@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "prompt-packet",
+  "type": "object",
+  "required": ["id", "from", "to_session", "goal", "constraints", "success", "reply_channel"],
+  "properties": {
+    "id": { "type": "string" },
+    "from": { "type": "string" },
+    "to_session": { "type": "string" },
+    "goal": { "type": "string" },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "success": { "type": "string" },
+    "reply_channel": { "type": "string" }
+  }
+}

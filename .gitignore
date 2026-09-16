@@ -1,0 +1,12 @@
+# Local / generated
+*.log
+*.tmp
+outbox/
+inbox/
+last-dev-run.local.md
+.vscode/
+.idea/
+
+# Fake-Grok / test homes (never commit)
+**/fake-grok-home/
+**/.bob-bridge-test/
