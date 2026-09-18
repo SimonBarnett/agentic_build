@@ -43,8 +43,9 @@ Start-BobWorker -Cwd D:\work\formprep -Prompt 'PONG' -Profile formprep
 ## Layout
 
 ```
-.grok/skills/  grok-build-fleet skill (agent interface)
-docs/          freeze PDF + wp0-recon.md
+agent_readme.md  handover for any Grok Bot (attach this)
+.grok/skills/    grok-build-fleet skill (agent interface)
+docs/            freeze PDF + wp0-recon.md
 schemas/       health overlay status completion prompt-packet
 src/           BobBridge module (Public/Private)
 config/        default.json profiles
