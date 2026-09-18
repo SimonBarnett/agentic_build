@@ -10,6 +10,9 @@
     "goal": { "type": "string" },
     "constraints": { "type": "array", "items": { "type": "string" } },
     "success": { "type": "string" },
-    "reply_channel": { "type": "string" }
+    "reply_channel": { "type": "string" },
+    "machine": { "type": "string" },
+    "cwd": { "type": "string" },
+    "profile": { "type": "string" }
   }
 }

@@ -13,7 +13,7 @@
           "sessionId": { "type": "string" },
           "title": { "type": "string" },
           "cwd": { "type": "string" },
-          "kind": { "type": "string", "enum": ["oneshot", "live"] },
+          "kind": { "type": "string", "enum": ["oneshot", "live", "grokbot", "fleet"] },
           "profile": { "type": "string" },
           "createdAt": { "type": "string" }
         }

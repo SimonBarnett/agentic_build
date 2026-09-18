@@ -5,7 +5,7 @@
       "yolo": false,
       "timeoutSec": 1200,
       "maxPerCwd": 1,
-      "rules": "DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets."
+      "rules": "DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets. MSSQL is the Windows logon user (integrated auth). Never put SQL passwords in the prompt."
     },
     "teams": {
       "yolo": false,

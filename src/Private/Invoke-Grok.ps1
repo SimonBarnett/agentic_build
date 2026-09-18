@@ -31,12 +31,15 @@ function Invoke-Grok {
     }
 
     $argvForLog = @($exe) + @($Args)
+    $quoted = @($argList | ForEach-Object {
+        '"' + (([string]$_) -replace '\\', '\\' -replace '"', '\"') + '"'
+    }) -join ' '
     $prevUpdater = $env:GROK_DISABLE_AUTOUPDATER
     $env:GROK_DISABLE_AUTOUPDATER = '1'
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $proc = Start-Process -FilePath $fileName -ArgumentList $argList -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        $proc = Start-Process -FilePath $fileName -ArgumentList $quoted -WorkingDirectory $WorkingDirectory -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
         $exited = $proc.WaitForExit($TimeoutSec * 1000)
         if (-not $exited) {
             try { Stop-ProcessTree -ProcessId $proc.Id } catch { }

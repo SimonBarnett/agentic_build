@@ -207,6 +207,42 @@ Invoke-Case 'BT0j grokbot hermetic' {
     if ($last.result -ne 'PONG') { throw "result=$($last.result)" }
 }
 
+# --- BT0k fleet fake store ---
+Invoke-Case 'BT0k fleet fake store' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $reg = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    if ($reg.id -ne 'testhost') { throw "id=$($reg.id)" }
+    if ($reg.mssql -ne 'integrated') { throw 'mssql not integrated' }
+    $machines = @(Get-BobMachines)
+    if ($machines.Count -lt 1) { throw 'no machines' }
+
+    $bad = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'password=secret' -Profile generic
+    if ($bad.error -ne 'refuse') { throw "secret goal not refused: $($bad.error)" }
+
+    $q = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Success 'echo'
+    if (-not $q.ok) { throw "enqueue failed $($q | ConvertTo-Json -Compress)" }
+    $inbox = Get-BobBuild -JobId $q.jobId
+    if ($inbox.lane -ne 'inbox') { throw "lane=$($inbox.lane)" }
+
+    $watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
+    $env:BOB_MACHINE_ID = 'testhost'
+    & $watch -Once -RepoRoot $RepoRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Watch-BobJobs exit $LASTEXITCODE" }
+
+    $done = Get-BobBuild -JobId $q.jobId
+    if ($done.lane -ne 'outbox') { throw "expected outbox, lane=$($done.lane)" }
+    if ($done.state -ne 'done') { throw "state=$($done.state)" }
+    if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'completion not ok' }
+
+    $q2 = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic
+    $st = Stop-BobBuild -JobId $q2.jobId
+    if (-not $st.ok) { throw 'stop enqueue failed' }
+    & $watch -Once -RepoRoot $RepoRoot | Out-Null
+    $stopped = Get-BobBuild -JobId $q2.jobId
+    if ($stopped.state -ne 'stopped') { throw "expected stopped, state=$($stopped.state)" }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }

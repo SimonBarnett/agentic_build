@@ -5,7 +5,7 @@
   "required": ["sessionId", "kind", "state", "cwd", "title", "updatedAt"],
   "properties": {
     "sessionId": { "type": "string" },
-    "kind": { "type": "string", "enum": ["oneshot", "live"] },
+    "kind": { "type": "string", "enum": ["oneshot", "live", "grokbot", "fleet"] },
     "state": { "type": "string" },
     "cwd": { "type": "string" },
     "title": { "type": "string" },
