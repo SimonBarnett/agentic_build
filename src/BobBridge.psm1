@@ -11,6 +11,7 @@ Get-ChildItem -Path $PublicDir -Filter '*.ps1' -ErrorAction Stop | ForEach-Objec
 Export-ModuleMember -Function @(
     'Get-BobHealth',
     'Get-BobWorkers',
+    'Get-BobAgents',
     'Start-BobWorker',
     'Send-BobPrompt',
     'Get-BobStatus',

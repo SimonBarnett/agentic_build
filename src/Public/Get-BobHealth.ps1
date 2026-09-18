@@ -28,7 +28,23 @@ function Get-BobHealth {
         }
     }
 
-    $ok = $installed -and $loggedIn
+    $bot = $null
+    $botOk = $false
+    if (-not (Test-BobUsesFakeGrok) -and (Test-GrokBotAvailable)) {
+        try {
+            $hr = Invoke-GrokBotApi -Action health -TimeoutSec 30
+            if ($hr.Parsed) { $bot = $hr.Parsed }
+            $botOk = [bool]($bot -and $bot.ok -and $bot.signedIn)
+        }
+        catch { $botOk = $false }
+    }
+
+    $ok = ($installed -and $loggedIn) -or $botOk
+    if ($botOk -and -not $version) {
+        $version = [string]$bot.appVersion
+        $loggedIn = $true
+        $installed = $true
+    }
     return [pscustomobject]@{
         ok             = $ok
         grok_installed = $installed
@@ -37,5 +53,7 @@ function Get-BobHealth {
         worker_count   = @($overlay.workers).Count
         leader_up      = $null
         machine        = $env:COMPUTERNAME
+        transport      = $(if ($botOk) { 'grokbot' } elseif ($installed) { 'cli' } else { $null })
+        grokbot        = $bot
     }
 }

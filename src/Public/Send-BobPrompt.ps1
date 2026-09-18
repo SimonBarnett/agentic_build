@@ -23,6 +23,29 @@ function Send-BobPrompt {
     $dir = Get-WorkerDir $SessionId
     New-Item -ItemType Directory -Force -Path (Join-Path $dir 'outbox') | Out-Null
 
+    $agent = $null
+    if ($entry.PSObject.Properties.Name -contains 'agent') { $agent = [string]$entry.agent }
+    $useBot = ($entry.kind -eq 'grokbot') -or (Test-ShouldUseGrokBot -Agent $agent)
+    if ($useBot) {
+        if (-not $agent) { $agent = [string]$entry.title }
+        $argv = @('grokbot', 'SendGrokBotUserMessage', $agent)
+        [IO.File]::WriteAllText((Join-Path $dir 'outbox\argv.txt'), ($argv -join "`n"))
+        Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $entry.profile -Prompt $Prompt
+        $raw = Invoke-GrokBotApi -Action send -Agent $agent -Text $Prompt -Wait -TimeoutSec $prof.TimeoutSec
+        $mapped = ConvertFrom-GrokBotRun -Run $raw -SessionId $SessionId
+        $written = Write-BobTurnResult -SessionId $SessionId -Cwd $cwdFull -Title $entry.title -Profile $entry.profile -Prompt $Prompt -Mapped $mapped -Kind 'grokbot' -Agent $agent -AgentId $mapped.GrokResult.agentId -Resumed $true
+        return [pscustomobject]@{
+            ok          = $written.ok
+            sessionId   = $SessionId
+            resumed     = $true
+            completion  = $written.completion
+            last_result = $written.last_result
+            argv        = $argv
+            transport   = 'grokbot'
+            agent       = $agent
+        }
+    }
+
     $argv = Get-BobArgv -Prompt $Prompt -Cwd $cwdFull -SessionId $SessionId -Resume -Profile $prof
     [IO.File]::WriteAllText((Join-Path $dir 'outbox\argv.txt'), ($argv -join "`n"))
     Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $entry.profile -Prompt $Prompt

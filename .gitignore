@@ -10,3 +10,7 @@ last-dev-run.local.md
 # Fake-Grok / test homes (never commit)
 **/fake-grok-home/
 **/.bob-bridge-test/
+
+# Python helper
+__pycache__/
+*.pyc

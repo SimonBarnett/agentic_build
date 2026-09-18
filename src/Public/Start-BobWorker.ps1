@@ -6,6 +6,7 @@ function Start-BobWorker {
         [string]$Profile = 'generic',
         [string]$Title,
         [string]$SessionId,
+        [string]$Agent,
         [switch]$Force,
         [switch]$WhatIfArgv
     )
@@ -13,7 +14,10 @@ function Start-BobWorker {
     $root = Initialize-BridgeRoot
     $prof = Get-Profile -Name $Profile
     $cwdFull = [IO.Path]::GetFullPath($Cwd)
-    if (-not $Title) { $Title = "bob-$Profile" }
+    if (-not $Title) {
+        if ($Agent) { $Title = $Agent }
+        else { $Title = "bob-$Profile" }
+    }
 
     if (Test-PromptSecrets -Prompt $Prompt) {
         return [pscustomobject]@{
@@ -47,7 +51,14 @@ function Start-BobWorker {
     New-Item -ItemType Directory -Force -Path (Join-Path $dir 'outbox') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $dir 'inbox') | Out-Null
 
-    $argv = Get-BobArgv -Prompt $Prompt -Cwd $cwdFull -SessionId $SessionId -Profile $prof
+    $useBot = Test-ShouldUseGrokBot -Agent $Agent
+    $argv = $null
+    if ($useBot) {
+        $argv = @('grokbot', 'SendGrokBotUserMessage', $Agent)
+    }
+    else {
+        $argv = Get-BobArgv -Prompt $Prompt -Cwd $cwdFull -SessionId $SessionId -Profile $prof
+    }
     $argvPath = Join-Path $dir 'outbox\argv.txt'
     [IO.File]::WriteAllText($argvPath, (($argv | ForEach-Object { $_ }) -join "`n"))
 
@@ -58,10 +69,44 @@ function Start-BobWorker {
             sessionId = $SessionId
             argv      = $argv
             argvPath  = $argvPath
+            transport = $(if ($useBot) { 'grokbot' } else { 'cli' })
+        }
+    }
+
+    if ($Agent -and -not $useBot -and -not (Test-BobUsesFakeGrok)) {
+        return [pscustomobject]@{
+            ok    = $false
+            error = 'grokbot_unavailable'
+            reason = 'Grok Bot home/python missing; off-DEV Fake-Grok still uses -p'
+        }
+    }
+
+    if ($useBot -and -not (Test-GrokBotAvailable)) {
+        return [pscustomobject]@{
+            ok     = $false
+            error  = 'grokbot_unavailable'
+            reason = 'Grok Bot is not signed in on this machine'
         }
     }
 
     Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $Profile -Prompt $Prompt
+
+    if ($useBot) {
+        $raw = Invoke-GrokBotApi -Action send -Agent $Agent -Text $Prompt -Wait -TimeoutSec $prof.TimeoutSec
+        $mapped = ConvertFrom-GrokBotRun -Run $raw -SessionId $SessionId
+        $written = Write-BobTurnResult -SessionId $SessionId -Cwd $cwdFull -Title $Title -Profile $Profile -Prompt $Prompt -Mapped $mapped -Kind 'grokbot' -Agent $Agent -AgentId $mapped.GrokResult.agentId -RegisterWorker
+        return [pscustomobject]@{
+            ok          = $written.ok
+            sessionId   = $SessionId
+            completion  = $written.completion
+            last_result = $written.last_result
+            status      = $written.status
+            argv        = $argv
+            processGone = $true
+            transport   = 'grokbot'
+            agent       = $Agent
+        }
+    }
 
     $run = Invoke-Grok -Args $argv -WorkingDirectory $cwdFull -TimeoutSec $prof.TimeoutSec
     [IO.File]::WriteAllText((Join-Path $dir 'outbox\raw.txt'), [string]$run.Stdout)

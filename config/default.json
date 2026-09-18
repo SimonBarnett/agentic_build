@@ -25,5 +25,10 @@
       "maxPerCwd": 2,
       "rules": "No production deploys. No force-push."
     }
+  },
+  "agents": {
+    "bob": { "profile": "generic" },
+    "haitch": { "profile": "teams" },
+    "merc": { "profile": "generic" }
   }
 }

@@ -194,6 +194,19 @@ Invoke-Case 'BT0i audit' {
     if ($ref.error -ne 'refuse') { throw "password prompt not refused: $($ref.error)" }
 }
 
+# --- BT0j grokbot hermetic ---
+Invoke-Case 'BT0j grokbot hermetic' {
+    param($bridgeRoot)
+    $agents = @(Get-BobAgents)
+    if ($agents.Count -ne 0) { throw "Fake-Grok must not list live agents: $($agents.Count)" }
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $r = Start-BobWorker -Cwd $cwd -Prompt 'PONG' -Profile generic -Agent Bob
+    if (-not $r.ok) { throw "fake -Agent Bob should still oneshot: $($r | ConvertTo-Json -Compress)" }
+    if ($r.transport -eq 'grokbot') { throw 'Fake-Grok must not use grokbot transport' }
+    $last = Get-BobResult -SessionId $r.sessionId
+    if ($last.result -ne 'PONG') { throw "result=$($last.result)" }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
