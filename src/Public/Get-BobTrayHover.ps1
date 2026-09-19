@@ -70,6 +70,74 @@ function Get-SessionContextRemaining {
     catch { return $null }
 }
 
+function Test-BobTrayRemainingKnown {
+    param($RemainingPct)
+    if ($null -eq $RemainingPct) { return $false }
+    if (($RemainingPct -is [string]) -and [string]::IsNullOrWhiteSpace([string]$RemainingPct)) { return $false }
+    return $true
+}
+
+function Get-BobTrayBarPaint {
+    [CmdletBinding()]
+    param(
+        $RemainingPct,
+        [int]$BarWidth = 392
+    )
+    if (-not (Test-BobTrayRemainingKnown $RemainingPct)) {
+        return [pscustomobject]@{
+            remaining_pct = $null
+            known         = $false
+            show_track    = $false
+            show_fill     = $false
+            fill_width    = $null
+            caption       = 'Context remaining  n/a'
+            pulse         = $false
+            kind          = 'unknown'
+        }
+    }
+    $pct = [int]$RemainingPct
+    if ($pct -lt 0) { $pct = 0 }
+    if ($pct -gt 100) { $pct = 100 }
+    $inner = [math]::Max(0, $BarWidth - 2)
+    $w = [int]($inner * $pct / 100)
+    if ($w -lt 8 -and $pct -gt 0) { $w = 8 }
+    if ($pct -eq 0) { $w = 0 }
+    return [pscustomobject]@{
+        remaining_pct = $pct
+        known         = $true
+        show_track    = $true
+        show_fill     = ($w -gt 0)
+        fill_width    = $w
+        caption       = ('Context remaining    {0}%' -f $pct)
+        pulse         = ($pct -lt 10)
+        kind          = 'known'
+    }
+}
+
+function Get-BobTrayAlertKind {
+    [CmdletBinding()]
+    param(
+        [string[]]$Alerts,
+        $RemainingPct
+    )
+    foreach ($a in @($Alerts)) {
+        if (-not $a) { continue }
+        if ($a -match 'watcher_down') { return 'watcher' }
+        if ($a -match 'agent_stall') { return 'stall' }
+        if ($a -match 'ACTION_REQUIRED') { return 'stall' }
+    }
+    $paint = Get-BobTrayBarPaint -RemainingPct $RemainingPct
+    if ($paint.pulse) { return 'context' }
+    return 'none'
+}
+
+function Get-BobTrayTitle {
+    $id = $null
+    try { $id = Get-ThisMachineId } catch { }
+    if (-not $id) { $id = 'this-machine' }
+    return ('Bob ({0})' -f $id)
+}
+
 function Get-BobTrayHover {
     $tier = '?'
     try {
@@ -87,6 +155,11 @@ function Get-BobTrayHover {
     }
     catch { }
 
+    $machineId = $null
+    try { $machineId = Get-ThisMachineId } catch { }
+    if (-not $machineId) { $machineId = 'this-machine' }
+    $title = 'Bob ({0})' -f $machineId
+
     $running = @()
     $queued = 0
     try { $running = @(Get-BobBuilds -Lane running -ErrorAction SilentlyContinue) } catch { }
@@ -101,7 +174,7 @@ function Get-BobTrayHover {
         $ctx = Get-SessionContextRemaining -Cwd $b.cwd -SessionId $sid
         if ($ctx) { $remainings += [int]$ctx.remaining_pct }
         $mac = [string]$b.machine
-        if (-not $mac) { $mac = '?' }
+        if (-not $mac) { $mac = $machineId }
         $jobs += [pscustomobject]@{
             id            = $id
             id8           = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
@@ -121,7 +194,7 @@ function Get-BobTrayHover {
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
-        $lines.Add(('{0}  context remaining  --' -f $tier))
+        $lines.Add(('{0}  context remaining  n/a' -f $tier))
         $short = '{0} {1} run' -f $tier, $jobs.Count
     }
     else {
@@ -129,13 +202,13 @@ function Get-BobTrayHover {
         $short = '{0} {1} run  {2}%' -f $tier, $jobs.Count, $remainPct
     }
     if ($jobs.Count -eq 0) {
-        $lines.Add('no fleet jobs running')
+        $lines.Add('no jobs on this machine')
         if ($null -eq $remainPct) { $short = '{0} idle' -f $tier }
         else { $short = '{0} idle  {1}%' -f $tier, $remainPct }
     }
     else {
         foreach ($j in $jobs) {
-            $rp = if ($null -eq $j.remaining_pct) { '--' } else { '{0}%' -f $j.remaining_pct }
+            $rp = if ($null -eq $j.remaining_pct) { 'n/a' } else { '{0}%' -f $j.remaining_pct }
             $lines.Add(('{0}  {1}  {2}  {3}  {4}  ctx {5}' -f $j.machine, $j.id8, $j.repo, $j.duration, $j.state, $rp))
         }
     }
@@ -143,6 +216,9 @@ function Get-BobTrayHover {
     if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
 
     return [pscustomobject]@{
+        title          = $title
+        machine        = $machineId
+        scope          = 'this-machine'
         short          = $short
         body           = ($lines -join [Environment]::NewLine)
         remaining_pct  = $remainPct

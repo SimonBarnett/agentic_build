@@ -1,4 +1,5 @@
-# Hidden fleet watcher + system tray icon. Flashes on ACTION_REQUIRED.
+# Hidden this-machine watcher + system tray icon. Flashes on ACTION_REQUIRED.
+# Job list is the local BobBridge store (not a cross-host fleet view).
 # Replaces the blank Interactive PowerShell window. Not a Windows service.
 # Requires powershell.exe -STA.
 [CmdletBinding()]
@@ -82,6 +83,7 @@ function New-FaRobotIcon {
 $iconIdle = New-FaRobotIcon -Badge ([System.Drawing.Color]::Transparent)
 $iconAlertA = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(220, 50, 47))
 $iconAlertB = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180, 0))
+$iconContext = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(210, 153, 34))
 Write-TrayLog 'tray icon Font Awesome robot'
 
 $script:attention = $false
@@ -89,8 +91,10 @@ $script:flashOn = $false
 $script:lastAlerts = @()
 $script:jobsPid = $null
 $script:jobsOwned = $false
-$script:hoverBody = 'Bob fleet'
+$script:hoverTitle = Get-BobTrayTitle
+$script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
+$script:alertKind = 'none'
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -131,7 +135,7 @@ function Set-Attention([string[]]$alerts) {
     if ($text.Length -gt 60) { $text = $text.Substring(0, 60) }
     try { $notify.Text = $text } catch { }
     try {
-        $notify.BalloonTipTitle = 'Bob fleet'
+        $notify.BalloonTipTitle = $script:hoverTitle
         $notify.BalloonTipText = (($alerts | Select-Object -First 3) -join "`n")
         $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
         $notify.ShowBalloonTip(8000)
@@ -144,19 +148,38 @@ function Update-Hover {
     try {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
+        $script:hoverTitle = [string]$h.title
+        if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
         else { $script:remainingPct = [int]$h.remaining_pct }
+        $barW = 392
+        if ($barPanel) { $barW = [int]$barPanel.Width }
+        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth $barW
+        $script:alertKind = Get-BobTrayAlertKind -Alerts $script:lastAlerts -RemainingPct $script:remainingPct
         $short = [string]$h.short
         if ($script:attention) { $short = '! ' + $short }
         if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
         $notify.Text = $short
         if ($titleLabel) {
-            $titleLabel.Text = 'Bob fleet'
-            if ($null -eq $script:remainingPct) { $barCaption.Text = 'Context remaining' }
-            else { $barCaption.Text = ('Context remaining    {0}%' -f $script:remainingPct) }
-            $jobsLabel.Text = $(if ($h.jobs -and $h.jobs.Count) {
-                    ($h.jobs | ForEach-Object { '{0}   {1}   {2}   {3}' -f $_.machine, $_.repo, $_.duration, $_.state }) -join [Environment]::NewLine
-                } else { 'No fleet jobs running' })
+            $titleLabel.Text = $script:hoverTitle
+            $barCaption.Text = $paint.caption
+            $barPanel.Visible = [bool]$paint.show_track
+            if ($paint.show_track) {
+                $jobsLabel.Location = New-Object System.Drawing.Point 14, 82
+            }
+            else {
+                $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
+            }
+            $jobsLabel.Text = $(if ($h.jobs -and @($h.jobs).Count) {
+                    (@($h.jobs) | ForEach-Object { '{0}   {1}   {2}   {3}   {4}' -f $_.machine, $_.id8, $_.repo, $_.duration, $_.state }) -join [Environment]::NewLine
+                } else { 'No jobs on this machine' })
+            if ($alertLabel) {
+                $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
+                $alertLabel.Location = New-Object System.Drawing.Point 14, ($jobsLabel.Bottom + 6)
+            }
+            if (-not $script:attention -and -not $paint.pulse -and $notify.Icon -ne $iconIdle) {
+                $notify.Icon = $iconIdle
+            }
             $barPanel.Invalidate()
         }
     }
@@ -188,36 +211,37 @@ $titleLabel = New-Object System.Windows.Forms.Label
 $titleLabel.AutoSize = $true
 $titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
 $titleLabel.ForeColor = $fg
-$titleLabel.Text = 'Bob fleet'
+$titleLabel.Text = $script:hoverTitle
 $titleLabel.Location = New-Object System.Drawing.Point 14, 12
 $barCaption = New-Object System.Windows.Forms.Label
 $barCaption.AutoSize = $true
 $barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
 $barCaption.ForeColor = $muted
-$barCaption.Text = 'Context remaining'
+$barCaption.Text = 'Context remaining  n/a'
 $barCaption.Location = New-Object System.Drawing.Point 14, 40
 $barPanel = New-Object System.Windows.Forms.Panel
 $barPanel.Location = New-Object System.Drawing.Point 14, 62
 $barPanel.Size = New-Object System.Drawing.Size 392, 10
 $barPanel.BackColor = $bg
+$barPanel.Visible = $false
 $barPanel.Add_Paint({
         param($s, $e)
+        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth $barPanel.Width
+        if (-not $paint.show_track) { return }
         $g = $e.Graphics
         $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
         $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
         Add-RoundRect $pathT 0 0 $barPanel.Width 10 5
         $g.FillPath($track, $pathT)
-        $pct = $script:remainingPct
-        if ($null -ne $pct) {
-            $w = [int](($barPanel.Width - 2) * [math]::Max(0, [math]::Min(100, $pct)) / 100)
-            if ($w -lt 8 -and $pct -gt 0) { $w = 8 }
+        if ($paint.show_fill -and $null -ne $paint.fill_width -and $paint.fill_width -gt 0) {
+            $pct = [int]$paint.remaining_pct
             $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
             if ($pct -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
             if ($pct -lt 10) { $col = [System.Drawing.Color]::FromArgb(248, 81, 73) }
             $fill = New-Object System.Drawing.SolidBrush $col
             $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
-            Add-RoundRect $pathF 1 1 $w 8 4
+            Add-RoundRect $pathF 1 1 $paint.fill_width 8 4
             $g.FillPath($fill, $pathF)
             $pathF.Dispose(); $fill.Dispose()
         }
@@ -228,14 +252,21 @@ $jobsLabel.AutoSize = $true
 $jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
 $jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
 $jobsLabel.ForeColor = $fg
-$jobsLabel.Location = New-Object System.Drawing.Point 14, 82
-$jobsLabel.Text = 'No fleet jobs running'
+$jobsLabel.Location = New-Object System.Drawing.Point 14, 62
+$jobsLabel.Text = 'No jobs on this machine'
+$alertLabel = New-Object System.Windows.Forms.Label
+$alertLabel.AutoSize = $true
+$alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
+$alertLabel.ForeColor = $muted
+$alertLabel.Location = New-Object System.Drawing.Point 14, 86
+$alertLabel.Text = 'alert: none'
 $tip.Controls.Add($titleLabel)
 $tip.Controls.Add($barCaption)
 $tip.Controls.Add($barPanel)
 $tip.Controls.Add($jobsLabel)
+$tip.Controls.Add($alertLabel)
 $tip.Add_Shown({
-        $tip.Height = $jobsLabel.Bottom + 16
+        $tip.Height = $alertLabel.Bottom + 16
     })
 $hideTip = New-Object System.Windows.Forms.Timer
 $hideTip.Interval = 3200
@@ -244,7 +275,7 @@ $hideTip.Add_Tick({ $tip.Hide(); $hideTip.Stop() })
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
 $notify.Visible = $true
-$notify.Text = 'Bob fleet'
+$notify.Text = $script:hoverTitle
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
 $miAck = $menu.Items.Add('Acknowledge')
@@ -255,7 +286,7 @@ $notify.ContextMenuStrip = $menu
 
 $miStatus.Add_Click({
         Update-Hover
-        $notify.BalloonTipTitle = 'Bob fleet'
+        $notify.BalloonTipTitle = $script:hoverTitle
         $body = $script:hoverBody
         if ($body.Length -gt 250) { $body = $body.Substring(0, 250) }
         $notify.BalloonTipText = $body
@@ -274,7 +305,9 @@ $notify.Add_MouseClick({
     })
 $notify.Add_MouseMove({
         Update-Hover
-        $tip.Height = [Math]::Max(110, $jobsLabel.Bottom + 16)
+        $bottom = $jobsLabel.Bottom
+        if ($alertLabel) { $bottom = $alertLabel.Bottom }
+        $tip.Height = [Math]::Max(110, $bottom + 16)
         $pt = [System.Windows.Forms.Cursor]::Position
         $x = $pt.X - $tip.Width
         $y = $pt.Y - $tip.Height - 12
@@ -288,10 +321,7 @@ $notify.Add_MouseMove({
 $flash = New-Object System.Windows.Forms.Timer
 $flash.Interval = 450
 $flash.Add_Tick({
-        if (-not $script:attention) {
-            if ($notify.Icon -ne $iconIdle) { $notify.Icon = $iconIdle }
-            return
-        }
+        if (-not $script:attention) { return }
         $script:flashOn = -not $script:flashOn
         $notify.Icon = $(if ($script:flashOn) { $iconAlertA } else { $iconAlertB })
     })
@@ -320,9 +350,9 @@ $pulseOff.Add_Tick({
     })
 $pulse.Add_Tick({
         if ($script:attention) { return }
-        if ($null -eq $script:remainingPct) { return }
-        if ([int]$script:remainingPct -ge 10) { return }
-        $notify.Icon = $iconAlertA
+        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct
+        if (-not $paint.pulse) { return }
+        $notify.Icon = $iconContext
         $pulseOff.Stop(); $pulseOff.Start()
     })
 

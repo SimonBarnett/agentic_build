@@ -264,6 +264,94 @@ Invoke-Case 'BT0k fleet fake store' {
     if (-not ($h.PSObject.Properties.Name -contains 'last_seen')) { throw 'health.last_seen missing' }
 }
 
+# --- BT0l tray hover (NC-01..NC-05) ---
+Invoke-Case 'BT0l tray hover' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+
+    $h = Get-BobTrayHover
+    if ($null -ne $h.remaining_pct) { throw "idle remaining_pct=$($h.remaining_pct) expected null" }
+    if ([string]$h.title -ne 'Bob (testhost)') { throw "title=$($h.title)" }
+    if ([string]$h.scope -ne 'this-machine') { throw "scope=$($h.scope)" }
+    if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
+    if ([string]$h.body -match '(?i)fleet') { throw "idle body still says fleet: $($h.body)" }
+    if ([string]$h.body -notmatch 'no jobs on this machine') { throw "idle body missing this-machine copy: $($h.body)" }
+    if ([string]$h.remaining_kind -ne 'context') { throw "kind=$($h.remaining_kind)" }
+
+    $paint = Get-BobTrayBarPaint -RemainingPct $h.remaining_pct -BarWidth 392
+    if ($paint.known) { throw 'null remaining must be unknown' }
+    if ($paint.show_track) { throw 'null remaining must hide track' }
+    if ($paint.show_fill) { throw 'null remaining must not fill' }
+    if ($null -ne $paint.fill_width) { throw "null remaining fill_width=$($paint.fill_width) must not be numeric (would look depleted)" }
+    if ($paint.pulse) { throw 'must not pulse when remaining unknown' }
+    if ($paint.caption -notmatch 'n/a') { throw "caption=$($paint.caption)" }
+
+    $zero = Get-BobTrayBarPaint -RemainingPct 0 -BarWidth 392
+    if (-not $zero.known) { throw '0% from usage must be known' }
+    if (-not $zero.show_track) { throw '0% must show empty track' }
+    if ($zero.show_fill) { throw '0% must not draw a fill' }
+    if ($zero.fill_width -ne 0) { throw "0% fill_width=$($zero.fill_width)" }
+    if (-not $zero.pulse) { throw '0% must pulse context' }
+
+    $mid = Get-BobTrayBarPaint -RemainingPct 50 -BarWidth 392
+    if ($mid.fill_width -le 0) { throw "50% fill_width=$($mid.fill_width)" }
+    if ($mid.pulse) { throw '50% must not pulse' }
+
+    $low = Get-BobTrayBarPaint -RemainingPct 5 -BarWidth 392
+    if (-not $low.pulse) { throw '5% must pulse' }
+
+    $emptyStr = Get-BobTrayBarPaint -RemainingPct '' -BarWidth 392
+    if ($null -ne $emptyStr.fill_width) { throw 'empty-string remaining must not fill' }
+    if ($emptyStr.pulse) { throw 'empty-string remaining must not pulse' }
+
+    $akNone = Get-BobTrayAlertKind -Alerts @() -RemainingPct $null
+    if ($akNone -ne 'none') { throw "alert=$akNone" }
+    $akCtx = Get-BobTrayAlertKind -Alerts @() -RemainingPct 5
+    if ($akCtx -ne 'context') { throw "alert=$akCtx" }
+    $akWatch = Get-BobTrayAlertKind -Alerts @('ACTION_REQUIRED: watcher_down watcher_up=False') -RemainingPct 5
+    if ($akWatch -ne 'watcher') { throw "alert=$akWatch" }
+    $akStall = Get-BobTrayAlertKind -Alerts @('ACTION_REQUIRED: agent_stall Bob idle_sec=900') -RemainingPct $null
+    if ($akStall -ne 'stall') { throw "alert=$akStall" }
+
+    $jobId = '9f96bc0e-1111-2222-3333-444455556666'
+    $runDir = Join-Path $bridgeRoot 'fleet\running\testhost'
+    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+    $job = [pscustomobject]@{
+        id        = $jobId
+        machine   = 'testhost'
+        cwd       = $cwd
+        claimedAt = [DateTime]::UtcNow.ToString('o')
+        state     = 'running'
+    }
+    [IO.File]::WriteAllText((Join-Path $runDir ($jobId + '.json')), ($job | ConvertTo-Json -Depth 6))
+
+    $h2 = Get-BobTrayHover
+    if ($h2.job_count -ne 1) { throw "job_count=$($h2.job_count)" }
+    if ([string]$h2.body -match '(?i)fleet') { throw "running body says fleet: $($h2.body)" }
+    if ([string]$h2.body -notmatch '9f96bc0e') { throw "hover body missing id8: $($h2.body)" }
+    if ($null -ne $h2.remaining_pct) { throw 'running without usage.json must keep remaining_pct null' }
+    $row = @($h2.jobs)[0]
+    $line = '{0}   {1}   {2}   {3}   {4}' -f $row.machine, $row.id8, $row.repo, $row.duration, $row.state
+    if ($line -notmatch '9f96bc0e') { throw "card line missing id8: $line" }
+    $paint2 = Get-BobTrayBarPaint -RemainingPct $h2.remaining_pct -BarWidth 392
+    if ($null -ne $paint2.fill_width) { throw 'running without usage.json must not set fill_width' }
+
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    foreach ($bad in @('Bob fleet', 'No fleet jobs running', 'no fleet jobs running')) {
+        if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
+    }
+    if ($traySrc -notmatch '\$_\.id8') { throw 'Watch-BobTray card line missing id8' }
+    if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
+    if ($traySrc -notmatch 'show_track') { throw 'Watch-BobTray paint path does not gate on show_track' }
+
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skillTray -notmatch '(?i)weekly') { throw 'bob-fleet-tray skill must document weekly vs context' }
+    if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
+    $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
+    if ($skillBox -notmatch '(?i)weekly') { throw 'box-usage skill must document weekly vs context' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }

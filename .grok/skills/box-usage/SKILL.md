@@ -19,7 +19,7 @@ $repo = if (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } elseif (T
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1"
 # machine-readable:
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Json
-# tray hover JSON (jobs + remaining worker-slot %):
+# tray hover JSON (this-machine jobs + session context remaining; not weekly quota):
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Hover
 ```
 
@@ -55,10 +55,12 @@ Get-BobBuilds -Machine <id>
 - MarchHare personal X maxed → route new builds to `ionos` (dedicated Premium+).
 - High `~\.grok` sessions/downloads size → consider `grok worktree gc --max-age 7d --dry-run` before reclaiming (see `grok du --help`).
 - `grok usage` with "No usage recorded" on a **running** job is normal; re-check when the job finishes.
-- Tray hover (`Get-BobTrayHover`) lists running jobs with **machine**, repo, duration, state. Remaining is **context** `(window - (inputTokens - cachedReadTokens)) / window` from session `usage.json`. If that file is missing, remaining is unknown (not 100%). Pulse red when known remaining < 10%.
+- Tray hover (`Get-BobTrayHover`) is **this machine only** (`scope=this-machine`, title `Bob (<id>)`). It lists local running jobs with machine, **id8**, repo, duration, state. Remaining is **session context** `(window - (inputTokens - cachedReadTokens)) / window` from session `usage.json`. If that file is missing, remaining is unknown (`n/a`) — not 100% and **not 0%**. Do not paint a depleted bar without `usage.json`. Pulse amber when **known** remaining < 10%.
+- **Weekly limit** (`Weekly limit left` in the grok.exe CLI footer) is **not** on the tray and **not** in BobBridge. Do not invent a weekly %. Read it from the CLI footer on that box. Never treat the context bar as weekly quota.
 
 ## Hard rules
 
 - Do **not** print or commit contents of `auth.json`.
 - Do **not** invent remaining-token counts the CLI does not expose.
-- Report facts from this host only.
+- Do **not** invent a weekly-limit API. Weekly % is CLI-footer only.
+- Report facts from this host only. Do not say "no fleet jobs" when the store is local-only.

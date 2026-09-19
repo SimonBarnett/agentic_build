@@ -99,7 +99,7 @@ if ($Hover) {
         $h | ConvertTo-Json -Compress -Depth 6
     }
     else {
-        Write-Output 'Bob fleet'
+        Write-Output '{"title":"Bob (this-machine)","scope":"this-machine","short":"idle","body":"no jobs on this machine","remaining_pct":null,"remaining_kind":"context"}'
     }
     return
 }

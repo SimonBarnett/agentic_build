@@ -26,7 +26,10 @@
         'Stop-BobWorker',
         'Export-BobTranscript',
         'Get-BobStallAlerts',
-        'Get-BobTrayHover'
+        'Get-BobTrayHover',
+        'Get-BobTrayBarPaint',
+        'Get-BobTrayAlertKind',
+        'Get-BobTrayTitle'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
