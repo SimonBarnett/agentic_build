@@ -4,7 +4,7 @@ function Get-FleetRoot {
 
 function Initialize-FleetRoot {
     $root = Get-FleetRoot
-    foreach ($n in @('inbox', 'running', 'outbox', 'machines', 'cancel', 'followup')) {
+    foreach ($n in @('inbox', 'running', 'outbox', 'machines', 'cancel', 'followup', 'peek')) {
         New-Item -ItemType Directory -Force -Path (Join-Path $root $n) | Out-Null
     }
     return $root
@@ -101,6 +101,7 @@ function Write-FleetHeartbeat {
     $rec | Add-Member -NotePropertyName windowsUser -NotePropertyValue "$env:USERDOMAIN\$env:USERNAME" -Force
     Write-JsonFile $path $rec
     Write-JsonFile (Join-Path (Initialize-FleetRoot) (Join-Path 'machines' ($id + '.json'))) $rec
+    try { Write-BobFleetPeekSnapshot } catch { }
 }
 
 function Test-FleetCancel {

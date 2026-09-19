@@ -230,12 +230,39 @@ function Get-BobTrayTitle {
     return 'Bob Fleet'
 }
 
+function Get-BobTrayRepoLabel {
+    param($Job, [switch]$SkipGit)
+    if ($Job -and $Job.repo) {
+        $r = [string]$Job.repo
+        if ($r -and $r.Trim() -and $r.Trim() -ne '?' -and -not (Test-BobTrayLooksLikeSha $r)) {
+            return $r.Trim()
+        }
+    }
+    $cwd = $null
+    if ($Job) { $cwd = [string]$Job.cwd }
+    if (-not $SkipGit -and $cwd) {
+        $slug = Get-GitHubSlugFromCwd $cwd
+        if ($slug -and $slug -ne '?' -and -not (Test-BobTrayLooksLikeSha $slug)) { return $slug }
+    }
+    if ($cwd) {
+        try {
+            $leaf = Split-Path $cwd -Leaf
+            if ($leaf -and -not (Test-BobTrayLooksLikeSha $leaf)) { return $leaf }
+        }
+        catch { }
+    }
+    return '?'
+}
+
 function ConvertTo-BobTrayJobRow {
-    param($Job, [string]$DefaultMachine, [string]$State)
+    param($Job, [string]$DefaultMachine, [string]$State, [switch]$SkipGit)
     $id = [string]$Job.id
     $sid = $id
     if ($Job.sessionId) { $sid = [string]$Job.sessionId }
-    $ctx = Get-SessionContextRemaining -Cwd $Job.cwd -SessionId $sid
+    $ctx = $null
+    if (-not $SkipGit) {
+        $ctx = Get-SessionContextRemaining -Cwd $Job.cwd -SessionId $sid
+    }
     $mac = [string]$Job.machine
     if (-not $mac) { $mac = $DefaultMachine }
     $when = $Job.claimedAt
@@ -244,7 +271,7 @@ function ConvertTo-BobTrayJobRow {
     if (-not $st) {
         if ($Job.state) { $st = [string]$Job.state } else { $st = 'running' }
     }
-    $repo = Get-GitHubSlugFromCwd $Job.cwd
+    $repo = Get-BobTrayRepoLabel -Job $Job -SkipGit:$SkipGit
     if (Test-BobTrayLooksLikeSha $repo) { $repo = '?' }
     return [pscustomobject]@{
         id                     = $id
@@ -287,24 +314,46 @@ function Get-BobTrayHover {
     $queued = @($queuedJobs).Count
 
     $jobs = @()
+    $localIds = @{}
     foreach ($b in $running) {
-        $jobs += ,(ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State $(if ($b.state) { [string]$b.state } else { 'running' }))
+        $row = ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State $(if ($b.state) { [string]$b.state } else { 'running' })
+        $jobs += ,$row
+        if ($row.id) { $localIds[$row.id] = $true }
     }
     foreach ($b in $queuedJobs) {
-        $jobs += ,(ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State 'queued')
+        $row = ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State 'queued'
+        $jobs += ,$row
+        if ($row.id) { $localIds[$row.id] = $true }
+    }
+
+    $reg = $null
+    try { $reg = Get-BobFleetRegistry } catch { }
+    $staleAfter = 900
+    $peekMs = 1500
+    $shareRoot = $null
+    if ($reg) {
+        if ($reg.staleAfterSec) { $staleAfter = [int]$reg.staleAfterSec }
+        if ($reg.peekTimeoutMs) { $peekMs = [int]$reg.peekTimeoutMs }
+        if ($reg.shareRoot) { $shareRoot = [string]$reg.shareRoot }
     }
 
     $byMachine = @{}
-    try {
-        foreach ($m in @(Get-BobMachines -ErrorAction SilentlyContinue)) {
+    $reachBy = @{}
+    $seenBy = @{}
+    $specBy = @{}
+    if ($reg) {
+        foreach ($m in @($reg.machines)) {
             $mid = [string]$m.id
-            if ($mid -and -not $byMachine.ContainsKey($mid)) { $byMachine[$mid] = @() }
+            if (-not $mid) { continue }
+            if (-not $byMachine.ContainsKey($mid)) { $byMachine[$mid] = @() }
+            $specBy[$mid] = $m
         }
     }
-    catch { }
     if (-not $byMachine.ContainsKey($machineId)) {
         $byMachine[$machineId] = @()
     }
+    $reachBy[$machineId] = 'local'
+
     foreach ($j in $jobs) {
         $mid = [string]$j.machine
         if (-not $mid) { $mid = $machineId }
@@ -312,6 +361,44 @@ function Get-BobTrayHover {
             $byMachine[$mid] = @()
         }
         $byMachine[$mid] += ,$j
+        if ($mid -ne $machineId -and -not $reachBy.ContainsKey($mid)) {
+            $reachBy[$mid] = 'ok'
+        }
+    }
+
+    foreach ($mid in @($byMachine.Keys)) {
+        if ($mid -eq $machineId) { continue }
+        if (@($byMachine[$mid]).Count -gt 0) { continue }
+        $spec = $null
+        if ($specBy.ContainsKey($mid)) { $spec = $specBy[$mid] }
+        else { $spec = [pscustomobject]@{ id = $mid } }
+        $peek = $null
+        try {
+            $peek = Read-BobPeerPeek -Id $mid -Spec $spec -ShareRoot $shareRoot -TimeoutMs $peekMs
+        }
+        catch { $peek = $null }
+        if (-not $peek -or -not $peek.ok) {
+            $reachBy[$mid] = 'unreachable'
+            continue
+        }
+        if ($peek.lastSeen) { $seenBy[$mid] = [string]$peek.lastSeen }
+        foreach ($pj in @($peek.jobs)) {
+            if ($pj.id -and $localIds.ContainsKey([string]$pj.id)) { continue }
+            $st = [string]$pj.state
+            if (-not $st) { $st = 'running' }
+            $byMachine[$mid] += ,(ConvertTo-BobTrayJobRow -Job $pj -DefaultMachine $mid -State $st -SkipGit)
+        }
+        $age = Get-BobLastSeenAgeSec -Record ([pscustomobject]@{ lastSeen = $peek.lastSeen })
+        $empty = (@($byMachine[$mid]).Count -eq 0)
+        if ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
+            $reachBy[$mid] = 'stale'
+        }
+        elseif (-not $empty -and $null -ne $age -and $age -gt $staleAfter) {
+            $reachBy[$mid] = 'stale'
+        }
+        else {
+            $reachBy[$mid] = 'ok'
+        }
     }
 
     $order = @()
@@ -337,17 +424,26 @@ function Get-BobTrayHover {
                 }
             )
         }
+        $reach = 'ok'
+        if ($reachBy.ContainsKey($mid)) { $reach = [string]$reachBy[$mid] }
         $tile = New-Object psobject -Property @{
             id        = $mid
             job_count = $rows.Count
             jobs      = $rows
+            reach     = $reach
+            last_seen = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
         }
         $tiles += ,$tile
         $jobLines += $mid
-        if ($rows.Count -eq 0) {
-            $jobLines += '  no jobs'
+        if ($reach -eq 'unreachable') {
+            $jobLines += '  unreachable'
+        }
+        elseif ($rows.Count -eq 0) {
+            if ($reach -eq 'stale') { $jobLines += '  lastSeen stale' }
+            else { $jobLines += '  no jobs' }
         }
         else {
+            if ($reach -eq 'stale') { $jobLines += '  lastSeen stale' }
             foreach ($j in $rows) {
                 $jobLines += ('  {0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
             }
@@ -386,7 +482,7 @@ function Get-BobTrayHover {
     return [pscustomobject]@{
         title          = $title
         machine        = $machineId
-        scope          = 'local-store'
+        scope          = $(if ($peerPeek) { 'fleet-peek' } else { 'local-store' })
         short          = $short
         body           = ($lines -join "`n")
         jobs_text      = $jobsText

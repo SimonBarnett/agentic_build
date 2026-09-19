@@ -11,7 +11,7 @@ description: >
 
 # Tray (Bob Fleet)
 
-`tools/Watch-BobTray.ps1` is the human monitor for **this Windows box**. Title is **Bob Fleet**. Job data is the local BobBridge store (`Get-BobBuilds` on this host) grouped into **machine tiles**. There is no WinRM / remote health peek. If only this host is in the store, the card still uses the Bob Fleet title and tile layout, plus `other hosts not in this store`.
+`tools/Watch-BobTray.ps1` is the human monitor. Title is **Bob Fleet**. The card lists **every registered fleet machine** (bundled `config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json` + local `fleet/machines`), this host first. Under each tile: running then queued jobs **on that machine**. Transport is read-only filesystem peek (`docs/bob-fleet-peer-peek.md`). No WinRM. Peek fail = tile stays, line `  unreachable` (or `  lastSeen stale`) — never omit a registered peer, never invent jobs, never say `other hosts not in this store` when peers are registered.
 
 `Install-BobFleet` registers it as `BobFleet-<id>` with `-STA -WindowStyle Hidden`. It starts hidden `Watch-BobJobs.ps1`. Do not leave a blank PowerShell window on the desktop.
 
@@ -23,7 +23,7 @@ description: >
   - Title: **Bob Fleet** (not `Bob (<machineId>)`).
   - **Weekly remaining** is the **primary** bar (fleet routing). Source: last `billing: fetched credits config` line in `~\.grok\logs\unified.jsonl`. `remaining_pct = round(100 - creditUsagePercent)` when `currentPeriod.type` is weekly and `creditUsagePercent` is present. Same number the Grok CLI footer shows as `Weekly limit left: N%`. If that field is missing: caption `Weekly remaining  n/a`, bar track and fill **hidden**. Never fake 100%. Never paint a depleted/empty bar (do not imply 0%) without a real weekly field. Do **not** read `auth.json`. Do **not** call a billing HTTP API. Do **not** use session context (233K/500K) as this bar.
   - Session context from `usage.json` is optional on the job object (`context_remaining_pct`) only. It is **not** the hover bar.
-  - **Machine tiles**: one heading per machine id (this host first). Under each tile: running then queued jobs as `owner/repo  duration  state`. Prefer `git remote get-url origin` owner/repo; never show a bare commit SHA as the primary label. Empty tile: `  no jobs`.
+  - **Machine tiles**: one heading per registered machine id (this host first). Under each tile: running then queued jobs as `owner/repo  duration  state`. Prefer `git remote get-url origin` owner/repo on **this** box; peer jobs use the stamped `repo` from that host’s peek snapshot — do not `git -C` a peer cwd. Never show a bare commit SHA as the primary label. Empty reachable tile: `  no jobs`. Peek fail: `  unreachable`. Readable store, old/missing heartbeat, no jobs: `  lastSeen stale`.
   - Footer: `alert: watcher|stall|weekly|none`.
   - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restarting `hideTip` on MouseMove is OK. Hide via the existing hide timer / leave as today.
   - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone.
@@ -58,3 +58,4 @@ Recycling the **scheduled task** **kills** the pull worker. Do not recycle `BobF
 - Do not invent weekly %. No billing HTTP scrape. Log field or n/a.
 - Do not report session context as weekly quota.
 - Job lines are GitHub `owner/repo`, never a commit SHA as the primary label.
+- Do not omit registered peers. Do not invent jobs. Do not WinRM. Recycle Watch-BobTray only after hover/peek code changes.

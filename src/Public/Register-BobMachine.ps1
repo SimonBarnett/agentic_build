@@ -35,5 +35,6 @@ function Register-BobMachine {
     $dir = Join-Path (Initialize-FleetRoot) 'machines'
     Write-JsonFile (Join-Path $dir ($mid + '.json')) $record
     $env:BOB_MACHINE_ID = $mid
+    try { Write-BobFleetPeekSnapshot } catch { }
     return $record
 }

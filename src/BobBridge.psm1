@@ -32,5 +32,6 @@ Export-ModuleMember -Function @(
     'Get-BobTrayAlertKind',
     'Get-BobTrayTitle',
     'Get-BobWeeklyRemaining',
-    'Get-BobTrayTipPlacement'
+    'Get-BobTrayTipPlacement',
+    'Get-BobFleetRegistry'
 )

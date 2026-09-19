@@ -54,6 +54,9 @@ function Invoke-Case {
         $env:BOB_BRIDGE_HOME = $null
         $env:BOB_GROK_EXE = $null
         $env:BOB_WEEKLY_LOG = $null
+        $env:BOB_FLEET_REGISTRY = $null
+        $env:BOB_FLEET_SHARE = $null
+        $env:BOB_FLEET_BUNDLED = $null
     }
 }
 
@@ -453,6 +456,114 @@ Invoke-Case 'BT0l tray hover' {
     if ($macIds[0] -ne 'testhost') { throw "machines[0]=$($macIds[0]) expected testhost" }
     if ($macIds -notcontains 'otherhost') { throw 'machines missing otherhost' }
 
+    $peerHome = Join-Path $bridgeRoot 'peer-marchhare'
+    $peerRun = Join-Path $peerHome 'fleet\running\marchhare'
+    New-Item -ItemType Directory -Force -Path $peerRun | Out-Null
+    $peerGit = Join-Path $bridgeRoot 'peek-repo'
+    New-Item -ItemType Directory -Force -Path $peerGit | Out-Null
+    & git -C $peerGit init -q
+    & git -C $peerGit remote add origin https://github.com/SimonBarnett/agentic_build.git
+    $freshSeen = [DateTime]::UtcNow.ToString('o')
+    [IO.File]::WriteAllText((Join-Path $peerHome 'machine.json'), (@{ id = 'marchhare'; lastSeen = $freshSeen } | ConvertTo-Json))
+    $peerJobId = 'dddddddd-1111-2222-3333-444455556666'
+    $peerJob = [pscustomobject]@{
+        id        = $peerJobId
+        machine   = 'marchhare'
+        cwd       = $peerGit
+        repo      = 'SimonBarnett/agentic_build'
+        claimedAt = $freshSeen
+        state     = 'running'
+    }
+    [IO.File]::WriteAllText((Join-Path $peerRun ($peerJobId + '.json')), ($peerJob | ConvertTo-Json -Depth 6))
+
+    $staleHome = Join-Path $bridgeRoot 'peer-stale'
+    New-Item -ItemType Directory -Force -Path (Join-Path $staleHome 'fleet\running\ce-priority-dev1') | Out-Null
+    $oldSeen = [datetime]::UtcNow.AddHours(-6).ToString('o')
+    [IO.File]::WriteAllText((Join-Path $staleHome 'machine.json'), (@{ id = 'ce-priority-dev1'; lastSeen = $oldSeen } | ConvertTo-Json))
+
+    $deadHome = Join-Path $bridgeRoot 'peer-missing\does-not-exist'
+    $regPath = Join-Path $bridgeRoot 'fleet\registry.json'
+    $regObj = [ordered]@{
+        staleAfterSec = 900
+        peekTimeoutMs = 2000
+        machines      = @(
+            [ordered]@{ id = 'testhost'; hostname = 'testhost' },
+            [ordered]@{ id = 'marchhare'; peekRoot = $peerHome },
+            [ordered]@{ id = 'ionos'; peekRoot = $deadHome },
+            [ordered]@{ id = 'ce-priority-dev1'; peekRoot = $staleHome }
+        )
+    }
+    [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
+
+    $h5 = Get-BobTrayHover
+    if ([string]$h5.title -ne 'Bob Fleet') { throw "registry title=$($h5.title)" }
+    if ([string]$h5.scope -ne 'fleet-peek') { throw "scope=$($h5.scope) expected fleet-peek" }
+    if (-not $h5.peer_peek) { throw 'peer_peek should be true when registry has peers' }
+    $txt = [string]$h5.jobs_text
+    if ($txt -notmatch '(?m)^testhost\r?$') { throw "h5 missing testhost: $txt" }
+    if ($txt -notmatch '(?m)^otherhost\r?$') { throw "h5 missing otherhost: $txt" }
+    if ($txt -notmatch '(?m)^marchhare\r?$') { throw "h5 missing marchhare: $txt" }
+    if ($txt -notmatch '(?m)^ionos\r?$') { throw "h5 missing ionos: $txt" }
+    if ($txt -notmatch '(?m)^ce-priority-dev1\r?$') { throw "h5 missing ce-priority-dev1: $txt" }
+    if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
+    if ($txt -notmatch '(?m)^marchhare\r?\n  SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
+    if ($txt -notmatch '(?m)^ionos\r?\n  unreachable') { throw "ionos must be unreachable: $txt" }
+    if ($txt -match '(?m)^ionos\r?\n  (no jobs|SimonBarnett)') { throw "unreachable ionos invented empty/jobs: $txt" }
+    if ($txt -notmatch '(?m)^ce-priority-dev1\r?\n  lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
+    $ids5 = @($h5.machines | ForEach-Object { [string]$_.id })
+    if ($ids5[0] -ne 'testhost') { throw "h5 machines[0]=$($ids5[0])" }
+    foreach ($need in @('testhost', 'otherhost', 'marchhare', 'ionos', 'ce-priority-dev1')) {
+        if ($ids5 -notcontains $need) { throw "h5 machines missing $need : $($ids5 -join ',')" }
+    }
+    $snapHome = Join-Path $bridgeRoot 'peer-snap'
+    $snapPeekDir = Join-Path $snapHome 'fleet\peek'
+    New-Item -ItemType Directory -Force -Path $snapPeekDir | Out-Null
+    $snapNow = [DateTime]::UtcNow.ToString('o')
+    [IO.File]::WriteAllText((Join-Path $snapHome 'machine.json'), (@{ id = 'snapbox'; lastSeen = $snapNow } | ConvertTo-Json))
+    $env:BOB_MACHINE_ID = 'snapbox'
+    $env:BOB_BRIDGE_HOME = $snapHome
+    $null = Register-BobMachine -Id snapbox -CwdRoots $snapHome
+    $snapRun = Join-Path $snapHome 'fleet\running\snapbox'
+    New-Item -ItemType Directory -Force -Path $snapRun | Out-Null
+    $sj1 = [pscustomobject]@{ id = 'eeeeeeee-1111-2222-3333-444455556666'; machine = 'snapbox'; cwd = $gitCwd; repo = 'SimonBarnett/agentic_irc'; claimedAt = $snapNow; state = 'running' }
+    $sj2 = [pscustomobject]@{ id = 'ffffffff-1111-2222-3333-444455556666'; machine = 'snapbox'; cwd = $otherGit; repo = 'SimonBarnett/FormPrep'; claimedAt = $snapNow; state = 'running' }
+    [IO.File]::WriteAllText((Join-Path $snapRun ($sj1.id + '.json')), ($sj1 | ConvertTo-Json -Depth 6))
+    [IO.File]::WriteAllText((Join-Path $snapRun ($sj2.id + '.json')), ($sj2 | ConvertTo-Json -Depth 6))
+    $mod = Get-Module BobBridge
+    & $mod { Write-BobFleetPeekSnapshot }
+    $written = Get-Content (Join-Path $snapPeekDir 'snapbox.json') -Raw
+    if ($written -notmatch '"running":\[') { throw "snapshot JSON must keep running as an array: $written" }
+    if ($written -match 'eeeeeeee-1111-2222-3333-444455556666 ffffffff') { throw "snapshot collapsed job ids (PS5 property unroll): $written" }
+    if ($written -notmatch 'eeeeeeee-1111-2222-3333-444455556666') { throw "snapshot missing job 1: $written" }
+    if ($written -notmatch 'ffffffff-1111-2222-3333-444455556666') { throw "snapshot missing job 2: $written" }
+
+    $env:BOB_BRIDGE_HOME = $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $regObj.machines += [ordered]@{ id = 'snapbox'; peekRoot = $snapHome }
+    [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
+    $hSnap = Get-BobTrayHover
+    $snapTxt = [string]$hSnap.jobs_text
+    if ($snapTxt -notmatch '(?m)^snapbox\r?\n  SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
+    if ($snapTxt -notmatch 'SimonBarnett/agentic_irc') { throw "snapbox missing irc job: $snapTxt" }
+    if ($snapTxt -notmatch 'SimonBarnett/FormPrep') { throw "snapbox missing FormPrep job: $snapTxt" }
+    $snapTile = @($hSnap.machines | Where-Object { [string]$_.id -eq 'snapbox' })[0]
+    if ([int]$snapTile.job_count -ne 2) { throw "snapbox job_count=$($snapTile.job_count) expected 2 (PS5 ConvertTo-Json collapse?)" }
+
+    $ionosTile = @($h5.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
+    if ([string]$ionosTile.reach -ne 'unreachable') { throw "ionos reach=$($ionosTile.reach)" }
+    if ([int]$ionosTile.job_count -ne 0) { throw "ionos job_count=$($ionosTile.job_count) (invented?)" }
+    $mhTile = @($h5.machines | Where-Object { [string]$_.id -eq 'marchhare' })[0]
+    if ([int]$mhTile.job_count -lt 1) { throw 'marchhare peek job missing' }
+    $staleTile = @($h5.machines | Where-Object { [string]$_.id -eq 'ce-priority-dev1' })[0]
+    if ([string]$staleTile.reach -ne 'stale') { throw "stale reach=$($staleTile.reach)" }
+
+    $peekDoc = Join-Path $RepoRoot 'docs\bob-fleet-peer-peek.md'
+    if (-not (Test-Path $peekDoc)) { throw 'missing docs/bob-fleet-peer-peek.md' }
+    $peekRaw = Get-Content $peekDoc -Raw
+    if ($peekRaw -notmatch '(?i)winrm') { throw 'peer-peek doc must name WinRM (and reject it)' }
+    if ($peekRaw -notmatch 'unreachable') { throw 'peer-peek doc must define unreachable' }
+
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     foreach ($bad in @('No fleet jobs running', 'no fleet jobs running', 'Context remaining')) {
         if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains stale UI copy: $bad" }
@@ -467,6 +578,9 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
+    if ($skillTray -notmatch 'unreachable') { throw 'bob-fleet-tray skill must document unreachable tiles' }
+    if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
+    if ($skillTray -notmatch 'bob-fleet-peer-peek') { throw 'bob-fleet-tray skill must point at peer-peek transport doc' }
     $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
     if ($skillBox -notmatch '(?i)weekly') { throw 'box-usage skill must document weekly vs context' }
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }

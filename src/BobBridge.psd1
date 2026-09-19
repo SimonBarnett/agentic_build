@@ -1,6 +1,6 @@
 @{
     RootModule        = 'BobBridge.psm1'
-    ModuleVersion     = '0.3.0'
+    ModuleVersion     = '0.4.0'
     GUID              = '8f3c2a1e-4b6d-4e9a-9c1f-2a7b8d0e5f11'
     Author            = 'Simon Barnett'
     CompanyName       = 'Medatech'
@@ -31,7 +31,8 @@
         'Get-BobTrayAlertKind',
         'Get-BobTrayTitle',
         'Get-BobWeeklyRemaining',
-        'Get-BobTrayTipPlacement'
+        'Get-BobTrayTipPlacement',
+        'Get-BobFleetRegistry'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

@@ -1,6 +1,8 @@
 # Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
 # Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
-# Job list is the local BobBridge store grouped into machine tiles (no WinRM peek).
+# Job list: every registered fleet machine (bundled registry + local store +
+# read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
+# No WinRM. See docs/bob-fleet-peer-peek.md.
 # Replaces the blank Interactive PowerShell window. Not a Windows service.
 # Requires powershell.exe -STA.
 [CmdletBinding()]

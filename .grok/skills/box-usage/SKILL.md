@@ -58,8 +58,8 @@ Get-BobTrayHover
 - MarchHare personal X maxed → route new builds to `ionos` (dedicated Premium+).
 - High `~\.grok` sessions/downloads size → consider `grok worktree gc --max-age 7d --dry-run` before reclaiming (see `grok du --help`).
 - `grok usage` with "No usage recorded" on a **running** job is normal; re-check when the job finishes.
-- Tray hover (`Get-BobTrayHover`) title is **Bob Fleet** (`scope=local-store`). Primary bar is **weekly remaining** from the CLI billing log (`creditUsagePercent`). If that field is missing, remaining is unknown (`n/a`) — not 100% and **not 0%**. Do not paint a depleted bar without a real weekly field. Pulse amber when **known** weekly remaining &lt; 10%.
-- Jobs are grouped by **machine tile**. Each job line is GitHub `owner/repo`, duration, state — never a commit SHA as the primary label.
+- Tray hover (`Get-BobTrayHover`) title is **Bob Fleet**. `scope=fleet-peek` when any peer is registered, else `local-store`. Primary bar is **weekly remaining** from the CLI billing log (`creditUsagePercent`). If that field is missing, remaining is unknown (`n/a`) — not 100% and **not 0%**. Do not paint a depleted bar without a real weekly field. Pulse amber when **known** weekly remaining &lt; 10%.
+- Jobs are grouped by **machine tile** for every registered host (see `docs/bob-fleet-peer-peek.md`). Each job line is GitHub `owner/repo`, duration, state — never a commit SHA as the primary label. Registered peer with a failed peek is `  unreachable`, not omitted.
 - Session context `(window - (inputTokens - cachedReadTokens)) / window` from `usage.json` is **not** the hover bar. Do not treat context 233K/500K as weekly quota.
 - **Weekly limit** is the CLI billing log field above (same as the grok.exe footer). Do not invent a weekly %. Do not call a billing HTTP API. Do not read `auth.json`.
 
