@@ -79,6 +79,17 @@ flowchart TB
   D4 -->|Yes| UAT["Ready for human UAT"]
 ```
 
+
+### Talking to build agents
+
+Use **BobBridge** for job lifecycle (Start-BobBuild, Send-BobBuildSpec, Get-BobBuild, Stop-BobBuild).
+
+Also use **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** for live Libera TLS chat with build agents:
+
+- scripts/irc_agent.py — join a **private** channel and announce AGPK.
+- scripts/seal.py — SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump inbox/*.bin into chat.
+- Pass MRB review URLs, fix instructions, and sealed handoffs over IRC when the build agent is online there.
+- Two agents on one box need different --home / AGENTIC_IRC_HOME directories.
 ### Guardrails
 
 - Bob orchestrates and reviews; build agents do the heavy implementation.
