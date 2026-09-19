@@ -37,7 +37,7 @@ Send-BobBuildSpec -JobId <id> -Prompt 'follow-up'
 Stop-BobBuild -JobId <id>
 ```
 
-`Watch-BobTray.ps1` (logon task `BobFleet-<id>`, `-STA -WindowStyle Hidden`, not a Windows service) shows a **system tray icon** and starts hidden `Watch-BobJobs.ps1`. The icon is green when idle and **flashes** on ACTION_REQUIRED. Left-click acknowledges; right-click Status / Open log / Exit. Do not leave a blank PowerShell window on the desktop.
+Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it is the stall monitor: `bob-fleet-monitor` (do not dispatch or kill Bob's jobs).
 
 `Test-PromptSecrets` refuses `password=` / `XAI_API_KEY=` **assignments**. Instructional mentions (`Do not set or request XAI_API_KEY`) must pass.
 
@@ -65,20 +65,7 @@ Prove idle watcher: `watcher_up=true` and `last_seen_age_sec` under 90. Prove bu
 
 ## Stall monitor
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Watch-BobAgents.ps1"
-```
-
-Stdout is ACTION_REQUIRED only. Handle:
-
-| Token | Do |
-|---|---|
-| `watcher_down` | Restart only if no live running job. Else leave it. |
-| `inbox_stale <jobId>` | Queue behind a live running job is not stale. Only act if watcher idle and inbox still sits. |
-| `running_orphan <jobId>` | worker process gone -> `Stop-BobBuild` |
-| `agent_stall <name>` | load `unstick-grok-bot` for that name |
-
-Do not exit the monitor on Grok Bot desktop restart. Diag log: `~\.grok\long-running-background-tasks\watch_bob_agents_<pid>.log`.
+See `bob-fleet-monitor` and `bob-fleet-tray`.
 
 ## Hourly skill harvest
 

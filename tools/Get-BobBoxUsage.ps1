@@ -7,7 +7,8 @@
 #>
 [CmdletBinding()]
 param(
-    [switch]$Json
+    [switch]$Json,
+    [switch]$Hover
 )
 
 $ErrorActionPreference = 'Continue'
@@ -78,8 +79,6 @@ function Try-ImportBobBridge {
 
 $now = Get-Date
 $sub = Get-SubscriptionDisplay
-$du = Get-GrokDu
-$active = @(Get-ActiveSessionsFile)
 $procs = @(Get-Process grok -ErrorAction SilentlyContinue | Select-Object Id, StartTime, CPU, @{n='WS_MB';e={[math]::Round($_.WorkingSet64/1MB,1)}})
 
 $bobRoot = Try-ImportBobBridge
@@ -93,6 +92,35 @@ if ($bobRoot -and (Get-Command Get-BobHealth -ErrorAction SilentlyContinue)) {
         }
     } catch { $builds = @() }
 }
+
+if ($Hover) {
+    $tier = '?'
+    if ($sub -and $sub.subscription_tier_display) {
+        $t = [string]$sub.subscription_tier_display
+        if ($t -match 'Premium') { $tier = 'P+' }
+        elseif ($t -match 'SuperGrok') { $tier = 'SG' }
+        else { $tier = $t }
+        if ($tier.Length -gt 8) { $tier = $tier.Substring(0, 8) }
+    }
+    $max = 2
+    try {
+        $cfg = Join-Path $bobRoot 'config\default.json'
+        if ($bobRoot -and (Test-Path $cfg)) {
+            $c = Get-Content $cfg -Raw | ConvertFrom-Json
+            if ($c.max_workers_per_machine) { $max = [int]$c.max_workers_per_machine }
+        }
+    } catch { }
+    $live = @($procs).Count
+    $queued = @($builds | Where-Object { $_.lane -eq 'inbox' }).Count
+    $run = @($builds | Where-Object { $_.lane -eq 'running' }).Count
+    $line = '{0} grok:{1}/{2} q:{3} r:{4}' -f $tier, $live, $max, $queued, $run
+    if ($line.Length -gt 63) { $line = $line.Substring(0, 63) }
+    Write-Output $line
+    return
+}
+
+$du = Get-GrokDu
+$active = @(Get-ActiveSessionsFile)
 
 $recentIds = @()
 if (Test-Path $grokExe) {

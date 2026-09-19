@@ -104,17 +104,42 @@ function Set-Attention([string[]]$alerts) {
     Write-TrayLog ($alerts -join ' | ')
 }
 
+function Get-HoverText {
+    $usage = Join-Path $RepoRoot 'tools\Get-BobBoxUsage.ps1'
+    $line = 'Bob fleet'
+    if (Test-Path $usage) {
+        try {
+            $line = [string](& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $usage -Hover 2>$null | Select-Object -Last 1)
+        }
+        catch { }
+    }
+    if (-not $line) { $line = 'Bob fleet' }
+    $line = $line.Trim()
+    if ($script:attention -and $script:lastAlerts.Count -gt 0) {
+        $bang = '! '
+        $rest = 63 - $bang.Length
+        if ($line.Length -gt $rest) { $line = $line.Substring(0, $rest) }
+        $line = $bang + $line
+    }
+    elseif ($line.Length -gt 63) { $line = $line.Substring(0, 63) }
+    return $line
+}
+
+function Update-Hover {
+    try { $notify.Text = (Get-HoverText) } catch { }
+}
+
 function Clear-Attention {
     $script:attention = $false
     $script:flashOn = $false
     $notify.Icon = $iconIdle
-    try { $notify.Text = 'Bob fleet idle' } catch { }
+    Update-Hover
 }
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
 $notify.Visible = $true
-$notify.Text = 'Bob fleet idle'
+$notify.Text = 'Bob fleet'
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
 $miAck = $menu.Items.Add('Acknowledge')
@@ -163,6 +188,7 @@ $poll.Add_Tick({
             Start-JobsWatcher
             $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $StallSec -HeartbeatStaleSec $HeartbeatStaleSec)
             if ($alerts.Count -gt 0) { Set-Attention $alerts }
+            Update-Hover
         }
         catch {
             Write-TrayLog ("poll error: " + $_.Exception.Message)
@@ -170,6 +196,7 @@ $poll.Add_Tick({
     })
 
 Start-JobsWatcher
+Update-Hover
 $flash.Start()
 $poll.Start()
 Write-TrayLog 'tray up'
