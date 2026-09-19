@@ -23,10 +23,13 @@ function Test-SameCwd {
 
 function Test-PromptSecrets {
     param([string]$Prompt)
-    if ($Prompt -match '(?i)password\s*=') {
+    if (-not $Prompt) { return $false }
+    # Only refuse assignment / env dumps — not instructional mentions.
+    # Matches: password=secret, password = secret, XAI_API_KEY=..., $env:XAI_API_KEY=...
+    if ($Prompt -match '(?i)(?:^|[^\w])password\s*=\s*\S') {
         return $true
     }
-    if ($Prompt -match '(?i)XAI_API_KEY') {
+    if ($Prompt -match '(?i)(?:\$env:)?XAI_API_KEY\s*=\s*\S') {
         return $true
     }
     return $false

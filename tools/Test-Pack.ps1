@@ -73,7 +73,7 @@ Invoke-Case 'BT0 parse' {
 # --- BT0b schema ---
 Invoke-Case 'BT0b schema' {
     $required = @{
-        'health.schema.json'        = @('ok', 'grok_installed', 'logged_in', 'grok_version', 'worker_count', 'leader_up', 'machine')
+        'health.schema.json'        = @('ok', 'grok_installed', 'logged_in', 'grok_version', 'worker_count', 'leader_up', 'machine', 'watcher_up', 'last_seen')
         'overlay.schema.json'       = @('workers')
         'status.schema.json'        = @('sessionId', 'kind', 'state', 'cwd', 'title', 'updatedAt')
         'completion.schema.json'    = @('id', 'session', 'status', 'summary', 'evidence', 'needs_human', 'next_suggested')
@@ -192,6 +192,9 @@ Invoke-Case 'BT0i audit' {
     if ($raw -match 'XAI_API_KEY') { throw 'audit contains XAI_API_KEY' }
     $ref = Start-BobWorker -Cwd (Join-Path $bridgeRoot 'other') -Prompt 'password=secret' -Profile generic -Force
     if ($ref.error -ne 'refuse') { throw "password prompt not refused: $($ref.error)" }
+    $mention = Start-BobWorker -Cwd $cwd -Prompt 'Do not set or request XAI_API_KEY' -Profile generic -WhatIfArgv -Force
+    if ($mention.error -eq 'refuse') { throw 'instructional XAI_API_KEY mention was refused' }
+    if (-not $mention.ok) { throw "mention whatif failed: $($mention | ConvertTo-Json -Compress)" }
 }
 
 # --- BT0j grokbot hermetic ---
@@ -220,7 +223,7 @@ Invoke-Case 'BT0k fleet fake store' {
     $bad = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'password=secret' -Profile generic
     if ($bad.error -ne 'refuse') { throw "secret goal not refused: $($bad.error)" }
 
-    $q = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Success 'echo'
+    $q = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Success 'echo' -Constraints @('Do not set or request XAI_API_KEY')
     if (-not $q.ok) { throw "enqueue failed $($q | ConvertTo-Json -Compress)" }
     $inbox = Get-BobBuild -JobId $q.jobId
     if ($inbox.lane -ne 'inbox') { throw "lane=$($inbox.lane)" }
@@ -241,6 +244,14 @@ Invoke-Case 'BT0k fleet fake store' {
     & $watch -Once -RepoRoot $RepoRoot | Out-Null
     $stopped = Get-BobBuild -JobId $q2.jobId
     if ($stopped.state -ne 'stopped') { throw "expected stopped, state=$($stopped.state)" }
+
+    $drive = Register-BobMachine -Id testhost -CwdRoots 'C:'
+    $root = [string]@($drive.cwdRoots)[0]
+    if ($root -ne 'C:\') { throw "drive-root cwdRoots=$root" }
+
+    $h = Get-BobHealth
+    if ($null -eq $h.watcher_up) { throw 'health.watcher_up missing' }
+    if (-not ($h.PSObject.Properties.Name -contains 'last_seen')) { throw 'health.last_seen missing' }
 }
 
 Write-Host ''

@@ -45,15 +45,21 @@ function Get-BobHealth {
         $loggedIn = $true
         $installed = $true
     }
+    $rec = Get-BobMachineRecord
+    $age = Get-BobLastSeenAgeSec -Record $rec
+    $watcherUp = Test-BobWatcherUp
     return [pscustomobject]@{
-        ok             = $ok
-        grok_installed = $installed
-        logged_in      = $loggedIn
-        grok_version   = $version
-        worker_count   = @($overlay.workers).Count
-        leader_up      = $null
-        machine        = $env:COMPUTERNAME
-        transport      = $(if ($botOk) { 'grokbot' } elseif ($installed) { 'cli' } else { $null })
-        grokbot        = $bot
+        ok                = $ok
+        grok_installed    = $installed
+        logged_in         = $loggedIn
+        grok_version      = $version
+        worker_count      = @($overlay.workers).Count
+        leader_up         = $null
+        machine           = $env:COMPUTERNAME
+        transport         = $(if ($botOk) { 'grokbot' } elseif ($installed) { 'cli' } else { $null })
+        grokbot           = $bot
+        watcher_up        = $watcherUp
+        last_seen         = $(if ($rec) { [string]$rec.lastSeen } else { $null })
+        last_seen_age_sec = $age
     }
 }

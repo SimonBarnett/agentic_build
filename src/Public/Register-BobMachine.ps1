@@ -7,13 +7,27 @@ function Register-BobMachine {
     )
     $mid = ConvertTo-MachineId $Id
     Initialize-BridgeRoot | Out-Null
+
+    $roots = @()
+    foreach ($r in @($CwdRoots)) {
+        if (-not $r) { continue }
+        $s = [string]$r.Trim()
+        if ($s -match '^[A-Za-z]:$') { $s = $s + '\' }
+        try { $s = [IO.Path]::GetFullPath($s) } catch { }
+        if ($s -match '^[A-Za-z]:\\?$') {
+            # Keep drive-root form ending with backslash for StartsWith checks
+            $s = $s.Substring(0, 2) + '\'
+        }
+        $roots += $s
+    }
+
     $record = [pscustomobject]@{
         id           = $mid
         hostname     = $env:COMPUTERNAME
         windowsUser  = "$env:USERDOMAIN\$env:USERNAME"
         mssql        = 'integrated'
         grokBot      = $true
-        cwdRoots     = @($CwdRoots)
+        cwdRoots     = @($roots)
         profiles     = @($Profiles)
         lastSeen     = [DateTime]::UtcNow.ToString('o')
     }

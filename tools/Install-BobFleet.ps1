@@ -45,14 +45,27 @@ $ps = (Get-Command powershell.exe).Source
 $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$watch`""
 $action = New-ScheduledTaskAction -Execute $ps -Argument $arg -WorkingDirectory $RepoRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $taskName = "BobFleet-$($rec.id)"
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+try {
+    Start-ScheduledTask -TaskName $taskName
+    $started = 'started now'
+}
+catch {
+    $started = "register-only (start failed: $($_.Exception.Message))"
+}
 
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skill:       $skillDstDir"
-Write-Host "Task:        $taskName (AtLogOn, not a Windows service)"
+Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
 Write-Host "Once:        powershell -NoProfile -File `"$watch`" -Once"
