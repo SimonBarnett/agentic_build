@@ -1,4 +1,4 @@
-# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
+﻿# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
 # Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
@@ -552,9 +552,8 @@ $notify.Add_MouseClick({
             Show-BobTrayCard -Reason 'click'
         }
     })
-$notify.Add_MouseMove({
-        Show-BobTrayCard -Reason 'hover'
-    })
+# FR good-systray-vs-dark-card: do not auto-show dark card on MouseMove — it hides the good NotifyIcon tip.
+# Detail card is click-only (see Add_MouseClick above).
 
 $flash = New-Object System.Windows.Forms.Timer
 $flash.Interval = 450
@@ -633,3 +632,4 @@ $notify.Dispose()
 if ($script:jobsOwned -and $script:jobsPid) {
     try { Stop-Process -Id $script:jobsPid -Force -ErrorAction SilentlyContinue } catch { }
 }
+
