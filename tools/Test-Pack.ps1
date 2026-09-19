@@ -58,7 +58,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
