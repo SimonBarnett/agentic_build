@@ -36,48 +36,42 @@ function Write-TrayLog([string]$m) {
     Add-Content -Path $logPath -Value ('{0:o} {1}' -f [datetime]::UtcNow, $m) -ErrorAction SilentlyContinue
 }
 
-function Get-GrokBaseIcon {
-    foreach ($p in @(
-            (Join-Path $env:USERPROFILE '.grok\bin\grok.exe'),
-            'C:\Program Files\Grok Bot\Grok Bot.exe'
-        )) {
-        if (-not (Test-Path $p)) { continue }
-        try {
-            $ex = [System.Drawing.Icon]::ExtractAssociatedIcon($p)
-            if ($ex) { return $ex }
-        }
-        catch { }
-    }
-    return $null
+function Add-RoundRect([System.Drawing.Drawing2D.GraphicsPath]$path, $x, $y, $w, $h, $r) {
+    $d = $r * 2
+    $path.AddArc($x, $y, $d, $d, 180, 90)
+    $path.AddArc($x + $w - $d, $y, $d, $d, 270, 90)
+    $path.AddArc($x + $w - $d, $y + $h - $d, $d, $d, 0, 90)
+    $path.AddArc($x, $y + $h - $d, $d, $d, 90, 90)
+    $path.CloseFigure()
 }
 
-function New-TrayIcon {
-    param(
-        [System.Drawing.Icon]$Base,
-        [System.Drawing.Color]$Badge
-    )
+# Font Awesome Free solid robot (CC BY 4.0), drawn at tray size.
+function New-FaRobotIcon {
+    param([System.Drawing.Color]$Badge)
     $sz = 16
     $bmp = New-Object System.Drawing.Bitmap $sz, $sz
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
-    if ($Base) {
-        $g.DrawIcon($Base, (New-Object System.Drawing.Rectangle 0, 0, $sz, $sz))
-    }
-    else {
-        $fill = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(46, 160, 67))
-        $g.FillEllipse($fill, 1, 1, 13, 13)
-        $fill.Dispose()
-    }
+    $fg = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(232, 236, 241))
+    $eye = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(28, 33, 40))
+    $ant = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(232, 236, 241)), 1.2
+    $g.DrawLine($ant, 8.0, 1.2, 8.0, 4.0)
+    $g.FillEllipse($fg, 7.0, 0.4, 2.0, 2.0)
+    $body = New-Object System.Drawing.Drawing2D.GraphicsPath
+    Add-RoundRect $body 3.2 4.2 9.6 10.4 1.6
+    $g.FillPath($fg, $body)
+    $g.FillRectangle($fg, 1.6, 7.2, 1.8, 4.4)
+    $g.FillRectangle($fg, 12.6, 7.2, 1.8, 4.4)
+    $g.FillEllipse($eye, 5.1, 7.0, 2.2, 2.2)
+    $g.FillEllipse($eye, 8.7, 7.0, 2.2, 2.2)
     if ($Badge.A -gt 0) {
         $br = New-Object System.Drawing.SolidBrush $Badge
-        $g.FillEllipse($br, 9, 9, 6, 6)
+        $g.FillEllipse($br, 10.2, 10.2, 5.2, 5.2)
         $br.Dispose()
-        $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 1
-        $g.DrawEllipse($pen, 9, 9, 6, 6)
-        $pen.Dispose()
     }
+    $body.Dispose(); $fg.Dispose(); $eye.Dispose(); $ant.Dispose()
     $h = $bmp.GetHicon()
     $icon = [System.Drawing.Icon]::FromHandle($h)
     $clone = $icon.Clone()
@@ -85,11 +79,10 @@ function New-TrayIcon {
     return $clone
 }
 
-$grokIcon = Get-GrokBaseIcon
-$iconIdle = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::Transparent)
-$iconAlertA = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::FromArgb(220, 50, 47))
-$iconAlertB = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180, 0))
-if ($grokIcon) { Write-TrayLog 'tray icon from grok.exe' } else { Write-TrayLog 'tray icon fallback dot' }
+$iconIdle = New-FaRobotIcon -Badge ([System.Drawing.Color]::Transparent)
+$iconAlertA = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(220, 50, 47))
+$iconAlertB = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180, 0))
+Write-TrayLog 'tray icon Font Awesome robot'
 
 $script:attention = $false
 $script:flashOn = $false
@@ -97,7 +90,7 @@ $script:lastAlerts = @()
 $script:jobsPid = $null
 $script:jobsOwned = $false
 $script:hoverBody = 'Bob fleet'
-$script:remainingPct = 100
+$script:remainingPct = $null
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -151,12 +144,21 @@ function Update-Hover {
     try {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
-        if ($h.remaining_pct -ne $null) { $script:remainingPct = [int]$h.remaining_pct }
+        if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
+        else { $script:remainingPct = [int]$h.remaining_pct }
         $short = [string]$h.short
         if ($script:attention) { $short = '! ' + $short }
         if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
         $notify.Text = $short
-        if ($tipLabel) { $tipLabel.Text = $script:hoverBody }
+        if ($titleLabel) {
+            $titleLabel.Text = 'Bob fleet'
+            if ($null -eq $script:remainingPct) { $barCaption.Text = 'Context remaining' }
+            else { $barCaption.Text = ('Context remaining    {0}%' -f $script:remainingPct) }
+            $jobsLabel.Text = $(if ($h.jobs -and $h.jobs.Count) {
+                    ($h.jobs | ForEach-Object { '{0}   {1}   {2}   {3}' -f $_.machine, $_.repo, $_.duration, $_.state }) -join [Environment]::NewLine
+                } else { 'No fleet jobs running' })
+            $barPanel.Invalidate()
+        }
     }
     catch {
         Write-TrayLog ("hover error: " + $_.Exception.Message)
@@ -170,24 +172,73 @@ function Clear-Attention {
     Update-Hover
 }
 
+$bg = [System.Drawing.Color]::FromArgb(22, 27, 34)
+$fg = [System.Drawing.Color]::FromArgb(230, 237, 243)
+$muted = [System.Drawing.Color]::FromArgb(139, 148, 158)
 $tip = New-Object System.Windows.Forms.Form
-$tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
+$tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $tip.ControlBox = $false
 $tip.ShowInTaskbar = $false
 $tip.TopMost = $true
 $tip.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$tip.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
-$tip.ForeColor = [System.Drawing.Color]::White
-$tipLabel = New-Object System.Windows.Forms.Label
-$tipLabel.AutoSize = $true
-$tipLabel.MaximumSize = New-Object System.Drawing.Size 420, 0
-$tipLabel.Font = New-Object System.Drawing.Font 'Consolas', 9
-$tipLabel.ForeColor = [System.Drawing.Color]::White
-$tipLabel.Padding = New-Object System.Windows.Forms.Padding 8
-$tipLabel.Text = 'Bob fleet'
-$tip.Controls.Add($tipLabel)
+$tip.BackColor = $bg
+$tip.Padding = New-Object System.Windows.Forms.Padding 14
+$tip.Width = 420
+$titleLabel = New-Object System.Windows.Forms.Label
+$titleLabel.AutoSize = $true
+$titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
+$titleLabel.ForeColor = $fg
+$titleLabel.Text = 'Bob fleet'
+$titleLabel.Location = New-Object System.Drawing.Point 14, 12
+$barCaption = New-Object System.Windows.Forms.Label
+$barCaption.AutoSize = $true
+$barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
+$barCaption.ForeColor = $muted
+$barCaption.Text = 'Context remaining'
+$barCaption.Location = New-Object System.Drawing.Point 14, 40
+$barPanel = New-Object System.Windows.Forms.Panel
+$barPanel.Location = New-Object System.Drawing.Point 14, 62
+$barPanel.Size = New-Object System.Drawing.Size 392, 10
+$barPanel.BackColor = $bg
+$barPanel.Add_Paint({
+        param($s, $e)
+        $g = $e.Graphics
+        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
+        $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
+        Add-RoundRect $pathT 0 0 $barPanel.Width 10 5
+        $g.FillPath($track, $pathT)
+        $pct = $script:remainingPct
+        if ($null -ne $pct) {
+            $w = [int](($barPanel.Width - 2) * [math]::Max(0, [math]::Min(100, $pct)) / 100)
+            if ($w -lt 8 -and $pct -gt 0) { $w = 8 }
+            $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
+            if ($pct -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
+            if ($pct -lt 10) { $col = [System.Drawing.Color]::FromArgb(248, 81, 73) }
+            $fill = New-Object System.Drawing.SolidBrush $col
+            $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
+            Add-RoundRect $pathF 1 1 $w 8 4
+            $g.FillPath($fill, $pathF)
+            $pathF.Dispose(); $fill.Dispose()
+        }
+        $pathT.Dispose(); $track.Dispose()
+    })
+$jobsLabel = New-Object System.Windows.Forms.Label
+$jobsLabel.AutoSize = $true
+$jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
+$jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
+$jobsLabel.ForeColor = $fg
+$jobsLabel.Location = New-Object System.Drawing.Point 14, 82
+$jobsLabel.Text = 'No fleet jobs running'
+$tip.Controls.Add($titleLabel)
+$tip.Controls.Add($barCaption)
+$tip.Controls.Add($barPanel)
+$tip.Controls.Add($jobsLabel)
+$tip.Add_Shown({
+        $tip.Height = $jobsLabel.Bottom + 16
+    })
 $hideTip = New-Object System.Windows.Forms.Timer
-$hideTip.Interval = 2800
+$hideTip.Interval = 3200
 $hideTip.Add_Tick({ $tip.Hide(); $hideTip.Stop() })
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
@@ -223,9 +274,7 @@ $notify.Add_MouseClick({
     })
 $notify.Add_MouseMove({
         Update-Hover
-        $tipLabel.Text = $script:hoverBody
-        $tip.Width = $tipLabel.PreferredWidth + 16
-        $tip.Height = $tipLabel.PreferredHeight + 16
+        $tip.Height = [Math]::Max(110, $jobsLabel.Bottom + 16)
         $pt = [System.Windows.Forms.Cursor]::Position
         $x = $pt.X - $tip.Width
         $y = $pt.Y - $tip.Height - 12

@@ -55,7 +55,7 @@ Get-BobBuilds -Machine <id>
 - MarchHare personal X maxed → route new builds to `ionos` (dedicated Premium+).
 - High `~\.grok` sessions/downloads size → consider `grok worktree gc --max-age 7d --dry-run` before reclaiming (see `grok du --help`).
 - `grok usage` with "No usage recorded" on a **running** job is normal; re-check when the job finishes.
-- Tray hover (`Get-BobTrayHover` / `-Hover`) lists running jobs (GitHub repo, duration, state) and remaining **worker slots** percent. Do not invent remaining-token percent. If remaining slots < 10%, `bob-fleet-tray` pulses red once a minute.
+- Tray hover (`Get-BobTrayHover`) lists running jobs with **machine**, repo, duration, state. Remaining is **context** `(window - (inputTokens - cachedReadTokens)) / window` from session `usage.json`. If that file is missing, remaining is unknown (not 100%). Pulse red when known remaining < 10%.
 
 ## Hard rules
 

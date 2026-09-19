@@ -9,7 +9,7 @@ function Get-GitHubSlugFromCwd {
         }
     }
     catch { }
-    if (Test-Path $Cwd) { return Split-Path $Cwd -Leaf }
+    if ($Cwd -and (Test-Path $Cwd)) { return Split-Path $Cwd -Leaf }
     return '?'
 }
 
@@ -27,8 +27,50 @@ function Get-BobJobAge {
     catch { return '?' }
 }
 
+function Get-ContextWindowTokens {
+    try {
+        $p = Join-Path $env:USERPROFILE '.grok\models_cache.json'
+        if (-not (Test-Path $p)) { return 500000 }
+        $d = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+        $m = $d.models
+        foreach ($name in @('grok-4.6', 'grok-4.5', 'grok-4')) {
+            if ($m.$name -and $m.$name.info -and $m.$name.info.context_window) {
+                return [int]$m.$name.info.context_window
+            }
+        }
+    }
+    catch { }
+    return 500000
+}
+
+function Get-SessionContextRemaining {
+    param([string]$Cwd, [string]$SessionId)
+    if (-not $Cwd -or -not $SessionId) { return $null }
+    $leaf = ([string]$Cwd).Replace('\', '%5C').Replace(':', '%3A')
+    $usagePath = Join-Path $env:USERPROFILE (Join-Path '.grok\sessions' (Join-Path $leaf (Join-Path $SessionId 'usage.json')))
+    if (-not (Test-Path $usagePath)) { return $null }
+    try {
+        $u = Get-Content $usagePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $s = $u.session
+        if (-not $s) { return $null }
+        $input = [int64]$s.inputTokens
+        $cached = 0
+        if ($s.cachedReadTokens) { $cached = [int64]$s.cachedReadTokens }
+        $used = [math]::Max(0, $input - $cached)
+        $window = Get-ContextWindowTokens
+        if ($window -le 0) { return $null }
+        $remain = [int][math]::Round(100.0 * [math]::Max(0, $window - $used) / $window)
+        if ($remain -gt 100) { $remain = 100 }
+        return [pscustomobject]@{
+            remaining_pct = $remain
+            used          = $used
+            window        = $window
+        }
+    }
+    catch { return $null }
+}
+
 function Get-BobTrayHover {
-    # Occupancy remaining = free worker slots / max. Token remainder is not exposed by grok CLI.
     $tier = '?'
     try {
         $path = Join-Path $env:USERPROFILE '.grok\settings_cache.json'
@@ -45,75 +87,68 @@ function Get-BobTrayHover {
     }
     catch { }
 
-    $max = 2
-    try {
-        $root = $null
-        if ($MyInvocation.MyCommand.Module) {
-            $root = Split-Path $MyInvocation.MyCommand.Module.ModuleBase -Parent
-        }
-        foreach ($c in @($root, 'C:\ai\agentic_build', 'D:\ai\agentic_build', 'C:\src\agentic_build')) {
-            if (-not $c) { continue }
-            $cfgPath = Join-Path $c 'config\default.json'
-            if (Test-Path $cfgPath) {
-                $cobj = Get-Content $cfgPath -Raw | ConvertFrom-Json
-                if ($cobj.max_workers_per_machine) { $max = [int]$cobj.max_workers_per_machine }
-                break
-            }
-        }
-    }
-    catch { }
-
     $running = @()
     $queued = 0
-    $mid = $env:BOB_MACHINE_ID
-    try {
-        if ($mid) { $running = @(Get-BobBuilds -Lane running -Machine $mid -ErrorAction SilentlyContinue) }
-        else { $running = @(Get-BobBuilds -Lane running -ErrorAction SilentlyContinue) }
-    } catch { }
-    try {
-        if ($mid) { $queued = @(Get-BobBuilds -Lane inbox -Machine $mid -ErrorAction SilentlyContinue).Count }
-        else { $queued = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue).Count }
-    } catch { }
+    try { $running = @(Get-BobBuilds -Lane running -ErrorAction SilentlyContinue) } catch { }
+    try { $queued = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue).Count } catch { }
 
     $jobs = @()
+    $remainings = @()
     foreach ($b in $running) {
         $id = [string]$b.id
+        $sid = $id
+        if ($b.sessionId) { $sid = [string]$b.sessionId }
+        $ctx = Get-SessionContextRemaining -Cwd $b.cwd -SessionId $sid
+        if ($ctx) { $remainings += [int]$ctx.remaining_pct }
+        $mac = [string]$b.machine
+        if (-not $mac) { $mac = '?' }
         $jobs += [pscustomobject]@{
-            id       = $id
-            id8      = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
-            repo     = Get-GitHubSlugFromCwd $b.cwd
-            duration = Get-BobJobAge $b.claimedAt
-            state    = $(if ($b.state) { [string]$b.state } else { 'running' })
-            cwd      = [string]$b.cwd
+            id            = $id
+            id8           = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
+            machine       = $mac
+            repo          = Get-GitHubSlugFromCwd $b.cwd
+            duration      = Get-BobJobAge $b.claimedAt
+            state         = $(if ($b.state) { [string]$b.state } else { 'running' })
+            cwd           = [string]$b.cwd
+            remaining_pct = $(if ($ctx) { [int]$ctx.remaining_pct } else { $null })
         }
     }
 
-    $runN = $jobs.Count
-    $remainPct = 0
-    if ($max -gt 0) {
-        $remainPct = [int][math]::Round(100.0 * [math]::Max(0, $max - $runN) / $max)
+    $remainPct = $null
+    if ($remainings.Count -gt 0) {
+        $remainPct = ($remainings | Measure-Object -Minimum).Minimum
     }
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add(('{0}  remaining {1}%  (slots {2}/{3}  q:{4})' -f $tier, $remainPct, $runN, $max, $queued))
+    if ($null -eq $remainPct) {
+        $lines.Add(('{0}  context remaining  --' -f $tier))
+        $short = '{0} {1} run' -f $tier, $jobs.Count
+    }
+    else {
+        $lines.Add(('{0}  context remaining  {1}%' -f $tier, $remainPct))
+        $short = '{0} {1} run  {2}%' -f $tier, $jobs.Count, $remainPct
+    }
     if ($jobs.Count -eq 0) {
         $lines.Add('no fleet jobs running')
-        $short = '{0} idle  {1}% slots' -f $tier, $remainPct
+        if ($null -eq $remainPct) { $short = '{0} idle' -f $tier }
+        else { $short = '{0} idle  {1}%' -f $tier, $remainPct }
     }
     else {
         foreach ($j in $jobs) {
-            $lines.Add(('{0}  {1}  {2}  {3}' -f $j.id8, $j.repo, $j.duration, $j.state))
+            $rp = if ($null -eq $j.remaining_pct) { '--' } else { '{0}%' -f $j.remaining_pct }
+            $lines.Add(('{0}  {1}  {2}  {3}  {4}  ctx {5}' -f $j.machine, $j.id8, $j.repo, $j.duration, $j.state, $rp))
         }
-        $short = '{0} {1} run  {2}% left' -f $tier, $jobs.Count, $remainPct
     }
+    if ($queued -gt 0) { $lines.Add(('queued {0}' -f $queued)) }
     if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
 
     return [pscustomobject]@{
         short          = $short
         body           = ($lines -join [Environment]::NewLine)
         remaining_pct  = $remainPct
-        remaining_kind = 'worker_slots'
+        remaining_kind = 'context'
         job_count      = $jobs.Count
+        queued         = $queued
         jobs           = $jobs
         tier           = $tier
     }
