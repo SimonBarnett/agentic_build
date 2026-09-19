@@ -36,25 +36,60 @@ function Write-TrayLog([string]$m) {
     Add-Content -Path $logPath -Value ('{0:o} {1}' -f [datetime]::UtcNow, $m) -ErrorAction SilentlyContinue
 }
 
-function New-DotIcon([System.Drawing.Color]$fill) {
-    $bmp = New-Object System.Drawing.Bitmap 16, 16
+function Get-GrokBaseIcon {
+    foreach ($p in @(
+            (Join-Path $env:USERPROFILE '.grok\bin\grok.exe'),
+            'C:\Program Files\Grok Bot\Grok Bot.exe'
+        )) {
+        if (-not (Test-Path $p)) { continue }
+        try {
+            $ex = [System.Drawing.Icon]::ExtractAssociatedIcon($p)
+            if ($ex) { return $ex }
+        }
+        catch { }
+    }
+    return $null
+}
+
+function New-TrayIcon {
+    param(
+        [System.Drawing.Icon]$Base,
+        [System.Drawing.Color]$Badge
+    )
+    $sz = 16
+    $bmp = New-Object System.Drawing.Bitmap $sz, $sz
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.Clear([System.Drawing.Color]::Transparent)
-    $brush = New-Object System.Drawing.SolidBrush $fill
-    $g.FillEllipse($brush, 1, 1, 13, 13)
-    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(40, 40, 40)), 1
-    $g.DrawEllipse($pen, 1, 1, 13, 13)
+    if ($Base) {
+        $g.DrawIcon($Base, (New-Object System.Drawing.Rectangle 0, 0, $sz, $sz))
+    }
+    else {
+        $fill = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(46, 160, 67))
+        $g.FillEllipse($fill, 1, 1, 13, 13)
+        $fill.Dispose()
+    }
+    if ($Badge.A -gt 0) {
+        $br = New-Object System.Drawing.SolidBrush $Badge
+        $g.FillEllipse($br, 9, 9, 6, 6)
+        $br.Dispose()
+        $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 1
+        $g.DrawEllipse($pen, 9, 9, 6, 6)
+        $pen.Dispose()
+    }
     $h = $bmp.GetHicon()
     $icon = [System.Drawing.Icon]::FromHandle($h)
     $clone = $icon.Clone()
-    $brush.Dispose(); $pen.Dispose(); $g.Dispose(); $bmp.Dispose()
+    $g.Dispose(); $bmp.Dispose()
     return $clone
 }
 
-$iconIdle = New-DotIcon ([System.Drawing.Color]::FromArgb(46, 160, 67))
-$iconAlertA = New-DotIcon ([System.Drawing.Color]::FromArgb(220, 50, 47))
-$iconAlertB = New-DotIcon ([System.Drawing.Color]::FromArgb(255, 180, 0))
+$grokIcon = Get-GrokBaseIcon
+$iconIdle = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::Transparent)
+$iconAlertA = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::FromArgb(220, 50, 47))
+$iconAlertB = New-TrayIcon -Base $grokIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180, 0))
+if ($grokIcon) { Write-TrayLog 'tray icon from grok.exe' } else { Write-TrayLog 'tray icon fallback dot' }
 
 $script:attention = $false
 $script:flashOn = $false

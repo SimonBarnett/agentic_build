@@ -1,8 +1,8 @@
 ---
 name: bob-fleet-tray
 description: >
-  System tray icon for the IONOS fleet watcher: hidden PowerShell, green when
-  idle, flashes on ACTION_REQUIRED, mouse-over shows box occupancy from
+  System tray icon for the IONOS fleet watcher: hidden PowerShell, Grok exe
+  icon (not a green dot), flashes on ACTION_REQUIRED, mouse-over shows box occupancy from
   box-usage. Use when the user says tray icon, system tray, NotifyIcon, flash
   the watcher, hover remaining, mouse over tray, or /bob-fleet-tray. Stall
   policy is bob-fleet-monitor. Usage numbers come from box-usage / Get-BobBoxUsage.ps1 -Hover.
@@ -14,7 +14,7 @@ description: >
 
 ## UI
 
-- Green: idle. Flashing red/amber: ACTION_REQUIRED (same tokens as `Watch-BobAgents.ps1`).
+- Idle: icon extracted from `~\.grok\bin\grok.exe` (fallback: Grok Bot.exe). Flashing red/amber **badge** on that icon: ACTION_REQUIRED (same tokens as `Watch-BobAgents.ps1`).
 - Left-click: acknowledge (stop flash).
 - Right-click: Status, Acknowledge, Open log, Exit watcher.
 - **Mouse-over**: popup from `Get-BobTrayHover` — each running job (GitHub slug from `git remote`, duration since `claimedAt`, state) plus remaining **worker slots** as a percent (`(max-running)/max`). Token remainder is not shown; grok CLI does not expose account quota. Short `NotifyIcon.Text` (63 chars) is a summary; the popup is the full list.
