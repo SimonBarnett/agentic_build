@@ -116,6 +116,7 @@ function Complete-FleetJob {
         $Completion,
         [string]$SessionId
     )
+    Write-FleetHeartbeat
     $packet = $Packet
     $packet | Add-Member -NotePropertyName state -NotePropertyValue $State -Force
     $packet | Add-Member -NotePropertyName completedAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
