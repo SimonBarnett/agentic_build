@@ -80,6 +80,10 @@ Stdout is ACTION_REQUIRED only. Handle:
 
 Do not exit the monitor on Grok Bot desktop restart. Diag log: `~\.grok\long-running-background-tasks\watch_bob_agents_<pid>.log`.
 
+## Hourly skill harvest
+
+`tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
+
 ## Spec / MRB loop
 
 For functional-spec intake, dispatch, and hostile MRB PDFs see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, and `bob-hostile-mrb`.

@@ -7,7 +7,7 @@ Grok Bot desktop is running on every build machine. `grok.exe` runs as the **Win
 Repo: `https://github.com/SimonBarnett/agentic_build`  
 Local clones: `D:\ai\agentic_build` (marchhare), `C:\src\agentic_build` (dev1, if present).
 
-Skills (auto-load on grok.exe / Grok Bot): `.grok/skills/grok-build-fleet`, `.grok/skills/unstick-grok-bot`.
+Skills (auto-load on grok.exe / Grok Bot): `.grok/skills/grok-build-fleet`, `.grok/skills/unstick-grok-bot`, `.grok/skills/harvest-agent-skills`.
 
 ## Machines
 
