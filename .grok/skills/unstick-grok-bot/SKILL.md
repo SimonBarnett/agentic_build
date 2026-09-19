@@ -1,0 +1,79 @@
+---
+name: unstick-grok-bot
+description: >
+  Diagnose and unstick a named Grok Bot (Bob, Haitch, Merc, …) that has stopped
+  responding. Use when the user says agent not responding, stalled agent, hung
+  Grok Bot, ping no reply, empty agent screen, Temporal PENDING, RecreateSandBox,
+  InterruptGrokBotAgentRun, or /unstick-grok-bot. Fleet job queue / Watch-BobJobs
+  is grok-build-fleet, not this skill.
+---
+
+# Unstick a named Grok Bot
+
+The agent's turn runs in a **Temporal** harness (`workflowId` `grok-bot-turn-<agentId>`). Tool exec may be this Windows computer **or** a cloud sandbox (VNC = "agent's screen"). A wedged turn accepts new chats as `GROK_BOT_SEND_STATUS_PENDING` and never writes them to the transcript. The Grok Bot UI can show those bubbles anyway.
+
+`$api = Join-Path $repo 'tools\GrokBotApi.py'` (`$repo` as in grok-build-fleet). `post` redacts token/url/credential fields.
+
+## 1. Snapshot — do not send
+
+```powershell
+python $api list
+python $api interrupt --agent <Name>
+```
+
+Roster `last` is the agent's last **assistant** line. User pings do not move it. WIP last line (`starting with`, `then commit`, `working on`, `about to`) plus stale `lastActivityAt` is a hung generation, not idle.
+
+`interrupt` `hadActiveRun: true` means a turn is live. `hadActiveRun` omitted/false means idle. Interrupt **does not always end** a wedged turn. Do not queue more prompts while PENDING.
+
+## 2. Transcript is source of truth
+
+```powershell
+python $api post --agent <Name> --method ListGrokBotTranscriptEntries
+python $api post --agent <Name> --method GetGrokBotSendStatus --json '{"messageId":"<id>"}'
+```
+
+Newest `send-message` is the last committed assistant line. UI messages missing from the transcript are optimistic/PENDING. `GROK_BOT_SEND_STATUS_PENDING` = Temporal has the bytes, the turn has not ingested them. `ACCEPTED` + new `echoEntryId` = recovered.
+
+## 3. Where it is wedged
+
+```powershell
+python $api post --method ListGrokBotUserComputers
+python $api post --service aiserver.v1.SandBoxService --agent <Name> --method GetSandBoxRunState
+```
+
+- This box as `hello.label` = computer-use host. Restarting Grok Bot desktop reconnects that host; it does **not** cancel Temporal.
+- `sand-session-marker.json` `aliveAtMs` is start time, not a heartbeat. Use a live `Grok Bot.exe` process (CIM `Name` matches `Grok Bot`).
+- `GetSandBoxRunState` `SAND_BOX_RUN_STATE_RUNNING` + PENDING sends after interrupt = cloud box/turn wedged. Empty "agent's screen" is that pod's VNC.
+
+`PollGrokBotUserComputerRequests` empty does not mean the turn is healthy.
+
+## 4. Recreate the sandbox (when 3 says wedged)
+
+```powershell
+python $api post --service aiserver.v1.SandBoxService --method RecreateSandBox --json '{"preserveData":true,"force":true}'
+python $api post --service aiserver.v1.SandBoxService --agent <Name> --method EnsureSandBox --json '{"wake":true}'
+```
+
+`started: true` then `EnsureSandBox.podId` must **change**. Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
+
+Then interrupt until `hadActiveRun` is omitted. **One** short no-tool ping:
+
+```powershell
+python $api interrupt --agent <Name>
+python $api send --agent <Name> --text "Reply with exactly PONG and then stop. Do not use tools." --wait --timeout 90
+```
+
+`--wait` can time out even after a reply if roster `lastActivityAt` lags; re-check transcript seq / `GetGrokBotSendStatus`.
+
+Tell the human to send a **new** ping in the Grok Bot UI. Pre-unstick bubbles may never land.
+
+## 5. Desktop process gone
+
+Start `"C:\Program Files\Grok Bot\Grok Bot.exe"`. Wait until CIM shows `Grok Bot.exe` and `GrokBotApi.py health` `signedIn`. Then go back to step 1. Desktop restart alone is not the unstick.
+
+## Do not
+
+- Send follow-up work into a PENDING turn.
+- Treat unread counts as agent stalls (those are human-unread).
+- WinRM, Windows service, or SQL passwords.
+- Dump sandbox URLs or tokens.

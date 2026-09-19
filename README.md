@@ -134,7 +134,7 @@ Start-BobWorker -Cwd D:\work\formprep -Prompt 'PONG' -Profile formprep
 
 ```
 agent_readme.md  handover for any Grok Bot (attach this)
-.grok/skills/    grok-build-fleet skill (agent interface)
+.grok/skills/    grok-build-fleet, unstick-grok-bot
 docs/            freeze PDF + wp0-recon.md
 schemas/       health overlay status completion prompt-packet
 src/           BobBridge module (Public/Private)

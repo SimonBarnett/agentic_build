@@ -7,7 +7,7 @@ Grok Bot desktop is running on every build machine. `grok.exe` runs as the **Win
 Repo: `https://github.com/SimonBarnett/agentic_build`  
 Local clones: `D:\ai\agentic_build` (marchhare), `C:\src\agentic_build` (dev1, if present).
 
-Skill (same facts, auto-load on grok.exe): `.grok/skills/grok-build-fleet/SKILL.md`
+Skills (auto-load on grok.exe / Grok Bot): `.grok/skills/grok-build-fleet`, `.grok/skills/unstick-grok-bot`.
 
 ## Machines
 
@@ -17,14 +17,14 @@ Skill (same facts, auto-load on grok.exe): `.grok/skills/grok-build-fleet/SKILL.
 |---|---|
 | `marchhare` | This dual-homed Windows box (Grok Bot + adapter). |
 | `dev1` | Form Prep / Priority. Profile `formprep`. |
-| `ionos` | Public media host. Later. |
+| `ionos` | Public media host. Clone `C:\ai\agentic_build`. |
 
 `Get-BobMachines` lists who has heartbeated. If this box is new: `Register-BobMachine -Id <id> -CwdRoots <allowed roots>`.
 
 ## Load (local-exec on the target computer)
 
 ```powershell
-$repo = if (Test-Path 'D:\ai\agentic_build') { 'D:\ai\agentic_build' } else { 'C:\src\agentic_build' }
+$repo = if (Test-Path 'D:\ai\agentic_build') { 'D:\ai\agentic_build' } elseif (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } else { 'C:\src\agentic_build' }
 Import-Module "$repo\src\BobBridge.psd1"
 ```
 
@@ -92,6 +92,6 @@ Point `cwd` at a repo the target machine can see, under that machine’s `cwdRoo
 - WinRM / SSH / RDP to start grok.
 - Windows service / SCM.
 - `--always-approve` or `--yolo` on formprep.
-- SQL passwords, `XAI_API_KEY`, or `password=` in packets.
+- SQL passwords, `XAI_API_KEY=`, or `password=` assignments in packets.
 - Claim a machine by hostname; use the id.
 - Touch `%USERPROFILE%\.grok\bob-bridge` from Fake-Grok tests.

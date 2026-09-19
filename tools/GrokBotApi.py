@@ -16,7 +16,10 @@ import urllib.error
 import urllib.request
 
 CRYPTPROTECT_UI_FORBIDDEN = 0x01
-API_BASE = "https://api2.cursor.sh/aiserver.v1.GrokBotService"
+API_HOST = "https://api2.cursor.sh/"
+GROK_BOT_SERVICE = "aiserver.v1.GrokBotService"
+API_BASE = API_HOST + GROK_BOT_SERVICE
+_REDACT_KEYS = ("token", "url", "credential", "authorization", "secret", "cookie", "password")
 
 
 class DATA_BLOB(ctypes.Structure):
@@ -216,7 +219,28 @@ def load_auth(home: str) -> tuple[str, str]:
     return access, machine
 
 
-def grokbot_post(access: str, machine: str, method: str, payload: dict) -> tuple[int, dict | str]:
+def _redact(obj):
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            kl = str(k).lower()
+            if any(s in kl for s in _REDACT_KEYS):
+                out[k] = "<redacted>"
+            else:
+                out[k] = _redact(v)
+        return out
+    if isinstance(obj, list):
+        return [_redact(x) for x in obj]
+    return obj
+
+
+def grokbot_post(
+    access: str,
+    machine: str,
+    method: str,
+    payload: dict,
+    service: str | None = None,
+) -> tuple[int, dict | str]:
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -229,7 +253,8 @@ def grokbot_post(access: str, machine: str, method: str, payload: dict) -> tuple
         "x-ghost-mode": "true",
         "User-Agent": "BobBridge/0.2",
     }
-    req = urllib.request.Request(API_BASE + "/" + method, data=body, headers=headers, method="POST")
+    svc = (service or GROK_BOT_SERVICE).strip().strip("/")
+    req = urllib.request.Request(API_HOST + svc + "/" + method, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
@@ -372,6 +397,26 @@ def cmd_interrupt(home: str, agent: str) -> None:
         raise SystemExit(1)
 
 
+def cmd_post(home: str, method: str, payload: dict, service: str, agent: str) -> None:
+    body = dict(payload or {})
+    if agent:
+        row = resolve_agent(home, agent)
+        body.setdefault("agentId", row["id"])
+    access, machine = load_auth(home)
+    code, raw = grokbot_post(access, machine, method, body, service=service or GROK_BOT_SERVICE)
+    emit(
+        {
+            "method": method,
+            "service": service or GROK_BOT_SERVICE,
+            "http": code,
+            "api": _redact(raw) if isinstance(raw, (dict, list)) else raw,
+        },
+        ok=(code == 200),
+    )
+    if code != 200:
+        raise SystemExit(1)
+
+
 def cmd_health(home: str) -> None:
     status = desktop_status(home)
     emit(
@@ -387,12 +432,16 @@ def cmd_health(home: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grok Bot agent API for BobBridge")
-    parser.add_argument("action", choices=["list", "send", "interrupt", "health"])
+    parser.add_argument("action", choices=["list", "send", "interrupt", "health", "post"])
     parser.add_argument("--agent", default="")
     parser.add_argument("--text", default="")
     parser.add_argument("--text-file", default="")
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--method", default="")
+    parser.add_argument("--service", default=GROK_BOT_SERVICE)
+    parser.add_argument("--json", default="")
+    parser.add_argument("--json-file", default="")
     args = parser.parse_args()
     if args.text_file:
         args.text = open(args.text_file, encoding="utf-8").read()
@@ -414,6 +463,20 @@ def main() -> None:
             emit({"error": "agent_required"}, ok=False)
             raise SystemExit(2)
         cmd_interrupt(home, args.agent)
+    elif args.action == "post":
+        if not args.method:
+            emit({"error": "method_required"}, ok=False)
+            raise SystemExit(2)
+        payload = {}
+        raw_json = args.json
+        if args.json_file:
+            raw_json = open(args.json_file, encoding="utf-8").read()
+        if raw_json.strip():
+            payload = json.loads(raw_json)
+        if not isinstance(payload, dict):
+            emit({"error": "json_object_required"}, ok=False)
+            raise SystemExit(2)
+        cmd_post(home, args.method, payload, args.service, args.agent)
 
 
 if __name__ == "__main__":

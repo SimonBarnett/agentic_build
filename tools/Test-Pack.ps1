@@ -56,6 +56,16 @@ function Invoke-Case {
     }
 }
 
+# --- BT0 skills ---
+Invoke-Case 'BT0 skills' {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot')) {
+        $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
+        if (-not (Test-Path $p)) { throw "missing $p" }
+        $raw = Get-Content $p -Raw
+        if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
+    }
+}
+
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
     $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |

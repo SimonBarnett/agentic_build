@@ -1,5 +1,5 @@
 # Register this Windows logon as a fleet machine. No SCM service.
-# Copies the grok-build-fleet skill into ~/.grok/skills so Grok Bot / grok.exe on this box can load it.
+# Copies .grok/skills/*/SKILL.md into ~/.grok/skills so Grok Bot / grok.exe on this box can load them.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$MachineId,
@@ -33,11 +33,18 @@ if (-not $env:BOB_GROK_EXE -and (Test-Path $grok)) {
 [Environment]::SetEnvironmentVariable('BOB_BRIDGE_HOME', $BridgeHome, 'User')
 [Environment]::SetEnvironmentVariable('BOB_MACHINE_ID', $rec.id, 'User')
 
-$skillSrc = Join-Path $RepoRoot '.grok\skills\grok-build-fleet\SKILL.md'
-$skillDstDir = Join-Path $env:USERPROFILE '.grok\skills\grok-build-fleet'
-if (Test-Path $skillSrc) {
-    New-Item -ItemType Directory -Force -Path $skillDstDir | Out-Null
-    Copy-Item $skillSrc (Join-Path $skillDstDir 'SKILL.md') -Force
+$skillRoot = Join-Path $RepoRoot '.grok\skills'
+$skillDstRoot = Join-Path $env:USERPROFILE '.grok\skills'
+$copied = @()
+if (Test-Path $skillRoot) {
+    foreach ($dir in @(Get-ChildItem $skillRoot -Directory)) {
+        $src = Join-Path $dir.FullName 'SKILL.md'
+        if (-not (Test-Path $src)) { continue }
+        $dstDir = Join-Path $skillDstRoot $dir.Name
+        New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+        Copy-Item $src (Join-Path $dstDir 'SKILL.md') -Force
+        $copied += $dir.Name
+    }
 }
 
 $watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
@@ -66,6 +73,6 @@ catch {
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
-Write-Host "Skill:       $skillDstDir"
+Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
 Write-Host "Once:        powershell -NoProfile -File `"$watch`" -Once"
