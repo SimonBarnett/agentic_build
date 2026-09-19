@@ -151,6 +151,10 @@ while ($true) {
                 catch { }
             }
             $alive = Test-JobProcess -SessionId $sid
+            if ((-not $alive) -and $watcherUp) {
+                Write-Diag ("completing $id session=$sid age_sec=$claimedAge (watcher still in tick)")
+                continue
+            }
             if ((-not $alive) -and $claimedAge -ge $HeartbeatStaleSec -and -not $seen.running.ContainsKey($id)) {
                 $seen.running[$id] = $true
                 $msg = "ACTION_REQUIRED: running_orphan $id session=$sid age_sec=$claimedAge"
