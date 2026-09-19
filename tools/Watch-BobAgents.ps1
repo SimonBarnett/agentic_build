@@ -84,14 +84,11 @@ while ($true) {
             $seen.watcher_down = $false
         }
 
-        if (-not (Test-BobUsesFakeGrok)) {
-            $marker = Get-GrokBotMarker
-            $pidLive = $false
-            if ($marker -and $marker.marker -and $marker.marker.pid) {
-                $pidLive = [bool](Get-Process -Id ([int]$marker.marker.pid) -ErrorAction SilentlyContinue)
-            }
+        $marker = Get-GrokBotMarker
+        if ($marker -and $marker.marker -and $marker.marker.pid) {
+            $pidLive = [bool](Get-Process -Id ([int]$marker.marker.pid) -ErrorAction SilentlyContinue)
             $botOk = [bool]($health.grokbot -and $health.grokbot.ok -and $health.grokbot.signedIn)
-            if ((-not $pidLive) -or (-not $botOk)) {
+            if ((-not $pidLive) -or ($health.grokbot -and -not $botOk)) {
                 $msg = "FAILED: grokbot_down pidLive=$pidLive signedIn=$botOk"
                 Write-Diag $msg
                 Write-Output $msg
@@ -151,7 +148,7 @@ while ($true) {
             if (-not $nowRun.ContainsKey($k)) { $seen.running.Remove($k) }
         }
 
-        if (-not (Test-BobUsesFakeGrok)) {
+        if ($health.grokbot) {
             $agents = @(Get-BobAgents)
             $nowStall = @{}
             $nowMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
