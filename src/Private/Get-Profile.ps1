@@ -1,4 +1,4 @@
-function Get-Profile {
+﻿function Get-Profile {
     param(
         [string]$Name = 'generic'
     )
@@ -23,8 +23,10 @@ function Get-Profile {
     if (-not $p) {
         throw "Unknown profile '$Name'. Known: formprep, teams, mud, generic."
     }
-    $maxMachine = 2
-    if ($cfg.max_workers_per_machine) { $maxMachine = [int]$cfg.max_workers_per_machine }
+    # 0 (or absent) = no per-machine worker cap
+    $maxMachine = 0
+    $prop = $cfg.PSObject.Properties['max_workers_per_machine']
+    if ($prop) { $maxMachine = [int]$prop.Value }
     return [pscustomobject]@{
         Name                   = $Name
         Yolo                   = [bool]$p.yolo

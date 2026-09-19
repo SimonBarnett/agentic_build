@@ -1,5 +1,5 @@
 {
-    "max_workers_per_machine":  2,
+    "max_workers_per_machine":  0,
     "profiles":  {
                      "formprep":  {
                                       "yolo":  false,

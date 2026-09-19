@@ -23,7 +23,7 @@ function Initialize-BridgeRoot {
             Copy-Item $bundled $cfgPath
         }
         else {
-            Write-JsonFile $cfgPath @{ max_workers_per_machine = 2; profiles = @{} }
+            Write-JsonFile $cfgPath @{ max_workers_per_machine = 0; profiles = @{} }
         }
     }
     if (-not (Test-Path (Join-Path $root 'audit.jsonl'))) {

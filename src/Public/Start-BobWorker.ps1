@@ -38,7 +38,8 @@ function Start-BobWorker {
         }
     }
 
-    if (@($overlay.workers).Count -ge $prof.MaxWorkersPerMachine -and -not $Force) {
+    # MaxWorkersPerMachine 0 = unlimited (no per-machine worker ceiling).
+    if ($prof.MaxWorkersPerMachine -gt 0 -and @($overlay.workers).Count -ge $prof.MaxWorkersPerMachine -and -not $Force) {
         return [pscustomobject]@{
             ok    = $false
             error = 'cap'
@@ -119,7 +120,7 @@ function Start-BobWorker {
         try { $parsed = $run.Stdout | ConvertFrom-Json } catch { $parsed = $null }
     }
     if (-not $parsed -and $run.ExitCode -eq 0) {
-        # stdout not JSON → blocked via ConvertTo-Completion
+        # stdout not JSON â†’ blocked via ConvertTo-Completion
     }
 
     $completion = ConvertTo-Completion -SessionId $SessionId -GrokResult $parsed -ExitCode $run.ExitCode -Stdout $run.Stdout -Stderr $run.Stderr
