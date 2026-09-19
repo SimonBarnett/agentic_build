@@ -84,6 +84,7 @@ $procs = @(Get-Process grok -ErrorAction SilentlyContinue | Select-Object Id, St
 $bobRoot = Try-ImportBobBridge
 $health = $null
 $builds = @()
+$week = $null
 if ($bobRoot -and (Get-Command Get-BobHealth -ErrorAction SilentlyContinue)) {
     try { $health = Get-BobHealth } catch { $health = $null }
     try {
@@ -92,6 +93,9 @@ if ($bobRoot -and (Get-Command Get-BobHealth -ErrorAction SilentlyContinue)) {
         }
     } catch { $builds = @() }
 }
+if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
+    try { $week = Get-BobWeeklyRemaining } catch { $week = $null }
+}
 
 if ($Hover) {
     if (Get-Command Get-BobTrayHover -ErrorAction SilentlyContinue) {
@@ -99,7 +103,7 @@ if ($Hover) {
         $h | ConvertTo-Json -Compress -Depth 6
     }
     else {
-        Write-Output '{"title":"Bob (this-machine)","scope":"this-machine","short":"idle","body":"no jobs on this machine","remaining_pct":null,"remaining_kind":"context"}'
+        Write-Output '{"title":"Bob Fleet","scope":"local-store","short":"idle","body":"weekly remaining  n/a","remaining_pct":null,"remaining_kind":"weekly"}'
     }
     return
 }
@@ -136,6 +140,16 @@ $report = [ordered]@{
     subscription       = $sub
     bob_bridge_root    = $bobRoot
     health             = $health
+    weekly_remaining   = if ($week) {
+        [ordered]@{
+            remaining_pct = [int]$week.remaining_pct
+            used_pct      = [int]$week.used_pct
+            fetched_at    = [string]$week.fetched_at
+            period_end    = [string]$week.period_end
+            source        = [string]$week.source
+            kind          = [string]$week.kind
+        }
+    } else { $null }
     grok_processes     = $procs
     active_sessions    = $active
     bob_builds         = $builds
@@ -169,6 +183,11 @@ if ($health) {
     Write-Host "Health:   BobBridge at $bobRoot but Get-BobHealth failed"
 } else {
     Write-Host "Health:   BobBridge not found on known roots"
+}
+if ($week -and $null -ne $week.remaining_pct) {
+    Write-Host ("Weekly:   remaining {0}% (used {1}%) source={2}" -f $week.remaining_pct, $week.used_pct, $week.source)
+} else {
+    Write-Host "Weekly:   n/a (no billing creditUsagePercent on a weekly period)"
 }
 Write-Host "Processes: $($procs.Count) grok.exe"
 foreach ($p in $procs) {

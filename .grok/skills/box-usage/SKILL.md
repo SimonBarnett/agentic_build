@@ -19,7 +19,7 @@ $repo = if (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } elseif (T
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1"
 # machine-readable:
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Json
-# tray hover JSON (this-machine jobs + session context remaining; not weekly quota):
+# tray hover JSON (Bob Fleet title, weekly remaining bar, machine tiles):
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Hover
 ```
 
@@ -30,6 +30,7 @@ Paste the text report (or JSON) back. Never paste `auth.json` or bearer tokens.
 | Signal | Source |
 |---|---|
 | Subscription display (e.g. X Premium+) | `~\.grok\settings_cache.json` → `settings.subscription_tier_display` |
+| **Weekly remaining %** | Last `billing: fetched credits config` in `~\.grok\logs\unified.jsonl` → `100 - creditUsagePercent` (CLI footer `Weekly limit left: N%`) |
 | Grok CLI / watcher / worker_count | `Get-BobHealth` when BobBridge is installed |
 | Live `grok.exe` | `Get-Process grok` |
 | Active sessions | `~\.grok\active_sessions.json` + `grok sessions list` |
@@ -47,6 +48,8 @@ $g = Join-Path $env:USERPROFILE '.grok\bin\grok.exe'
 Import-Module ...\BobBridge.psd1
 Get-BobHealth
 Get-BobBuilds -Machine <id>
+Get-BobWeeklyRemaining
+Get-BobTrayHover
 ```
 
 ## How to read it for fleet routing
@@ -55,12 +58,14 @@ Get-BobBuilds -Machine <id>
 - MarchHare personal X maxed → route new builds to `ionos` (dedicated Premium+).
 - High `~\.grok` sessions/downloads size → consider `grok worktree gc --max-age 7d --dry-run` before reclaiming (see `grok du --help`).
 - `grok usage` with "No usage recorded" on a **running** job is normal; re-check when the job finishes.
-- Tray hover (`Get-BobTrayHover`) is **this machine only** (`scope=this-machine`, title `Bob (<id>)`). It lists local running jobs with machine, **id8**, repo, duration, state. Remaining is **session context** `(window - (inputTokens - cachedReadTokens)) / window` from session `usage.json`. If that file is missing, remaining is unknown (`n/a`) — not 100% and **not 0%**. Do not paint a depleted bar without `usage.json`. Pulse amber when **known** remaining < 10%.
-- **Weekly limit** (`Weekly limit left` in the grok.exe CLI footer) is **not** on the tray and **not** in BobBridge. Do not invent a weekly %. Read it from the CLI footer on that box. Never treat the context bar as weekly quota.
+- Tray hover (`Get-BobTrayHover`) title is **Bob Fleet** (`scope=local-store`). Primary bar is **weekly remaining** from the CLI billing log (`creditUsagePercent`). If that field is missing, remaining is unknown (`n/a`) — not 100% and **not 0%**. Do not paint a depleted bar without a real weekly field. Pulse amber when **known** weekly remaining &lt; 10%.
+- Jobs are grouped by **machine tile**. Each job line is GitHub `owner/repo`, duration, state — never a commit SHA as the primary label.
+- Session context `(window - (inputTokens - cachedReadTokens)) / window` from `usage.json` is **not** the hover bar. Do not treat context 233K/500K as weekly quota.
+- **Weekly limit** is the CLI billing log field above (same as the grok.exe footer). Do not invent a weekly %. Do not call a billing HTTP API. Do not read `auth.json`.
 
 ## Hard rules
 
 - Do **not** print or commit contents of `auth.json`.
 - Do **not** invent remaining-token counts the CLI does not expose.
-- Do **not** invent a weekly-limit API. Weekly % is CLI-footer only.
+- Do **not** invent a weekly-limit API. Weekly % is the CLI billing log `creditUsagePercent` or n/a.
 - Report facts from this host only. Do not say "no fleet jobs" when the store is local-only.

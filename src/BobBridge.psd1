@@ -30,6 +30,7 @@
         'Get-BobTrayBarPaint',
         'Get-BobTrayAlertKind',
         'Get-BobTrayTitle',
+        'Get-BobWeeklyRemaining',
         'Get-BobTrayTipPlacement'
     )
     CmdletsToExport   = @()

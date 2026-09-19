@@ -1,5 +1,6 @@
-# Hidden this-machine watcher + system tray icon. Flashes on ACTION_REQUIRED.
-# Job list is the local BobBridge store (not a cross-host fleet view).
+# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
+# Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
+# Job list is the local BobBridge store grouped into machine tiles (no WinRM peek).
 # Replaces the blank Interactive PowerShell window. Not a Windows service.
 # Requires powershell.exe -STA.
 [CmdletBinding()]
@@ -362,9 +363,7 @@ function Update-Hover {
             else {
                 $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
             }
-            $jobsLabel.Text = $(if ($h.jobs -and @($h.jobs).Count) {
-                    (@($h.jobs) | ForEach-Object { '{0}   {1}   {2}   {3}   {4}' -f $_.machine, $_.id8, $_.repo, $_.duration, $_.state }) -join [Environment]::NewLine
-                } else { 'No jobs on this machine' })
+            $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { 'No jobs' })
             if ($alertLabel) {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $alertLabel.Location = New-Object System.Drawing.Point 14, ($jobsLabel.Bottom + 6)
@@ -409,7 +408,7 @@ $barCaption = New-Object System.Windows.Forms.Label
 $barCaption.AutoSize = $true
 $barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
 $barCaption.ForeColor = $muted
-$barCaption.Text = 'Context remaining  n/a'
+$barCaption.Text = 'Weekly remaining  n/a'
 $barCaption.Location = New-Object System.Drawing.Point 14, 40
 $barPanel = New-Object System.Windows.Forms.Panel
 $barPanel.Location = New-Object System.Drawing.Point 14, 62
@@ -445,7 +444,7 @@ $jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
 $jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
 $jobsLabel.ForeColor = $fg
 $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
-$jobsLabel.Text = 'No jobs on this machine'
+$jobsLabel.Text = 'No jobs'
 $alertLabel = New-Object System.Windows.Forms.Label
 $alertLabel.AutoSize = $true
 $alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8

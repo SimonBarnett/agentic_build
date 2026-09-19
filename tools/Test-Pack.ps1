@@ -53,6 +53,7 @@ function Invoke-Case {
         Remove-Module BobBridge -ErrorAction SilentlyContinue
         $env:BOB_BRIDGE_HOME = $null
         $env:BOB_GROK_EXE = $null
+        $env:BOB_WEEKLY_LOG = $null
     }
 }
 
@@ -264,20 +265,24 @@ Invoke-Case 'BT0k fleet fake store' {
     if (-not ($h.PSObject.Properties.Name -contains 'last_seen')) { throw 'health.last_seen missing' }
 }
 
-# --- BT0l tray hover (NC-01..NC-05) ---
+# --- BT0l tray hover (weekly remaining + machine tiles T1-T7) ---
 Invoke-Case 'BT0l tray hover' {
     param($bridgeRoot)
     $cwd = Join-Path $bridgeRoot 'cwd'
     $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
 
     $h = Get-BobTrayHover
-    if ($null -ne $h.remaining_pct) { throw "idle remaining_pct=$($h.remaining_pct) expected null" }
-    if ([string]$h.title -ne 'Bob (testhost)') { throw "title=$($h.title)" }
-    if ([string]$h.scope -ne 'this-machine') { throw "scope=$($h.scope)" }
+    if ($null -ne $h.remaining_pct) { throw "idle remaining_pct=$($h.remaining_pct) expected null (no weekly log)" }
+    if ([string]$h.title -ne 'Bob Fleet') { throw "title=$($h.title)" }
+    if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
-    if ([string]$h.body -match '(?i)fleet') { throw "idle body still says fleet: $($h.body)" }
-    if ([string]$h.body -notmatch 'no jobs on this machine') { throw "idle body missing this-machine copy: $($h.body)" }
-    if ([string]$h.remaining_kind -ne 'context') { throw "kind=$($h.remaining_kind)" }
+    if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^testhost\r?$') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
+    if ([string]$h.remaining_kind -ne 'weekly') { throw "kind=$($h.remaining_kind)" }
+    if ([string]$h.body -notmatch 'weekly remaining') { throw "body missing weekly remaining: $($h.body)" }
+    if ([string]$h.body -match '(?i)context remaining') { throw "body still says context remaining: $($h.body)" }
+    if ([string]$h.title -match '(?i)Bob \(') { throw "title branded as one machine: $($h.title)" }
 
     $paint = Get-BobTrayBarPaint -RemainingPct $h.remaining_pct -BarWidth 392
     if ($paint.known) { throw 'null remaining must be unknown' }
@@ -285,18 +290,25 @@ Invoke-Case 'BT0l tray hover' {
     if ($paint.show_fill) { throw 'null remaining must not fill' }
     if ($null -ne $paint.fill_width) { throw "null remaining fill_width=$($paint.fill_width) must not be numeric (would look depleted)" }
     if ($paint.pulse) { throw 'must not pulse when remaining unknown' }
+    if ($paint.caption -notmatch 'Weekly remaining') { throw "caption=$($paint.caption)" }
     if ($paint.caption -notmatch 'n/a') { throw "caption=$($paint.caption)" }
 
     $zero = Get-BobTrayBarPaint -RemainingPct 0 -BarWidth 392
-    if (-not $zero.known) { throw '0% from usage must be known' }
+    if (-not $zero.known) { throw '0% weekly remaining must be known' }
     if (-not $zero.show_track) { throw '0% must show empty track' }
     if ($zero.show_fill) { throw '0% must not draw a fill' }
     if ($zero.fill_width -ne 0) { throw "0% fill_width=$($zero.fill_width)" }
-    if (-not $zero.pulse) { throw '0% must pulse context' }
+    if (-not $zero.pulse) { throw '0% weekly remaining must pulse' }
 
     $mid = Get-BobTrayBarPaint -RemainingPct 50 -BarWidth 392
     if ($mid.fill_width -le 0) { throw "50% fill_width=$($mid.fill_width)" }
     if ($mid.pulse) { throw '50% must not pulse' }
+    if ($mid.caption -notmatch 'Weekly remaining') { throw "50% caption=$($mid.caption)" }
+
+    $nine = Get-BobTrayBarPaint -RemainingPct 9 -BarWidth 392
+    if (-not $nine.show_fill) { throw '9% must show fill (drain as used, remaining fills left)' }
+    if ($nine.fill_width -le 0) { throw "9% fill_width=$($nine.fill_width)" }
+    if (-not $nine.pulse) { throw '9% weekly remaining must pulse' }
 
     $low = Get-BobTrayBarPaint -RemainingPct 5 -BarWidth 392
     if (-not $low.pulse) { throw '5% must pulse' }
@@ -307,12 +319,52 @@ Invoke-Case 'BT0l tray hover' {
 
     $akNone = Get-BobTrayAlertKind -Alerts @() -RemainingPct $null
     if ($akNone -ne 'none') { throw "alert=$akNone" }
-    $akCtx = Get-BobTrayAlertKind -Alerts @() -RemainingPct 5
-    if ($akCtx -ne 'context') { throw "alert=$akCtx" }
+    $akWeek = Get-BobTrayAlertKind -Alerts @() -RemainingPct 5
+    if ($akWeek -ne 'weekly') { throw "alert=$akWeek" }
     $akWatch = Get-BobTrayAlertKind -Alerts @('ACTION_REQUIRED: watcher_down watcher_up=False') -RemainingPct 5
     if ($akWatch -ne 'watcher') { throw "alert=$akWatch" }
     $akStall = Get-BobTrayAlertKind -Alerts @('ACTION_REQUIRED: agent_stall Bob idle_sec=900') -RemainingPct $null
     if ($akStall -ne 'stall') { throw "alert=$akStall" }
+
+    $weekLog = Join-Path $bridgeRoot 'weekly.jsonl'
+    $weekLine = '{"ts":"2026-09-19T12:00:00Z","src":"shell","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":91.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-26T00:00:00Z"}}}}'
+    [IO.File]::WriteAllText($weekLog, $weekLine + [Environment]::NewLine)
+    $env:BOB_WEEKLY_LOG = $weekLog
+    $w = Get-BobWeeklyRemaining -LogPath $weekLog
+    if ($null -eq $w) { throw 'weekly parser returned null for 91% used' }
+    if ([int]$w.remaining_pct -ne 9) { throw "91% used remaining=$($w.remaining_pct) expected 9" }
+    $hw = Get-BobTrayHover
+    if ([int]$hw.remaining_pct -ne 9) { throw "hover remaining_pct=$($hw.remaining_pct) expected 9 from weekly log" }
+    if ([string]$hw.remaining_kind -ne 'weekly') { throw "kind=$($hw.remaining_kind)" }
+    if ([string]$hw.body -notmatch 'weekly remaining  9%') { throw "body missing 9% weekly: $($hw.body)" }
+    if ([string]$hw.short.Length -gt 63) { throw "short exceeds 63: $($hw.short)" }
+    $pw = Get-BobTrayBarPaint -RemainingPct $hw.remaining_pct -BarWidth 392
+    if ($pw.fill_width -le 0) { throw '9% weekly remaining must paint a fill' }
+    if ($pw.caption -notmatch '9%') { throw "9% caption=$($pw.caption)" }
+
+    $badWeek = Join-Path $bridgeRoot 'weekly-noperiod.jsonl'
+    [IO.File]::WriteAllText($badWeek, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
+    $wn = Get-BobWeeklyRemaining -LogPath $badWeek
+    if ($null -ne $wn) { throw 'missing creditUsagePercent must be n/a, not invented' }
+
+    $monthLog = Join-Path $bridgeRoot 'weekly-monthly.jsonl'
+    [IO.File]::WriteAllText($monthLog, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":10.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_MONTHLY"}}}}' + [Environment]::NewLine)
+    $wm = Get-BobWeeklyRemaining -LogPath $monthLog
+    if ($null -ne $wm) { throw 'monthly creditUsagePercent must not be reported as weekly remaining' }
+
+    $noType = Join-Path $bridgeRoot 'weekly-notype.jsonl'
+    [IO.File]::WriteAllText($noType, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":10.0}}}' + [Environment]::NewLine)
+    $wt = Get-BobWeeklyRemaining -LogPath $noType
+    if ($null -ne $wt) { throw 'creditUsagePercent without weekly period type must be n/a' }
+
+    $env:BOB_WEEKLY_LOG = $null
+
+    $gitCwd = Join-Path $bridgeRoot 'irc-repo'
+    New-Item -ItemType Directory -Force -Path $gitCwd | Out-Null
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) { throw 'git required for owner/repo job-line test' }
+    & git -C $gitCwd init -q
+    & git -C $gitCwd remote add origin https://github.com/SimonBarnett/agentic_irc.git
 
     $jobId = '9f96bc0e-1111-2222-3333-444455556666'
     $runDir = Join-Path $bridgeRoot 'fleet\running\testhost'
@@ -320,7 +372,7 @@ Invoke-Case 'BT0l tray hover' {
     $job = [pscustomobject]@{
         id        = $jobId
         machine   = 'testhost'
-        cwd       = $cwd
+        cwd       = $gitCwd
         claimedAt = [DateTime]::UtcNow.ToString('o')
         state     = 'running'
     }
@@ -328,28 +380,96 @@ Invoke-Case 'BT0l tray hover' {
 
     $h2 = Get-BobTrayHover
     if ($h2.job_count -ne 1) { throw "job_count=$($h2.job_count)" }
-    if ([string]$h2.body -match '(?i)fleet') { throw "running body says fleet: $($h2.body)" }
-    if ([string]$h2.body -notmatch '9f96bc0e') { throw "hover body missing id8: $($h2.body)" }
-    if ($null -ne $h2.remaining_pct) { throw 'running without usage.json must keep remaining_pct null' }
+    if ([string]$h2.title -ne 'Bob Fleet') { throw "running title=$($h2.title)" }
+    if ([string]$h2.body -match '(?i)no fleet jobs running') { throw "running body says no fleet jobs: $($h2.body)" }
+    if ([string]$h2.jobs_text -notmatch 'SimonBarnett/agentic_irc') { throw "jobs_text missing owner/repo: $($h2.jobs_text)" }
+    if ([string]$h2.jobs_text -match '(?i)7e8797e|[0-9a-f]{40}') { throw "jobs_text looks like SHA: $($h2.jobs_text)" }
     $row = @($h2.jobs)[0]
-    $line = '{0}   {1}   {2}   {3}   {4}' -f $row.machine, $row.id8, $row.repo, $row.duration, $row.state
-    if ($line -notmatch '9f96bc0e') { throw "card line missing id8: $line" }
+    if ([string]$row.repo -ne 'SimonBarnett/agentic_irc') { throw "repo=$($row.repo)" }
+    if ([string]$h2.jobs_text -notmatch '(?m)^testhost\r?$') { throw "running jobs_text missing testhost tile" }
+    if ($null -ne $h2.remaining_pct) { throw 'running without weekly log must keep remaining_pct null' }
     $paint2 = Get-BobTrayBarPaint -RemainingPct $h2.remaining_pct -BarWidth 392
-    if ($null -ne $paint2.fill_width) { throw 'running without usage.json must not set fill_width' }
+    if ($null -ne $paint2.fill_width) { throw 'running without weekly log must not set fill_width' }
+
+    $shaCwd = Join-Path $bridgeRoot '7e8797eabcdef'
+    New-Item -ItemType Directory -Force -Path $shaCwd | Out-Null
+    $job2Id = 'aaaaaaaa-1111-2222-3333-444455556666'
+    $job2 = [pscustomobject]@{
+        id        = $job2Id
+        machine   = 'testhost'
+        cwd       = $shaCwd
+        claimedAt = [DateTime]::UtcNow.ToString('o')
+        state     = 'running'
+    }
+    [IO.File]::WriteAllText((Join-Path $runDir ($job2Id + '.json')), ($job2 | ConvertTo-Json -Depth 6))
+    $h3 = Get-BobTrayHover
+    $shaRow = @($h3.jobs) | Where-Object { $_.id -eq $job2Id } | Select-Object -First 1
+    if (-not $shaRow) { throw 'missing SHA-cwd job row' }
+    if ([string]$shaRow.repo -match '(?i)^[0-9a-f]{7,40}$') { throw "SHA cwd leaked as repo=$($shaRow.repo)" }
+    if ([string]$h3.jobs_text -match '7e8797eabcdef') { throw "jobs_text shows SHA leaf: $($h3.jobs_text)" }
+
+    $macDir = Join-Path $bridgeRoot 'fleet\machines'
+    [IO.File]::WriteAllText((Join-Path $macDir 'otherhost.json'), '{"id":"otherhost"}')
+    $otherGit = Join-Path $bridgeRoot 'formprep-repo'
+    New-Item -ItemType Directory -Force -Path $otherGit | Out-Null
+    & git -C $otherGit init -q
+    & git -C $otherGit remote add origin git@github.com:SimonBarnett/FormPrep.git
+    $otherId = 'bbbbbbbb-1111-2222-3333-444455556666'
+    $otherDir = Join-Path $bridgeRoot 'fleet\running\otherhost'
+    New-Item -ItemType Directory -Force -Path $otherDir | Out-Null
+    $otherJob = [pscustomobject]@{
+        id        = $otherId
+        machine   = 'otherhost'
+        cwd       = $otherGit
+        claimedAt = [DateTime]::UtcNow.ToString('o')
+        state     = 'running'
+    }
+    [IO.File]::WriteAllText((Join-Path $otherDir ($otherId + '.json')), ($otherJob | ConvertTo-Json -Depth 6))
+    $qId = 'cccccccc-1111-2222-3333-444455556666'
+    $qDir = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    New-Item -ItemType Directory -Force -Path $qDir | Out-Null
+    $qJob = [pscustomobject]@{
+        id        = $qId
+        machine   = 'testhost'
+        cwd       = $gitCwd
+        createdAt = [DateTime]::UtcNow.ToString('o')
+        state     = 'queued'
+    }
+    [IO.File]::WriteAllText((Join-Path $qDir ($qId + '.json')), ($qJob | ConvertTo-Json -Depth 6))
+    $h4 = Get-BobTrayHover
+    if ([string]$h4.title -ne 'Bob Fleet') { throw "multi-machine title=$($h4.title)" }
+    if ([string]$h4.jobs_text -notmatch '(?m)^testhost\r?$') { throw "multi jobs_text missing testhost tile: $($h4.jobs_text)" }
+    if ([string]$h4.jobs_text -notmatch '(?m)^otherhost\r?$') { throw "multi jobs_text missing otherhost tile: $($h4.jobs_text)" }
+    if ([string]$h4.jobs_text -notmatch 'SimonBarnett/FormPrep') { throw "otherhost missing owner/repo: $($h4.jobs_text)" }
+    $idxThis = ([string]$h4.jobs_text).IndexOf("testhost")
+    $idxPeer = ([string]$h4.jobs_text).IndexOf("otherhost")
+    if ($idxThis -lt 0 -or $idxPeer -lt 0 -or $idxThis -gt $idxPeer) { throw "this host tile must be first: $($h4.jobs_text)" }
+    $testhostBlock = ([string]$h4.jobs_text -split '(?m)^otherhost')[0]
+    $runIdx = $testhostBlock.IndexOf('running')
+    $qIdx = $testhostBlock.IndexOf('queued')
+    if ($runIdx -lt 0 -or $qIdx -lt 0 -or $runIdx -gt $qIdx) { throw "testhost must list running before queued: $testhostBlock" }
+    if ([string]$h4.jobs_text -match 'other hosts not in this store') { throw 'peer tiles present so must not claim other hosts missing' }
+    $macIds = @($h4.machines | ForEach-Object { [string]$_.id })
+    if ($macIds[0] -ne 'testhost') { throw "machines[0]=$($macIds[0]) expected testhost" }
+    if ($macIds -notcontains 'otherhost') { throw 'machines missing otherhost' }
 
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
-    foreach ($bad in @('Bob fleet', 'No fleet jobs running', 'no fleet jobs running')) {
-        if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
+    foreach ($bad in @('No fleet jobs running', 'no fleet jobs running', 'Context remaining')) {
+        if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains stale UI copy: $bad" }
     }
-    if ($traySrc -notmatch '\$_\.id8') { throw 'Watch-BobTray card line missing id8' }
+    if ($traySrc -notmatch 'jobs_text') { throw 'Watch-BobTray card must render jobs_text machine tiles' }
+    if ($traySrc -notmatch 'Weekly remaining') { throw 'Watch-BobTray must label Weekly remaining' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'show_track') { throw 'Watch-BobTray paint path does not gate on show_track' }
 
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
-    if ($skillTray -notmatch '(?i)weekly') { throw 'bob-fleet-tray skill must document weekly vs context' }
+    if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
+    if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
+    if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
     $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
     if ($skillBox -notmatch '(?i)weekly') { throw 'box-usage skill must document weekly vs context' }
+    if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
 
 # --- BT0m tray tip placement (NC-T01..NC-T03) ---

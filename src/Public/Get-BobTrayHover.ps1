@@ -1,15 +1,35 @@
+function Test-BobTrayLooksLikeSha {
+    param([string]$Value)
+    if (-not $Value) { return $true }
+    $s = [string]$Value.Trim()
+    if ($s -match '^(HEAD|[0-9a-fA-F]{7,40})$') { return $true }
+    return $false
+}
+
 function Get-GitHubSlugFromCwd {
     param([string]$Cwd)
-    if (-not $Cwd) { return '?' }
-    try {
-        if (Get-Command git -ErrorAction SilentlyContinue) {
-            $url = & git -C $Cwd remote get-url origin 2>$null
-            if ($url -match 'github\.com[:/](.+?)(?:\.git)?\s*$') { return $Matches[1].Trim() }
-            if ($url) { return ([string]$url).Trim() }
+    $slug = $null
+    if ($Cwd) {
+        try {
+            if (Get-Command git -ErrorAction SilentlyContinue) {
+                $url = & git -C $Cwd remote get-url origin 2>$null
+                if ($url -match 'github\.com[:/](?<slug>.+?)(?:\.git)?\s*$') {
+                    $slug = $Matches['slug'].Trim().TrimEnd('/').Replace('\', '/')
+                }
+            }
         }
+        catch { }
     }
-    catch { }
-    if ($Cwd -and (Test-Path $Cwd)) { return Split-Path $Cwd -Leaf }
+    if ($slug -and ($slug -match '/') -and -not (Test-BobTrayLooksLikeSha $slug)) {
+        return $slug
+    }
+    if ($Cwd) {
+        try {
+            $leaf = Split-Path $Cwd -Leaf
+            if ($leaf -and -not (Test-BobTrayLooksLikeSha $leaf)) { return $leaf }
+        }
+        catch { }
+    }
     return '?'
 }
 
@@ -70,6 +90,81 @@ function Get-SessionContextRemaining {
     catch { return $null }
 }
 
+function Get-BobWeeklyLogPath {
+    if ($env:BOB_WEEKLY_LOG -and $env:BOB_WEEKLY_LOG.Trim()) {
+        return $env:BOB_WEEKLY_LOG.Trim()
+    }
+    # Isolated Fake-Grok tests must not scrape the operator CLI log.
+    $exe = [string]$env:BOB_GROK_EXE
+    if ($exe -and ($exe -match '(?i)Fake-Grok')) { return $null }
+    return (Join-Path $env:USERPROFILE '.grok\logs\unified.jsonl')
+}
+
+function Get-BobWeeklyRemaining {
+    [CmdletBinding()]
+    param([string]$LogPath)
+    if (-not $LogPath) { $LogPath = Get-BobWeeklyLogPath }
+    if (-not $LogPath -or -not (Test-Path $LogPath)) { return $null }
+    $raw = $null
+    try {
+        $fs = [IO.File]::Open($LogPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $pos = $fs.Length
+            $chunk = 1MB
+            while ($pos -gt 0 -and -not $raw) {
+                $take = [int64][Math]::Min($chunk, $pos)
+                $pos = $pos - $take
+                [void]$fs.Seek($pos, [IO.SeekOrigin]::Begin)
+                $buf = New-Object byte[] $take
+                $n = $fs.Read($buf, 0, $take)
+                $text = [Text.Encoding]::UTF8.GetString($buf, 0, $n)
+                $lines = $text -split "`r?`n"
+                $start = 0
+                if ($pos -gt 0) { $start = 1 }
+                for ($i = $lines.Length - 1; $i -ge $start; $i--) {
+                    $ln = $lines[$i]
+                    if ($ln -and $ln.Contains('billing: fetched credits config')) {
+                        $raw = $ln.Trim()
+                        break
+                    }
+                }
+            }
+        }
+        finally { $fs.Dispose() }
+    }
+    catch { return $null }
+    if (-not $raw) { return $null }
+    try {
+        $j = $raw | ConvertFrom-Json
+        $cfg = $null
+        if ($j.ctx -and $j.ctx.config) { $cfg = $j.ctx.config }
+        elseif ($j.config) { $cfg = $j.config }
+        if (-not $cfg) { return $null }
+        $ptype = $null
+        if ($cfg.currentPeriod -and $cfg.currentPeriod.type) { $ptype = [string]$cfg.currentPeriod.type }
+        # Only the weekly period is the CLI "Weekly limit left" bar. Missing or non-weekly => n/a.
+        if (-not $ptype -or ($ptype -notmatch 'WEEKLY')) { return $null }
+        $usedRaw = $cfg.creditUsagePercent
+        if ($null -eq $usedRaw -or [string]::IsNullOrWhiteSpace([string]$usedRaw)) { return $null }
+        $used = [double]$usedRaw
+        if ($used -lt 0 -or $used -gt 100) { return $null }
+        $remain = [int][math]::Round(100.0 - $used)
+        if ($remain -lt 0) { $remain = 0 }
+        if ($remain -gt 100) { $remain = 100 }
+        $periodEnd = $null
+        if ($cfg.currentPeriod -and $cfg.currentPeriod.end) { $periodEnd = [string]$cfg.currentPeriod.end }
+        return [pscustomobject]@{
+            remaining_pct = $remain
+            used_pct      = [int][math]::Round($used)
+            fetched_at    = [string]$j.ts
+            period_end    = $periodEnd
+            source        = 'unified.jsonl:billing: fetched credits config'
+            kind          = 'weekly'
+        }
+    }
+    catch { return $null }
+}
+
 function Test-BobTrayRemainingKnown {
     param($RemainingPct)
     if ($null -eq $RemainingPct) { return $false }
@@ -90,7 +185,7 @@ function Get-BobTrayBarPaint {
             show_track    = $false
             show_fill     = $false
             fill_width    = $null
-            caption       = 'Context remaining  n/a'
+            caption       = 'Weekly remaining  n/a'
             pulse         = $false
             kind          = 'unknown'
         }
@@ -108,9 +203,9 @@ function Get-BobTrayBarPaint {
         show_track    = $true
         show_fill     = ($w -gt 0)
         fill_width    = $w
-        caption       = ('Context remaining    {0}%' -f $pct)
+        caption       = ('Weekly remaining    {0}%' -f $pct)
         pulse         = ($pct -lt 10)
-        kind          = 'known'
+        kind          = 'weekly'
     }
 }
 
@@ -127,15 +222,40 @@ function Get-BobTrayAlertKind {
         if ($a -match 'ACTION_REQUIRED') { return 'stall' }
     }
     $paint = Get-BobTrayBarPaint -RemainingPct $RemainingPct
-    if ($paint.pulse) { return 'context' }
+    if ($paint.pulse) { return 'weekly' }
     return 'none'
 }
 
 function Get-BobTrayTitle {
-    $id = $null
-    try { $id = Get-ThisMachineId } catch { }
-    if (-not $id) { $id = 'this-machine' }
-    return ('Bob ({0})' -f $id)
+    return 'Bob Fleet'
+}
+
+function ConvertTo-BobTrayJobRow {
+    param($Job, [string]$DefaultMachine, [string]$State)
+    $id = [string]$Job.id
+    $sid = $id
+    if ($Job.sessionId) { $sid = [string]$Job.sessionId }
+    $ctx = Get-SessionContextRemaining -Cwd $Job.cwd -SessionId $sid
+    $mac = [string]$Job.machine
+    if (-not $mac) { $mac = $DefaultMachine }
+    $when = $Job.claimedAt
+    if (-not $when) { $when = $Job.createdAt }
+    $st = $State
+    if (-not $st) {
+        if ($Job.state) { $st = [string]$Job.state } else { $st = 'running' }
+    }
+    $repo = Get-GitHubSlugFromCwd $Job.cwd
+    if (Test-BobTrayLooksLikeSha $repo) { $repo = '?' }
+    return [pscustomobject]@{
+        id                     = $id
+        id8                    = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
+        machine                = $mac
+        repo                   = $repo
+        duration               = Get-BobJobAge $when
+        state                  = $st
+        cwd                    = [string]$Job.cwd
+        context_remaining_pct  = $(if ($ctx) { [int]$ctx.remaining_pct } else { $null })
+    }
 }
 
 function Get-BobTrayHover {
@@ -158,74 +278,126 @@ function Get-BobTrayHover {
     $machineId = $null
     try { $machineId = Get-ThisMachineId } catch { }
     if (-not $machineId) { $machineId = 'this-machine' }
-    $title = 'Bob ({0})' -f $machineId
+    $title = Get-BobTrayTitle
 
     $running = @()
-    $queued = 0
+    $queuedJobs = @()
     try { $running = @(Get-BobBuilds -Lane running -ErrorAction SilentlyContinue) } catch { }
-    try { $queued = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue).Count } catch { }
+    try { $queuedJobs = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue) } catch { }
+    $queued = @($queuedJobs).Count
 
     $jobs = @()
-    $remainings = @()
     foreach ($b in $running) {
-        $id = [string]$b.id
-        $sid = $id
-        if ($b.sessionId) { $sid = [string]$b.sessionId }
-        $ctx = Get-SessionContextRemaining -Cwd $b.cwd -SessionId $sid
-        if ($ctx) { $remainings += [int]$ctx.remaining_pct }
-        $mac = [string]$b.machine
-        if (-not $mac) { $mac = $machineId }
-        $jobs += [pscustomobject]@{
-            id            = $id
-            id8           = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
-            machine       = $mac
-            repo          = Get-GitHubSlugFromCwd $b.cwd
-            duration      = Get-BobJobAge $b.claimedAt
-            state         = $(if ($b.state) { [string]$b.state } else { 'running' })
-            cwd           = [string]$b.cwd
-            remaining_pct = $(if ($ctx) { [int]$ctx.remaining_pct } else { $null })
-        }
+        $jobs += ,(ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State $(if ($b.state) { [string]$b.state } else { 'running' }))
+    }
+    foreach ($b in $queuedJobs) {
+        $jobs += ,(ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State 'queued')
     }
 
+    $byMachine = @{}
+    try {
+        foreach ($m in @(Get-BobMachines -ErrorAction SilentlyContinue)) {
+            $mid = [string]$m.id
+            if ($mid -and -not $byMachine.ContainsKey($mid)) { $byMachine[$mid] = @() }
+        }
+    }
+    catch { }
+    if (-not $byMachine.ContainsKey($machineId)) {
+        $byMachine[$machineId] = @()
+    }
+    foreach ($j in $jobs) {
+        $mid = [string]$j.machine
+        if (-not $mid) { $mid = $machineId }
+        if (-not $byMachine.ContainsKey($mid)) {
+            $byMachine[$mid] = @()
+        }
+        $byMachine[$mid] += ,$j
+    }
+
+    $order = @()
+    if ($byMachine.ContainsKey($machineId)) { $order += $machineId }
+    foreach ($k in ($byMachine.Keys | Sort-Object)) {
+        if ($k -ne $machineId) { $order += $k }
+    }
+
+    $tiles = @()
+    $jobLines = @()
+    foreach ($mid in $order) {
+        $rows = @($byMachine[$mid])
+        if ($rows.Count -gt 1) {
+            $rows = @(
+                $rows | Sort-Object -Property @{
+                    Expression = {
+                        switch ([string]$_.state) {
+                            'running' { 0 }
+                            'queued' { 1 }
+                            default { 2 }
+                        }
+                    }
+                }
+            )
+        }
+        $tile = New-Object psobject -Property @{
+            id        = $mid
+            job_count = $rows.Count
+            jobs      = $rows
+        }
+        $tiles += ,$tile
+        $jobLines += $mid
+        if ($rows.Count -eq 0) {
+            $jobLines += '  no jobs'
+        }
+        else {
+            foreach ($j in $rows) {
+                $jobLines += ('  {0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+            }
+        }
+    }
+    $peerPeek = $order.Count -gt 1
+    if (-not $peerPeek) {
+        $jobLines += 'other hosts not in this store'
+    }
+    $jobsText = ($jobLines -join "`n")
+
+    $week = Get-BobWeeklyRemaining
     $remainPct = $null
-    if ($remainings.Count -gt 0) {
-        $remainPct = ($remainings | Measure-Object -Minimum).Minimum
+    $weekFetched = $null
+    if ($week -and (Test-BobTrayRemainingKnown $week.remaining_pct)) {
+        $remainPct = [int]$week.remaining_pct
+        $weekFetched = [string]$week.fetched_at
     }
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
-        $lines.Add(('{0}  context remaining  n/a' -f $tier))
-        $short = '{0} {1} run' -f $tier, $jobs.Count
+        $lines.Add(('{0}  weekly remaining  n/a' -f $tier))
+        $short = '{0} {1} run' -f $tier, @($running).Count
     }
     else {
-        $lines.Add(('{0}  context remaining  {1}%' -f $tier, $remainPct))
-        $short = '{0} {1} run  {2}%' -f $tier, $jobs.Count, $remainPct
+        $lines.Add(('{0}  weekly remaining  {1}%' -f $tier, $remainPct))
+        $short = '{0} {1} run  {2}%' -f $tier, @($running).Count, $remainPct
     }
-    if ($jobs.Count -eq 0) {
-        $lines.Add('no jobs on this machine')
+    foreach ($jl in $jobLines) { $lines.Add($jl) }
+    if (@($running).Count -eq 0) {
         if ($null -eq $remainPct) { $short = '{0} idle' -f $tier }
         else { $short = '{0} idle  {1}%' -f $tier, $remainPct }
     }
-    else {
-        foreach ($j in $jobs) {
-            $rp = if ($null -eq $j.remaining_pct) { 'n/a' } else { '{0}%' -f $j.remaining_pct }
-            $lines.Add(('{0}  {1}  {2}  {3}  {4}  ctx {5}' -f $j.machine, $j.id8, $j.repo, $j.duration, $j.state, $rp))
-        }
-    }
-    if ($queued -gt 0) { $lines.Add(('queued {0}' -f $queued)) }
     if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
 
     return [pscustomobject]@{
         title          = $title
         machine        = $machineId
-        scope          = 'this-machine'
+        scope          = 'local-store'
         short          = $short
-        body           = ($lines -join [Environment]::NewLine)
+        body           = ($lines -join "`n")
+        jobs_text      = $jobsText
         remaining_pct  = $remainPct
-        remaining_kind = 'context'
-        job_count      = $jobs.Count
+        remaining_kind = 'weekly'
+        weekly_fetched_at = $weekFetched
+        job_count      = @($running).Count
         queued         = $queued
-        jobs           = $jobs
+        jobs           = @($jobs)
+        machines       = $tiles
+        peer_peek      = $peerPeek
         tier           = $tier
     }
 }
