@@ -86,10 +86,17 @@ while ($true) {
         $watcherUp = [bool]$health.watcher_up
         $age = $health.last_seen_age_sec
         $heartbeatStale = ($null -ne $age -and [int]$age -gt $HeartbeatStaleSec)
-        if ((-not $watcherUp) -or $heartbeatStale) {
+        $runningNow = @(Get-BobBuilds -Lane running -ErrorAction SilentlyContinue)
+        $busy = $runningNow.Count -gt 0
+        if ($busy) {
+            Write-Diag ("watcher busy jobs={0} last_seen_age_sec={1}" -f $runningNow.Count, $age)
+        }
+        # lastSeen only updates at tick start; a live grok.exe job holds the loop.
+        $watcherDead = (-not $watcherUp) -or ($heartbeatStale -and -not $busy)
+        if ($watcherDead) {
             if (-not $seen.watcher_down) {
                 $seen.watcher_down = $true
-                $msg = "ACTION_REQUIRED: watcher_down watcher_up=$watcherUp last_seen=$($health.last_seen) age_sec=$age"
+                $msg = "ACTION_REQUIRED: watcher_down watcher_up=$watcherUp last_seen=$($health.last_seen) age_sec=$age running=$($runningNow.Count)"
                 Write-Diag $msg
                 Write-Output $msg
             }

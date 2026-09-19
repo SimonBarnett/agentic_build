@@ -5,7 +5,7 @@ description: >
   ionos). Heal a dead Watch-BobJobs pull worker. Use when the user says start a
   grok build, run Form Prep on DEV1, dispatch a build, fleet job, Watch-BobJobs,
   Start-BobBuild, Get-BobHealth, Install-BobFleet, Watch-BobAgents, stalled
-  watcher, or /grok-build-fleet. Named Grok Bot silent â†’ also load unstick-grok-bot.
+  watcher, or /grok-build-fleet. Named Grok Bot silent -> also load unstick-grok-bot.
   Grok Bot desktop is on every build machine; grok.exe is the Windows logon user
   (MSSQL integrated auth).
 ---
@@ -14,7 +14,7 @@ description: >
 
 Any Grok Bot uses this skill. Builds are `grok.exe -p` as the **logged-in Windows user** (MSSQL integrated). Do not put SQL passwords in specs.
 
-If a **named Grok Bot** (Bob, Haitch, â€¦) is silent in chat, follow `unstick-grok-bot`. This skill is the Windows pull-worker and job queue.
+If a **named Grok Bot** (Bob, Haitch, ...) is silent in chat, follow `unstick-grok-bot`. This skill is the Windows pull-worker and job queue.
 
 ## Load (local-exec on the target computer)
 
@@ -30,7 +30,7 @@ Import-Module "$repo\src\BobBridge.psd1"
 ```powershell
 Get-BobMachines
 Get-BobHealth
-Start-BobBuild -Machine ionos -Cwd $repo -Goal 'â€¦' -Profile generic -ReplyChannel $env:USERNAME
+Start-BobBuild -Machine ionos -Cwd $repo -Goal '...' -Profile generic -ReplyChannel $env:USERNAME
 Get-BobBuild -JobId <id>
 Get-BobBuilds -Machine ionos
 Send-BobBuildSpec -JobId <id> -Prompt 'follow-up'
@@ -51,7 +51,7 @@ Poll `Get-BobBuild`. Worker pings `reply_channel` (Grok Bot name) queued/running
 
 ## Watcher dead
 
-`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`). `last_seen` / `last_seen_age_sec` come from `machine.json`.
+`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`). `last_seen` / `last_seen_age_sec` come from `machine.json`. `lastSeen` is written at the start of each tick; a live claimed job holds the loop so age can exceed 90s while healthy.
 
 A `BobFleet-<id>` task that is `Ready` with LastRunTime 1932 / result 267011 **never started** (registered after this logon).
 
@@ -61,7 +61,7 @@ powershell -NoProfile -File "$repo\tools\Install-BobFleet.ps1" -MachineId <id> -
 Start-ScheduledTask -TaskName "BobFleet-<id>"   # if already registered
 ```
 
-Prove: `watcher_up=true` and `last_seen_age_sec` under 90.
+Prove idle watcher: `watcher_up=true` and `last_seen_age_sec` under 90. Prove busy watcher: `Get-BobBuilds -Lane running` plus live `grok.exe` with that job's session id. Do not restart a busy watcher.
 
 ## Stall monitor
 
@@ -73,13 +73,13 @@ Stdout is ACTION_REQUIRED only. Handle:
 
 | Token | Do |
 |---|---|
-| `watcher_down` | `Start-ScheduledTask BobFleet-<id>`; confirm heartbeat |
+| `watcher_down` | Restart only if no live running job. Else leave it. |
 | `inbox_stale <jobId>` | watcher up? then `Get-BobBuild` |
-| `running_orphan <jobId>` | worker process gone â†’ `Stop-BobBuild` |
+| `running_orphan <jobId>` | worker process gone -> `Stop-BobBuild` |
 | `agent_stall <name>` | load `unstick-grok-bot` for that name |
 
 Do not exit the monitor on Grok Bot desktop restart. Diag log: `~\.grok\long-running-background-tasks\watch_bob_agents_<pid>.log`.
 
 ## Spec / MRB loop
 
-For functional-spec intake, dispatch, and hostile MRB PDFs see ob-build-loop, ob-spec-intake, ob-build-dispatch, and ob-hostile-mrb.
+For functional-spec intake, dispatch, and hostile MRB PDFs see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, and `bob-hostile-mrb`.
