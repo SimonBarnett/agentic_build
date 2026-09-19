@@ -84,16 +84,13 @@ while ($true) {
             $seen.watcher_down = $false
         }
 
-        $marker = Get-GrokBotMarker
-        if ($marker -and $marker.marker -and $marker.marker.pid) {
-            $pidLive = [bool](Get-Process -Id ([int]$marker.marker.pid) -ErrorAction SilentlyContinue)
-            $botOk = [bool]($health.grokbot -and $health.grokbot.ok -and $health.grokbot.signedIn)
-            if ((-not $pidLive) -or ($health.grokbot -and -not $botOk)) {
-                $msg = "FAILED: grokbot_down pidLive=$pidLive signedIn=$botOk"
-                Write-Diag $msg
-                Write-Output $msg
-                exit 1
-            }
+        $procLive = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'Grok Bot' }).Count -gt 0
+        $botOk = [bool]($health.grokbot -and $health.grokbot.ok -and $health.grokbot.signedIn)
+        if (-not $procLive) {
+            $msg = "FAILED: grokbot_down procLive=False signedIn=$botOk"
+            Write-Diag $msg
+            Write-Output $msg
+            exit 1
         }
 
         $inbox = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue)
