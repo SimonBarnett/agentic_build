@@ -50,6 +50,14 @@ namespace BobTrayUi {
         public uint uID;
         public Guid guidItem;
     }
+    public class IconRect {
+        public int X;
+        public int Y;
+        public int Width;
+        public int Height;
+        public string Source;
+        public bool Ok;
+    }
     public static class Shell {
         [DllImport("shell32.dll")]
         public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out RECT iconLocation);
@@ -59,7 +67,64 @@ namespace BobTrayUi {
         public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
         [DllImport("user32.dll")]
         public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public const int SW_SHOWNOACTIVATE = 4;
+        public const int SW_SHOWNA = 8;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOMOVE = 0x0002;
+        public const uint SWP_NOACTIVATE = 0x0010;
+        public const uint SWP_SHOWWINDOW = 0x0040;
+
+        public static bool TryGetNotifyIconRect(IntPtr hWnd, uint uID, out RECT rect) {
+            rect = new RECT();
+            if (hWnd == IntPtr.Zero) return false;
+            NOTIFYICONIDENTIFIER nid = new NOTIFYICONIDENTIFIER();
+            nid.cbSize = (uint)Marshal.SizeOf(typeof(NOTIFYICONIDENTIFIER));
+            nid.hWnd = hWnd;
+            nid.uID = uID;
+            nid.guidItem = Guid.Empty;
+            int hr = Shell_NotifyIconGetRect(ref nid, out rect);
+            return hr == 0 && (rect.Right - rect.Left) > 0 && (rect.Bottom - rect.Top) > 0;
+        }
+
+        public static bool TryGetTrayNotifyRect(out RECT rect) {
+            rect = new RECT();
+            IntPtr tray = FindWindow("Shell_TrayWnd", null);
+            if (tray == IntPtr.Zero) return false;
+            IntPtr area = FindWindowEx(tray, IntPtr.Zero, "TrayNotifyWnd", null);
+            IntPtr target = area != IntPtr.Zero ? area : tray;
+            return GetWindowRect(target, out rect) && (rect.Right - rect.Left) > 0;
+        }
+
+        public static IconRect QueryNotifyIconRect(IntPtr hWnd, uint uID) {
+            IconRect r = new IconRect();
+            RECT rect;
+            if (TryGetNotifyIconRect(hWnd, uID, out rect)) {
+                r.Ok = true;
+                r.Source = "icon";
+                r.X = rect.Left;
+                r.Y = rect.Top;
+                r.Width = rect.Right - rect.Left;
+                r.Height = rect.Bottom - rect.Top;
+                return r;
+            }
+            if (TryGetTrayNotifyRect(out rect)) {
+                r.Ok = true;
+                r.Source = "tray";
+                r.X = rect.Left;
+                r.Y = rect.Top;
+                r.Width = rect.Right - rect.Left;
+                r.Height = rect.Bottom - rect.Top;
+                return r;
+            }
+            r.Ok = false;
+            r.Source = "";
+            return r;
+        }
     }
     public class TipForm : Form {
         protected override bool ShowWithoutActivation { get { return true; } }
@@ -67,64 +132,37 @@ namespace BobTrayUi {
             get {
                 CreateParams cp = base.CreateParams;
                 cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+                cp.ExStyle |= 0x00000080; // WS_EX_TOOLWINDOW
+                cp.ExStyle |= 0x00000008; // WS_EX_TOPMOST
                 return cp;
             }
+        }
+        public bool ShowParkedAt(int x, int y) {
+            this.Left = x;
+            this.Top = y;
+            if (!this.IsHandleCreated) this.CreateHandle();
+            bool pos = Shell.SetWindowPos(
+                this.Handle,
+                Shell.HWND_TOPMOST,
+                x,
+                y,
+                this.Width,
+                this.Height,
+                Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
+            this.Visible = true;
+            if (!this.Visible) {
+                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
+                this.Visible = true;
+            }
+            if (!this.Visible) {
+                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNOACTIVATE);
+                this.Visible = true;
+            }
+            return this.Visible && pos;
         }
     }
 }
 '@
-}
-
-function Get-BobNotifyIconRect {
-    param([System.Windows.Forms.NotifyIcon]$NotifyIcon)
-    try {
-        $t = $NotifyIcon.GetType()
-        $flags = [Reflection.BindingFlags]'Instance,NonPublic'
-        $windowField = $t.GetField('window', $flags)
-        $idField = $t.GetField('id', $flags)
-        if ($windowField -and $idField) {
-            $window = $windowField.GetValue($NotifyIcon)
-            if ($window) {
-                $hWnd = $window.Handle
-                $id = [uint32]$idField.GetValue($NotifyIcon)
-                if ($hWnd -ne [IntPtr]::Zero) {
-                    $nid = New-Object BobTrayUi.NOTIFYICONIDENTIFIER
-                    $nid.cbSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf([type][BobTrayUi.NOTIFYICONIDENTIFIER])
-                    $nid.hWnd = $hWnd
-                    $nid.uID = $id
-                    $rect = New-Object BobTrayUi.RECT
-                    $hr = [BobTrayUi.Shell]::Shell_NotifyIconGetRect([ref]$nid, [ref]$rect)
-                    if ($hr -eq 0 -and ($rect.Right - $rect.Left) -gt 0 -and ($rect.Bottom - $rect.Top) -gt 0) {
-                        return [pscustomobject]@{
-                            X      = $rect.Left
-                            Y      = $rect.Top
-                            Width  = ($rect.Right - $rect.Left)
-                            Height = ($rect.Bottom - $rect.Top)
-                        }
-                    }
-                }
-            }
-        }
-    }
-    catch { }
-    try {
-        $tray = [BobTrayUi.Shell]::FindWindow('Shell_TrayWnd', $null)
-        if ($tray -ne [IntPtr]::Zero) {
-            $area = [BobTrayUi.Shell]::FindWindowEx($tray, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
-            $target = if ($area -ne [IntPtr]::Zero) { $area } else { $tray }
-            $r = New-Object BobTrayUi.RECT
-            if ([BobTrayUi.Shell]::GetWindowRect($target, [ref]$r) -and ($r.Right - $r.Left) -gt 0) {
-                return [pscustomobject]@{
-                    X      = $r.Left
-                    Y      = $r.Top
-                    Width  = ($r.Right - $r.Left)
-                    Height = ($r.Bottom - $r.Top)
-                }
-            }
-        }
-    }
-    catch { }
-    return $null
 }
 
 Remove-Module BobBridge -ErrorAction SilentlyContinue
@@ -137,6 +175,57 @@ $logPath = Join-Path $logDir 'watch_bob_tray.log'
 
 function Write-TrayLog([string]$m) {
     Add-Content -Path $logPath -Value ('{0:o} {1}' -f [datetime]::UtcNow, $m) -ErrorAction SilentlyContinue
+}
+
+function Get-BobNotifyIconRect {
+    param([System.Windows.Forms.NotifyIcon]$NotifyIcon)
+    try {
+        $hWnd = [IntPtr]::Zero
+        $id = [uint32]0
+        $t = $NotifyIcon.GetType()
+        $flags = [Reflection.BindingFlags]'Instance,NonPublic'
+        $windowField = $t.GetField('window', $flags)
+        $idField = $t.GetField('id', $flags)
+        if ($windowField -and $idField) {
+            $window = $windowField.GetValue($NotifyIcon)
+            if ($window) {
+                $hWnd = $window.Handle
+                $id = [uint32]$idField.GetValue($NotifyIcon)
+            }
+        }
+        $r = [BobTrayUi.Shell]::QueryNotifyIconRect($hWnd, $id)
+        if ($r -and $r.Ok) {
+            return [pscustomobject]@{
+                X      = [int]$r.X
+                Y      = [int]$r.Y
+                Width  = [int]$r.Width
+                Height = [int]$r.Height
+                Source = [string]$r.Source
+            }
+        }
+    }
+    catch {
+        Write-TrayLog ('icon rect error: ' + $_.Exception.Message)
+    }
+    return $null
+}
+
+function Test-BobTrayPointInRect {
+    param($Point, $Rect, [int]$Pad = 0)
+    if ($null -eq $Point -or $null -eq $Rect) { return $false }
+    try {
+        $x = [int]$Point.X
+        $y = [int]$Point.Y
+        $w = [int]$Rect.Width
+        $h = [int]$Rect.Height
+        if ($w -le 0 -or $h -le 0) { return $false }
+        $left = [int]$Rect.X - $Pad
+        $top = [int]$Rect.Y - $Pad
+        $right = [int]$Rect.X + $w + $Pad
+        $bottom = [int]$Rect.Y + $h + $Pad
+        return ($x -ge $left -and $x -le $right -and $y -ge $top -and $y -le $bottom)
+    }
+    catch { return $false }
 }
 
 function Add-RoundRect([System.Drawing.Drawing2D.GraphicsPath]$path, $x, $y, $w, $h, $r) {
@@ -197,6 +286,7 @@ $script:hoverTitle = Get-BobTrayTitle
 $script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
 $script:alertKind = 'none'
+$script:iconRectCache = $null
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -372,7 +462,62 @@ $tip.Add_Shown({
     })
 $hideTip = New-Object System.Windows.Forms.Timer
 $hideTip.Interval = 3200
-$hideTip.Add_Tick({ $tip.Hide(); $hideTip.Stop() })
+$hideTip.Add_Tick({
+        try {
+            if ($tip.Visible) { $tip.Hide() }
+        }
+        catch {
+            Write-TrayLog ('tip hide error: ' + $_.Exception.Message)
+        }
+        $hideTip.Stop()
+    })
+
+function Show-BobTrayCard {
+    param([string]$Reason = 'hover')
+    try {
+        Update-Hover
+        $bottom = $jobsLabel.Bottom
+        if ($alertLabel) { $bottom = $alertLabel.Bottom }
+        $tip.Height = [Math]::Max(110, $bottom + 16)
+        # NC-T01 / NC-D02: park once on first show. Do not update Location on later MouseMove.
+        if (-not $tip.Visible) {
+            $iconRect = $script:iconRectCache
+            $pt = [System.Windows.Forms.Cursor]::Position
+            $work = [System.Windows.Forms.Screen]::FromPoint($pt).WorkingArea
+            $place = Get-BobTrayTipPlacement -TipWidth $tip.Width -TipHeight $tip.Height `
+                -IconRect $iconRect -Cursor $pt -WorkArea $work -AlreadyVisible $false
+            $tip.Location = New-Object System.Drawing.Point ([int]$place.x), ([int]$place.y)
+            $shown = $false
+            try {
+                $shown = [bool]$tip.ShowParkedAt([int]$place.x, [int]$place.y)
+            }
+            catch {
+                Write-TrayLog ("tip ShowParkedAt error reason=${Reason}: " + $_.Exception.Message)
+            }
+            if (-not $tip.Visible) {
+                try {
+                    $tip.Show()
+                    if ($tip.Handle -ne [IntPtr]::Zero) {
+                        [void][BobTrayUi.Shell]::ShowWindow($tip.Handle, [BobTrayUi.Shell]::SW_SHOWNA)
+                    }
+                }
+                catch {
+                    Write-TrayLog ("tip Show() error reason=${Reason}: " + $_.Exception.Message)
+                }
+            }
+            if (-not $tip.Visible) {
+                Write-TrayLog ("tip show fail reason=$Reason visible=false handle=$($tip.IsHandleCreated) loc=$($tip.Left),$($tip.Top) src=$($place.source) parked=$shown")
+            }
+            else {
+                Write-TrayLog ("tip show ok reason=$Reason src=$($place.source) loc=$($tip.Left),$($tip.Top) size=$($tip.Width)x$($tip.Height)")
+            }
+        }
+        $hideTip.Stop(); $hideTip.Start()
+    }
+    catch {
+        Write-TrayLog ("tip show error reason=${Reason}: " + $_.Exception.Message)
+    }
+}
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
@@ -402,28 +547,12 @@ $miExit.Add_Click({ $ctx.ExitThread() })
 $notify.Add_MouseClick({
         param($s, $e)
         if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-            if ($script:attention) { Clear-Attention } else { $miStatus.PerformClick() }
+            if ($script:attention) { Clear-Attention }
+            Show-BobTrayCard -Reason 'click'
         }
     })
 $notify.Add_MouseMove({
-        Update-Hover
-        $bottom = $jobsLabel.Bottom
-        if ($alertLabel) { $bottom = $alertLabel.Bottom }
-        $tip.Height = [Math]::Max(110, $bottom + 16)
-        # NC-T01: park once on first show. Do not update Location on later MouseMove.
-        if (-not $tip.Visible) {
-            $iconRect = Get-BobNotifyIconRect $notify
-            $pt = [System.Windows.Forms.Cursor]::Position
-            $work = [System.Windows.Forms.Screen]::FromPoint($pt).WorkingArea
-            $place = Get-BobTrayTipPlacement -TipWidth $tip.Width -TipHeight $tip.Height `
-                -IconRect $iconRect -Cursor $pt -WorkArea $work -AlreadyVisible $false
-            $tip.Location = New-Object System.Drawing.Point ([int]$place.x), ([int]$place.y)
-            $tip.Show()
-            if ($tip.Handle -ne [IntPtr]::Zero) {
-                [void][BobTray.Native]::ShowWindow($tip.Handle, [BobTrayUi.Shell]::SW_SHOWNOACTIVATE)
-            }
-        }
-        $hideTip.Stop(); $hideTip.Start()
+        Show-BobTrayCard -Reason 'hover'
     })
 
 $flash = New-Object System.Windows.Forms.Timer
@@ -464,14 +593,39 @@ $pulse.Add_Tick({
         $pulseOff.Stop(); $pulseOff.Start()
     })
 
+$iconProbe = New-Object System.Windows.Forms.Timer
+$iconProbe.Interval = 400
+$iconProbe.Add_Tick({
+        try {
+            $script:iconRectCache = Get-BobNotifyIconRect $notify
+            $pt = [System.Windows.Forms.Cursor]::Position
+            if ($script:iconRectCache -and [string]$script:iconRectCache.Source -eq 'icon') {
+                if (Test-BobTrayPointInRect $pt $script:iconRectCache -Pad 2) {
+                    Show-BobTrayCard -Reason 'probe'
+                }
+            }
+            if ($tip.Visible) {
+                $tipRect = @{ X = $tip.Left; Y = $tip.Top; Width = $tip.Width; Height = $tip.Height }
+                if (Test-BobTrayPointInRect $pt $tipRect -Pad 4) {
+                    $hideTip.Stop(); $hideTip.Start()
+                }
+            }
+        }
+        catch {
+            Write-TrayLog ('icon probe error: ' + $_.Exception.Message)
+        }
+    })
+
 Start-JobsWatcher
 Update-Hover
+try { [void]$tip.Handle } catch { Write-TrayLog ('tip handle create fail: ' + $_.Exception.Message) }
 $flash.Start()
 $poll.Start()
 $pulse.Start()
+$iconProbe.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
-$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop(); $hideTip.Stop()
+$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop(); $hideTip.Stop(); $iconProbe.Stop()
 $tip.Hide(); $tip.Dispose()
 $notify.Visible = $false
 $notify.Dispose()

@@ -17,15 +17,16 @@ description: >
 ## UI
 
 - Idle: Font Awesome Free solid **robot** (CC BY 4.0), not grok.exe extract.
-- Left-click: acknowledge. Right-click: Status, Open log, Exit.
-- **Mouse-over**: dark card.
+- Left-click: acknowledge if flashing; **always show the dark card** (overflow-chevron fallback when hover is unreliable). Right-click: Status, Open log, Exit.
+- **Mouse-over**: dark card. Hover uses `NotifyIcon.MouseMove` plus a 400ms icon-rect probe (`Shell_NotifyIconGetRect` cached on a timer — do **not** call it from the MouseMove callback). If the native `NotifyIcon.Text` tip is the only thing that appears, that is a fail.
   - Title: `Bob (<machineId>)` from this box's `machine.json` / `BOB_MACHINE_ID`.
   - **Context remaining** is the **session window** only: `(context_window - (inputTokens - cachedReadTokens)) / context_window` from that session's `usage.json` vs `models_cache`. If `usage.json` is missing, remaining is **unknown**: caption `n/a`, bar track and fill **hidden**. Never fake 100%. Never paint a depleted/empty bar (do not imply 0%) without `usage.json`.
   - **Weekly limit** is CLI-footer only (`Weekly limit left` in grok.exe). The tray does **not** show weekly %. There is no weekly field in BobBridge. Do not invent one. Do not read the context bar as weekly quota.
   - Jobs on **this machine**: machine, **id8**, GitHub repo, duration, state. Empty: `No jobs on this machine`.
   - Footer: `alert: watcher|stall|context|none`.
   - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restarting `hideTip` on MouseMove is OK. Hide via the existing hide timer / leave as today.
-  - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`).
+  - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone.
+  - **Log** show/hide failures (and successful first-show) to `watch_bob_tray.log`.
 
 ## Badge sources
 

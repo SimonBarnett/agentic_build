@@ -407,6 +407,122 @@ Invoke-Case 'BT0m tray tip placement' {
     if ($skillTray -notmatch 'ShowWithoutActivation') { throw 'bob-fleet-tray skill must document ShowWithoutActivation' }
 }
 
+# --- BT0n tray tip show (NC-D01 / NC-D02) ---
+Invoke-Case 'BT0n tray tip show' {
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show card on hover' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'click'") { throw 'left-click must show card (overflow fallback)' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show card when cursor is over icon' }
+    if ($traySrc -notmatch 'ShowParkedAt') { throw 'tip form must force-show via ShowParkedAt' }
+    if ($traySrc -notmatch 'SetWindowPos') { throw 'tip show must use SetWindowPos' }
+    if ($traySrc -notmatch 'SWP_NOACTIVATE') { throw 'SetWindowPos must pass SWP_NOACTIVATE' }
+    if ($traySrc -notmatch 'SWP_SHOWWINDOW') { throw 'SetWindowPos must pass SWP_SHOWWINDOW' }
+    if ($traySrc -notmatch 'tip show fail') { throw 'Watch-BobTray must log tip show failures' }
+    if ($traySrc -notmatch 'tip hide error') { throw 'Watch-BobTray must log tip hide failures' }
+    if ($traySrc -notmatch 'iconRectCache') { throw 'icon rect must be cached off the NotifyIcon callback' }
+    if ($traySrc -match '(?s)Add_MouseMove\(\{.{0,400}Get-BobNotifyIconRect') {
+        throw 'Do not call Shell_NotifyIconGetRect / Get-BobNotifyIconRect from MouseMove'
+    }
+    if ($traySrc -notmatch '(?s)if \(-not \$tip\.Visible\).{0,800}Get-BobTrayTipPlacement') {
+        throw 'Get-BobTrayTipPlacement must run only when tip is not visible'
+    }
+    if ($traySrc -match '\$x = \$pt\.X - \$tip\.Width') { throw 'Watch-BobTray still derives Location from cursor X every move' }
+    foreach ($bad in @('Bob fleet', 'No fleet jobs running', 'no fleet jobs running')) {
+        if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
+    }
+
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skillTray -notmatch '(?i)left-click') { throw 'bob-fleet-tray skill must document left-click card show' }
+    if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
+    if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
+
+    $sta = {
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+        if (-not ('BobTrayShowTest.TipForm' -as [type])) {
+            $refs = @(
+                [System.Windows.Forms.Form].Assembly.Location,
+                [System.Drawing.Point].Assembly.Location
+            )
+            Add-Type -ReferencedAssemblies $refs -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+namespace BobTrayShowTest {
+    public static class Shell {
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        public const int SW_SHOWNA = 8;
+        public const uint SWP_NOACTIVATE = 0x0010;
+        public const uint SWP_SHOWWINDOW = 0x0040;
+    }
+    public class TipForm : Form {
+        protected override bool ShowWithoutActivation { get { return true; } }
+        protected override CreateParams CreateParams {
+            get {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x08000000;
+                cp.ExStyle |= 0x00000080;
+                cp.ExStyle |= 0x00000008;
+                return cp;
+            }
+        }
+        public bool ShowParkedAt(int x, int y) {
+            this.Left = x; this.Top = y;
+            if (!this.IsHandleCreated) this.CreateHandle();
+            Shell.SetWindowPos(this.Handle, Shell.HWND_TOPMOST, x, y, this.Width, this.Height,
+                Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
+            this.Visible = true;
+            if (!this.Visible) {
+                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
+                this.Visible = true;
+            }
+            return this.Visible;
+        }
+    }
+}
+'@
+        }
+        $f = New-Object BobTrayShowTest.TipForm
+        $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+        $f.ShowInTaskbar = $false
+        $f.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+        $f.Size = New-Object System.Drawing.Size 200, 80
+        $ok = $false
+        try {
+            $ok = [bool]$f.ShowParkedAt(48, 48)
+            if (-not $f.Visible) { throw 'ShowParkedAt did not set Visible' }
+            if (-not $ok) { throw 'ShowParkedAt returned false' }
+        }
+        finally {
+            try { $f.Hide() } catch { }
+            $f.Dispose()
+        }
+        'ok'
+    }
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = 'STA'
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript($sta.ToString())
+    try {
+        $out = $ps.Invoke()
+        if ($ps.HadErrors) {
+            $err = @($ps.Streams.Error | ForEach-Object { $_.ToString() }) -join '; '
+            throw "STA ShowParkedAt smoke failed: $err"
+        }
+        if ([string]$out[-1] -ne 'ok') { throw "STA ShowParkedAt smoke output=$out" }
+    }
+    finally {
+        $ps.Dispose()
+        $rs.Dispose()
+    }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
