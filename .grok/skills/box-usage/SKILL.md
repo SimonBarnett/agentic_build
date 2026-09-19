@@ -19,7 +19,7 @@ $repo = if (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } elseif (T
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1"
 # machine-readable:
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Json
-# tray mouse-over (max 63 chars; occupancy only):
+# tray hover JSON (jobs + remaining worker-slot %):
 powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Get-BobBoxUsage.ps1" -Hover
 ```
 
@@ -55,7 +55,7 @@ Get-BobBuilds -Machine <id>
 - MarchHare personal X maxed → route new builds to `ionos` (dedicated Premium+).
 - High `~\.grok` sessions/downloads size → consider `grok worktree gc --max-age 7d --dry-run` before reclaiming (see `grok du --help`).
 - `grok usage` with "No usage recorded" on a **running** job is normal; re-check when the job finishes.
-- Tray hover (`-Hover`) is `P+ grok:live/max q:inbox r:running`. That is slots in use, not remaining tokens. `bob-fleet-tray` displays it.
+- Tray hover (`Get-BobTrayHover` / `-Hover`) lists running jobs (GitHub repo, duration, state) and remaining **worker slots** percent. Do not invent remaining-token percent. If remaining slots < 10%, `bob-fleet-tray` pulses red once a minute.
 
 ## Hard rules
 

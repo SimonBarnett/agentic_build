@@ -26,5 +26,6 @@ Export-ModuleMember -Function @(
     'Get-BobResult',
     'Stop-BobWorker',
     'Export-BobTranscript',
-    'Get-BobStallAlerts'
+    'Get-BobStallAlerts',
+    'Get-BobTrayHover'
 )

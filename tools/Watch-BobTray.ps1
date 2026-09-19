@@ -60,6 +60,9 @@ $script:attention = $false
 $script:flashOn = $false
 $script:lastAlerts = @()
 $script:jobsPid = $null
+$script:jobsOwned = $false
+$script:hoverBody = 'Bob fleet'
+$script:remainingPct = 100
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -80,11 +83,16 @@ function Test-JobsWatcherUp {
 
 function Start-JobsWatcher {
     $hits = Test-JobsWatcherUp
-    if ($hits.Count -gt 0) { $script:jobsPid = [int]$hits[0].ProcessId; return }
+    if ($hits.Count -gt 0) {
+        $script:jobsPid = [int]$hits[0].ProcessId
+        $script:jobsOwned = $false
+        return
+    }
     $p = Start-Process -FilePath (Get-Command powershell.exe).Source `
         -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $watchJobs) `
         -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
     $script:jobsPid = $p.Id
+    $script:jobsOwned = $true
     Write-TrayLog "started Watch-BobJobs pid=$($p.Id)"
 }
 
@@ -104,29 +112,20 @@ function Set-Attention([string[]]$alerts) {
     Write-TrayLog ($alerts -join ' | ')
 }
 
-function Get-HoverText {
-    $usage = Join-Path $RepoRoot 'tools\Get-BobBoxUsage.ps1'
-    $line = 'Bob fleet'
-    if (Test-Path $usage) {
-        try {
-            $line = [string](& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $usage -Hover 2>$null | Select-Object -Last 1)
-        }
-        catch { }
-    }
-    if (-not $line) { $line = 'Bob fleet' }
-    $line = $line.Trim()
-    if ($script:attention -and $script:lastAlerts.Count -gt 0) {
-        $bang = '! '
-        $rest = 63 - $bang.Length
-        if ($line.Length -gt $rest) { $line = $line.Substring(0, $rest) }
-        $line = $bang + $line
-    }
-    elseif ($line.Length -gt 63) { $line = $line.Substring(0, 63) }
-    return $line
-}
-
 function Update-Hover {
-    try { $notify.Text = (Get-HoverText) } catch { }
+    try {
+        $h = Get-BobTrayHover
+        $script:hoverBody = [string]$h.body
+        if ($h.remaining_pct -ne $null) { $script:remainingPct = [int]$h.remaining_pct }
+        $short = [string]$h.short
+        if ($script:attention) { $short = '! ' + $short }
+        if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
+        $notify.Text = $short
+        if ($tipLabel) { $tipLabel.Text = $script:hoverBody }
+    }
+    catch {
+        Write-TrayLog ("hover error: " + $_.Exception.Message)
+    }
 }
 
 function Clear-Attention {
@@ -135,6 +134,26 @@ function Clear-Attention {
     $notify.Icon = $iconIdle
     Update-Hover
 }
+
+$tip = New-Object System.Windows.Forms.Form
+$tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
+$tip.ControlBox = $false
+$tip.ShowInTaskbar = $false
+$tip.TopMost = $true
+$tip.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$tip.BackColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+$tip.ForeColor = [System.Drawing.Color]::White
+$tipLabel = New-Object System.Windows.Forms.Label
+$tipLabel.AutoSize = $true
+$tipLabel.MaximumSize = New-Object System.Drawing.Size 420, 0
+$tipLabel.Font = New-Object System.Drawing.Font 'Consolas', 9
+$tipLabel.ForeColor = [System.Drawing.Color]::White
+$tipLabel.Padding = New-Object System.Windows.Forms.Padding 8
+$tipLabel.Text = 'Bob fleet'
+$tip.Controls.Add($tipLabel)
+$hideTip = New-Object System.Windows.Forms.Timer
+$hideTip.Interval = 2800
+$hideTip.Add_Tick({ $tip.Hide(); $hideTip.Stop() })
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
@@ -149,15 +168,13 @@ $miExit = $menu.Items.Add('Exit watcher')
 $notify.ContextMenuStrip = $menu
 
 $miStatus.Add_Click({
-        $h = Get-BobHealth
-        $lines = @(
-            "watcher_up=$($h.watcher_up) last_seen_age_sec=$($h.last_seen_age_sec)"
-            "alerts: $(if ($script:lastAlerts.Count) { $script:lastAlerts -join '; ' } else { 'none' })"
-        )
+        Update-Hover
         $notify.BalloonTipTitle = 'Bob fleet'
-        $notify.BalloonTipText = ($lines -join "`n")
+        $body = $script:hoverBody
+        if ($body.Length -gt 250) { $body = $body.Substring(0, 250) }
+        $notify.BalloonTipText = $body
         $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
-        $notify.ShowBalloonTip(6000)
+        $notify.ShowBalloonTip(8000)
     })
 $miAck.Add_Click({ Clear-Attention })
 $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath } })
@@ -168,6 +185,20 @@ $notify.Add_MouseClick({
         if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
             if ($script:attention) { Clear-Attention } else { $miStatus.PerformClick() }
         }
+    })
+$notify.Add_MouseMove({
+        Update-Hover
+        $tipLabel.Text = $script:hoverBody
+        $tip.Width = $tipLabel.PreferredWidth + 16
+        $tip.Height = $tipLabel.PreferredHeight + 16
+        $pt = [System.Windows.Forms.Cursor]::Position
+        $x = $pt.X - $tip.Width
+        $y = $pt.Y - $tip.Height - 12
+        if ($x -lt 0) { $x = 8 }
+        if ($y -lt 0) { $y = 8 }
+        $tip.Location = New-Object System.Drawing.Point $x, $y
+        if (-not $tip.Visible) { $tip.Show() }
+        $hideTip.Stop(); $hideTip.Start()
     })
 
 $flash = New-Object System.Windows.Forms.Timer
@@ -195,15 +226,33 @@ $poll.Add_Tick({
         }
     })
 
+$pulse = New-Object System.Windows.Forms.Timer
+$pulse.Interval = 60000
+$pulseOff = New-Object System.Windows.Forms.Timer
+$pulseOff.Interval = 700
+$pulseOff.Add_Tick({
+        $pulseOff.Stop()
+        if (-not $script:attention) { $notify.Icon = $iconIdle }
+    })
+$pulse.Add_Tick({
+        if ($script:attention) { return }
+        if ($null -eq $script:remainingPct) { return }
+        if ([int]$script:remainingPct -ge 10) { return }
+        $notify.Icon = $iconAlertA
+        $pulseOff.Stop(); $pulseOff.Start()
+    })
+
 Start-JobsWatcher
 Update-Hover
 $flash.Start()
 $poll.Start()
+$pulse.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
-$poll.Stop(); $flash.Stop()
+$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop(); $hideTip.Stop()
+$tip.Hide(); $tip.Dispose()
 $notify.Visible = $false
 $notify.Dispose()
-if ($script:jobsPid) {
+if ($script:jobsOwned -and $script:jobsPid) {
     try { Stop-Process -Id $script:jobsPid -Force -ErrorAction SilentlyContinue } catch { }
 }

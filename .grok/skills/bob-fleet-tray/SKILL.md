@@ -17,7 +17,8 @@ description: >
 - Green: idle. Flashing red/amber: ACTION_REQUIRED (same tokens as `Watch-BobAgents.ps1`).
 - Left-click: acknowledge (stop flash).
 - Right-click: Status, Acknowledge, Open log, Exit watcher.
-- **Mouse-over** (`NotifyIcon.Text`, max 63 chars): `Get-BobBoxUsage.ps1 -Hover` — occupancy, not invented token remainder. Format `P+ grok:n/max q:inbox r:running`. `box-usage` owns what those numbers mean.
+- **Mouse-over**: popup from `Get-BobTrayHover` — each running job (GitHub slug from `git remote`, duration since `claimedAt`, state) plus remaining **worker slots** as a percent (`(max-running)/max`). Token remainder is not shown; grok CLI does not expose account quota. Short `NotifyIcon.Text` (63 chars) is a summary; the popup is the full list.
+- If remaining slots **< 10%**, the icon **flashes red once a minute** (not a continuous flash). ACTION_REQUIRED is still a continuous red/amber flash.
 
 Log: `~\.grok\long-running-background-tasks\watch_bob_tray.log`.
 

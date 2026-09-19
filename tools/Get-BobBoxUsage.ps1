@@ -94,28 +94,13 @@ if ($bobRoot -and (Get-Command Get-BobHealth -ErrorAction SilentlyContinue)) {
 }
 
 if ($Hover) {
-    $tier = '?'
-    if ($sub -and $sub.subscription_tier_display) {
-        $t = [string]$sub.subscription_tier_display
-        if ($t -match 'Premium') { $tier = 'P+' }
-        elseif ($t -match 'SuperGrok') { $tier = 'SG' }
-        else { $tier = $t }
-        if ($tier.Length -gt 8) { $tier = $tier.Substring(0, 8) }
+    if (Get-Command Get-BobTrayHover -ErrorAction SilentlyContinue) {
+        $h = Get-BobTrayHover
+        $h | ConvertTo-Json -Compress -Depth 6
     }
-    $max = 2
-    try {
-        $cfg = Join-Path $bobRoot 'config\default.json'
-        if ($bobRoot -and (Test-Path $cfg)) {
-            $c = Get-Content $cfg -Raw | ConvertFrom-Json
-            if ($c.max_workers_per_machine) { $max = [int]$c.max_workers_per_machine }
-        }
-    } catch { }
-    $live = @($procs).Count
-    $queued = @($builds | Where-Object { $_.lane -eq 'inbox' }).Count
-    $run = @($builds | Where-Object { $_.lane -eq 'running' }).Count
-    $line = '{0} grok:{1}/{2} q:{3} r:{4}' -f $tier, $live, $max, $queued, $run
-    if ($line.Length -gt 63) { $line = $line.Substring(0, 63) }
-    Write-Output $line
+    else {
+        Write-Output 'Bob fleet'
+    }
     return
 }
 
