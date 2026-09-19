@@ -9,7 +9,18 @@ Any Grok Bot starts Grok Builds on named machines. Skill: `.grok/skills/grok-bui
 
 ## Bob functional-spec build loop
 
-When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **feature-request PDF** that extends an existing repo. Bob orchestrates; build agents implement. Use model **`build0.1`** and spread jobs across legion machines (`marchhare`, `dev1`, …) to balance token load.
+
+Skills (copied by Install-BobFleet into ~\.grok\skills):
+
+| Skill | Role |
+|---|---|
+| grok-build-fleet | Start/monitor/stop builds; heal Watch-BobJobs |
+| ob-build-loop | Orchestrator overview for the functional-spec loop |
+| ob-spec-intake | Park functional / feature-request PDFs under /docs |
+| ob-build-dispatch | Write build-and-test plan + Start-BobBuild |
+| ob-hostile-mrb | Hostile MRB PDF into /docs until ready for human UAT |
+| unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
+When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **feature-request PDF** that extends an existing repo. Bob orchestrates; build agents implement. Use model **`build0.1`** and spread jobs across legion machines (`marchhare`, `dev1`, â€¦) to balance token load.
 
 ### New product (fresh functional spec)
 
@@ -30,7 +41,7 @@ When another agent cannot complete a task, they write a **functional specificati
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Add the feature-request functional specification under `/docs` and commit/push.
 4. Start a build agent (model `build0.1`) to implement, commit, and push.
-5. Same hostile MRB PDF → `/docs` → build-agent fix loop until Bob passes for human UAT.
+5. Same hostile MRB PDF â†’ `/docs` â†’ build-agent fix loop until Bob passes for human UAT.
 
 ### Flow
 
@@ -47,14 +58,14 @@ flowchart TB
   A1 --> A2 --> A3
   F1 --> F2
 
-  subgraph BOB_NEW["Bob — new product"]
+  subgraph BOB_NEW["Bob â€” new product"]
     B1["Create public repo on SimonBarnett"]
     B2["Commit functional spec to /docs"]
     B3["Write detailed build and test plan to /docs"]
-    B4["Start build agent via agentic_build\nmodel: build0.1\nmachine: marchhare / DEV1 / …"]
+    B4["Start build agent via agentic_build\nmodel: build0.1\nmachine: marchhare / DEV1 / â€¦"]
   end
 
-  subgraph BOB_FEAT["Bob — feature request"]
+  subgraph BOB_FEAT["Bob â€” feature request"]
     C1["Do not break prior versions"]
     C2["Add v2 / v3 folders"]
     C3["Commit feature spec to /docs"]
@@ -64,12 +75,12 @@ flowchart TB
   A3 --> B1 --> B2 --> B3 --> B4
   F2 --> C1 --> C2 --> C3 --> C4
 
-  subgraph LOOP["Build ↔ hostile MRB loop"]
+  subgraph LOOP["Build â†” hostile MRB loop"]
     D1["Build agent implements\ncommit + push"]
     D2["Bob hostile MRB\nbrutal detailed review"]
-    D3["MRB PDF → /docs\ncommit + push"]
+    D3["MRB PDF â†’ /docs\ncommit + push"]
     D4{"Bob passes?"}
-    D5["Send review URL to build agent\nfix → commit + push"]
+    D5["Send review URL to build agent\nfix â†’ commit + push"]
   end
 
   B4 --> D1
@@ -86,8 +97,8 @@ Use **BobBridge** for job lifecycle (Start-BobBuild, Send-BobBuildSpec, Get-BobB
 
 Also use **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** for live Libera TLS chat with build agents:
 
-- scripts/irc_agent.py — join a **private** channel and announce AGPK.
-- scripts/seal.py — SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump inbox/*.bin into chat.
+- scripts/irc_agent.py â€” join a **private** channel and announce AGPK.
+- scripts/seal.py â€” SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump inbox/*.bin into chat.
 - Pass MRB review URLs, fix instructions, and sealed handoffs over IRC when the build agent is online there.
 - Two agents on one box need different --home / AGENTIC_IRC_HOME directories.
 ### Guardrails
@@ -95,7 +106,7 @@ Also use **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** for live
 - Bob orchestrates and reviews; build agents do the heavy implementation.
 - Prefer this fleet over Bob burning tokens on coding.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
-- Never mark ready for human UAT until Bob’s own MRB passes.
+- Never mark ready for human UAT until Bobâ€™s own MRB passes.
 
 ## Off-DEV (no real grok)
 
