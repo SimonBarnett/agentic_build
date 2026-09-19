@@ -55,6 +55,21 @@ function Test-JobProcess {
     return ($hits.Count -gt 0)
 }
 
+function Test-GrokBotProcUp {
+    $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '(?i)Grok Bot' })
+    return ($hits.Count -gt 0)
+}
+
+function Get-GrokBotMarkerAgeSec {
+    $got = Get-GrokBotMarker
+    if (-not $got -or -not $got.marker) { return $null }
+    $ms = [int64]0
+    if (-not [int64]::TryParse([string]$got.marker.aliveAtMs, [ref]$ms)) { return $null }
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    return [int](($now - $ms) / 1000)
+}
+
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -84,13 +99,21 @@ while ($true) {
             $seen.watcher_down = $false
         }
 
-        $procLive = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq 'Grok Bot' }).Count -gt 0
-        $botOk = [bool]($health.grokbot -and $health.grokbot.ok -and $health.grokbot.signedIn)
-        if (-not $procLive) {
-            $msg = "FAILED: grokbot_down procLive=False signedIn=$botOk"
-            Write-Diag $msg
-            Write-Output $msg
-            exit 1
+        $procLive = Test-GrokBotProcUp
+        $markerAge = Get-GrokBotMarkerAgeSec
+        $markerFresh = ($null -ne $markerAge -and $markerAge -lt $HeartbeatStaleSec)
+        $botLive = $procLive -or $markerFresh
+        if (-not $botLive) {
+            if (-not $seen.grokbot_down) {
+                $seen.grokbot_down = $true
+                $msg = "ACTION_REQUIRED: grokbot_down procLive=$procLive marker_age_sec=$markerAge"
+                Write-Diag $msg
+                Write-Output $msg
+            }
+        }
+        else {
+            if ($seen.grokbot_down) { Write-Diag 'grokbot recovered' }
+            $seen.grokbot_down = $false
         }
 
         $inbox = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue)
