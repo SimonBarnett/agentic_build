@@ -24,7 +24,8 @@
         'Get-BobStatus',
         'Get-BobResult',
         'Stop-BobWorker',
-        'Export-BobTranscript'
+        'Export-BobTranscript',
+        'Get-BobStallAlerts'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

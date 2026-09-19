@@ -37,7 +37,7 @@ Send-BobBuildSpec -JobId <id> -Prompt 'follow-up'
 Stop-BobBuild -JobId <id>
 ```
 
-`Watch-BobJobs.ps1` (logon task `BobFleet-<id>`, not a Windows service) claims **this** machine's inbox.
+`Watch-BobTray.ps1` (logon task `BobFleet-<id>`, `-STA -WindowStyle Hidden`, not a Windows service) shows a **system tray icon** and starts hidden `Watch-BobJobs.ps1`. The icon is green when idle and **flashes** on ACTION_REQUIRED. Left-click acknowledges; right-click Status / Open log / Exit. Do not leave a blank PowerShell window on the desktop.
 
 `Test-PromptSecrets` refuses `password=` / `XAI_API_KEY=` **assignments**. Instructional mentions (`Do not set or request XAI_API_KEY`) must pass.
 

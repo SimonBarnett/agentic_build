@@ -47,9 +47,9 @@ if (Test-Path $skillRoot) {
     }
 }
 
-$watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
+$watch = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
 $ps = (Get-Command powershell.exe).Source
-$arg = "-NoProfile -ExecutionPolicy Bypass -File `"$watch`""
+$arg = "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watch`""
 $action = New-ScheduledTaskAction -Execute $ps -Argument $arg -WorkingDirectory $RepoRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet `
@@ -75,4 +75,5 @@ Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
-Write-Host "Once:        powershell -NoProfile -File `"$watch`" -Once"
+Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
+Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
