@@ -25,6 +25,108 @@ Add-Type -Name Native -Namespace BobTray -MemberDefinition @'
 $hwnd = [BobTray.Native]::GetConsoleWindow()
 if ($hwnd -ne [IntPtr]::Zero) { [void][BobTray.Native]::ShowWindow($hwnd, 0) }
 
+if (-not ('BobTrayUi.TipForm' -as [type])) {
+    $refs = @(
+        [System.Windows.Forms.Form].Assembly.Location,
+        [System.Drawing.Point].Assembly.Location
+    )
+    Add-Type -ReferencedAssemblies $refs -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace BobTrayUi {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NOTIFYICONIDENTIFIER {
+        public uint cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public Guid guidItem;
+    }
+    public static class Shell {
+        [DllImport("shell32.dll")]
+        public static extern int Shell_NotifyIconGetRect(ref NOTIFYICONIDENTIFIER identifier, out RECT iconLocation);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        public const int SW_SHOWNOACTIVATE = 4;
+    }
+    public class TipForm : Form {
+        protected override bool ShowWithoutActivation { get { return true; } }
+        protected override CreateParams CreateParams {
+            get {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE
+                return cp;
+            }
+        }
+    }
+}
+'@
+}
+
+function Get-BobNotifyIconRect {
+    param([System.Windows.Forms.NotifyIcon]$NotifyIcon)
+    try {
+        $t = $NotifyIcon.GetType()
+        $flags = [Reflection.BindingFlags]'Instance,NonPublic'
+        $windowField = $t.GetField('window', $flags)
+        $idField = $t.GetField('id', $flags)
+        if ($windowField -and $idField) {
+            $window = $windowField.GetValue($NotifyIcon)
+            if ($window) {
+                $hWnd = $window.Handle
+                $id = [uint32]$idField.GetValue($NotifyIcon)
+                if ($hWnd -ne [IntPtr]::Zero) {
+                    $nid = New-Object BobTrayUi.NOTIFYICONIDENTIFIER
+                    $nid.cbSize = [uint32][Runtime.InteropServices.Marshal]::SizeOf([type][BobTrayUi.NOTIFYICONIDENTIFIER])
+                    $nid.hWnd = $hWnd
+                    $nid.uID = $id
+                    $rect = New-Object BobTrayUi.RECT
+                    $hr = [BobTrayUi.Shell]::Shell_NotifyIconGetRect([ref]$nid, [ref]$rect)
+                    if ($hr -eq 0 -and ($rect.Right - $rect.Left) -gt 0 -and ($rect.Bottom - $rect.Top) -gt 0) {
+                        return [pscustomobject]@{
+                            X      = $rect.Left
+                            Y      = $rect.Top
+                            Width  = ($rect.Right - $rect.Left)
+                            Height = ($rect.Bottom - $rect.Top)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch { }
+    try {
+        $tray = [BobTrayUi.Shell]::FindWindow('Shell_TrayWnd', $null)
+        if ($tray -ne [IntPtr]::Zero) {
+            $area = [BobTrayUi.Shell]::FindWindowEx($tray, [IntPtr]::Zero, 'TrayNotifyWnd', $null)
+            $target = if ($area -ne [IntPtr]::Zero) { $area } else { $tray }
+            $r = New-Object BobTrayUi.RECT
+            if ([BobTrayUi.Shell]::GetWindowRect($target, [ref]$r) -and ($r.Right - $r.Left) -gt 0) {
+                return [pscustomobject]@{
+                    X      = $r.Left
+                    Y      = $r.Top
+                    Width  = ($r.Right - $r.Left)
+                    Height = ($r.Bottom - $r.Top)
+                }
+            }
+        }
+    }
+    catch { }
+    return $null
+}
+
 Remove-Module BobBridge -ErrorAction SilentlyContinue
 Import-Module $psd1 -Force
 
@@ -198,7 +300,7 @@ function Clear-Attention {
 $bg = [System.Drawing.Color]::FromArgb(22, 27, 34)
 $fg = [System.Drawing.Color]::FromArgb(230, 237, 243)
 $muted = [System.Drawing.Color]::FromArgb(139, 148, 158)
-$tip = New-Object System.Windows.Forms.Form
+$tip = New-Object BobTrayUi.TipForm
 $tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $tip.ControlBox = $false
 $tip.ShowInTaskbar = $false
@@ -308,13 +410,19 @@ $notify.Add_MouseMove({
         $bottom = $jobsLabel.Bottom
         if ($alertLabel) { $bottom = $alertLabel.Bottom }
         $tip.Height = [Math]::Max(110, $bottom + 16)
-        $pt = [System.Windows.Forms.Cursor]::Position
-        $x = $pt.X - $tip.Width
-        $y = $pt.Y - $tip.Height - 12
-        if ($x -lt 0) { $x = 8 }
-        if ($y -lt 0) { $y = 8 }
-        $tip.Location = New-Object System.Drawing.Point $x, $y
-        if (-not $tip.Visible) { $tip.Show() }
+        # NC-T01: park once on first show. Do not update Location on later MouseMove.
+        if (-not $tip.Visible) {
+            $iconRect = Get-BobNotifyIconRect $notify
+            $pt = [System.Windows.Forms.Cursor]::Position
+            $work = [System.Windows.Forms.Screen]::FromPoint($pt).WorkingArea
+            $place = Get-BobTrayTipPlacement -TipWidth $tip.Width -TipHeight $tip.Height `
+                -IconRect $iconRect -Cursor $pt -WorkArea $work -AlreadyVisible $false
+            $tip.Location = New-Object System.Drawing.Point ([int]$place.x), ([int]$place.y)
+            $tip.Show()
+            if ($tip.Handle -ne [IntPtr]::Zero) {
+                [void][BobTray.Native]::ShowWindow($tip.Handle, [BobTrayUi.Shell]::SW_SHOWNOACTIVATE)
+            }
+        }
         $hideTip.Stop(); $hideTip.Start()
     })
 

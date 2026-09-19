@@ -229,3 +229,162 @@ function Get-BobTrayHover {
         tier           = $tier
     }
 }
+
+function Get-BobPointCoord {
+    param($Value, [string[]]$Names, $Default = 0)
+    if ($null -eq $Value) { return $Default }
+    foreach ($n in $Names) {
+        $v = $null
+        $found = $false
+        if ($Value -is [System.Collections.IDictionary]) {
+            foreach ($k in @($Value.Keys)) {
+                if ([string]$k -ceq $n -or [string]$k -eq $n) {
+                    $v = $Value[$k]
+                    $found = $true
+                    break
+                }
+            }
+        }
+        if (-not $found) {
+            $p = $Value.PSObject.Properties[$n]
+            if ($p) {
+                $v = $p.Value
+                $found = $true
+            }
+        }
+        if (-not $found) {
+            try {
+                $v = $Value.$n
+                if ($null -ne $v) { $found = $true }
+            }
+            catch { }
+        }
+        if ($found -and $null -ne $v -and "$v" -ne '') {
+            try { return [int]$v } catch { }
+        }
+    }
+    return $Default
+}
+
+function ConvertTo-BobTrayRect {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    $x = Get-BobPointCoord $Value @('X', 'x', 'Left', 'left') -Default $null
+    $y = Get-BobPointCoord $Value @('Y', 'y', 'Top', 'top') -Default $null
+    $w = Get-BobPointCoord $Value @('Width', 'width') -Default $null
+    $h = Get-BobPointCoord $Value @('Height', 'height') -Default $null
+    if ($null -eq $w) {
+        $right = Get-BobPointCoord $Value @('Right', 'right') -Default $null
+        if ($null -ne $right -and $null -ne $x) { $w = $right - $x }
+    }
+    if ($null -eq $h) {
+        $bottom = Get-BobPointCoord $Value @('Bottom', 'bottom') -Default $null
+        if ($null -ne $bottom -and $null -ne $y) { $h = $bottom - $y }
+    }
+    if ($null -eq $x -or $null -eq $y -or $null -eq $w -or $null -eq $h) { return $null }
+    if ($w -le 0 -or $h -le 0) { return $null }
+    return [pscustomobject]@{
+        X      = [int]$x
+        Y      = [int]$y
+        Width  = [int]$w
+        Height = [int]$h
+        Right  = [int]($x + $w)
+        Bottom = [int]($y + $h)
+    }
+}
+
+function Get-BobTrayTipPlacement {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][int]$TipWidth,
+        [Parameter(Mandatory = $true)][int]$TipHeight,
+        $IconRect,
+        $Cursor,
+        $WorkArea,
+        [bool]$AlreadyVisible = $false,
+        [int]$CurrentX = 0,
+        [int]$CurrentY = 0,
+        [int]$Gap = 12,
+        [int]$Margin = 8
+    )
+    if ($AlreadyVisible) {
+        return [pscustomobject]@{
+            x      = [int]$CurrentX
+            y      = [int]$CurrentY
+            source = 'sticky'
+            moved  = $false
+        }
+    }
+
+    $icon = ConvertTo-BobTrayRect $IconRect
+    $work = ConvertTo-BobTrayRect $WorkArea
+    $cx = Get-BobPointCoord $Cursor @('X', 'x')
+    $cy = Get-BobPointCoord $Cursor @('Y', 'y')
+    $source = 'cursor'
+    $x = $cx - $TipWidth
+    $y = $cy - $TipHeight - $Gap
+
+    if ($icon) {
+        $source = 'icon'
+        $workLeft = 0
+        $workTop = 0
+        $workRight = 0
+        $workBottom = 0
+        if ($work) {
+            $workLeft = $work.X
+            $workTop = $work.Y
+            $workRight = $work.Right
+            $workBottom = $work.Bottom
+        }
+        $fromBottom = $false
+        $fromTop = $false
+        $fromLeft = $false
+        $fromRight = $false
+        if ($work) {
+            $fromBottom = ($icon.Bottom -ge ($workBottom - 2))
+            $fromTop = ($icon.Y -le ($workTop + 2))
+            $fromLeft = ($icon.Right -le ($workLeft + 2))
+            $fromRight = ($icon.X -ge ($workRight - 2))
+        }
+        if ($fromTop -and -not $fromBottom) {
+            $x = $icon.Right - $TipWidth
+            $y = $icon.Bottom + $Gap
+        }
+        elseif ($fromLeft -and -not $fromRight -and -not $fromBottom) {
+            $x = $icon.Right + $Gap
+            $y = $icon.Bottom - $TipHeight
+        }
+        elseif ($fromRight -and -not $fromBottom) {
+            $x = $icon.X - $TipWidth - $Gap
+            $y = $icon.Bottom - $TipHeight
+        }
+        else {
+            $x = $icon.Right - $TipWidth
+            $y = $icon.Y - $TipHeight - $Gap
+        }
+    }
+
+    if ($work) {
+        $maxX = $work.Right - $TipWidth - $Margin
+        $maxY = $work.Bottom - $TipHeight - $Margin
+        $minX = $work.X + $Margin
+        $minY = $work.Y + $Margin
+        if ($maxX -lt $minX) { $maxX = $minX }
+        if ($maxY -lt $minY) { $maxY = $minY }
+        if ($x -gt $maxX) { $x = $maxX }
+        if ($y -gt $maxY) { $y = $maxY }
+        if ($x -lt $minX) { $x = $minX }
+        if ($y -lt $minY) { $y = $minY }
+    }
+    else {
+        if ($x -lt $Margin) { $x = $Margin }
+        if ($y -lt $Margin) { $y = $Margin }
+    }
+
+    return [pscustomobject]@{
+        x      = [int]$x
+        y      = [int]$y
+        source = $source
+        moved  = $true
+    }
+}

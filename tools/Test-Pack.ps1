@@ -352,6 +352,61 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillBox -notmatch '(?i)weekly') { throw 'box-usage skill must document weekly vs context' }
 }
 
+# --- BT0m tray tip placement (NC-T01..NC-T03) ---
+Invoke-Case 'BT0m tray tip placement' {
+    $icon = @{ X = 1880; Y = 1048; Width = 24; Height = 24 }
+    $work = @{ X = 0; Y = 0; Width = 1920; Height = 1040 }
+    $cursorA = @{ X = 1892; Y = 1060 }
+    $p = Get-BobTrayTipPlacement -TipWidth 420 -TipHeight 120 -IconRect $icon -Cursor $cursorA -WorkArea $work
+    if ($p.source -ne 'icon') { throw "source=$($p.source) expected icon" }
+    if (-not $p.moved) { throw 'first place must set moved' }
+    if ($p.x -ne 1484) { throw "icon x=$($p.x) expected 1484 (right-aligned to icon)" }
+    if ($p.y -lt 0) { throw "icon y=$($p.y)" }
+    if (($p.y + 120) -gt 1040) { throw "icon y=$($p.y) not clamped into work area" }
+    $iconX = $p.x
+    $iconY = $p.y
+
+    $cursorB = @{ X = 400; Y = 300 }
+    $sticky = Get-BobTrayTipPlacement -TipWidth 420 -TipHeight 120 -IconRect $icon -Cursor $cursorB -WorkArea $work -AlreadyVisible $true -CurrentX $iconX -CurrentY $iconY
+    if ($sticky.source -ne 'sticky') { throw "already-visible source=$($sticky.source)" }
+    if ($sticky.moved) { throw 'already visible must not move' }
+    if ($sticky.x -ne $iconX -or $sticky.y -ne $iconY) { throw "sticky moved from $iconX,$iconY to $($sticky.x),$($sticky.y)" }
+
+    $cur = Get-BobTrayTipPlacement -TipWidth 420 -TipHeight 120 -Cursor @{ X = 800; Y = 600 } -WorkArea @{ X = 0; Y = 0; Width = 1920; Height = 1080 }
+    if ($cur.source -ne 'cursor') { throw "missing-icon source=$($cur.source)" }
+    if ($cur.x -ne 380) { throw "cursor x=$($cur.x) expected 800-420" }
+    if ($cur.y -ne 468) { throw "cursor y=$($cur.y) expected 600-120-12" }
+
+    $clamp = Get-BobTrayTipPlacement -TipWidth 420 -TipHeight 120 -Cursor @{ X = 10; Y = 10 } -WorkArea @{ X = 0; Y = 0; Width = 1920; Height = 1080 }
+    if ($clamp.x -lt 8 -or $clamp.y -lt 8) { throw "cursor clamp x=$($clamp.x) y=$($clamp.y)" }
+
+    $topBar = Get-BobTrayTipPlacement -TipWidth 420 -TipHeight 120 `
+        -IconRect @{ X = 1880; Y = 4; Width = 24; Height = 24 } `
+        -Cursor @{ X = 1890; Y = 16 } `
+        -WorkArea @{ X = 0; Y = 40; Width = 1920; Height = 1040 }
+    if ($topBar.source -ne 'icon') { throw 'top-taskbar must use icon' }
+    if ($topBar.y -lt 40) { throw "top-taskbar y=$($topBar.y) should sit in work area below icon" }
+
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'Get-BobTrayTipPlacement') { throw 'Watch-BobTray must call Get-BobTrayTipPlacement' }
+    if ($traySrc -notmatch 'AlreadyVisible') { throw 'Watch-BobTray must pass AlreadyVisible to placement' }
+    if ($traySrc -notmatch '(?s)if \(-not \$tip\.Visible\).{0,800}Get-BobTrayTipPlacement') {
+        throw 'Get-BobTrayTipPlacement must run only when tip is not visible'
+    }
+    if ($traySrc -match '\$x = \$pt\.X - \$tip\.Width') { throw 'Watch-BobTray still derives Location from cursor X every move' }
+    if ($traySrc -notmatch 'ShowWithoutActivation') { throw 'tip form missing ShowWithoutActivation (NC-T02)' }
+    if ($traySrc -notmatch '0x08000000') { throw 'tip form missing WS_EX_NOACTIVATE (NC-T02)' }
+    if ($traySrc -notmatch 'Shell_NotifyIconGetRect') { throw 'Watch-BobTray should prefer Shell_NotifyIconGetRect' }
+    foreach ($bad in @('Bob fleet', 'No fleet jobs running', 'no fleet jobs running')) {
+        if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
+    }
+
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skillTray -notmatch 'Get-BobTrayTipPlacement') { throw 'bob-fleet-tray skill must name Get-BobTrayTipPlacement' }
+    if ($skillTray -notmatch '(?i)already visible') { throw 'bob-fleet-tray skill must document already-visible sticky contract' }
+    if ($skillTray -notmatch 'ShowWithoutActivation') { throw 'bob-fleet-tray skill must document ShowWithoutActivation' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }

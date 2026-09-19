@@ -30,5 +30,6 @@ Export-ModuleMember -Function @(
     'Get-BobTrayHover',
     'Get-BobTrayBarPaint',
     'Get-BobTrayAlertKind',
-    'Get-BobTrayTitle'
+    'Get-BobTrayTitle',
+    'Get-BobTrayTipPlacement'
 )

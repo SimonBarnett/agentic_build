@@ -29,7 +29,8 @@
         'Get-BobTrayHover',
         'Get-BobTrayBarPaint',
         'Get-BobTrayAlertKind',
-        'Get-BobTrayTitle'
+        'Get-BobTrayTitle',
+        'Get-BobTrayTipPlacement'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
