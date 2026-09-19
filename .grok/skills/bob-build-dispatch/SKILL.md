@@ -23,7 +23,7 @@ Write `docs/build-and-test-plan.md` in the target repo (commit + push) that a bu
 
 ## 2. Choose machine
 
-Prefer spare Premium+ capacity. Prefer `ionos` when MarchHare personal X is maxed. Ids: `ionos`, `marchhare`, `dev1` — not hostnames.
+Prefer spare Premium+ capacity. Prefer `ionos` when MarchHare personal X is maxed. Ids: `ionos`, `marchhare`, `dev1` â€” not hostnames.
 
 Load BobBridge from the local agentic_build clone (`C:\ai\agentic_build`, `D:\ai\agentic_build`, or `C:\src\agentic_build`). Run `Get-BobHealth` / `Get-BobMachines`. Heal a dead watcher via `grok-build-fleet`.
 
@@ -49,3 +49,7 @@ Prefer instructional wording for secrets ("do not set an API key environment var
 - Tell the human `jobId` + machine.
 - Poll `Get-BobBuild` / reply_channel pings (see `grok-build-fleet`).
 - On successful push from the build agent, run `bob-hostile-mrb`.
+
+## Long jobs
+
+Product builds often exceed a few minutes. Rely on Watch-BobAgents for unning_orphan / inbox_stale / gent_stall. Do not Stop-BobBuild solely because wall time feels long while the worker process is alive. Prefer profiles.generic.timeoutSec >= 7200 on legion boxes.

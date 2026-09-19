@@ -1,34 +1,40 @@
 {
-  "max_workers_per_machine": 2,
-  "profiles": {
-    "formprep": {
-      "yolo": false,
-      "timeoutSec": 1200,
-      "maxPerCwd": 1,
-      "rules": "DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets. MSSQL is the Windows logon user (integrated auth). Never put SQL passwords in the prompt."
-    },
-    "teams": {
-      "yolo": false,
-      "timeoutSec": 600,
-      "maxPerCwd": 1,
-      "rules": "No AccessMedia.All. No claiming fixture speak is audible."
-    },
-    "mud": {
-      "yolo": true,
-      "timeoutSec": 600,
-      "maxPerCwd": 2,
-      "rules": "No spend. Stay on configured host."
-    },
-    "generic": {
-      "yolo": false,
-      "timeoutSec": 180,
-      "maxPerCwd": 2,
-      "rules": "No production deploys. No force-push."
-    }
-  },
-  "agents": {
-    "bob": { "profile": "generic" },
-    "haitch": { "profile": "teams" },
-    "merc": { "profile": "generic" }
-  }
+    "max_workers_per_machine":  2,
+    "profiles":  {
+                     "formprep":  {
+                                      "yolo":  false,
+                                      "timeoutSec":  1200,
+                                      "maxPerCwd":  1,
+                                      "rules":  "DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets. MSSQL is the Windows logon user (integrated auth). Never put SQL passwords in the prompt."
+                                  },
+                     "teams":  {
+                                   "yolo":  false,
+                                   "timeoutSec":  600,
+                                   "maxPerCwd":  1,
+                                   "rules":  "No AccessMedia.All. No claiming fixture speak is audible."
+                               },
+                     "mud":  {
+                                 "yolo":  true,
+                                 "timeoutSec":  600,
+                                 "maxPerCwd":  2,
+                                 "rules":  "No spend. Stay on configured host."
+                             },
+                     "generic":  {
+                                     "yolo":  false,
+                                     "timeoutSec":  7200,
+                                     "maxPerCwd":  2,
+                                     "rules":  "No production deploys. No force-push."
+                                 }
+                 },
+    "agents":  {
+                   "bob":  {
+                               "profile":  "generic"
+                           },
+                   "haitch":  {
+                                  "profile":  "teams"
+                              },
+                   "merc":  {
+                                "profile":  "generic"
+                            }
+               }
 }

@@ -83,3 +83,9 @@ Do not exit the monitor on Grok Bot desktop restart. Diag log: `~\.grok\long-run
 ## Spec / MRB loop
 
 For functional-spec intake, dispatch, and hostile MRB PDFs see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, and `bob-hostile-mrb`.
+
+## Long builds (do not kill early)
+
+config/default.json profiles.generic.timeoutSec defaults to **7200** (2h). Multi-phase gap-closes need that headroom. Do **not** lower it for real product work.
+
+Monitor stalls with Watch-BobAgents.ps1 (ACTION_REQUIRED only). A quiet long run is OK — timeout is a safety net, not a productivity target. If Get-BobBuild stays unning with a live grok process, let it finish.
