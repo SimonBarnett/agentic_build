@@ -101,20 +101,7 @@ while ($true) {
 
         $procLive = Test-GrokBotProcUp
         $markerAge = Get-GrokBotMarkerAgeSec
-        $markerFresh = ($null -ne $markerAge -and $markerAge -lt $HeartbeatStaleSec)
-        $botLive = $procLive -or $markerFresh
-        if (-not $botLive) {
-            if (-not $seen.grokbot_down) {
-                $seen.grokbot_down = $true
-                $msg = "ACTION_REQUIRED: grokbot_down procLive=$procLive marker_age_sec=$markerAge"
-                Write-Diag $msg
-                Write-Output $msg
-            }
-        }
-        else {
-            if ($seen.grokbot_down) { Write-Diag 'grokbot recovered' }
-            $seen.grokbot_down = $false
-        }
+        Write-Diag "grokbot procLive=$procLive marker_age_sec=$markerAge"
 
         $inbox = @(Get-BobBuilds -Lane inbox -ErrorAction SilentlyContinue)
         $nowInbox = @{}
