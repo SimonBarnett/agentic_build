@@ -74,7 +74,7 @@ Stdout is ACTION_REQUIRED only. Handle:
 | Token | Do |
 |---|---|
 | `watcher_down` | Restart only if no live running job. Else leave it. |
-| `inbox_stale <jobId>` | watcher up? then `Get-BobBuild` |
+| `inbox_stale <jobId>` | Queue behind a live running job is not stale. Only act if watcher idle and inbox still sits. |
 | `running_orphan <jobId>` | worker process gone -> `Stop-BobBuild` |
 | `agent_stall <name>` | load `unstick-grok-bot` for that name |
 

@@ -124,11 +124,14 @@ while ($true) {
                 }
                 catch { }
             }
-            if ($jobAge -ge $HeartbeatStaleSec -and -not $seen.inbox.ContainsKey($id)) {
+            if ($jobAge -ge $HeartbeatStaleSec -and -not $busy -and -not $seen.inbox.ContainsKey($id)) {
                 $seen.inbox[$id] = $true
                 $msg = "ACTION_REQUIRED: inbox_stale $id age_sec=$jobAge"
                 Write-Diag $msg
                 Write-Output $msg
+            }
+            elseif ($jobAge -ge $HeartbeatStaleSec -and $busy) {
+                Write-Diag ("inbox queued $id age_sec=$jobAge behind running=$($runningNow.Count)")
             }
         }
         foreach ($k in @($seen.inbox.Keys)) {
