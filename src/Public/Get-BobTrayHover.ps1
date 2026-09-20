@@ -197,6 +197,9 @@ function ConvertTo-BobCursorUsageDoc {
         if ($remain -gt 100) { $remain = 100 }
     }
     if ($null -eq $used -and $null -ne $remain) { $used = 100 - $remain }
+    $periodEnd = $null
+    if ($j.period_end) { $periodEnd = [string]$j.period_end }
+    elseif ($j.nextResetTimestampUtc) { $periodEnd = [string]$j.nextResetTimestampUtc }
     return [pscustomobject]@{
         remaining_pct = $(if ($null -eq $remain) { $null } else { [int]$remain })
         used_pct      = $(if ($null -eq $used) { $null } else { [int][math]::Round([double]$used) })
@@ -204,6 +207,7 @@ function ConvertTo-BobCursorUsageDoc {
         overage_usd   = $overUsd
         on_demand_used_cents = $cents
         overage_source = $(if ($j.overage_source) { [string]$j.overage_source } else { $null })
+        period_end    = $periodEnd
         source        = 'cursor-agent'
         kind          = 'weekly'
     }
@@ -423,6 +427,30 @@ function Format-BobCursorAccountLabel {
 }
 
 
+
+function Format-BobResetLabel {
+    param($PeriodEnd)
+    if (-not $PeriodEnd -or [string]::IsNullOrWhiteSpace([string]$PeriodEnd)) { return $null }
+    try {
+        $raw = [string]$PeriodEnd
+        $dt = $null
+        # ms epoch
+        if ($raw -match '^\d{12,}$') {
+            $dt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$raw).UtcDateTime
+        }
+        else {
+            $dt = [datetime]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            if ($dt.Kind -eq [DateTimeKind]::Unspecified) { $dt = [DateTime]::SpecifyKind($dt, [DateTimeKind]::Utc) }
+            $dt = $dt.ToUniversalTime()
+        }
+        $tz = [TimeZoneInfo]::FindSystemTimeZoneById('GMT Standard Time')
+        try { $tz = [TimeZoneInfo]::FindSystemTimeZoneById('Europe/London') } catch { }
+        $local = [TimeZoneInfo]::ConvertTimeFromUtc($dt, $tz)
+        return ('reset {0}' -f $local.ToString('d MMM', [Globalization.CultureInfo]::GetCultureInfo('en-GB')))
+    }
+    catch { return $null }
+}
+
 function Get-BobTrayTitle {
     param($MachineId)
     $mid = [string]$MachineId
@@ -635,6 +663,7 @@ function Get-BobTrayHover {
     }
     $reachBy[$machineId] = 'local'
     $weeklyBy = @{}
+    $periodEndBy = @{}
     $week = Get-BobWeeklyRemaining
     $remainPct = $null
     $weekFetched = $null
@@ -643,6 +672,7 @@ function Get-BobTrayHover {
         $weekFetched = [string]$week.fetched_at
         $weeklyBy[$machineId] = $remainPct
     }
+    if ($week -and $week.period_end) { $periodEndBy[$machineId] = [string]$week.period_end }
     $cursorWeek = $null
     $cursorRemain = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
@@ -690,6 +720,7 @@ function Get-BobTrayHover {
         if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) {
             $weeklyBy[$mid] = [int]$peek.weekly
         }
+        if ($peek.period_end) { $periodEndBy[$mid] = [string]$peek.period_end }
         $peerJobs = @()
         if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
         foreach ($pj in $peerJobs) {
@@ -744,6 +775,20 @@ function Get-BobTrayHover {
                 if ($smid) { $weeklyBy[$smid] = [int]$shared }
             }
         }
+        $ends = @()
+        foreach ($sm in @($seat.machines)) {
+            $smid = [string]$sm
+            if ($smid -and $periodEndBy.ContainsKey($smid) -and $periodEndBy[$smid]) {
+                $ends += ,[string]$periodEndBy[$smid]
+            }
+        }
+        if ($ends.Count -gt 0) {
+            $sharedEnd = ($ends | Sort-Object | Select-Object -First 1)
+            foreach ($sm in @($seat.machines)) {
+                $smid = [string]$sm
+                if ($smid) { $periodEndBy[$smid] = $sharedEnd }
+            }
+        }
     }
 
     $tiles = @()
@@ -768,6 +813,9 @@ function Get-BobTrayHover {
         $wPct = $null
         if ($weeklyBy.ContainsKey($mid)) { $wPct = $weeklyBy[$mid] }
         $seatInfo = Get-BobSeatForMachine -MachineId $mid
+        $tileEnd = $null
+        if ($periodEndBy.ContainsKey($mid)) { $tileEnd = [string]$periodEndBy[$mid] }
+        $tileReset = Format-BobResetLabel $tileEnd
         $tile = New-Object psobject -Property @{
             id             = $mid
             job_count      = $rows.Count
@@ -775,6 +823,8 @@ function Get-BobTrayHover {
             reach          = $reach
             last_seen      = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
             remaining_pct  = $wPct
+            period_end     = $tileEnd
+            reset_label    = $tileReset
             seat_id        = $(if ($seatInfo) { [string]$seatInfo.id } else { $null })
             seat_label     = $(if ($seatInfo) { [string]$seatInfo.label } else { $null })
             seat_email     = $(if ($seatInfo) { [string]$seatInfo.email } else { $null })
@@ -854,6 +904,8 @@ function Get-BobTrayHover {
         account_remaining_pct = $cursorRemain
         account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })
         account_used_pct = $cursorUsed
+        account_period_end = $(if ($cursorWeek -and $cursorWeek.period_end) { [string]$cursorWeek.period_end } else { $null })
+        account_reset_label = $(if ($cursorWeek -and $cursorWeek.period_end) { Format-BobResetLabel $cursorWeek.period_end } else { $null })
     }
 }
 

@@ -579,7 +579,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label
+            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -706,7 +706,7 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $AccountName, $AccountPct, $AccountLabel)
+    param($Machines, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
     if (-not $script:tileHost) { return }
 
     # Format everything first so a throw never leaves a cleared host.
@@ -735,7 +735,9 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
-        $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
+        $acctHeading = ('{0} ({1})' -f $acctName, $acctLabel)
+        if ($AccountReset) { $acctHeading = ('{0}  ·  {1}' -f $acctHeading, [string]$AccountReset) }
+        $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
             -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
         $y += 6
         $indent = 18
@@ -753,7 +755,9 @@ function Rebuild-BobTrayTiles {
             if (-not $seat) { $seat = [string]$m.seat_email }
             $nameHeading = $id
             if ($seat) { $nameHeading = ('{0}  -  {1}' -f $id, $seat) }
-            $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $nameHeading, $pctLabel) `
+            $machHeading = ('{0} ({1})' -f $nameHeading, $pctLabel)
+            if ($m.reset_label) { $machHeading = ('{0}  ·  {1}' -f $machHeading, [string]$m.reset_label) }
+            $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading $machHeading `
                 -RemainingPct $pct -BarWidth 354 -Icon $null
             $reach = [string]$m.reach
             $jobTxt = ''

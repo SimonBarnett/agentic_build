@@ -189,6 +189,30 @@ def main() -> int:
         if fx_rate is not None:
             out["usd_gbp_rate"] = fx_rate
 
+        # Cursor Sand weekly reset (preferred) then billing cycle end (ms).
+        period_end = None
+        nrt = sand.get("nextResetTimestampUtc")
+        if nrt:
+            period_end = str(nrt)
+        if not period_end and period:
+            for key in ("billingCycleEnd", "periodEnd", "endDate", "end"):
+                v = period.get(key)
+                if v is None or v == "":
+                    continue
+                try:
+                    # ms epoch
+                    ms = int(float(v))
+                    if ms > 10_000_000_000:
+                        from datetime import datetime, timezone
+                        period_end = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    else:
+                        period_end = str(v)
+                except (TypeError, ValueError):
+                    period_end = str(v)
+                break
+        if period_end:
+            out["period_end"] = period_end
+
         # Sand exhausted (or unknown remaining) with money: keep remaining_pct null for label path
         if remain is not None and remain <= 0:
             out["remaining_pct"] = None

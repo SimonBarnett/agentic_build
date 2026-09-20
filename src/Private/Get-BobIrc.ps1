@@ -143,7 +143,14 @@ function ConvertTo-BobIrcPoint {
     $q = 0
     if ($Doc.running) { $run = [int]$Doc.running }
     if ($Doc.queued) { $q = [int]$Doc.queued }
-    $line = "BOB v1 id=$mid weekly=$w running=$run queued=$q lastSeen=$seen jobs=$jobs"
+    $reset = '-'
+    if ($Doc.period_end) {
+        try {
+            $rd = [datetime]::Parse([string]$Doc.period_end, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            $reset = $rd.ToUniversalTime().ToString('yyyy-MM-dd')
+        } catch { $reset = '-' }
+    }
+    $line = "BOB v1 id=$mid weekly=$w reset=$reset running=$run queued=$q lastSeen=$seen jobs=$jobs"
     if ($line.Length -gt 350) { $line = $line.Substring(0, 349) + '-' }
     return $line
 }
@@ -179,15 +186,20 @@ function ConvertFrom-BobIrcPoint {
     $q = 0
     try { $run = [int]$kv['running'] } catch { }
     try { $q = [int]$kv['queued'] } catch { }
+    $periodEnd = $null
+    if ($kv.ContainsKey('reset') -and [string]$kv['reset'] -ne '-') {
+        $periodEnd = [string]$kv['reset']
+    }
     return [pscustomobject]@{
-        ok       = $true
-        id       = $mid
-        weekly   = $weekly
-        running  = $run
-        queued   = $q
-        lastSeen = $(if ($kv['lastSeen'] -and $kv['lastSeen'] -ne '-') { [string]$kv['lastSeen'] } else { $null })
-        jobs     = $jobs
-        source   = 'irc'
+        ok         = $true
+        id         = $mid
+        weekly     = $weekly
+        period_end = $periodEnd
+        running    = $run
+        queued     = $q
+        lastSeen   = $(if ($kv['lastSeen'] -and $kv['lastSeen'] -ne '-') { [string]$kv['lastSeen'] } else { $null })
+        jobs       = $jobs
+        source     = 'irc'
     }
 }
 
@@ -201,13 +213,14 @@ function Read-BobIrcPeer {
     $jobs = @()
     foreach ($j in @($doc.jobs)) { $jobs += ,$j }
     return [pscustomobject]@{
-        ok       = $true
-        id       = [string]$doc.id
-        lastSeen = $(if ($doc.lastSeen) { [string]$doc.lastSeen } else { $null })
-        hostname = $null
-        jobs     = $jobs
-        weekly   = $doc.weekly
-        source   = 'irc'
+        ok         = $true
+        id         = [string]$doc.id
+        lastSeen   = $(if ($doc.lastSeen) { [string]$doc.lastSeen } else { $null })
+        hostname   = $null
+        jobs       = $jobs
+        weekly     = $doc.weekly
+        period_end = $(if ($doc.period_end) { [string]$doc.period_end } else { $null })
+        source     = 'irc'
     }
 }
 
@@ -239,21 +252,24 @@ function Write-BobIrcStatus {
         $jobs += ,[pscustomobject]@{ repo = $repo; state = 'running' }
     }
     $week = $null
+    $periodEnd = $null
     try {
         $w = Get-BobWeeklyRemaining
         if ($w -and $null -ne $w.remaining_pct) { $week = [int]$w.remaining_pct }
+        if ($w -and $w.period_end) { $periodEnd = [string]$w.period_end }
     }
     catch { }
     $seen = [DateTime]::UtcNow.ToString('o')
     $doc = [pscustomobject]@{
-        ok       = $true
-        id       = $id
-        weekly   = $week
-        running  = @($running).Count + $liveN
-        queued   = @($inbox).Count
-        lastSeen = $seen
-        jobs     = $jobs
-        source   = 'irc'
+        ok         = $true
+        id         = $id
+        weekly     = $week
+        period_end = $periodEnd
+        running    = @($running).Count + $liveN
+        queued     = @($inbox).Count
+        lastSeen   = $seen
+        jobs       = $jobs
+        source     = 'irc'
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
