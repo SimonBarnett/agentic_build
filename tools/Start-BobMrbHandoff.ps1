@@ -14,6 +14,38 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
+
+function Get-BobGhExe {
+    foreach ($c in @(
+            (Join-Path ${env:ProgramFiles} 'GitHub CLI\gh.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'),
+            (Join-Path $env:LOCALAPPDATA 'GitHubCLI\gh.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe')
+        )) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    $cmd = Get-Command gh.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Test-BobGhIssuePosting {
+    $gh = Get-BobGhExe
+    if (-not $gh) {
+        throw 'MRB handoff preflight: gh.exe not found (winget install GitHub.cli). Fix GitHub CLI before spending Cursor/Grok on the review.'
+    }
+    if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) {
+        return $gh
+    }
+    & $gh auth status 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'MRB handoff preflight: gh auth login required on this worker (or set GH_TOKEN / GITHUB_TOKEN with issues:write). Fail here before starting the reasoning model.'
+    }
+    return $gh
+}
+
+$null = Test-BobGhIssuePosting
+
 $issueUrl = $(if ($Issue) { "https://github.com/$Repo/issues/$Issue" } else { "https://github.com/$Repo" })
 $shaLine = $(if ($Sha) { "SHA $Sha. Review that commit only. Do not stage or commit unrelated dirty files in the checkout." } else { 'HEAD of origin/main on the product repo. Do not stage or commit unrelated dirty files in the checkout.' })
 $docsLine = $(if ($Docs) { $Docs } else { 'docs/feature-request-*.md' })

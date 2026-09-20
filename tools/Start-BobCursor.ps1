@@ -13,7 +13,7 @@ param(
     [string]$JobId,
     [string]$Cwd,
     [string]$Model,
-    [ValidateSet('mrb', 'build')][string]$Kind = 'build'
+    [ValidateSet('mrb', 'build')][string]$Kind
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,12 +56,19 @@ if ($Job) {
     if (-not $JobId) { $JobId = [string]$Job.id }
     if (-not $Cwd) { $Cwd = [string]$Job.cwd }
     if (-not $Model -and $Job.model) { $Model = [string]$Job.model }
-    if (-not $Kind -and $Job.kind) { $Kind = [string]$Job.kind }
+}
+
+$kindResolved = 'build'
+if ($PSBoundParameters.ContainsKey('Kind')) {
+    $kindResolved = $Kind
+}
+elseif ($Job -and $Job.kind) {
+    $kindResolved = [string]$Job.kind
 }
 
 if (-not $JobId) { $JobId = [guid]::NewGuid().ToString() }
 if (-not $Branch) { $Branch = ('work/{0}' -f $JobId) }
-if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel cursor-models }
+if (-not $Model) { $Model = Get-BobJobModel -Kind $kindResolved -Fuel cursor-models }
 
 $packet = [ordered]@{
     task   = 'git'
@@ -74,7 +81,7 @@ $packet = [ordered]@{
     mrb    = $Mrb
     cwd    = $Cwd
     goal   = $Goal
-    kind   = $Kind
+    kind   = $kindResolved
     model  = $Model
     note   = 'Commit and push on the work branch. Do not mark ready for human UAT. Bob chairs MRB.'
 }

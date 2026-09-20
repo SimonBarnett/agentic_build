@@ -44,13 +44,13 @@ No vendor name required in the packet.
 
 Eligible = machine up, `jobs == 0`, scratch ok, machine can start that fuel, fuel has included remaining (unless on-demand explicitly allowed).
 
-Try fuels in order:
+Try fuels in order (matches `Get-BobFuelOrder` / `Start-BobBuild -AllowCopilot`):
 
 1. `cursor-models` (shared top-bar pool)
 2. `grok-build` (per-machine weekly bar)
-3. `copilot` (`start-bob-copilot`)
+3. `copilot` — **only** when the enqueue explicitly passes `-AllowCopilot` (`start-bob-copilot`; not default)
 4. `grok-bot` (per-machine Bot week)
-5. `on-demand` (only if a cap is enabled and remaining > 0)
+5. `on-demand` (only if a cap is enabled and remaining > 0, and `-AllowOnDemand` is set)
 
 Within a fuel, pick the healthiest machine (idle, reset furthest, repo already present).
 

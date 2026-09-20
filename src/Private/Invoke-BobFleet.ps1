@@ -202,7 +202,9 @@ function Invoke-BobFleetOnce {
             $cursorScript = Join-Path (Get-ModuleRoot) 'tools\Start-BobCursor.ps1'
             if (Test-Path $cursorScript) {
                 try {
-                    $hand = & $cursorScript -Job $packet
+                    $cursorArgs = @{ Job = $packet }
+                    if ($packet.kind) { $cursorArgs['Kind'] = [string]$packet.kind }
+                    $hand = & $cursorScript @cursorArgs
                     if ($hand -and $hand.packetPath) { $summary = "handed cursor-models $($hand.packetPath)" }
                 }
                 catch {

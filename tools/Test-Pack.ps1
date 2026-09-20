@@ -1111,6 +1111,30 @@ Invoke-Case 'BT0p git-task picker' {
     $env:BOB_CAPACITY_FILE = $null
 }
 
+# --- BT0q kind mrb cursor packet (issue #10 fix 2) ---
+Invoke-Case 'BT0q kind mrb packet' {
+    param($bridgeRoot)
+    $cursor = Join-Path $RepoRoot 'tools\Start-BobCursor.ps1'
+    $jobCwd = Join-Path $bridgeRoot 'mrb-cwd'
+    New-Item -ItemType Directory -Force -Path $jobCwd | Out-Null
+    $job = [pscustomobject]@{
+        id     = [guid]::NewGuid().ToString()
+        repo   = 'https://github.com/SimonBarnett/agentic_build'
+        cwd    = $jobCwd
+        goal   = 'Hostile MRB fixture'
+        kind   = 'mrb'
+        fuel   = 'cursor-models'
+        task   = 'git'
+        branch = 'work/mrb-fixture'
+    }
+    $r = & $cursor -Job $job
+    if (-not $r.packetPath -or -not (Test-Path $r.packetPath)) { throw 'missing cursor handoff packet' }
+    $packet = Get-Content $r.packetPath -Raw | ConvertFrom-Json
+    if ([string]$packet.kind -ne 'mrb') { throw "packet.kind=$($packet.kind)" }
+    if ([string]$packet.model -eq 'composer-2.5') { throw 'kind=mrb must not resolve composer-2.5' }
+    if ([string]$packet.model -ne 'claude-opus-5-thinking-high') { throw "packet.model=$($packet.model)" }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }

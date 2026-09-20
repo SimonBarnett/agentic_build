@@ -16,6 +16,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | grok-build-fleet | Start/monitor/stop jobs; heal Watch-BobJobs; git-task picker |
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
+| cursor-mrb-dev | Cursor MRB then FIX until PASS-nits (`Start-BobMrbHandoff.ps1` / `Start-BobCursor.ps1`) |
 | bob-build-loop | Orchestrator: park, dispatch, hand off MRB, UAT stamp |
 | bob-spec-intake | Park FR as GitHub issue + `/docs` markdown |
 | bob-build-dispatch | Write build-and-test plan + `Start-BobBuild -Task git` |
@@ -32,8 +33,8 @@ When another agent cannot complete a task, they write a **functional specificati
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
 4. `Start-BobBuild -Task git` (picker chooses machine+fuel unless you pin). Prefer `build0.1` on grok-build when listed, else `grok-4.5`.
 5. Worker implements, **commits and pushes**.
-6. Bob **hands off** hostile MRB (`tools/Start-BobMrbHandoff.ps1`) onto the feature-request issue. Worker posts FAIL or PASS-nits, parks missing features as new FRs. No MRB PDF.
-7. Repeat until **Bob** stamps **ready for human UAT**.
+6. On each pushed SHA: Bob **hands off** hostile MRB (`tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
+7. On **FAIL**, dispatch a **build** worker (`Start-BobCursor -Kind build` or grok-build), commit and push, then re-MRB the new SHA. Repeat until **PASS-nits**. Only **Bob** stamps **ready for human UAT**.
 
 ### Feature request (extends existing repo)
 
@@ -41,7 +42,7 @@ When another agent cannot complete a task, they write a **functional specificati
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
 4. `Start-BobBuild -Task git` to implement, commit, and push.
-5. Same handed-off MRB loop until Bob stamps UAT. Git is the source of truth.
+5. Same per-SHA MRB loop as above (new issue per SHA; FAIL → build worker → re-MRB until PASS-nits; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
 
@@ -76,7 +77,7 @@ flowchart TB
   subgraph MRB["Hostile MRB"]
     M1["Bob: Start-BobMrbHandoff.ps1"]
     M2["Cursor Models then Grok Build"]
-    M3["GitHub issue: FAIL or PASS-nits"]
+    M3["New GitHub issue per SHA: FAIL or PASS-nits"]
     M4["Missing features: park new FRs"]
     M5{"Bob UAT stamp?"}
   end

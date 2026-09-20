@@ -28,6 +28,17 @@ Do not use the MRB model for implementation. Catalog mapping: `grok-build-fleet`
 
 `start-bob-cursor`: `cursor-agent status` must be logged in. Never `~\.grok\bin\agent.exe` (that is grok). If Cursor is not logged in, `Start-BobMrbHandoff` falls back to grok-build.
 
+## GitHub posting (preflight)
+
+Before `Start-BobMrbHandoff` starts Cursor or grok-build, the **worker box** must be able to open MRB issues:
+
+1. `gh.exe` on PATH or under `%ProgramFiles%\GitHub CLI\`.
+2. **Either** interactive `gh auth login` as a user with `issues:write` on the product repo, **or** non-interactive `GH_TOKEN` / `GITHUB_TOKEN` (same scopes).
+
+If preflight fails, fix auth on that machine first — do not burn the MRB reasoning model on a review that cannot be posted.
+
+Workers post via `tools/Start-BobMrb.ps1` (creates missing `mrb` / `mrb-pass` / `mrb-fail` labels instead of failing after composing the body).
+
 ## Loop
 
 1. Tip = named SHA or `origin/main`. Unrelated dirty files in the checkout are out of scope (do not stage them).
