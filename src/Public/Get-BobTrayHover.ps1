@@ -600,17 +600,17 @@ function Get-BobTrayHover {
         $age = Get-BobLastSeenAgeSec -Record ([pscustomobject]@{ lastSeen = $peek.lastSeen })
         $empty = (@($byMachine[$mid]).Count -eq 0)
         $fromIrc = ([string]$peek.source -eq 'irc')
-        if ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
+        # Seats in the moot (or already sourced from IRC) stay irc-fallback
+        # even when bob-peers JSON lastSeen ages past staleAfterSec. Age
+        # first used to flip them to stale / not-in-moot.
+        if ($inMoot -or $fromIrc) {
+            $reachBy[$mid] = 'irc-fallback'
+        }
+        elseif ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
             $reachBy[$mid] = 'stale'
         }
         elseif (-not $empty -and $null -ne $age -and $age -gt $staleAfter) {
             $reachBy[$mid] = 'stale'
-        }
-        elseif ($fromIrc) {
-            $reachBy[$mid] = 'irc-fallback'
-        }
-        elseif ($inMoot) {
-            $reachBy[$mid] = 'irc-fallback'
         }
         else {
             $reachBy[$mid] = 'ok'
@@ -632,6 +632,14 @@ function Get-BobTrayHover {
     $tiles = @()
     $jobLines = @()
     foreach ($mid in $order) {
+        $resolvedMid = $null
+        try { $resolvedMid = Resolve-BobiverseMachineId $mid } catch { $resolvedMid = $mid }
+        if ($seatIds.Count -gt 0) {
+            if (-not $resolvedMid) {
+                if ($mid -ne $machineId) { continue }
+            }
+            else { $mid = [string]$resolvedMid }
+        }
         $rows = @($byMachine[$mid])
         if ($rows.Count -gt 1) {
             $rows = @(

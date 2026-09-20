@@ -624,6 +624,11 @@ function Rebuild-BobTrayTiles {
     foreach ($m in @($Machines)) {
         if (-not $m) { continue }
         $id = [string]$m.id
+        $resolved = $null
+        try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
+        # Ghost IRC ids (marchhare-bugets) fail resolve when nicks are loaded.
+        if (-not $resolved) { continue }
+        $id = [string]$resolved
         $pct = $m.remaining_pct
         $pctLabel = 'n/a'
         if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }

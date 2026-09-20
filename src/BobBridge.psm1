@@ -41,5 +41,7 @@ Export-ModuleMember -Function @(
     'ConvertFrom-BobIrcPoint',
     'Read-BobIrcPeer',
     'Write-BobIrcStatus',
-    'Import-BobIrcPeerTranscript'
+    'Import-BobIrcPeerTranscript',
+    'Resolve-BobiverseMachineId',
+    'Get-BobiverseMachineIds'
 )

@@ -944,6 +944,28 @@ Invoke-Case 'BT0o bobiverse irc' {
     $ionosSeat = @($hSeats.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
     if ([string]$ionosSeat.reach -ne 'irc-fallback') { throw "ionos seat reach=$($ionosSeat.reach) expected irc-fallback" }
     if ([string]$hSeats.jobs_text -match 'marchhare-bugets') { throw "jobs_text has ghost: $($hSeats.jobs_text)" }
+    if (Resolve-BobiverseMachineId 'marchhare-bugets') { throw 'Resolve-BobiverseMachineId must reject marchhare-bugets' }
+    if ((Resolve-BobiverseMachineId 'bob-flamingo') -ne 'flamingo') { throw 'Resolve-BobiverseMachineId must map nick to flamingo' }
+
+    $aged = [datetime]::UtcNow.AddHours(-6).ToString('o')
+    $flPeer = @{
+        ok       = $true
+        id       = 'flamingo'
+        weekly   = 20
+        running  = 0
+        queued   = 0
+        lastSeen = $aged
+        jobs     = @()
+        source   = 'irc'
+    } | ConvertTo-Json -Depth 6
+    [IO.File]::WriteAllText((Join-Path $peerDir 'flamingo.json'), $flPeer)
+    $hAged = Get-BobTrayHover
+    $flTile = @($hAged.machines | Where-Object { [string]$_.id -eq 'flamingo' })[0]
+    if ([string]$flTile.reach -ne 'irc-fallback') { throw "aged IRC flamingo reach=$($flTile.reach) expected irc-fallback (not stale/not-in-moot)" }
+    $flBlock = [regex]::Match([string]$hAged.jobs_text, '(?ms)^[ ]{0,2}flamingo \([^)]+\)\r?\n[ ]+.*')
+    if ($flBlock.Success -and $flBlock.Value -match 'not in moot|lastSeen stale') {
+        throw "aged IRC flamingo must not paint not-in-moot/stale: $($flBlock.Value)"
+    }
 
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
@@ -965,6 +987,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
+    if ($traySrc -notmatch 'Resolve-BobiverseMachineId') { throw 'Watch-BobTray must drop tiles that fail Resolve-BobiverseMachineId' }
 }
 
 Write-Host ''
