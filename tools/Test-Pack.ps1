@@ -1528,6 +1528,20 @@ Invoke-Case 'BT0x1 fuel model enqueue refuse' {
     }
 }
 
+Invoke-Case 'BT0x1b fuel model enqueue refuse cursor fuel' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $bad = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Fuel 'cursor-models' -Model 'build0.1'
+    if ($bad.ok) { throw 'cursor-models + grok build model must not enqueue' }
+    if ([string]$bad.error -ne 'fuel_model_mismatch') { throw "error=$($bad.error)" }
+    $inbox = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    if (Test-Path $inbox) {
+        $left = @(Get-ChildItem $inbox -Filter '*.json' -ErrorAction SilentlyContinue).Count
+        if ($left -gt 0) { throw "inbox still has $left packet(s) after refuse" }
+    }
+}
+
 Invoke-Case 'BT0x2 fuel model tick refuse' {
     param($bridgeRoot)
     $cwd = Join-Path $bridgeRoot 'cwd'
