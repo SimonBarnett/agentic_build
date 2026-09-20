@@ -121,6 +121,26 @@ function Get-LoopWorld {
         }
         catch { }
     }
+    if (-not $job) {
+        if ($State.startError -or $State.currentJobId -or $State.currentPid) {
+            $started = $null
+            if ($State.startError) { $started = $false }
+            $job = [pscustomobject]@{
+                id               = $(if ($State.currentJobId) { [string]$State.currentJobId } else { $null })
+                lane             = $null
+                state            = $null
+                completionStatus = $null
+                fuel             = [string]$State.fuel
+                pid              = $State.currentPid
+                startError       = $(if ($State.startError) { [string]$State.startError } else { $null })
+                started          = $started
+            }
+        }
+    }
+    elseif ($State.startError) {
+        $job | Add-Member -NotePropertyName startError -NotePropertyValue ([string]$State.startError) -Force
+        $job | Add-Member -NotePropertyName started -NotePropertyValue $false -Force
+    }
     $alive = $null
     if ($State.currentPid) { $alive = Test-BobBuildLoopPidAlive -ProcessId $State.currentPid }
     return [pscustomobject]@{
@@ -337,8 +357,12 @@ while ($true) {
             }
             else {
                 $g = New-BobBuildGoal -State $state
-                if ($state.lastMrb) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes (Get-BobMrbRequiredFixes '') }
-                $fix = [bool]$state.lastMrb
+                $fix = $false
+                if ($state.lastMrb) {
+                    $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World $world
+                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
+                    $fix = $true
+                }
                 $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix:$fix
                 $state = Apply-StartResult -State $state -Decision $decision -Started $started -WaitPhase 'wait_pr'
             }
