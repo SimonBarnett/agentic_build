@@ -106,7 +106,15 @@ else {
     $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
 }
 if ($sel.wait) {
-    throw "MRB handoff preflight: no eligible $enqueueFuel worker ($($sel.reason)). Fix capacity before spending Grok on the review."
+    $why = "no eligible $enqueueFuel worker ($($sel.reason))"
+    return [pscustomobject]@{
+        ok         = $false
+        started    = $false
+        startError = $why
+        jobId      = $null
+        pid        = $null
+        handed     = $enqueueFuel
+    }
 }
 Assert-BobMrbWorkerCanPost -WorkerMachine ([string]$sel.machine)
 
@@ -115,7 +123,14 @@ $mrbModel = Get-BobJobModel -Kind mrb -Fuel $enqueueFuel
 $q = Start-BobBuild -Task git -Fuel $enqueueFuel -Kind mrb -Model $mrbModel -Machine $sel.machine -PinGitWorker -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Docs $Docs -Plan $Plan -Mrb $issueUrl -AllowCopilot:$AllowCopilot
 if (-not $q.ok -or $q.wait) {
     $why = $(if ($q.reason) { [string]$q.reason } else { 'enqueue refused' })
-    throw "MRB handoff enqueue failed ($why)."
+    return [pscustomobject]@{
+        ok         = $false
+        started    = $false
+        startError = $why
+        jobId      = $null
+        pid        = $null
+        handed     = $enqueueFuel
+    }
 }
 $q | Add-Member -NotePropertyName handed -NotePropertyValue $enqueueFuel -Force
 return $q

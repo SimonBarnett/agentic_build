@@ -292,8 +292,13 @@ function Test-BobBuildLoopNoArtifact {
     }
 
     $fuel = [string]$State.fuel
-    if ($fuel -eq 'cursor-models') {
+    if ($fuel -eq 'cursor-models' -and -not $hasPid) {
         if (-not $job) { return $true }
+        $cs = [string]$job.completionStatus
+        if ($cs -and $cs -ne 'ok') { return $true }
+        $st = [string]$job.state
+        if ($st -in @('failed', 'blocked', 'stopped')) { return $true }
+        if ($st -eq 'done' -and $cs -and $cs -ne 'ok') { return $true }
         return $false
     }
 
