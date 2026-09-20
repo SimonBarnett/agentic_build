@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $issueUrl = $(if ($Issue) { "https://github.com/$Repo/issues/$Issue" } else { "https://github.com/$Repo" })
-$shaLine = $(if ($Sha) { "SHA $Sha." } else { 'HEAD of origin/main on the product repo.' })
+$shaLine = $(if ($Sha) { "SHA $Sha. Review that commit only. Do not stage or commit unrelated dirty files in the checkout." } else { 'HEAD of origin/main on the product repo. Do not stage or commit unrelated dirty files in the checkout.' })
 $docsLine = $(if ($Docs) { $Docs } else { 'docs/feature-request-*.md' })
 $planLine = $(if ($Plan) { $Plan } else { 'docs/build-and-test-plan*.md' })
 
