@@ -22,6 +22,8 @@ param(
 $ErrorActionPreference = 'Continue'
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+$stallThresholdSec = $StallSec
+$heartbeatStaleThresholdSec = $HeartbeatStaleSec
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
 if (-not (Test-Path $psd1)) { throw "missing $psd1" }
 
@@ -579,7 +581,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
+            Update-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -705,7 +707,7 @@ function Add-BobTrayUsageRow {
     return ($barY + 14)
 }
 
-function Rebuild-BobTrayTiles {
+function Update-BobTrayTiles {
     param($Machines, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
     if (-not $script:tileHost) { return }
 
@@ -986,7 +988,8 @@ $ctx = New-Object System.Windows.Forms.ApplicationContext
 $miRestart.Add_Click({ Restart-BobTrayWatcher })
 $miExit.Add_Click({ $ctx.ExitThread() })
 $notify.Add_MouseClick({
-        param($s, $e)
+        param([object]$sender, $e)
+        [void]$sender
         if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
             if ($script:attention) { Clear-Attention }
             Show-BobTrayCard -Reason 'click'
@@ -1006,7 +1009,7 @@ $poll.Interval = [Math]::Max(5000, $PollSec * 1000)
 $poll.Add_Tick({
         try {
             Start-JobsWatcher
-            $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $StallSec -HeartbeatStaleSec $HeartbeatStaleSec)
+            $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $stallThresholdSec -HeartbeatStaleSec $heartbeatStaleThresholdSec)
             if ($alerts.Count -gt 0) { Set-Attention $alerts }
             Update-Hover
         }

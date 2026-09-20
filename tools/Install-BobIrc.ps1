@@ -56,7 +56,7 @@ $env:BOB_IRC_NICK = $nick
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
 if (Test-Path $psd1) {
     Import-Module $psd1 -Force
-    Compact-BobIrcOutbox -Home $ircHome
+    Optimize-BobIrcOutbox -Home $ircHome
 }
 
 $ident = Join-Path $ircHome 'identity.json'

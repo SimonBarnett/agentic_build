@@ -49,7 +49,7 @@
         'Read-BobIrcPeer',
         'Write-BobIrcStatus',
         'Import-BobIrcPeerTranscript',
-        'Compact-BobIrcOutbox'
+        'Optimize-BobIrcOutbox'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

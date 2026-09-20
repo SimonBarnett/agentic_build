@@ -155,6 +155,7 @@ function Write-BobTurnResult {
         completion  = $completion
         transport   = $Kind
         agent       = $Agent
+        promptChars = $(if ($Prompt) { $Prompt.Length } else { 0 })
         agentId     = $AgentId
     }
     Write-JsonFile (Join-Path $dir 'last_result.json') $last

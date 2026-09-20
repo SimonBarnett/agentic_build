@@ -23,6 +23,9 @@ function Invoke-Capture {
     }
     try {
         $p = Start-Process -FilePath $exe -ArgumentList $GrokArgs -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:TEMP\bob-recon-out.txt" -RedirectStandardError "$env:TEMP\bob-recon-err.txt"
+        if ($TimeoutSec -gt 0 -and $p -and -not $p.HasExited) {
+            $null = $p.WaitForExit([Math]::Min($TimeoutSec * 1000, [int]::MaxValue))
+        }
         $stdout = Get-Content "$env:TEMP\bob-recon-out.txt" -Raw -ErrorAction SilentlyContinue
         $stderr = Get-Content "$env:TEMP\bob-recon-err.txt" -Raw -ErrorAction SilentlyContinue
         return "exit=$($p.ExitCode)`n$stdout`n$stderr"

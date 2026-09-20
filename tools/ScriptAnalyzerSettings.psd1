@@ -1,7 +1,11 @@
 @{
     IncludeDefaultRules = $false
-    Rules               = @(
-        'PSUseApprovedVerbs'
-        'PSReviewUnusedParameter'
-    )
+    Rules               = @{
+        PSUseApprovedVerbs      = @{
+            Enable = $true
+        }
+        PSReviewUnusedParameter = @{
+            Enable = $true
+        }
+    }
 }

@@ -350,6 +350,7 @@ function Select-BobGitWorker {
         [switch]$AllowCopilot,
         [string]$Repo
     )
+    $preferRepo = [string]$Repo
     if (-not $Capacity) {
         $Capacity = Get-BobCapacity
     }
@@ -416,7 +417,7 @@ function Select-BobGitWorker {
                         return [datetime]::MinValue
                     }; Descending = $true }
                 @{ Expression = {
-                        if ($Repo -and $_.hasRepo -eq $true) { 0 } else { 1 }
+                        if ($preferRepo -and $_.hasRepo -eq $true) { 0 } else { 1 }
                     } }
                 @{ Expression = {
                         $p = $null

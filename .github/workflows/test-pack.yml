@@ -19,9 +19,8 @@ jobs:
       - name: Install PSScriptAnalyzer
         shell: pwsh
         run: |
-          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -MinimumVersion 1.21.0
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -MinimumVersion 1.21.0 -AllowClobber -Repository PSGallery
 
       - name: Run Test-Pack (offline gate)
         shell: pwsh

@@ -66,7 +66,7 @@ function Get-SessionUsage([string]$SessionId) {
     }
 }
 
-function Try-ImportBobBridge {
+function Import-BobBridgeFromSearchPath {
     foreach ($root in @('C:\ai\agentic_build', 'D:\ai\agentic_build', 'C:\src\agentic_build')) {
         $psd = Join-Path $root 'src\BobBridge.psd1'
         if (Test-Path $psd) {
@@ -81,7 +81,7 @@ $now = Get-Date
 $sub = Get-SubscriptionDisplay
 $procs = @(Get-Process grok -ErrorAction SilentlyContinue | Select-Object Id, StartTime, CPU, @{n='WS_MB';e={[math]::Round($_.WorkingSet64/1MB,1)}})
 
-$bobRoot = Try-ImportBobBridge
+$bobRoot = Import-BobBridgeFromSearchPath
 $health = $null
 $builds = @()
 $week = $null

@@ -376,7 +376,7 @@ function Test-BobIrcOutboxDuplicatePoint {
     return ((Get-BobIrcPointDedupeKey $last) -eq (Get-BobIrcPointDedupeKey $Line))
 }
 
-function Compact-BobIrcOutbox {
+function Optimize-BobIrcOutbox {
     param(
         [string]$Home,
         [int]$ThresholdBytes = 32768

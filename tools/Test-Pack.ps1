@@ -61,6 +61,38 @@ function Get-CommandAstSimpleName {
     return $ce.Extent.Text
 }
 
+function Get-BobBridgeExportsFromHead {
+    $raw = Get-RepoSourceRaw 'src\BobBridge.psd1'
+    $tmp = [IO.Path]::GetTempFileName() + '.psd1'
+    try {
+        [IO.File]::WriteAllText($tmp, $raw)
+        $data = Import-PowerShellDataFile -LiteralPath $tmp
+        return @($data.FunctionsToExport | ForEach-Object { [string]$_ })
+    }
+    finally {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-BobModuleFunctionNamesFromHead {
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    Push-Location $RepoRoot
+    try {
+        $srcFiles = @(git ls-tree -r HEAD --name-only src 2>$null | Where-Object { $_ -match '\.ps1$' })
+    }
+    finally {
+        Pop-Location
+    }
+    foreach ($relGit in $srcFiles) {
+        $rel = $relGit -replace '/', '\'
+        $raw = Get-RepoSourceRaw $rel
+        foreach ($m in [regex]::Matches($raw, '(?m)^\s*function\s+([A-Za-z][\w-]*)\s*\{')) {
+            [void]$names.Add($m.Groups[1].Value)
+        }
+    }
+    return $names
+}
+
 function New-TestRoot {
     $d = Join-Path $env:TEMP ('bob-bridge-test-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $d | Out-Null
@@ -680,7 +712,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'jobs_text') { throw 'Watch-BobTray card must render jobs_text machine tiles' }
     if ($traySrc -notmatch 'Weekly remaining') { throw 'Watch-BobTray must label Weekly remaining' }
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
-    if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
+    if ($traySrc -notmatch 'Update-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -match 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must not draw a cursor icon on the account bar' }
     if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
     if ($traySrc -notmatch 'HideTooltipWindows') { throw 'must pop shell tooltips_class32 so native tip does not stack on the card' }
@@ -1037,9 +1069,9 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -notmatch '127\.0\.0\.1') { throw 'Watch-Bobiverse must treat 127.0.0.1 as private Ergo' }
     if ($watchBv -notmatch 'Test-BobiverseIrcPrivateErgoHost') { throw 'Watch-Bobiverse must share private-Ergo host match' }
     if ($watchBv -match '(?m)^\s*\$ircHost\s*=\s*[''"]127\.0\.0\.1[''"]') { throw 'must not default ionos to 127.0.0.1' }
-    if ($watchBv -notmatch 'Compact-BobIrcOutbox') { throw 'Start-BobiverseIrcAgent must compact a fat POINT outbox' }
+    if ($watchBv -notmatch 'Optimize-BobIrcOutbox') { throw 'Start-BobiverseIrcAgent must compact a fat POINT outbox' }
     $installIrc2 = Get-RepoSourceRaw 'tools\Install-BobIrc.ps1'
-    if ($installIrc2 -notmatch 'Compact-BobIrcOutbox') { throw 'Install-BobIrc must compact a fat POINT outbox' }
+    if ($installIrc2 -notmatch 'Optimize-BobIrcOutbox') { throw 'Install-BobIrc must compact a fat POINT outbox' }
     $docsBv = Get-RepoSourceRaw 'docs\bobiverse.md'
     if ($docsBv -notmatch 'Outbox POINT backlog') { throw 'docs/bobiverse.md must note POINT backlog disconnect loop' }
 
@@ -1065,7 +1097,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     [void]$fat.Add('PRIVMSG #bobiverse :keep-me')
     while (([Text.Encoding]::UTF8.GetByteCount(($fat -join "`n"))) -lt 33000) { [void]$fat.Add($sample) }
     [IO.File]::WriteAllLines($fatOut, $fat)
-    Compact-BobIrcOutbox -Home $fatHome
+    Optimize-BobIrcOutbox -Home $fatHome
     $after = @(Get-Content $fatOut | Where-Object { $_ })
     if ($after.Count -ne 2) { throw "compact kept $($after.Count) lines (want PRIVMSG + latest POINT)" }
     if ($after[0] -notmatch 'keep-me') { throw 'compact dropped non-POINT line' }
@@ -1574,42 +1606,31 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
 
 # --- BT0p tools BobBridge public surface (issue #15) ---
 Invoke-Case 'BT0p tools bobbridge surface' {
-    $psd1Path = Join-Path $RepoRoot 'src\BobBridge.psd1'
-    $psd1 = Import-PowerShellDataFile -LiteralPath $psd1Path
-    $exported = @($psd1.FunctionsToExport | ForEach-Object { [string]$_ })
-    $moduleFuncs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $exported = @(Get-BobBridgeExportsFromHead)
+    $exportedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($n in $exported) { [void]$exportedSet.Add($n) }
+    $moduleFuncs = Get-BobModuleFunctionNamesFromHead
+    $bad = @()
     Push-Location $RepoRoot
     try {
-        $srcFiles = @(git ls-tree -r HEAD --name-only src 2>$null | Where-Object { $_ -match '\.ps1$' })
+        $toolFiles = @(git ls-tree -r HEAD --name-only tools 2>$null | Where-Object { $_ -match '\.ps1$' })
     }
     finally {
         Pop-Location
     }
-    foreach ($relGit in $srcFiles) {
+    foreach ($relGit in $toolFiles) {
+        $leaf = [IO.Path]::GetFileName($relGit)
+        if ($leaf -in @('Test-Pack.ps1', 'Fake-Grok.ps1', 'Fake-Gh.ps1')) { continue }
         $rel = $relGit -replace '/', '\'
         $raw = Get-RepoSourceRaw $rel
         $tokens = $null
         $errors = $null
         $ast = [System.Management.Automation.Language.Parser]::ParseInput($raw, [ref]$tokens, [ref]$errors)
         if ($errors -and $errors.Count -gt 0) { throw "parse ${relGit}: $($errors[0].Message)" }
-        foreach ($fd in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
-            [void]$moduleFuncs.Add([string]$fd.Name)
-        }
-    }
-    $bad = @()
-    Get-ChildItem (Join-Path $RepoRoot 'tools') -Filter *.ps1 | Where-Object {
-            $_.Name -notin @('Test-Pack.ps1', 'Fake-Grok.ps1', 'Fake-Gh.ps1')
-        } | ForEach-Object {
-        $rel = $_.FullName.Substring($RepoRoot.Length).TrimStart('\')
-        $raw = Get-RepoSourceRaw $rel
-        $tokens = $null
-        $errors = $null
-        $ast = [System.Management.Automation.Language.Parser]::ParseInput($raw, [ref]$tokens, [ref]$errors)
-        if ($errors -and $errors.Count -gt 0) { throw "parse ${rel}: $($errors[0].Message)" }
         foreach ($cmdAst in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
             $name = Get-CommandAstSimpleName -CommandAst $cmdAst
             if (-not $name) { continue }
-            if ($moduleFuncs.Contains($name) -and ($exported -notcontains $name)) {
+            if ($moduleFuncs.Contains($name) -and -not $exportedSet.Contains($name)) {
                 $bad += "${rel}:$($cmdAst.Extent.StartLineNumber) calls non-exported BobBridge function $name"
             }
         }
@@ -1623,25 +1644,19 @@ Invoke-Case 'BT0q psscriptanalyzer gate lint' {
         throw 'PSScriptAnalyzer module required (Install-Module PSScriptAnalyzer -Scope CurrentUser)'
     }
     Import-Module PSScriptAnalyzer -ErrorAction Stop
+    $includeRules = @('PSUseApprovedVerbs', 'PSReviewUnusedParameter')
+    $severity = @('Error', 'Warning')
     $lintHits = @()
-    foreach ($root in @((Join-Path $RepoRoot 'src\Public'), (Join-Path $RepoRoot 'src\Private'))) {
-        Get-ChildItem $root -Recurse -Include *.ps1 -File | ForEach-Object {
-            $diag = @(Invoke-ScriptAnalyzer -Path $_.FullName -IncludeRule @('PSUseApprovedVerbs') -Severity @('Error'))
-            foreach ($d in $diag) {
-                $lintHits += "$($d.ScriptName):$($d.Line) $($d.RuleName) $($d.Message)"
-            }
+    Get-ChildItem (Join-Path $RepoRoot 'src') -Recurse -Include *.ps1 -File | ForEach-Object {
+        $diag = @(Invoke-ScriptAnalyzer -Path $_.FullName -IncludeRule $includeRules -Severity $severity)
+        foreach ($d in $diag) {
+            $lintHits += "$($d.ScriptName):$($d.Line) $($d.RuleName) $($d.Message)"
         }
     }
-    foreach ($rel in @(
-            'tools\Start-BobMrbHandoff.ps1',
-            'tools\Start-BobMrb.ps1',
-            'tools\Start-BobCursor.ps1',
-            'tools\Start-BobCopilot.ps1',
-            'tools\Bob-Gh.ps1',
-            'tools\Watch-BobJobs.ps1'
-        )) {
-        $path = Join-Path $RepoRoot $rel
-        $diag = @(Invoke-ScriptAnalyzer -Path $path -IncludeRule @('PSReviewUnusedParameter') -Severity @('Error', 'Warning'))
+    Get-ChildItem (Join-Path $RepoRoot 'tools') -Filter *.ps1 -File | Where-Object {
+            $_.Name -notin @('Test-Pack.ps1', 'Fake-Grok.ps1', 'Fake-Gh.ps1')
+        } | ForEach-Object {
+        $diag = @(Invoke-ScriptAnalyzer -Path $_.FullName -IncludeRule $includeRules -Severity $severity)
         foreach ($d in $diag) {
             $lintHits += "$($d.ScriptName):$($d.Line) $($d.RuleName) $($d.Message)"
         }

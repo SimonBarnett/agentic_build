@@ -95,5 +95,6 @@ function Get-GrokResultText {
         if ($Parsed.PSObject.Properties.Name -contains 'result' -and $Parsed.result) { return [string]$Parsed.result }
         if ($Parsed.PSObject.Properties.Name -contains 'text' -and $Parsed.text) { return [string]$Parsed.text }
     }
+    if ($Stdout) { return $Stdout }
     return $null
 }

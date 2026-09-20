@@ -73,7 +73,7 @@ function Test-BobiverseIrcAgentUp {
 }
 
 function Start-BobiverseIrcAgent {
-    try { Compact-BobIrcOutbox } catch { }
+    try { Optimize-BobIrcOutbox } catch { }
     if (Test-BobiverseIrcAgentUp) { return }
     $py = Get-BobiversePython
     if (-not $py) {
