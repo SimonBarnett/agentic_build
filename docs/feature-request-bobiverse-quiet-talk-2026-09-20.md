@@ -11,8 +11,7 @@
 **Related:** [agentic_build#14](https://github.com/SimonBarnett/agentic_build/pull/14) (POINT dedupe; not this UX)
 
 Intake issue: https://github.com/SimonBarnett/agentic_build/issues/36
-Open a matching `feature-request` on **agentic_irc** when a token can write
-that repo.
+Protocol issue: https://github.com/SimonBarnett/agentic_irc/issues/6
 Do not invent a new IRC verb family. Git-task verbs stay
 `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`.
 
