@@ -36,18 +36,26 @@ function Get-BobiversePython {
     return $null
 }
 
+function Test-BobiverseIrcPrivateErgoHost {
+    param([string]$CommandLine)
+    if (-not $CommandLine) { return $false }
+    # irc.ntsa.uk is the cert/SNI name. 127.0.0.1 is the same private Ergo
+    # (loopback). Do not treat loopback as stale/Libera.
+    return ($CommandLine -match 'irc\.ntsa\.uk' -or $CommandLine -match '127\.0\.0\.1')
+}
+
 function Stop-StaleBobiverseIrcAgent {
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
             $_.CommandLine -match 'bobiverse' -and
-            $_.CommandLine -notmatch 'irc\.ntsa\.uk'
+            -not (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     foreach ($p in $hits) {
         try {
             Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
-            Write-BobiverseLog "killed stale irc_agent pid=$($p.ProcessId) (not irc.ntsa.uk)"
+            Write-BobiverseLog "killed stale irc_agent pid=$($p.ProcessId) (not irc.ntsa.uk/127.0.0.1)"
         }
         catch { }
     }
@@ -59,12 +67,13 @@ function Test-BobiverseIrcAgentUp {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
             $_.CommandLine -match 'bobiverse' -and
-            $_.CommandLine -match 'irc\.ntsa\.uk'
+            (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     return ($hits.Count -gt 0)
 }
 
 function Start-BobiverseIrcAgent {
+    try { Compact-BobIrcOutbox } catch { }
     if (Test-BobiverseIrcAgentUp) { return }
     $py = Get-BobiversePython
     if (-not $py) {
@@ -95,6 +104,9 @@ function Start-BobiverseIrcAgent {
     $ircHost = [string]$cfg.host
     $ircPort = 6697
     if ($cfg.port) { $ircPort = [int]$cfg.port }
+    if ($env:BOB_IRC_HOST -and $env:BOB_IRC_HOST.Trim()) {
+        $ircHost = $env:BOB_IRC_HOST.Trim()
+    }
     if (-not $ircHost -or $ircHost -eq 'irc.libera.chat') {
         Write-BobiverseLog 'skip irc_agent: no private host (libera disabled)'
         return

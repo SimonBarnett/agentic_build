@@ -43,4 +43,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\In
 
 `Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden 30s loop: POINT local status, scrape peer POINT lines into `bob-peers\`, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files. `Watch-BobTray` starts the loop the same way it starts `Watch-BobJobs`.
 
-Do not open IRC from CI. Ergo `PASS` is `~\.grok\ergo\connect.password` (env `AGENTIC_IRC_PASSWORD`); do not commit it. SASL env only if a box still needs it (`AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD`).
+Do not open IRC from CI. Ergo `PASS` is `~\.grok\ergo\connect.password` (env `AGENTIC_IRC_PASSWORD`); do not commit it. SASL env only if a box still needs it (`AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD`). Prefer `host=irc.ntsa.uk` (cert/SNI). Do not default ionos to `127.0.0.1` unless the agent sets `server_hostname=irc.ntsa.uk` while connecting to loopback. `$env:BOB_IRC_HOST` overrides `--host` when set. `127.0.0.1` is a valid private Ergo host (same daemon); do not kill loopback `irc_agent` as stale/Libera.
+
+## Outbox POINT backlog (Ergo disconnect loop)
+
+`Write-BobIrcStatus` appends a POINT every Watch tick (~30s). A huge `~\.agentic-irc-bobiverse\outbox.txt` of pending `MOOT v1 POINT … BOB v1` lines (`lastSeen=` is the only change) makes `irc_agent.py` drain at FLOOD_S=0.8s; Ergo flood/burst limits drop the client; the agent reconnects; the backlog grows. Dedupe skips an append when the last outbox line matches the new POINT after stripping `lastSeen=`. Start/Install also compact a POINT-only backlog over 32KB down to the latest self POINT.
+
+Verify on the box: outbox stays small across several Watch ticks; one `irc_agent` process; no rapid `001`/`JOIN` spam in `irc.log`.

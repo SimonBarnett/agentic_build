@@ -966,6 +966,43 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must POINT via Write-BobIrcStatus' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse must poll peer POINT lines' }
+    if ($watchBv -notmatch 'BOB_IRC_HOST') { throw 'Watch-Bobiverse must honor BOB_IRC_HOST' }
+    if ($watchBv -notmatch '127\.0\.0\.1') { throw 'Watch-Bobiverse must treat 127.0.0.1 as private Ergo' }
+    if ($watchBv -notmatch 'Test-BobiverseIrcPrivateErgoHost') { throw 'Watch-Bobiverse must share private-Ergo host match' }
+    if ($watchBv -match '(?m)^\s*\$ircHost\s*=\s*[''"]127\.0\.0\.1[''"]') { throw 'must not default ionos to 127.0.0.1' }
+    if ($watchBv -notmatch 'Compact-BobIrcOutbox') { throw 'Start-BobiverseIrcAgent must compact a fat POINT outbox' }
+    $installIrc2 = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    if ($installIrc2 -notmatch 'Compact-BobIrcOutbox') { throw 'Install-BobIrc must compact a fat POINT outbox' }
+    $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($docsBv -notmatch 'Outbox POINT backlog') { throw 'docs/bobiverse.md must note POINT backlog disconnect loop' }
+
+    $env:BOB_MACHINE_ID = 'testhost'
+    $ob = Join-Path $ircHome 'outbox.txt'
+    if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
+    Write-BobIrcStatus | Out-Null
+    Write-BobIrcStatus | Out-Null
+    if (-not (Test-Path $ob)) { throw 'Write-BobIrcStatus did not create outbox' }
+    $obLines = @(Get-Content $ob | Where-Object { $_ })
+    if ($obLines.Count -ne 1) { throw "dedupe failed: outbox lines=$($obLines.Count)" }
+    if ($obLines[0] -notmatch 'MOOT v1 POINT' -or $obLines[0] -notmatch 'BOB v1 ') { throw "outbox line=$($obLines[0])" }
+    Add-Content -Path $ob -Value 'MOOT v1 POINT b0b1be15e0000001 :BOB v1 id=testhost weekly=99 reset=- cur=- crst=- running=0 queued=0 lastSeen=2026-09-20T00:00:00Z jobs=-' -Encoding utf8
+    Write-BobIrcStatus | Out-Null
+    $obLines2 = @(Get-Content $ob | Where-Object { $_ })
+    if ($obLines2.Count -ne 3) { throw "status change must append: outbox lines=$($obLines2.Count)" }
+
+    $fatHome = Join-Path $bridgeRoot 'irc-fat'
+    New-Item -ItemType Directory -Force -Path $fatHome | Out-Null
+    $fatOut = Join-Path $fatHome 'outbox.txt'
+    $sample = 'MOOT v1 POINT b0b1be15e0000001 :BOB v1 id=testhost weekly=1 reset=- cur=- crst=- running=0 queued=0 lastSeen=2026-09-20T00:00:00Z jobs=-'
+    $fat = New-Object System.Collections.Generic.List[string]
+    [void]$fat.Add('PRIVMSG #bobiverse :keep-me')
+    while (([Text.Encoding]::UTF8.GetByteCount(($fat -join "`n"))) -lt 33000) { [void]$fat.Add($sample) }
+    [IO.File]::WriteAllLines($fatOut, $fat)
+    Compact-BobIrcOutbox -Home $fatHome
+    $after = @(Get-Content $fatOut | Where-Object { $_ })
+    if ($after.Count -ne 2) { throw "compact kept $($after.Count) lines (want PRIVMSG + latest POINT)" }
+    if ($after[0] -notmatch 'keep-me') { throw 'compact dropped non-POINT line' }
+    if ($after[1] -notmatch 'id=testhost') { throw 'compact lost self POINT' }
     $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
     if ($tickSrc -match 'Write-BobIrcStatus') { throw 'fleet tick must not POINT; that is Watch-Bobiverse automation' }
 
