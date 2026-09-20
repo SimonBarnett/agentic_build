@@ -318,6 +318,11 @@ Invoke-Case 'BT0l tray hover' {
     if ($zero.show_fill) { throw '0% must not draw a fill' }
     if ($zero.fill_width -ne 0) { throw "0% fill_width=$($zero.fill_width)" }
     if (-not $zero.pulse) { throw '0% weekly remaining must pulse' }
+    if ([int]$zero.fill_r -le [int]$zero.fill_g) { throw "0% bar must be redder than green r=$($zero.fill_r) g=$($zero.fill_g)" }
+
+    $full = Get-BobTrayBarPaint -RemainingPct 100 -BarWidth 392
+    if ([int]$full.fill_g -le [int]$full.fill_r) { throw "100% bar must be greener than red r=$($full.fill_r) g=$($full.fill_g)" }
+    if ($full.fill_width -le 0) { throw '100% must fill' }
 
     $mid = Get-BobTrayBarPaint -RemainingPct 50 -BarWidth 392
     if ($mid.fill_width -le 0) { throw "50% fill_width=$($mid.fill_width)" }
@@ -589,6 +594,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Weekly remaining') { throw 'Watch-BobTray must label Weekly remaining' }
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
+    if ($traySrc -notmatch 'Transparent') { throw 'machine-name label BackColor must be Transparent so it does not cover the bar' }
+    if ($traySrc -notmatch 'fill_r') { throw 'Watch-BobTray must use gradient fill_r/fill_g/fill_b' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray must paint weekly bars via Get-BobTrayBarPaint' }
 

@@ -172,6 +172,29 @@ function Test-BobTrayRemainingKnown {
     return $true
 }
 
+function Get-BobTrayBarFillRgb {
+    param([int]$Pct)
+    if ($Pct -lt 0) { $Pct = 0 }
+    if ($Pct -gt 100) { $Pct = 100 }
+    # 0 = red, 50 = amber, 100 = green.
+    $red = @{ r = 248; g = 81; b = 73 }
+    $amber = @{ r = 210; g = 153; b = 34 }
+    $green = @{ r = 63; g = 185; b = 80 }
+    if ($Pct -ge 50) {
+        $t = ($Pct - 50) / 50.0
+        $a = $amber; $b = $green
+    }
+    else {
+        $t = $Pct / 50.0
+        $a = $red; $b = $amber
+    }
+    return [pscustomobject]@{
+        r = [int][math]::Round($a.r + ($b.r - $a.r) * $t)
+        g = [int][math]::Round($a.g + ($b.g - $a.g) * $t)
+        b = [int][math]::Round($a.b + ($b.b - $a.b) * $t)
+    }
+}
+
 function Get-BobTrayBarPaint {
     [CmdletBinding()]
     param(
@@ -185,6 +208,9 @@ function Get-BobTrayBarPaint {
             show_track    = $false
             show_fill     = $false
             fill_width    = $null
+            fill_r        = $null
+            fill_g        = $null
+            fill_b        = $null
             caption       = 'Weekly remaining  n/a'
             pulse         = $false
             kind          = 'unknown'
@@ -197,12 +223,16 @@ function Get-BobTrayBarPaint {
     $w = [int]($inner * $pct / 100)
     if ($w -lt 8 -and $pct -gt 0) { $w = 8 }
     if ($pct -eq 0) { $w = 0 }
+    $rgb = Get-BobTrayBarFillRgb -Pct $pct
     return [pscustomobject]@{
         remaining_pct = $pct
         known         = $true
         show_track    = $true
         show_fill     = ($w -gt 0)
         fill_width    = $w
+        fill_r        = [int]$rgb.r
+        fill_g        = [int]$rgb.g
+        fill_b        = [int]$rgb.b
         caption       = ('Weekly remaining    {0}%' -f $pct)
         pulse         = ($pct -lt 10)
         kind          = 'weekly'

@@ -432,10 +432,11 @@ function Rebuild-BobTrayTiles {
         $nm.AutoSize = $true
         $nm.Font = $nameFont
         $nm.ForeColor = $fg
+        $nm.BackColor = [System.Drawing.Color]::Transparent
         $nm.Text = ('{0} ({1})' -f $id, $pctLabel)
         $nm.Location = New-Object System.Drawing.Point 0, $y
         $script:tileHost.Controls.Add($nm)
-        $y += 18
+        $y += 20
         $paint = Get-BobTrayBarPaint -RemainingPct $pct -BarWidth 392
         $bar = New-Object System.Windows.Forms.Panel
         $bar.Location = New-Object System.Drawing.Point 0, $y
@@ -453,10 +454,7 @@ function Rebuild-BobTrayTiles {
                 Add-RoundRect $pathT 0 0 $s.Width 10 5
                 $g.FillPath($track, $pathT)
                 if ($p.known -and $p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
-                    $pc = [int]$p.remaining_pct
-                    $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
-                    if ($pc -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
-                    if ($pc -lt 10) { $col = [System.Drawing.Color]::FromArgb(248, 81, 73) }
+                    $col = [System.Drawing.Color]::FromArgb([int]$p.fill_r, [int]$p.fill_g, [int]$p.fill_b)
                     $fill = New-Object System.Drawing.SolidBrush $col
                     $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
                     Add-RoundRect $pathF 1 1 $p.fill_width 8 4
@@ -487,6 +485,7 @@ function Rebuild-BobTrayTiles {
         $jl.MaximumSize = New-Object System.Drawing.Size 392, 0
         $jl.Font = $jobFont
         $jl.ForeColor = $fg
+        $jl.BackColor = [System.Drawing.Color]::Transparent
         $jl.Text = $jobTxt
         $jl.Location = New-Object System.Drawing.Point 14, $y
         $script:tileHost.Controls.Add($jl)

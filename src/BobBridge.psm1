@@ -29,6 +29,7 @@ Export-ModuleMember -Function @(
     'Get-BobStallAlerts',
     'Get-BobTrayHover',
     'Get-BobTrayBarPaint',
+    'Get-BobTrayBarFillRgb',
     'Get-BobTrayAlertKind',
     'Get-BobTrayTitle',
     'Get-BobWeeklyRemaining',
