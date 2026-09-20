@@ -1,0 +1,49 @@
+---
+name: cursor-mrb-dev
+description: >
+  Run Cursor Agent for hostile MRB then FIX until PASS-nits on a product repo.
+  Use when the user says cursor mrb, mrb until pass, cursor builder, re-mrb,
+  mrb/dev loop, or /cursor-mrb-dev. Launch mechanics are start-bob-cursor.
+  Verdict rules are bob-hostile-mrb. Bob still stamps UAT.
+---
+
+# Cursor MRB / FIX until PASS-nits
+
+Default fuel: `cursor-models`, then `grok-build`. Copilot only with `-AllowCopilot`.
+
+Bob does not write the MRB or the code in this grok.exe session. Hand off, watch GitHub, repeat.
+
+## Models
+
+`Get-BobJobModel -Kind mrb|build -Fuel cursor-models|grok-build` (`config/default.json` `models`).
+
+| Kind | Cursor | grok.exe |
+|---|---|---|
+| mrb | latest reasoning (`claude-opus-5-thinking-high`) | `grok-4.6` |
+| build | `composer-2.5` | `build0.1` if listed, else `grok-4.5` |
+
+Do not use the MRB model for implementation. Catalog mapping: `grok-build-fleet` / `Resolve-BobGrokCliModel`.
+
+## Login
+
+`start-bob-cursor`: `cursor-agent status` must be logged in. Never `~\.grok\bin\agent.exe` (that is grok). If Cursor is not logged in, `Start-BobMrbHandoff` falls back to grok-build.
+
+## Loop
+
+1. Tip = named SHA or `origin/main`. Unrelated dirty files in the checkout are out of scope (do not stage them).
+2. **MRB:** `tools/Start-BobMrbHandoff.ps1 -Repo owner/repo -Issue <fr-or-prior-fail> -Sha <sha> -Cwd <clone> -Fuel cursor-models`. That uses `-Kind mrb`. Wait for a **new** GitHub issue titled `MRB FAIL|PASS-nits: ... <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). The prior FAIL issue is history, not this board.
+3. **FAIL:** `tools/Start-BobCursor.ps1 -Kind build -Repo <url> -Cwd <clone> -Mrb <new-mrb-issue> -Goal <required fixes>`. Implement only this board's required fixes. Do not implement parked FRs or a live walk this box cannot do. Comment on the MRB issue with the new SHA, tests, and which fixes are green vs still red.
+4. Repeat step 2 on the new SHA until **PASS-nits**.
+5. Only **Bob** stamps **ready for human UAT**. Worker never writes those words.
+
+Launch, prompt quoting, and Job Object detach: `start-bob-cursor`. Missing-features / FAIL vs PASS-nits bars: `bob-hostile-mrb`.
+
+## Watch
+
+Watch the **GitHub issue**, not the redirected `.log` (cursor-agent stdout is often empty until exit). Confirm the live `node.exe` command line has `--model claude-opus-5-thinking-high` (MRB) or `--model composer-2.5` (FIX).
+
+## Hard
+
+- No MRB PDFs.
+- No `password=` / `XAI_API_KEY=` assignments in goals or git.
+- Do not burn Grok Bot weekly on this loop when Cursor or grok.exe can take it.

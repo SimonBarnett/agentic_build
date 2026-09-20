@@ -6,6 +6,7 @@ description: >
   He does not write the MRB in-session. Check for missing features and file
   FRs. No MRB PDFs. Use when the user says MRB, hostile review, review the
   push, ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb.
+  Cursor MRB then FIX until PASS-nits is cursor-mrb-dev.
 ---
 
 # Hostile MRB (GitHub issue)
@@ -25,7 +26,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
 
 Default is Cursor Agent (`cursor-agent.cmd`, never `~\.grok\bin\agent.exe` which is grok) on the **latest reasoning model** (`config/default.json` `models.mrbCursor`, currently `claude-opus-5-thinking-high`). Grok Build fallback uses `models.mrbGrok` (`grok-4.6`). Build workers must not use these models — they use `build0.1` when grok.exe lists it, else `grok-4.5` (`Resolve-BobGrokCliModel` / `models.buildGrokFallback`), or Cursor `composer-2.5`. Do not use Copilot unless `-AllowCopilot`.
 
-Tell the human the issue URL. IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
+Tell the human the issue URL. After a FIX push, hand off **again** on the **new SHA**; the worker opens a **new** MRB issue (title includes that SHA). Comment on the prior FAIL issue with the new URL. Review the named SHA only; do not stage unrelated dirty files in the checkout. Loop until PASS-nits: `cursor-mrb-dev`.
+
+IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
 
 **Chair:** only Bob may declare **ready for human UAT**. The worker posts `FAIL` or `PASS-nits` only. If the worker thinks it passed, they write `candidate PASS-UAT, Bob stamp required`. Bob reads that issue and stamps the phrase, or rejects.
 
@@ -72,7 +75,7 @@ Request means **file the issue and the markdown**, then push. Do not implement t
    - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
-5. If not a UAT candidate: `Send-BobBuildSpec` (or IRC) with the **issue URL** and ordered fixes. Wait for the next push; comment again on the same issue.
+5. If FAIL: hand the **Required fixes** to a build worker (`cursor-mrb-dev`). Wait for the next push; Bob hands off a **new** MRB on that SHA (do not reuse the old FAIL issue as the board).
 
 ## Pass bar
 

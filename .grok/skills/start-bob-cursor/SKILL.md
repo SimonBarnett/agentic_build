@@ -3,7 +3,8 @@ name: start-bob-cursor
 description: >
   Hand a git task to Cursor Agent (cursor-models fuel) on a live fleet box.
   Use when Select-BobGitWorker / Start-BobBuild -Task git picked cursor-models,
-  the operator passed -Fuel cursor-models, or /start-bob-cursor.
+  the operator passed -Fuel cursor-models, /start-bob-cursor, or a
+  cursor-mrb-dev FIX/MRB launch.
 ---
 
 # Start Bob Cursor
@@ -14,7 +15,15 @@ Bills Cursor Models (shared account pool on every Cursor-capable box). Not Grok 
 
 ## When
 
-Picker selected `cursor-models`, or `Start-BobBuild -Task git -Fuel cursor-models`.
+Picker selected `cursor-models`, `Start-BobBuild -Task git -Fuel cursor-models`, `Start-BobMrbHandoff`, or `cursor-mrb-dev`.
+
+## Login
+
+Binary is `%LOCALAPPDATA%\cursor-agent\cursor-agent.cmd` (or `.ps1`). Never `~\.grok\bin\agent.exe` (grok). `cursor-agent status` must show logged in. Login: `agent login` with `NO_OPEN_BROWSER=1` (prints a cursor.com URL). A Grok Bot Cursor token is **not** CLI auth.
+
+## Kind / model
+
+`-Kind mrb` -> `Get-BobJobModel` latest reasoning (`claude-opus-5-thinking-high`). `-Kind build` (default) -> `composer-2.5`. Confirm on the live `node.exe` command line `--model`.
 
 ## Command
 
@@ -28,16 +37,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
   -Goal '...' -JobId <id> -Cwd <clone>
 ```
 
-Writes a packet JSON. Starts **`cursor-agent.exe`** (`-p --model`) via a
-`launch.ps1` that reads the prompt file (do not put the prompt on
-`Start-Process -ArgumentList`; Windows splits quotes). Do not
-`Start-Process -RedirectStandardOutput` — PS 5.1 then waits for the
-agent; the launcher redirects to the log itself. Start the agent with
-`Win32_Process.Create` so it is not killed when the dispatcher shell
-exits (grok.exe Job Object). Never
-`~\.grok\bin\agent.exe` (that file is grok). Model from `Get-BobJobModel`:
-MRB `claude-opus-5-thinking-high`, build `composer-2.5`. Does not scrape
-Cursor cookies. Does not mark ready for human UAT.
+Call the script **in-process** (`& Start-BobCursor.ps1 -Goal $goal -Kind build`). Nested `powershell -File ... -Goal $unquoted` splits the goal on spaces and on tokens that look like flags.
+
+Writes a packet JSON. Starts **cursor-agent** (`-p --model`) via `launch.ps1` that reads the prompt file. Pass the prompt **after `--`** so node does not eat tokens (`unknown option '-join'`). Goal text must not contain CLI-looking tokens (`-join`, `-p`, `-File`) or raw `"` that split node argv.
+
+Do not put the prompt on `Start-Process -ArgumentList` (Windows splits quotes). Do not `Start-Process -RedirectStandardOutput` (PS 5.1 waits for the agent). Start with `Win32_Process.Create` so the agent outlives the grok.exe Job Object. Redirect inside `launch.ps1`. Skip empty Docs/Plan so the prompt is not `Read  and .`.
+
+Watch **GitHub**, not the redirected `.log` (stdout is often empty until exit). Does not scrape Cursor cookies. Does not mark ready for human UAT.
 
 ## Packet
 

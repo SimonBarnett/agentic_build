@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-20 — Cursor MRB/FIX until PASS-nits
+
+`cursor-mrb-dev`: hand off Cursor MRB (reasoning model) then Cursor
+builder (`composer-2.5`) until a new `MRB FAIL|PASS-nits` issue on the
+new SHA. `start-bob-cursor` owns login, `-Kind`, in-process `-Goal`,
+`--` before prompt, Win32_Process.Create, no RedirectStandardOutput.
+`bob-hostile-mrb`: new MRB issue per SHA; do not reuse the old FAIL as
+the board. `bob-build-loop` points here; fuel is Cursor then Grok.
+
 ## 2026-09-20 — bob-irc canonical in agentic_irc
 
 All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo

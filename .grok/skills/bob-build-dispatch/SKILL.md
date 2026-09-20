@@ -30,7 +30,8 @@ Override remains: `-Machine flamingo -Fuel grok-build` for formprep / MSSQL.
 `-Fix` re-runs the picker. **Builders** use `build0.1` when grok.exe
 lists it, else `grok-4.5` (`models.buildGrokFallback`); Cursor
 `composer-2.5`. **MRB** uses the latest reasoning model
-(`grok-4.6` / `claude-opus-5-thinking-high`).
+(`grok-4.6` / `claude-opus-5-thinking-high`). Cursor MRB/FIX until
+PASS-nits: `cursor-mrb-dev`.
 
 Ids: `ionos`, `marchhare`, `dev1`, `flamingo` — not hostnames. DUMB / 2012
 is not a git worker.
