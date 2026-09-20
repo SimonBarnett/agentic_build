@@ -107,9 +107,13 @@ if ($agent) {
     }
 }
 if ($agent -and $Cwd -and -not ($env:BOB_GROK_EXE -match '(?i)Fake-Grok')) {
+    $readBits = @()
+    if ($Docs) { $readBits += $Docs }
+    if ($Plan) { $readBits += $Plan }
+    $readLine = $(if ($readBits.Count -gt 0) { "Read $($readBits -join ' and '). " } else { '' })
     $prompt = @"
 Git task $JobId. Repo $Repo.
-Read $Docs and $Plan. $Goal
+$readLine$Goal
 Do not mark ready for human UAT. Bob chairs MRB ($Mrb).
 Do not put password= or XAI_API_KEY= assignments in git.
 "@
@@ -119,17 +123,18 @@ Do not put password= or XAI_API_KEY= assignments in git.
     try {
         $promptFile = Join-Path $logDir ('cursor-agent-' + $JobId + '.prompt.txt')
         [IO.File]::WriteAllText($promptFile, $prompt, $utf8)
-        $arg = @(
-            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-            $(if ($agent -match '\.cmd$') {
-                Join-Path (Split-Path $agent) 'cursor-agent.ps1'
-            } else { $agent }),
-            '-p', '--force', '--trust', '--output-format', 'text', '--model', $Model, $prompt
-        )
-        $exe = $agent
-        if ($agent -match '\.cmd$' -or $agent -match '\.ps1$') {
-            $exe = (Get-Command powershell.exe).Source
-        }
+        $ps1 = $agent
+        if ($agent -match '\.cmd$') { $ps1 = Join-Path (Split-Path $agent) 'cursor-agent.ps1' }
+        $launch = Join-Path $logDir ('cursor-agent-' + $JobId + '.launch.ps1')
+        $launchBody = @"
+`$ErrorActionPreference = 'Stop'
+`$prompt = [IO.File]::ReadAllText('$($promptFile.Replace("'","''"))')
+Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
+& '$($ps1.Replace("'","''"))' -p --force --trust --output-format text --model '$($Model.Replace("'","''"))' `$prompt
+"@
+        [IO.File]::WriteAllText($launch, $launchBody, $utf8)
+        $exe = (Get-Command powershell.exe).Source
+        $arg = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launch)
         $p = Start-Process -FilePath $exe `
             -ArgumentList $arg `
             -WorkingDirectory $Cwd -WindowStyle Hidden `

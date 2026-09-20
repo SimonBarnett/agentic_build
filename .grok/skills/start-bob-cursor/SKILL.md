@@ -28,7 +28,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
   -Goal '...' -JobId <id> -Cwd <clone>
 ```
 
-Writes a packet JSON. Starts **`cursor-agent.exe`** (`-p --model`). Never `~\.grok\bin\agent.exe` (that file is grok). Model from `Get-BobJobModel`: MRB `claude-opus-5-thinking-high`, build `composer-2.5`. Does not scrape Cursor cookies. Does not mark ready for human UAT.
+Writes a packet JSON. Starts **`cursor-agent.exe`** (`-p --model`) via a
+`launch.ps1` that reads the prompt file (do not put the prompt on
+`Start-Process -ArgumentList`; Windows splits quotes). Never
+`~\.grok\bin\agent.exe` (that file is grok). Model from `Get-BobJobModel`:
+MRB `claude-opus-5-thinking-high`, build `composer-2.5`. Does not scrape
+Cursor cookies. Does not mark ready for human UAT.
 
 ## Packet
 

@@ -4,6 +4,13 @@
 
 Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
 
+## 2026-09-20 — cursor-agent prompt via launch.ps1
+
+`Start-Process -ArgumentList` mangles a multiline MRB prompt (quotes
+split the node argv). Write `cursor-agent-<job>.prompt.txt` and a
+`launch.ps1` that reads it and passes one argument to `cursor-agent.ps1`.
+Skip empty Docs/Plan so the prompt is not `Read  and .`.
+
 ## 2026-09-20 — grok.exe has no build0.1; resolve equivalent
 
 `grok models` on 1.0.34 is only `grok-4.6` / `grok-4.5` (`-m build0.1` is
