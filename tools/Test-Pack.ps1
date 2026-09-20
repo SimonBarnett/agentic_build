@@ -32,6 +32,8 @@ function Import-Bridge {
     $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
     $env:BOB_SKIP_LIVE_GROK = '1'
+    # Pin gh to a missing path so Fake-Grok cases never discover the system CLI or honour GH_TOKEN.
+    $env:BOB_GH_EXE = Join-Path $BridgeRoot 'no-such-gh.exe'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
     $env:BOB_FLEET_SHARE = $null
