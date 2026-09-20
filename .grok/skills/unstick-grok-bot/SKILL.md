@@ -74,6 +74,8 @@ python $api send --agent <Name> --text "Reply with exactly PONG and then stop. D
 
 Tell the human to send a **new** ping in the Grok Bot UI if the turn still has no assistant `send-message`.
 
+If a **second idle agent** (not the stuck one) also `ACCEPTED_TEMPORAL` with no assistant `send-message`, this is a **Temporal harness outage** for the account, not a single-agent wedge. Stop RecreateSandBox. Sandbox/desktop recycle will not start a new `grok-bot-turn-<id>`. Wait for Cursor Grok Bot backend; do not stack more API PONGs.
+
 ## 5. Desktop process gone
 
 Start `"C:\Program Files\Grok Bot\Grok Bot.exe"`. Wait until CIM shows `Grok Bot.exe` and `GrokBotApi.py health` `signedIn`. Then go back to step 1. Desktop restart alone is not the unstick.

@@ -60,7 +60,7 @@ CLI lands at `%USERPROFILE%\.grok\bin`. Desktop: `%LOCALAPPDATA%\Programs\Grok B
 | `window-state.json` | `x/y ~ -32000`, `width/height = 0` => "blank" is off-screen zero-size |
 | `GPUCache` / `DawnWebGPUCache` / `Code Cache` | safe to clear while the app is killed |
 
-Fix: kill the app, rewrite `window-state.json` to sane bounds (e.g. 80,80 / 1280x800), relaunch via the no-GPU shortcut.
+Fix: kill the app, rewrite `window-state.json` to sane bounds (e.g. 80,80 / 1280x800), relaunch via the no-GPU shortcut. On ionos 2026-09-20 the file was `x:-31992 y:-32000 width:0 height:0 isMaximized:true` while the chat pane still painted; **Bob's screen** (sandbox VNC) stayed empty. That is not a Temporal unstick.
 
 Memory: closing Edge/Steam can free 1+ GB and unstick the UI.
 

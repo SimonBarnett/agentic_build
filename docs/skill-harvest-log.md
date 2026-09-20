@@ -11,6 +11,10 @@ Checked both open drafts vs `main`. Merging either would rewind later tray/git-t
 - `start-bob-cursor` + `Select-BobGitWorker` / `Get-BobCapacity`: git-task dispatch is `(machine, fuel)`. Cursor Models is the shared top bar, not a machine named cursor. DUMB/2012 is not a git worker.
 - Tray issue #3: do not merge PR #5 (it would drop seat labels / GBP overage). BT0n now asserts click-only / no hover; `Install-BobFleet` registers `_Watch-Bobiverse-<id>` without double-starting an already-running moot.
 
+## 2026-09-20 — unstick: account-wide Temporal
+
+If Haitch (or any idle agent) also ACCEPTED_TEMPORAL with no send-message, RecreateSandBox cannot fix it. Probe a second agent before more Recreate. `window-state.json` x/y ~-32000 w/h 0 is a separate Electron blank; kill, rewrite bounds, relaunch `--disable-gpu`.
+
 ## 2026-09-20 — unstick wait for new podId
 
 RecreateSandBox `started: true` is not success. Poll EnsureSandBox until `podId` changes (1-3 min; API can timeout mid-transfer). Two 30s samples of the **old** id mean the box has not rotated.
