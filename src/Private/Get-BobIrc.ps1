@@ -20,6 +20,62 @@ function Get-BobIrcHome {
     return [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'))
 }
 
+function Get-BobMootRoster {
+    $cfg = Get-BobiverseConfig
+    $nicks = @()
+    $nickToId = @{}
+    $idToNick = @{}
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            $id = [string]$p.Name
+            $nk = [string]$p.Value
+            if (-not $id -or -not $nk) { continue }
+            $idToNick[$id] = $nk
+            $nickToId[$nk.ToLowerInvariant()] = $id
+        }
+    }
+    $mid = $null
+    if ($cfg) { $mid = [string]$cfg.mootId }
+    $home = Get-BobIrcHome
+    $roster = @()
+    if ($mid -and $home) {
+        $stPath = Join-Path $home (Join-Path 'moot' ($mid + '.json'))
+        $st = Read-JsonFile $stPath
+        if ($st -and $st.roster) {
+            foreach ($n in @($st.roster)) {
+                $s = [string]$n
+                if ($s) { $roster += $s.ToLowerInvariant() }
+            }
+        }
+        if ($st -and $st.chair) {
+            $c = [string]$st.chair
+            if ($c) {
+                $cl = $c.ToLowerInvariant()
+                if ($roster -notcontains $cl) { $roster += $cl }
+            }
+        }
+    }
+    return [pscustomobject]@{
+        nicks     = $roster
+        nickToId  = $nickToId
+        idToNick  = $idToNick
+        mootId    = $mid
+    }
+}
+
+function Test-BobMachineInMoot {
+    param([string]$MachineId, $Roster)
+    if (-not $MachineId) { return $false }
+    if (-not $Roster) { return $false }
+    $self = Get-ThisMachineId
+    if ($self -and $MachineId -eq $self -and @($Roster.nicks).Count -gt 0) { return $true }
+    if ($Roster.idToNick.ContainsKey($MachineId)) {
+        $nk = [string]$Roster.idToNick[$MachineId]
+        if ($nk -and ($Roster.nicks -contains $nk.ToLowerInvariant())) { return $true }
+    }
+    return $false
+}
+
 function Get-BobIrcNick {
     param($Config, [string]$MachineId)
     if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { return $env:BOB_IRC_NICK.Trim() }

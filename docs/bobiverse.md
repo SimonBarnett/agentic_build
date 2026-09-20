@@ -30,7 +30,7 @@ MOOT v1 POINT b0b1be15e0000001 :BOB v1 id=flamingo weekly=96 running=0 queued=0 
 
 `jobs` is `-` or `owner/repo:state,...`. Weekly remaining is **that machine's** Grok seat. No SQL passwords, no `XAI_API_KEY`.
 
-`irc_agent.py` writes `~\.agentic-irc-bobiverse\bob-peers\<id>.json`. The tray reads those files when filesystem peek cannot see a peer (`reach=irc-fallback`). `unreachable` means no peek **and** no recent POINT.
+`irc_agent.py` writes `~\.agentic-irc-bobiverse\bob-peers\<id>.json`. The tray paints **one weekly bar per machine** from that POINT. `reach=irc-fallback` when they are on the moot roster. `not in moot` (not `unreachable`) when the nick is not on the MODE2 roster. The card has an **X** to close.
 
 ## Install (each build box)
 

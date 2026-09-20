@@ -290,6 +290,8 @@ $script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
 $script:alertKind = 'none'
 $script:iconRectCache = $null
+$script:cardClosed = $false
+$script:tileHost = $null
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -370,9 +372,7 @@ function Update-Hover {
         if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
         else { $script:remainingPct = [int]$h.remaining_pct }
-        $barW = 392
-        if ($barPanel) { $barW = [int]$barPanel.Width }
-        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth $barW
+        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth 392
         $script:alertKind = Get-BobTrayAlertKind -Alerts $script:lastAlerts -RemainingPct $script:remainingPct
         $short = [string]$h.short
         if ($script:attention) { $short = '! ' + $short }
@@ -380,18 +380,13 @@ function Update-Hover {
         $notify.Text = $short
         if ($titleLabel) {
             $titleLabel.Text = $script:hoverTitle
-            $barCaption.Text = $paint.caption
-            $barPanel.Visible = [bool]$paint.show_track
-            if ($paint.show_track) {
-                $jobsLabel.Location = New-Object System.Drawing.Point 14, 82
-            }
-            else {
-                $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
-            }
-            $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { 'No jobs' })
+            if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
+            Rebuild-BobTrayTiles @($h.machines)
             if ($alertLabel) {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
-                $alertLabel.Location = New-Object System.Drawing.Point 14, ($jobsLabel.Bottom + 6)
+                $yAlert = 40
+                if ($script:tileHost) { $yAlert = $script:tileHost.Bottom + 8 }
+                $alertLabel.Location = New-Object System.Drawing.Point 14, $yAlert
             }
             if ($tip.Visible -and $alertLabel) {
                 $tip.Height = [Math]::Max(110, $alertLabel.Bottom + 16)
@@ -399,7 +394,6 @@ function Update-Hover {
             if (-not $script:attention -and -not $paint.pulse -and $notify.Icon -ne $iconIdle) {
                 $notify.Icon = $iconIdle
             }
-            $barPanel.Invalidate()
         }
     }
     catch {
@@ -412,6 +406,101 @@ function Clear-Attention {
     $script:flashOn = $false
     $notify.Icon = $iconIdle
     Update-Hover
+}
+
+function Hide-BobTrayCard {
+    $script:cardClosed = $true
+    try { $hideTip.Stop() } catch { }
+    try { if ($tip.Visible) { $tip.Hide() } } catch { Write-TrayLog ('tip hide error: ' + $_.Exception.Message) }
+}
+
+function Rebuild-BobTrayTiles {
+    param($Machines)
+    if (-not $script:tileHost) { return }
+    $script:tileHost.Controls.Clear()
+    $y = 0
+    $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+    $smallFont = New-Object System.Drawing.Font 'Segoe UI', 8
+    $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
+    foreach ($m in @($Machines)) {
+        if (-not $m) { continue }
+        $id = [string]$m.id
+        $nm = New-Object System.Windows.Forms.Label
+        $nm.AutoSize = $true
+        $nm.Font = $nameFont
+        $nm.ForeColor = $fg
+        $nm.Text = $id
+        $nm.Location = New-Object System.Drawing.Point 0, $y
+        $script:tileHost.Controls.Add($nm)
+        $y += 18
+        $cap = New-Object System.Windows.Forms.Label
+        $cap.AutoSize = $true
+        $cap.Font = $smallFont
+        $cap.ForeColor = $muted
+        $pct = $m.remaining_pct
+        $paint = Get-BobTrayBarPaint -RemainingPct $pct -BarWidth 392
+        $cap.Text = [string]$paint.caption
+        $cap.Location = New-Object System.Drawing.Point 0, $y
+        $script:tileHost.Controls.Add($cap)
+        $y += 16
+        $bar = New-Object System.Windows.Forms.Panel
+        $bar.Location = New-Object System.Drawing.Point 0, $y
+        $bar.Size = New-Object System.Drawing.Size 392, 10
+        $bar.BackColor = $bg
+        $bar.Tag = $pct
+        $bar.Visible = [bool]$paint.show_track
+        $bar.Add_Paint({
+                param($s, $e)
+                $p = Get-BobTrayBarPaint -RemainingPct $s.Tag -BarWidth $s.Width
+                if (-not $p.show_track) { return }
+                $g = $e.Graphics
+                $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+                $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
+                $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
+                Add-RoundRect $pathT 0 0 $s.Width 10 5
+                $g.FillPath($track, $pathT)
+                if ($p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
+                    $pc = [int]$p.remaining_pct
+                    $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
+                    if ($pc -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
+                    if ($pc -lt 10) { $col = [System.Drawing.Color]::FromArgb(248, 81, 73) }
+                    $fill = New-Object System.Drawing.SolidBrush $col
+                    $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
+                    Add-RoundRect $pathF 1 1 $p.fill_width 8 4
+                    $g.FillPath($fill, $pathF)
+                    $pathF.Dispose(); $fill.Dispose()
+                }
+                $pathT.Dispose(); $track.Dispose()
+            })
+        $script:tileHost.Controls.Add($bar)
+        if ($bar.Visible) { $y += 14 }
+        $reach = [string]$m.reach
+        $jobTxt = ''
+        if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
+        elseif (@($m.jobs).Count -eq 0) {
+            if ($reach -eq 'stale') { $jobTxt = 'lastSeen stale' }
+            else { $jobTxt = 'no jobs' }
+        }
+        else {
+            $bits = @()
+            if ($reach -eq 'stale') { $bits += 'lastSeen stale' }
+            foreach ($j in @($m.jobs)) {
+                $bits += ('{0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+            }
+            $jobTxt = ($bits -join "`n")
+        }
+        $jl = New-Object System.Windows.Forms.Label
+        $jl.AutoSize = $true
+        $jl.MaximumSize = New-Object System.Drawing.Size 392, 0
+        $jl.Font = $jobFont
+        $jl.ForeColor = $fg
+        $jl.Text = $jobTxt
+        $jl.Location = New-Object System.Drawing.Point 0, $y
+        $script:tileHost.Controls.Add($jl)
+        $nLines = @($jobTxt -split "`n").Count
+        $y += [Math]::Max(18, (16 * $nLines) + 8)
+    }
+    $script:tileHost.Height = [Math]::Max(10, $y)
 }
 
 $bg = [System.Drawing.Color]::FromArgb(22, 27, 34)
@@ -432,40 +521,26 @@ $titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
 $titleLabel.ForeColor = $fg
 $titleLabel.Text = $script:hoverTitle
 $titleLabel.Location = New-Object System.Drawing.Point 14, 12
+$closeBtn = New-Object System.Windows.Forms.Label
+$closeBtn.AutoSize = $true
+$closeBtn.Text = 'X'
+$closeBtn.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 10
+$closeBtn.ForeColor = $muted
+$closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
+$closeBtn.Location = New-Object System.Drawing.Point 392, 10
+$closeBtn.Add_Click({ Hide-BobTrayCard })
 $barCaption = New-Object System.Windows.Forms.Label
 $barCaption.AutoSize = $true
 $barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
 $barCaption.ForeColor = $muted
 $barCaption.Text = 'Weekly remaining  n/a'
 $barCaption.Location = New-Object System.Drawing.Point 14, 40
+$barCaption.Visible = $false
 $barPanel = New-Object System.Windows.Forms.Panel
 $barPanel.Location = New-Object System.Drawing.Point 14, 62
 $barPanel.Size = New-Object System.Drawing.Size 392, 10
 $barPanel.BackColor = $bg
 $barPanel.Visible = $false
-$barPanel.Add_Paint({
-        param($s, $e)
-        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth $barPanel.Width
-        if (-not $paint.show_track) { return }
-        $g = $e.Graphics
-        $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-        $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
-        $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
-        Add-RoundRect $pathT 0 0 $barPanel.Width 10 5
-        $g.FillPath($track, $pathT)
-        if ($paint.show_fill -and $null -ne $paint.fill_width -and $paint.fill_width -gt 0) {
-            $pct = [int]$paint.remaining_pct
-            $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
-            if ($pct -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
-            if ($pct -lt 10) { $col = [System.Drawing.Color]::FromArgb(248, 81, 73) }
-            $fill = New-Object System.Drawing.SolidBrush $col
-            $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
-            Add-RoundRect $pathF 1 1 $paint.fill_width 8 4
-            $g.FillPath($fill, $pathF)
-            $pathF.Dispose(); $fill.Dispose()
-        }
-        $pathT.Dispose(); $track.Dispose()
-    })
 $jobsLabel = New-Object System.Windows.Forms.Label
 $jobsLabel.AutoSize = $true
 $jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
@@ -473,6 +548,11 @@ $jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
 $jobsLabel.ForeColor = $fg
 $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
 $jobsLabel.Text = ''
+$jobsLabel.Visible = $false
+$script:tileHost = New-Object System.Windows.Forms.Panel
+$script:tileHost.Location = New-Object System.Drawing.Point 14, 38
+$script:tileHost.Size = New-Object System.Drawing.Size 392, 10
+$script:tileHost.BackColor = $bg
 $alertLabel = New-Object System.Windows.Forms.Label
 $alertLabel.AutoSize = $true
 $alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
@@ -480,9 +560,11 @@ $alertLabel.ForeColor = $muted
 $alertLabel.Location = New-Object System.Drawing.Point 14, 86
 $alertLabel.Text = 'alert: none'
 $tip.Controls.Add($titleLabel)
+$tip.Controls.Add($closeBtn)
 $tip.Controls.Add($barCaption)
 $tip.Controls.Add($barPanel)
 $tip.Controls.Add($jobsLabel)
+$tip.Controls.Add($script:tileHost)
 $tip.Controls.Add($alertLabel)
 $tip.Add_Shown({
         $tip.Height = $alertLabel.Bottom + 16
@@ -502,9 +584,12 @@ $hideTip.Add_Tick({
 function Show-BobTrayCard {
     param([string]$Reason = 'hover')
     try {
+        if ($script:cardClosed -and $Reason -ne 'click') { return }
+        if ($Reason -eq 'click') { $script:cardClosed = $false }
         # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
         # would freeze the UI and the native "P+ idle" tip would win.
         $bottom = $jobsLabel.Bottom
+        if ($script:tileHost) { $bottom = $script:tileHost.Bottom }
         if ($alertLabel) { $bottom = $alertLabel.Bottom }
         $tip.Height = [Math]::Max(110, $bottom + 16)
         # NC-T01 / NC-D02: park once on first show. Do not update Location on later MouseMove.
@@ -540,7 +625,6 @@ function Show-BobTrayCard {
                 Write-TrayLog ("tip show ok reason=$Reason src=$($place.source) loc=$($tip.Left),$($tip.Top) size=$($tip.Width)x$($tip.Height)")
             }
         }
-        $hideTip.Stop(); $hideTip.Start()
     }
     catch {
         Write-TrayLog ("tip show error reason=${Reason}: " + $_.Exception.Message)
@@ -630,6 +714,14 @@ $iconProbe.Add_Tick({
             if ($script:iconRectCache -and [string]$script:iconRectCache.Source -eq 'icon') {
                 if (Test-BobTrayPointInRect $pt $script:iconRectCache -Pad 2) {
                     Show-BobTrayCard -Reason 'probe'
+                }
+                elseif ($script:cardClosed) {
+                    $overTip = $false
+                    if ($tip.Visible) {
+                        $tipRect = @{ X = $tip.Left; Y = $tip.Top; Width = $tip.Width; Height = $tip.Height }
+                        $overTip = Test-BobTrayPointInRect $pt $tipRect -Pad 4
+                    }
+                    if (-not $overTip) { $script:cardClosed = $false }
                 }
             }
             if ($tip.Visible) {

@@ -353,6 +353,18 @@ function Get-BobTrayHover {
         $byMachine[$machineId] = @()
     }
     $reachBy[$machineId] = 'local'
+    $weeklyBy = @{}
+    $week = Get-BobWeeklyRemaining
+    $remainPct = $null
+    $weekFetched = $null
+    if ($week -and (Test-BobTrayRemainingKnown $week.remaining_pct)) {
+        $remainPct = [int]$week.remaining_pct
+        $weekFetched = [string]$week.fetched_at
+        $weeklyBy[$machineId] = $remainPct
+    }
+
+    $moot = $null
+    try { $moot = Get-BobMootRoster } catch { $moot = $null }
 
     foreach ($j in $jobs) {
         $mid = [string]$j.machine
@@ -377,11 +389,17 @@ function Get-BobTrayHover {
             $peek = Read-BobPeerPeek -Id $mid -Spec $spec -ShareRoot $shareRoot -TimeoutMs $peekMs
         }
         catch { $peek = $null }
+        $inMoot = $false
+        try { $inMoot = [bool](Test-BobMachineInMoot -MachineId $mid -Roster $moot) } catch { $inMoot = $false }
         if (-not $peek -or -not $peek.ok) {
-            $reachBy[$mid] = 'unreachable'
+            if ($inMoot) { $reachBy[$mid] = 'irc-fallback' }
+            else { $reachBy[$mid] = 'not-in-moot' }
             continue
         }
         if ($peek.lastSeen) { $seenBy[$mid] = [string]$peek.lastSeen }
+        if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) {
+            $weeklyBy[$mid] = [int]$peek.weekly
+        }
         $peerJobs = @()
         if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
         foreach ($pj in $peerJobs) {
@@ -400,6 +418,9 @@ function Get-BobTrayHover {
             $reachBy[$mid] = 'stale'
         }
         elseif ($fromIrc) {
+            $reachBy[$mid] = 'irc-fallback'
+        }
+        elseif ($inMoot) {
             $reachBy[$mid] = 'irc-fallback'
         }
         else {
@@ -432,17 +453,22 @@ function Get-BobTrayHover {
         }
         $reach = 'ok'
         if ($reachBy.ContainsKey($mid)) { $reach = [string]$reachBy[$mid] }
+        $wPct = $null
+        if ($weeklyBy.ContainsKey($mid)) { $wPct = $weeklyBy[$mid] }
         $tile = New-Object psobject -Property @{
-            id        = $mid
-            job_count = $rows.Count
-            jobs      = $rows
-            reach     = $reach
-            last_seen = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
+            id             = $mid
+            job_count      = $rows.Count
+            jobs           = $rows
+            reach          = $reach
+            last_seen      = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
+            remaining_pct  = $wPct
         }
         $tiles += ,$tile
         $jobLines += $mid
-        if ($reach -eq 'unreachable') {
-            $jobLines += '  unreachable'
+        if ($null -eq $wPct) { $jobLines += '  weekly remaining  n/a' }
+        else { $jobLines += ('  weekly remaining    {0}%' -f [int]$wPct) }
+        if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
+            $jobLines += '  not in moot'
         }
         elseif ($rows.Count -eq 0) {
             if ($reach -eq 'stale') { $jobLines += '  lastSeen stale' }
@@ -460,14 +486,6 @@ function Get-BobTrayHover {
         $jobLines += 'other hosts not in this store'
     }
     $jobsText = ($jobLines -join "`n")
-
-    $week = Get-BobWeeklyRemaining
-    $remainPct = $null
-    $weekFetched = $null
-    if ($week -and (Test-BobTrayRemainingKnown $week.remaining_pct)) {
-        $remainPct = [int]$week.remaining_pct
-        $weekFetched = [string]$week.fetched_at
-    }
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {

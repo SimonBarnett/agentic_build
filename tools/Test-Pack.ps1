@@ -522,11 +522,12 @@ Invoke-Case 'BT0l tray hover' {
     if ($txt -notmatch '(?m)^ionos\r?$') { throw "h5 missing ionos: $txt" }
     if ($txt -notmatch '(?m)^ce-priority-dev1\r?$') { throw "h5 missing ce-priority-dev1: $txt" }
     if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
-    if ($txt -notmatch '(?m)^marchhare\r?\n  SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -notmatch '(?m)^marchhare\r?\n  weekly remaining[^\n]*\r?\n  SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
     if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
-    if ($txt -notmatch '(?m)^ionos\r?\n  unreachable') { throw "ionos must be unreachable: $txt" }
-    if ($txt -match '(?m)^ionos\r?\n  (no jobs|SimonBarnett)') { throw "unreachable ionos invented empty/jobs: $txt" }
-    if ($txt -notmatch '(?m)^ce-priority-dev1\r?\n  lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
+    if ($txt -notmatch '(?m)^ionos\r?\n  weekly remaining') { throw "ionos missing weekly bar line: $txt" }
+    if ($txt -notmatch '(?m)^ionos\r?\n  weekly remaining[^\n]*\r?\n  not in moot') { throw "ionos must be not in moot: $txt" }
+    if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "do not say unreachable for a box that is not in the moot: $txt" }
+    if ($txt -notmatch '(?m)^ce-priority-dev1\r?\n  weekly remaining[^\n]*\r?\n  lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
     $ids5 = @($h5.machines | ForEach-Object { [string]$_.id })
     if ($ids5[0] -ne 'testhost') { throw "h5 machines[0]=$($ids5[0])" }
     foreach ($need in @('testhost', 'otherhost', 'marchhare', 'ionos', 'ce-priority-dev1')) {
@@ -560,14 +561,14 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
     $hSnap = Get-BobTrayHover
     $snapTxt = [string]$hSnap.jobs_text
-    if ($snapTxt -notmatch '(?m)^snapbox\r?\n  SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
+    if ($snapTxt -notmatch '(?m)^snapbox\r?\n  weekly remaining[^\n]*\r?\n  SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/agentic_irc') { throw "snapbox missing irc job: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/FormPrep') { throw "snapbox missing FormPrep job: $snapTxt" }
     $snapTile = @($hSnap.machines | Where-Object { [string]$_.id -eq 'snapbox' })[0]
     if ([int]$snapTile.job_count -ne 2) { throw "snapbox job_count=$($snapTile.job_count) expected 2 (PS5 ConvertTo-Json collapse?)" }
 
     $ionosTile = @($h5.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
-    if ([string]$ionosTile.reach -ne 'unreachable') { throw "ionos reach=$($ionosTile.reach)" }
+    if ([string]$ionosTile.reach -ne 'not-in-moot') { throw "ionos reach=$($ionosTile.reach)" }
     if ([int]$ionosTile.job_count -ne 0) { throw "ionos job_count=$($ionosTile.job_count) (invented?)" }
     $mhTile = @($h5.machines | Where-Object { [string]$_.id -eq 'marchhare' })[0]
     if ([int]$mhTile.job_count -lt 1) { throw 'marchhare peek job missing' }
@@ -586,6 +587,8 @@ Invoke-Case 'BT0l tray hover' {
     }
     if ($traySrc -notmatch 'jobs_text') { throw 'Watch-BobTray card must render jobs_text machine tiles' }
     if ($traySrc -notmatch 'Weekly remaining') { throw 'Watch-BobTray must label Weekly remaining' }
+    if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
+    if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'show_track') { throw 'Watch-BobTray paint path does not gate on show_track' }
 
@@ -594,7 +597,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
-    if ($skillTray -notmatch 'unreachable') { throw 'bob-fleet-tray skill must document unreachable tiles' }
+    if ($skillTray -notmatch 'not in moot') { throw 'bob-fleet-tray skill must document not-in-moot tiles' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
     if ($skillTray -notmatch 'bob-fleet-peer-peek') { throw 'bob-fleet-tray skill must point at peer-peek transport doc' }
     $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
