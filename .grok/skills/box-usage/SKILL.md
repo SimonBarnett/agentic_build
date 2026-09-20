@@ -5,7 +5,8 @@ description: >
   box: weekly remaining %, reset dates, on-demand GBP overage, live grok
   processes, sessions, BobBridge jobs, and ~/.grok disk. Use when the user asks
   usage, quota, remaining, reset date, overage, how maxed, Premium+ headroom,
-  Cursor Sand, or /box-usage. Pair with bob-fleet-tray for the TipForm card and
+  Cursor Sand, unpaid invoice, paid their bill, or /box-usage. Pair with
+  cursor-sand-billing when Grok Bot is silent at Sand 100%. Pair with bob-fleet-tray for the TipForm card and
   grok-build-fleet when choosing ionos vs marchhare vs flamingo.
 ---
 

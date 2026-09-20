@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — customer paid their bill
+
+Standalone `cursor-sand-billing`: Grok Bot deaf → Sand 100% / Stripe `NEEDS_AUTH` / Open invoices at `cursor.com/dashboard/billing` (not Spending). After Paid, one ping. Do not Recreate. `box-usage` still owns the numbers.
+
 ## 2026-09-20 — Cursor MRB/FIX until PASS-nits
 
 `cursor-mrb-dev`: hand off Cursor MRB (reasoning model) then Cursor
