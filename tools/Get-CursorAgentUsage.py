@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read Grok Bot / Cursor-agent weekly usage. Prints JSON only (no tokens)."""
+"""Read Grok Bot / Cursor-agent weekly usage + on-demand overage (money). Prints JSON only."""
 from __future__ import annotations
 
 import base64
@@ -76,13 +76,58 @@ def _fetch_json(token: str, path: str) -> dict:
             "Connect-Protocol-Version": "1",
         },
     )
-    with urllib.request.urlopen(req, timeout=4) as resp:
+    with urllib.request.urlopen(req, timeout=6) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _fetch_usage(token: str) -> dict:
-    # Grok Bot "Weekly usage 98%" is Sand usagePercent (USED), not plan remaining.
-    return _fetch_json(token, "aiserver.v1.DashboardService/GetSandUsageStatus")
+def _usd_to_gbp(usd: float) -> float | None:
+    """Convert USD to GBP. Prefer open.er-api.com; fallback jsDelivr currency-api."""
+    endpoints = (
+        ("https://open.er-api.com/v6/latest/USD", lambda b: float((b.get("rates") or {}).get("GBP") or 0)),
+        (
+            "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+            lambda b: float(((b.get("usd") or {}).get("gbp") or 0)),
+        ),
+    )
+    for url, pick in endpoints:
+        try:
+            req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            rate = pick(body)
+            if rate and rate > 0:
+                return round(usd * rate, 2)
+        except Exception:
+            continue
+    return None
+
+
+def _on_demand_usd_cents(period: dict | None) -> tuple[int | None, str | None]:
+    if not period:
+        return None, None
+    slu = period.get("spendLimitUsage") or {}
+    for key in ("individualUsed", "totalSpend"):
+        v = slu.get(key)
+        if v is None or v == "":
+            continue
+        try:
+            cents = int(round(float(v)))
+        except (TypeError, ValueError):
+            continue
+        if cents < 0:
+            continue
+        return cents, f"period.spendLimitUsage.{key}"
+    # Fallback: plan overage past included (totalSpend - includedSpend)
+    pu = period.get("planUsage") or {}
+    try:
+        total = float(pu.get("totalSpend"))
+        included = float(pu.get("includedSpend"))
+        over = int(round(total - included))
+        if over > 0:
+            return over, "period.planUsage.totalSpend-includedSpend"
+    except (TypeError, ValueError):
+        pass
+    return None, None
 
 
 def main() -> int:
@@ -92,32 +137,67 @@ def main() -> int:
         if not token:
             print("{}", end="")
             return 1
-        body = _fetch_usage(token)
-        used = body.get("usagePercent")
+        sand = _fetch_json(token, "aiserver.v1.DashboardService/GetSandUsageStatus")
+        try:
+            period = _fetch_json(token, "aiserver.v1.DashboardService/GetCurrentPeriodUsage")
+        except Exception:
+            period = None
+
+        used = sand.get("usagePercent")
         if used is None:
-            used = body.get("percentUsed")
-        if used is None:
+            used = sand.get("percentUsed")
+        used_f = None
+        remain = None
+        if used is not None and used != "":
+            used_f = float(used)
+            if 0.0 <= used_f <= 1.0:
+                used_f = used_f * 100.0
+            remain = int(round(100.0 - used_f))
+            # Keep true remaining; negative means over on the percent meter.
+            # Do not clamp to 0 — callers decide empty vs money.
+
+        cents, cents_src = _on_demand_usd_cents(period)
+        overage_gbp = None
+        overage_usd = None
+        overage_source = None
+        fx_rate = None
+        if cents is not None:
+            overage_usd = round(cents / 100.0, 2)
+            overage_source = cents_src
+            gbp = _usd_to_gbp(overage_usd)
+            if gbp is not None:
+                overage_gbp = gbp
+                # stash rate for debugging
+                if overage_usd > 0:
+                    fx_rate = round(overage_gbp / overage_usd, 6)
+
+        out: dict = {
+            "ok": True,
+            "source": "cursor-agent",
+            "kind": "weekly",
+        }
+        if used_f is not None:
+            out["used_pct"] = int(round(used_f))
+            out["remaining_pct"] = remain
+        if overage_usd is not None:
+            out["overage_usd"] = overage_usd
+            out["on_demand_used_cents"] = cents
+        if overage_gbp is not None:
+            out["overage_gbp"] = overage_gbp
+        if overage_source:
+            out["overage_source"] = overage_source
+        if fx_rate is not None:
+            out["usd_gbp_rate"] = fx_rate
+
+        # Sand exhausted (or unknown remaining) with money: keep remaining_pct null for label path
+        if remain is not None and remain <= 0:
+            out["remaining_pct"] = None
+            out["sand_exhausted"] = True
+
+        if used_f is None and overage_gbp is None and overage_usd is None:
             print(json.dumps({"ok": False, "error": "no usagePercent"}))
             return 1
-        used_f = float(used)
-        if 0.0 <= used_f <= 1.0:
-            used_f = used_f * 100.0
-        remain = int(round(100.0 - used_f))
-        if remain < 0:
-            remain = 0
-        if remain > 100:
-            remain = 100
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "used_pct": int(round(used_f if used_f is not None else (100 - remain))),
-                    "remaining_pct": remain,
-                    "source": "cursor-agent",
-                    "kind": "weekly",
-                }
-            )
-        )
+        print(json.dumps(out))
         return 0
     except Exception as e:
         print(json.dumps({"ok": False, "error": type(e).__name__}))

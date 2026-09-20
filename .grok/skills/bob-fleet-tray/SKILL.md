@@ -1,4 +1,4 @@
----
+﻿---
 name: bob-fleet-tray
 description: >
   System tray icon for Bob Fleet / bobiverse on this Windows box: hidden
@@ -45,9 +45,7 @@ Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
 
 - Known remaining: `cursor (N%)` in normal foreground.
-- Empty / overspent: `cursor (-£12.00)` in **red** (negative pounds). Source
-  `%USERPROFILE%\.grok\tip_cursor.json` `{"cursor":12}` means **£12**, not
-  12%. Never paint `n/a` or `over +12%` for this case.
+- Empty / overspent (Sand weekly exhausted): `cursor (-£x.xx)` in **red**. Money comes from Cursor `GetCurrentPeriodUsage` `spendLimitUsage.individualUsed` (USD cents), converted to GBP via live FX — **not** `tip_cursor.json` and not "12% => £12".
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining.
 
 ## UI hard rules (diagnostics 2026-09-20)
@@ -56,7 +54,7 @@ Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
   TipForm. **No hover** to show the card (hover caused double TipForm /
   ghost chips). Close only via **X**.
 - **One TipForm only.** `NotifyIcon.Text` stays blank always
-  (`Clear-BobNativeTip`). Never park `P+ idle …` — that white chip is the
+  (`Clear-BobNativeTip`). Never park `P+ idle â€¦` â€” that white chip is the
   bad second dialog.
 - **Single instance.** Mutex `Local\BobFleetTray-<machineId>`. Restart
   watcher kills every `Watch-BobTray` process (ghosts), rejoins `#bobiverse`,
@@ -87,11 +85,11 @@ BobFleet-*` while build jobs run.
 
 ## Diagnose (when the card/icon misbehaves)
 
-1. Count `Watch-BobTray` processes — more than one → kill all, start one.
+1. Count `Watch-BobTray` processes â€” more than one â†’ kill all, start one.
 2. Log tail `watch_bob_tray.log` for `tray up`, `tip show ok`, poll errors.
 3. Confirm `$notify.Visible` path still sets Visible=$true after start.
 4. Confirm `NotifyIcon.Text` is empty (no white P+ chip).
-5. Confirm title `#Bobiverse (<id>)`, cursor `-£x.xx` red when overspent,
+5. Confirm title `#Bobiverse (<id>)`, cursor `-Â£x.xx` red when overspent,
    seat labels beside names, shared % on ntsa seats.
 6. If card flashes on poll: verify Suspend/Resume paint wraps
    `Rebuild-BobTrayTiles`.
@@ -104,3 +102,4 @@ BobFleet-*` while build jobs run.
 - Do not report session context as weekly quota.
 - Job lines are GitHub owner/repo, never a commit SHA as primary label.
 - Do not omit registered bobiverse seats. Do not invent jobs. Do not WinRM.
+

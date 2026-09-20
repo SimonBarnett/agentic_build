@@ -170,8 +170,13 @@ function ConvertTo-BobCursorUsageDoc {
     if (-not $j) { return $null }
     $remain = $null
     $used = $null
-    if ($null -ne $j.remaining_pct) { $remain = [int]$j.remaining_pct }
-    if ($null -ne $j.used_pct) { $used = [int]$j.used_pct }
+    $overGbp = $null
+    $overUsd = $null
+    $cents = $null
+    if ($null -ne $j.remaining_pct -and [string]$j.remaining_pct -ne '') {
+        $remain = [int]$j.remaining_pct
+    }
+    if ($null -ne $j.used_pct -and [string]$j.used_pct -ne '') { $used = [double]$j.used_pct }
     if ($null -eq $used) {
         if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
         elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
@@ -180,13 +185,25 @@ function ConvertTo-BobCursorUsageDoc {
     if ($null -eq $remain -and $null -ne $used) {
         $remain = [int][math]::Round(100.0 - [double]$used)
     }
-    if ($null -eq $remain) { return $null }
-    if ($remain -lt 0) { $remain = 0 }
-    if ($remain -gt 100) { $remain = 100 }
-    if ($null -eq $used) { $used = 100 - $remain }
+    if ($j.sand_exhausted -eq $true -or ($null -ne $remain -and [int]$remain -le 0 -and ($null -ne $j.overage_gbp -or $null -ne $j.overage_usd))) {
+        $remain = $null
+    }
+    if ($null -ne $j.overage_gbp -and [string]$j.overage_gbp -ne '') { $overGbp = [double]$j.overage_gbp }
+    if ($null -ne $j.overage_usd -and [string]$j.overage_usd -ne '') { $overUsd = [double]$j.overage_usd }
+    if ($null -ne $j.on_demand_used_cents -and [string]$j.on_demand_used_cents -ne '') { $cents = [int]$j.on_demand_used_cents }
+    if ($null -eq $remain -and $null -eq $used -and $null -eq $overGbp -and $null -eq $overUsd) { return $null }
+    if ($null -ne $remain) {
+        if ($remain -lt 0) { $remain = 0 }
+        if ($remain -gt 100) { $remain = 100 }
+    }
+    if ($null -eq $used -and $null -ne $remain) { $used = 100 - $remain }
     return [pscustomobject]@{
-        remaining_pct = [int]$remain
-        used_pct      = [int][math]::Round([double]$used)
+        remaining_pct = $(if ($null -eq $remain) { $null } else { [int]$remain })
+        used_pct      = $(if ($null -eq $used) { $null } else { [int][math]::Round([double]$used) })
+        overage_gbp   = $overGbp
+        overage_usd   = $overUsd
+        on_demand_used_cents = $cents
+        overage_source = $(if ($j.overage_source) { [string]$j.overage_source } else { $null })
         source        = 'cursor-agent'
         kind          = 'weekly'
     }
@@ -217,12 +234,23 @@ function Get-BobCursorAgentWeeklyRemaining {
     }
     $py = $null
     foreach ($c in @(
+            'C:\Python\Python312\python.exe',
+            'C:\Python\Python313\python.exe',
             (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe')
         )) {
-        if (Test-Path $c) { $py = $c; break }
+        if ($c -and (Test-Path $c)) { $py = $c; break }
     }
-    $script = Join-Path (Get-ModuleRoot) 'tools\Get-CursorAgentUsage.py'
+    $script = $null
+    try {
+        $root = Split-Path (Get-ModuleRoot) -Parent
+        $cand = Join-Path $root 'tools\Get-CursorAgentUsage.py'
+        if (Test-Path $cand) { $script = $cand }
+    } catch { }
+    if (-not $script) {
+        $cand2 = Join-Path (Get-ModuleRoot) 'tools\Get-CursorAgentUsage.py'
+        if (Test-Path $cand2) { $script = $cand2 }
+    }
     if ($py -and (Test-Path $script)) {
         try {
             $raw = & $py $script 2>$null
@@ -362,19 +390,16 @@ function Get-BobSeatForMachine {
 }
 
 function Get-BobCursorOverageGbp {
-    # tip_cursor.json {"cursor":12} means £12 overage (not a percent).
-    $tipPath = Join-Path $env:USERPROFILE '.grok\tip_cursor.json'
-    if (Test-Path $tipPath) {
-        try {
-            $tj = Get-Content $tipPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($null -ne $tj.cursor -and [string]$tj.cursor -ne '') {
-                return [double]$tj.cursor
-            }
-        } catch { }
-    }
+    # Real on-demand spend from Get-CursorAgentUsage.py (USD cents -> GBP).
+    # Never treat tip_cursor.json as pounds.
+    try {
+        $doc = Get-BobCursorAgentWeeklyRemaining
+        if ($doc -and $null -ne $doc.overage_gbp -and [string]$doc.overage_gbp -ne '') {
+            return [double]$doc.overage_gbp
+        }
+    } catch { }
     return $null
 }
-
 function Test-BobCursorOverageLabel {
     param([string]$Label)
     if (-not $Label) { return $false }
