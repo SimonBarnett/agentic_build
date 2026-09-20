@@ -17,3 +17,11 @@ ntsa (marchhare + ce-priority-dev1), cursor overage as red negative pounds from
 `tip_cursor.json`, Suspend/Resume redraw to stop poll flash, single-instance
 mutex + Restart watcher kill-all. Trigger: recycle Watch-BobTray only after
 card/hover changes.
+
+## 2026-09-20 — bob-fleet-tray blank-card + real GBP overage (ionos UAT)
+
+- Dropped WM_SETREDRAW from Suspend/Resume-BobTrayPaint (SuspendLayout only).
+- Rebuild-BobTrayTiles formats cursor/seat labels before Controls.Clear.
+- Inline overage-red check (no Test-BobCursorOverageLabel from tray).
+- Get-CursorAgentUsage.py: spendLimitUsage.individualUsed → GBP via er-api.
+- Skill rewritten with diagnose steps for blank card + no-dialog compile fail.
