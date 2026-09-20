@@ -136,15 +136,18 @@ Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
 "@
         [IO.File]::WriteAllText($launch, $launchBody, $utf8)
         $exe = (Get-Command powershell.exe).Source
-        $arg = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launch)
-        # Do not RedirectStandardOutput here: PS 5.1 Start-Process then waits
-        # for the child (handoff blocked ~14 min on the fomprep MRB).
-        $p = Start-Process -FilePath $exe `
-            -ArgumentList $arg `
-            -WorkingDirectory $Cwd -WindowStyle Hidden `
-            -PassThru
+        # Win32_Process.Create so the agent outlives this shell's Job Object
+        # (Start-Process children died when the grok.exe command exited).
+        $cmdLine = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}"' -f $exe, $launch
+        $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine      = $cmdLine
+            CurrentDirectory = $Cwd
+        }
+        if ($created.ReturnValue -ne 0 -or -not $created.ProcessId) {
+            throw "Win32_Process.Create return=$($created.ReturnValue)"
+        }
         $started = $true
-        $packet.pid = $p.Id
+        $packet.pid = [int]$created.ProcessId
     }
     catch {
         $startError = $_.Exception.Message

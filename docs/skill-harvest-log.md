@@ -4,6 +4,13 @@
 
 Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
 
+## 2026-09-20 — Start-BobCursor must leave the grok Job Object
+
+`Start-Process` children are killed when the grok.exe shell that called
+`Start-BobCursor.ps1` exits. Use `Win32_Process.Create` so cursor-agent
+outlives the dispatcher. Combined with no `RedirectStandardOutput` on
+the parent (PS 5.1 wait bug).
+
 ## 2026-09-20 — Start-BobCursor must not wait on the agent
 
 `Start-Process -RedirectStandardOutput -PassThru` in Windows PowerShell

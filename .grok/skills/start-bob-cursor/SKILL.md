@@ -32,7 +32,9 @@ Writes a packet JSON. Starts **`cursor-agent.exe`** (`-p --model`) via a
 `launch.ps1` that reads the prompt file (do not put the prompt on
 `Start-Process -ArgumentList`; Windows splits quotes). Do not
 `Start-Process -RedirectStandardOutput` — PS 5.1 then waits for the
-agent; the launcher redirects to the log itself. Never
+agent; the launcher redirects to the log itself. Start the agent with
+`Win32_Process.Create` so it is not killed when the dispatcher shell
+exits (grok.exe Job Object). Never
 `~\.grok\bin\agent.exe` (that file is grok). Model from `Get-BobJobModel`:
 MRB `claude-opus-5-thinking-high`, build `composer-2.5`. Does not scrape
 Cursor cookies. Does not mark ready for human UAT.
