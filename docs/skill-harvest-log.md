@@ -1,5 +1,13 @@
 # Skill harvest log
 
+## 2026-09-20 — dispatcher hands every worker PR to a different MRB worker
+
+When a worker opens a PR, the dispatcher immediately `Start-BobMrbHandoff`
+(`-Kind mrb`, new job, isolated worktree). Never the implementer. Never
+resume the Composer session. FAIL still spawns a FIX worker who opens a
+new PR; that PR is MRBd by yet another worker. Home: `bob-build-loop`.
+Pointers: `cursor-mrb-dev`, `bob-hostile-mrb`.
+
 ## 2026-09-20 — PR/MRB transaction: Cursor Models then grok
 
 Simon: Cursor Models (Cursor Grok + Composer) for MRBs and PRs until that

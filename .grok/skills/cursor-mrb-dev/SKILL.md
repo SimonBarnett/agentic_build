@@ -58,10 +58,13 @@ Workers post via `tools/Start-BobMrb.ps1` (creates missing `mrb` /
 
 1. Tip = the **open PR** head SHA (or named SHA). Unrelated dirty files are
    out of scope.
-2. **MRB:** `tools/Start-BobMrbHandoff.ps1 -Repo owner/repo -Issue <fr>
-   -Sha <pr-head> -Cwd <clone> -Fuel cursor-models`. Wait for a **new**
-   GitHub issue `MRB FAIL|PASS-nits: ... <sha>` (labels `mrb` + `mrb-fail`
-   or `mrb-pass`). Prior FAIL issue is history.
+2. **MRB:** as soon as the PR URL exists, `tools/Start-BobMrbHandoff.ps1
+   -Repo owner/repo -Issue <fr> -Sha <pr-head> -Cwd <clone>
+   -Fuel cursor-models`. That starts a **new** agent (`-Kind mrb`, Cursor
+   Grok). Do not ask the implementer to review their own PR. Do not resume
+   the Composer/`-Kind build` session. Isolated cwd/worktree. Wait for a
+   **new** GitHub issue `MRB FAIL|PASS-nits: ... <sha>` (labels `mrb` +
+   `mrb-fail` or `mrb-pass`). Prior FAIL issue is history.
 3. **FAIL:** do not merge. Immediately
    `Start-BobBuild -Task git -Fix -Kind build -Mrb <new-mrb-issue>`
    (or `Start-BobCursor.ps1 -Kind build` when fuel is still cursor-models).

@@ -104,7 +104,7 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 
 ### Guardrails
 
-- Bob orchestrates and stamps UAT. Workers open PRs. Bob **hands off** hostile MRB; the MRB agent merges on PASS-nits. Every FAIL spawns a FIX worker. No in-session MRB or implementation.
+- Bob orchestrates and stamps UAT. Workers open PRs. The dispatcher hands each PR to a **different** worker for MRB (`Start-BobMrbHandoff`, new job, `-Kind mrb`). The implementer never reviews or merges their own PR. PASS-nits: that MRB agent merges. FAIL: spawn a FIX worker. No in-session MRB or implementation.
 - Cursor Models remaining % is the tray top bar and the fuel gate, not a machine named `cursor`, not Grok Bot Sand, not Other Models.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.

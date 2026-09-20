@@ -26,7 +26,7 @@ Handoff scripts: `cursor-mrb-dev`. Remaining numbers: `box-usage`.
 |---|---|---|
 | FR + plan parked | `Start-BobBuild -Task git` | dispatcher |
 | Worker finished on `work/<job>` | Open a PR against `main`. Never push `main`. Never merge. | that worker |
-| PR opened | `Start-BobMrbHandoff` on the PR head SHA | dispatcher |
+| PR opened | Immediately `Start-BobMrbHandoff` on the PR head SHA. **New worker**, new job, `-Kind mrb`. Never the implementer. Never resume the PR worker. | dispatcher |
 | MRB **FAIL** | Do not merge. Immediately `Start-BobBuild -Task git -Fix` with Required fixes. Worker opens a **new** PR. | dispatcher |
 | MRB **PASS-nits** | MRB worker merges the PR (`gh pr merge`). Nits do not block. | that MRB worker |
 | candidate PASS-UAT | Stamp or reject the phrase **ready for human UAT** | Bob only |
@@ -72,7 +72,10 @@ flowchart TB
 
 - New product repos: **public** under `SimonBarnett` unless Simon says otherwise.
 - Feature work: **do not break** prior versions; use `v2/` / `v3/` (or next free version folder).
-- Worker output is a **PR**. MRB output is FAIL (spawn worker) or PASS-nits (merge).
+- Worker output is a **PR**. The dispatcher hands that PR to a **different**
+  worker for MRB (new job, `-Kind mrb`). The implementer never reviews or
+  merges their own PR. MRB output is FAIL (spawn FIX worker) or PASS-nits
+  (that MRB worker merges).
 - Never Other Models (`claude-opus-5-thinking-high` and friends) for this loop.
 - Never put `password=` or `XAI_API_KEY=` **assignments** in goals (`Test-PromptSecrets`).
 - MRB is a GitHub issue, not a PDF.
