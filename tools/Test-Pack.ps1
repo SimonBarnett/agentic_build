@@ -1722,6 +1722,44 @@ Invoke-Case 'BT0loop4c wait_mrb retry on refused-start world' {
     if ($d.kind -ne 'mrb') { throw "kind=$($d.kind)" }
 }
 
+Invoke-Case 'BT0loop4c2 wait_mrb retry on state startError no job' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
+    $state.phase = 'wait_mrb'
+    $state.jobAttempts = 1
+    $state.currentKind = 'mrb'
+    $state.startError = 'MRB handoff enqueue failed (enqueue refused)'
+    $state.currentPid = $null
+    $state.currentJobId = $null
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+    if ($d.kind -ne 'mrb') { throw "kind=$($d.kind)" }
+}
+
+Invoke-Case 'BT0loop4d2 wait_pr cursor-models completion not ok no pid' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3 -Fuel 'cursor-models'
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 1
+    $state.currentKind = 'build'
+    $state.currentPid = $null
+    $state.currentJobId = 'cursor-done-bad'
+    $world = [pscustomobject]@{
+        Job          = [pscustomobject]@{ id = 'cursor-done-bad'; fuel = 'cursor-models'; completionStatus = 'error'; pid = $null }
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+}
+
 Invoke-Case 'BT0loop4d wait_pr cursor-models no pid no job' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3 -Fuel 'cursor-models'
@@ -1851,6 +1889,34 @@ Invoke-Case 'BT0loop8 loop once testworld no live gh' {
     $board = Get-BobMrbBoard -Repo 'fixture/repo' -Issue 19 -Path $r.statePath
     if ([int]$board.issue -ne 19) { throw 'board issue missing' }
     if ($starts.Count -lt 1) { throw 'TestStartBuild not called' }
+}
+
+Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 44
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 44 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd -MaxJobRetries 3
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $mrbCalls = New-Object System.Collections.Generic.List[string]
+    $r = & $loop -Issue 44 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestStartMrb {
+        param($st)
+        [void]$mrbCalls.Add('mrb')
+        [pscustomobject]@{ ok = $false; started = $false; jobId = $null; pid = $null; fuel = 'cursor-models'; startError = 'MRB handoff enqueue failed (enqueue refused)' }
+    }
+    if ($r.action -ne 'retry_job') { throw "expected retry_job after refused mrb start, got $($r.action)" }
+    if (-not [string]$r.state.startError) { throw 'startError must persist on state' }
+    if ($mrbCalls.Count -lt 1) { throw 'TestStartMrb not invoked on retry_job' }
 }
 
 Write-Host ''

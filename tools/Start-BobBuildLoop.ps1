@@ -269,7 +269,21 @@ function Invoke-LoopStartMrb {
     if ($State.docs) { $hArgs['Docs'] = [string]$State.docs }
     if ($State.plan) { $hArgs['Plan'] = [string]$State.plan }
     if ($AllowCopilot) { $hArgs['AllowCopilot'] = $true }
-    $r = & $handoff @hArgs
+    try {
+        $r = & $handoff @hArgs
+    }
+    catch {
+        $msg = [string]$_.Exception.Message
+        if (-not $msg.Trim()) { $msg = 'MRB handoff refused' }
+        return [pscustomobject]@{
+            ok         = $false
+            started    = $false
+            jobId      = $null
+            pid        = $null
+            fuel       = $(if ($State.fuel) { [string]$State.fuel } else { 'cursor-models' })
+            startError = $msg
+        }
+    }
     $pid = $null
     if ($r.pid) { $pid = $r.pid }
     $jobId = $null
