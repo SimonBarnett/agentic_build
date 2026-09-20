@@ -1,56 +1,36 @@
-# Feature request: capacity dispatch for git tasks (machine × fuel)
+# Feature request: git-task capacity dispatch — (machine, fuel), Cursor Models is a shared pool
 
-**Date:** 2026-09-20  
-**Repo:** https://github.com/SimonBarnett/agentic_build  
-**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/7  
-**Raised by:** Simon (originating agent / this thread)  
-**UAT + hostile MRB owner:** Bob  
-**Build orchestrator:** Bob  
+**Date:** 2026-09-20
+**Repo:** https://github.com/SimonBarnett/agentic_build
+**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/8
+**Raised by:** Simon (via originating agent)
+**UAT + hostile MRB owner:** Bob
+**Build orchestrator:** Bob — `Start-BobBuild -Task git` (picker chooses seat; do not pin flamingo unless override)
+
+## Problem
+
+1. `Start-BobBuild` is machine-first. The factory loop is **git-task-first**: spec + plan in git, implementer commits and pushes, Bob MRBs as an issue, originating agent gets the issue URL. The implementer brand (Grok Build, Grok Bot, Cursor Agent, Copilot) is a swap-out replacement.
+
+2. The fleet tray already splits two kinds of meter and the dispatcher does not:
+   - **Top bar on the form** = Cursor Models (account pool: Cursor Grok / Composer). This fuel is usable on **every** machine that can run Cursor Agent. It is not a machine called `cursor`.
+   - **Rows** = named machines (`flamingo`, `ionos`, `marchhare`, `DEV1`, …) each with their own Grok weekly remaining, reset date, and jobs.
+   - A row labelled `cursor` with reset 23 Sep is **Grok Bot weekly on that glass**, not the top bar.
+
+3. When Grok Bot weekly is 100% and Cursor Models is ~1% used, Bob still needs to hand git work to a live box running Cursor fuel. Pinning `-Machine cursor` is the wrong model.
 
 ## Ask
 
-Bob hands a **git task** to whoever has capacity. The worker brand is not in the packet. Cursor Models is **fuel**, not a machine: it has its own bar at the top of the fleet form and is reachable from every Cursor-capable box.
+Treat a worker as a pair `(machine, fuel)`.
 
-A git task is accepted when the worker **commits and pushes** a branch. Chat transcripts are not the handoff. Git + the issue are the swap-out point. A fix pass may land on a different `(machine, fuel)` than the first implement pass.
+Fuels: `cursor-models` | `grok-build` | `copilot` | `grok-bot` | `on-demand`.
 
-## LOCKED
+Machines: registered Bob Fleet boxes that have scratch `CwdRoots` and a pull worker. Mode 3 DUMB / Server 2012 `airc-dumb` is **not** eligible for git tasks.
 
-1. Packet has no model name and no required `-Machine`.
-2. Capacity is a pair `(machine, fuel)`.
-3. Machines = tray **rows** (flamingo, ionos, marchhare, ce-priority-dev1, …).
-4. Fuels include at least: `cursor-models` (shared top bar), `grok-build`, `grok-bot`, `copilot`, `on-demand`.
-5. `cursor-models` is account-level. Burning it from ionos or flamingo moves the **top bar**, not a fake machine named cursor.
-6. The tray row labelled `cursor` / Grok Bot week is **`grok-bot` fuel**, not the top bar.
-7. DUMB / Mode 3 / 2012 is **not** eligible for git tasks unless a later FR wraps a jailed git-only script. Default: no.
-8. `-Machine` and `-Fuel` remain explicit overrides (formprep, MSSQL, pinned box).
-9. Default `Start-BobBuild -Task git` picks capacity.
-10. Included quota beats on-demand. Do not pick `on-demand` or empty `grok-bot` if any included fuel+machine pair is eligible.
-11. Bob stays chair: spec intake, dispatch, hostile MRB, UAT stamp. Cursor / Copilot / grok.exe only implement.
-12. IRC verbs stay vendor-free: `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`.
-13. Do not break prior versions of Start-BobBuild / Watch-BobJobs / named `-Machine` behaviour.
+### Git-task packet
 
-## UNKNOWN (do not invent)
-
-- Exact Cursor cloud-agent API vs local IDE launch on a box.
-- Whether Copilot quota is readable from the tray process.
-- Numeric remaining units for Cursor Models (form shows %).
-- Whether two Cursor agents on two boxes share one cloud-agent slot.
-
-## Gap vs current tree
-
-- `Start-BobBuild` requires / assumes a named machine. No `-Task git`. No fuel.
-- Profiles are `generic` / `formprep` (transport), not fuels.
-- `start-bob-copilot` exists as a side door, not behind the same picker.
-- No `start-bob-cursor`.
-- Tray / `bob-fleet-tray` / peer peek / `seat-period-end.json` already track per-machine Grok weeks and jobs. They do not expose a first-class shared `cursor-models` pool as dispatch input.
-- `bob-build-dispatch` writes a plan and calls Start-BobBuild; it does not sort eligible pairs.
-- DUMB is in agentic_irc, not filtered out of a git picker because no git picker exists yet.
-
-## Git packet (LOCKED fields)
-
-```
+```text
 task: git
-repo: <https url>
+repo: <url>
 branch: work/<job-id>
 docs: /docs/<spec>.md
 plan: /docs/<plan>.md
@@ -58,41 +38,49 @@ mrb: <issue url or empty>
 return: issue comment + POINT UAT
 ```
 
-Optional override: `machine`, `fuel`.
+No vendor name required in the packet.
 
-## Picker order (LOCKED)
+### Picker (default when `-Machine` omitted)
 
-```
-for fuel in cursor-models, grok-build, copilot, grok-bot, on-demand:
-  if fuel has no remaining included (or on-demand not allowed): continue
-  seats = machines that can run that fuel
-           AND alive AND jobs==0 AND scratch Cwd ok
-           AND not dumb-only
-  pick best seat: idle, reset furthest, repo already present
-  return (machine, fuel)
-POINT WAIT if none
-```
+Eligible = machine up, `jobs == 0`, scratch ok, machine can start that fuel, fuel has included remaining (unless on-demand explicitly allowed).
 
-Today (2026-09-20, Ultra): Cursor Models ~1% used (month 16 Oct), Grok Bot weekly 100% until 23 Sep, on-demand $62.52/$100. Rows: ionos 0%/26 Sep, flamingo 15%/27 Sep, marchhare and ce-priority-dev1 thin/23 Sep. Picker should prefer `(any Cursor-capable box, cursor-models)` then `(ionos|flamingo, grok-build)` before Bot on-demand.
+Try fuels in order:
+
+1. `cursor-models` (shared top-bar pool)
+2. `grok-build` (per-machine weekly bar)
+3. `copilot` (`start-bob-copilot`)
+4. `grok-bot` (per-machine Bot week)
+5. `on-demand` (only if a cap is enabled and remaining > 0)
+
+Within a fuel, pick the healthiest machine (idle, reset furthest, repo already present).
+
+If none: park job, IRC `POINT WAIT`. Do not lie with `unreachable`.
+
+Override remains: `Start-BobBuild -Machine flamingo -Fuel grok-build` for formprep / MSSQL / `--rules`.
+
+FIX pass re-runs the picker. Cursor may fix a Grok commit and vice versa. Git is the swap point. Bob never hands the chair (MRB / UAT stamp) to Cursor because it has quota.
+
+### Skills / cmdlets
+
+- Extend `Start-BobBuild` / `bob-build-dispatch` / `grok-build-fleet`: `-Task git`, optional `-Machine`, optional `-Fuel`.
+- Add `start-bob-cursor` behind the same picker (peer of `start-bob-copilot`). Implementation may be cloud agent or a printed IDE prompt packet; must still commit + push on `work/<job-id>`.
+- Tray: keep **one** Cursor Models bar at the top of the form. Rows stay machines and list which fuels they can strike. Do not add a fake machine for Cursor Models.
+- IRC (existing `#bobiverse` / `bob-irc`): `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT` — no vendor names in the verbs. `BUILD <job> <nick>` is the machine nick; fuel is in the job file.
 
 ## Acceptance
 
-1. `Start-BobBuild -Task git` with no `-Machine` writes a job naming `{machine, fuel, packet}` and does not require a vendor in the packet.
-2. Tray / capacity snapshot distinguishes **top-bar `cursor-models`** from **row `grok-bot`**. Shared pool is not a machine row.
-3. Each machine row can declare which fuels it can strike. Dumb-only rows never win a git pick.
-4. `start-bob-cursor` (new) and existing `start-bob-copilot` are reachable from the same picker, not only as human rituals.
-5. `-Machine` / `-Fuel` override still works; existing named-machine jobs keep working.
-6. Watch-BobJobs / pull worker starts the chosen fuel on the chosen box (or documents WAIT + how a human starts Cursor IDE when cloud launch is UNKNOWN).
-7. Completion record is SHA + job id (PUSH). MRB stays a GitHub issue on this FR issue or the feature-request issue being built.
-8. Off-DEV Fake-Grok path: picker can be unit-tested without live bots or GitHub (pair selection only).
-9. README + `bob-build-dispatch` / `grok-build-fleet` skill text describe `-Task git` and fuel vs machine.
-10. Commit/push. Hostile MRB on issue #7.
+1. Off-DEV Test-Pack / Fake-Grok: picker is unit-testable; given a fake tray (Cursor Models 1% used, Bot 100%, ionos 0% Grok week, flamingo 15%, DUMB box present) a git task with no `-Machine` selects an eligible `(machine, cursor-models)` pair and never selects DUMB.
+2. `Start-BobBuild -Task git` without `-Machine` writes a job file containing both `machine` and `fuel`.
+3. `-Machine flamingo -Fuel grok-build` still pins.
+4. Tray schema/docs: top bar = shared Cursor Models; rows = machines; `cursor` Bot week is a fuel on a machine, not the top bar.
+5. `start-bob-cursor` skill exists with when-to-use triggers; `start-bob-copilot` is reached via the same picker not a separate human ritual.
+6. FIX re-queue uses the picker again.
+7. Commit + push. Hostile MRB on issue #8. Do not mark ready for human UAT until Bob passes.
 
 ## Non-goals
 
-- Public token marketplace / paying strangers / silent consumer app.
-- Unattended public IRC.
-- Making DUMB a git worker.
-- Cursor as MRB chair or second Bob.
-- Changing Grok Bot or Cursor billing.
-- Secrets in docs.
+- Token marketplace / paying strangers / selling leftover SuperGrok.
+- Unattended public IRC channels.
+- Making Mode 3 DUMB / 2012 `airc-dumb.exe` a git-task worker.
+- Changing provider quota math.
+- Letting Cursor (or Copilot) own MRB / UAT.
