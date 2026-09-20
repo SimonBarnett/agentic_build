@@ -32,6 +32,9 @@ function Import-Bridge {
     $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
     $env:BOB_SKIP_LIVE_GROK = '1'
+    $env:BOB_GH_EXE = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $null
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
     $env:BOB_FLEET_SHARE = $null
@@ -79,6 +82,9 @@ function Invoke-Case {
         $env:BOB_FAKE_GH_MODE = $null
         $env:BOB_FAKE_GH_LOG = $null
         $env:BOB_FAKE_GH_QUIET = $null
+        $env:BOB_SKIP_GH_INSTALL = $null
+        $env:GH_TOKEN = $null
+        $env:GITHUB_TOKEN = $null
         $env:BOB_MACHINE_ID = $null
     }
 }
@@ -1370,6 +1376,9 @@ Invoke-Case 'BT0s mrb label skip' {
         $env:BOB_FAKE_GH_MODE = $savedMode
         $env:BOB_FAKE_GH_LOG = $savedLog
         $env:BOB_FAKE_GH_QUIET = $null
+        $env:BOB_SKIP_GH_INSTALL = $null
+        $env:GH_TOKEN = $null
+        $env:GITHUB_TOKEN = $null
     }
 }
 
@@ -1510,6 +1519,79 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
     catch {
         if ($_.Exception.Message -notmatch 'TestSkipCursor') { throw $_.Exception.Message }
     }
+}
+
+# --- BT0y fleet gh posting readiness (issue #11) ---
+Invoke-Case 'BT0y1 gh posting absent' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'missing-gh.exe'
+    $snap = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+    if ($snap.present) { throw 'present must be false when gh missing' }
+    if ($snap.issue_posting_ready) { throw 'issue_posting_ready must be false' }
+}
+
+Invoke-Case 'BT0y2 gh posting dead auth' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'dead'
+    $env:GH_TOKEN = 'fixture-token-not-readiness'
+    $snap = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+    if (-not $snap.present) { throw 'gh fixture must be present' }
+    if ($snap.authenticated) { throw 'authenticated must be false on dead mode' }
+    if ($snap.issue_posting_ready) { throw 'token env alone must not make ready' }
+}
+
+Invoke-Case 'BT0y3 gh posting ready fixture' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $snap = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+    if (-not $snap.issue_posting_ready) { throw "ready fixture failed: $($snap.reason)" }
+    $rec = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    if (-not $rec.gh_posting.issue_posting_ready) { throw 'Register-BobMachine must persist gh_posting' }
+    $h = Get-BobHealth
+    if (-not $h.gh_posting.issue_posting_ready) { throw 'Get-BobHealth gh_posting must be ready on fixture' }
+}
+
+Invoke-Case 'BT0y4 mrb picker skips not-ready' {
+    param($bridgeRoot)
+    $fixture = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'ionos'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 100 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build'); issue_posting_ready = $false
+            }
+            [pscustomobject]@{
+                id = 'flamingo'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build'); issue_posting_ready = $true
+            }
+        )
+    }
+    $mrb = Select-BobGitWorker -Capacity $fixture -Kind mrb -Fuel grok-build
+    if ($mrb.wait) { throw "mrb picker waited: $($mrb.reason)" }
+    if ($mrb.machine -ne 'flamingo') { throw "mrb picked $($mrb.machine) expected flamingo (only posting-ready)" }
+    $build = Select-BobGitWorker -Capacity $fixture -Kind build -Fuel grok-build
+    if ($build.machine -ne 'ionos') { throw "build kind may pick ionos got $($build.machine)" }
+}
+
+Invoke-Case 'BT0y5 install gh reports not-ready' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'missing-gh.exe'
+    $env:BOB_SKIP_GH_INSTALL = '1'
+    $r = Install-BobGitHubCliIfMissing -Repo 'fixture/repo'
+    if ($r.gh_posting.issue_posting_ready) { throw 'must report not-ready when gh absent' }
+    if ($r.action -ne 'skipped') { throw "action=$($r.action)" }
+    $src = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($src -notmatch 'Install-BobGitHubCliIfMissing') { throw 'Install-BobFleet must call Install-BobGitHubCliIfMissing' }
 }
 
 Write-Host ''

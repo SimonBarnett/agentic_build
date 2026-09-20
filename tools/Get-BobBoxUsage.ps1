@@ -178,7 +178,16 @@ if ($sub) {
     Write-Host "Tier:     (settings_cache missing or unreadable)"
 }
 if ($health) {
-    Write-Host "Health:   ok=$($health.ok) grok=$($health.grok_version) logged_in=$($health.logged_in) workers=$($health.worker_count) watcher_up=$($health.watcher_up) last_seen_age_sec=$($health.last_seen_age_sec)"
+    $ghNote = ''
+    if ($health.gh_posting) {
+        $gp = $health.gh_posting
+        if ($gp.issue_posting_ready) { $ghNote = ' gh_post=ready' }
+        else { $ghNote = ' gh_post=not-ready' }
+    }
+    Write-Host "Health:   ok=$($health.ok) grok=$($health.grok_version) logged_in=$($health.logged_in) workers=$($health.worker_count) watcher_up=$($health.watcher_up) last_seen_age_sec=$($health.last_seen_age_sec)$ghNote"
+    if ($health.gh_posting -and -not $health.gh_posting.issue_posting_ready) {
+        Write-Host ("          gh: {0}" -f $health.gh_posting.reason)
+    }
 } elseif ($bobRoot) {
     Write-Host "Health:   BobBridge at $bobRoot but Get-BobHealth failed"
 } else {

@@ -47,7 +47,9 @@
         'Read-BobIrcPeer',
         'Write-BobIrcStatus',
         'Import-BobIrcPeerTranscript',
-        'Compact-BobIrcOutbox'
+        'Compact-BobIrcOutbox',
+        'Get-BobGhPostingReadiness',
+        'Install-BobGitHubCliIfMissing'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

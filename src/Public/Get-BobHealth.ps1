@@ -48,6 +48,18 @@ function Get-BobHealth {
     $rec = Get-BobMachineRecord
     $age = Get-BobLastSeenAgeSec -Record $rec
     $watcherUp = Test-BobWatcherUp
+    $ghPosting = $null
+    try {
+        $ghPosting = Get-BobGhPostingReadiness
+    }
+    catch {
+        $ghPosting = [pscustomobject]@{
+            present             = $false
+            authenticated       = $false
+            issue_posting_ready = $false
+            reason              = $_.Exception.Message
+        }
+    }
     return [pscustomobject]@{
         ok                = $ok
         grok_installed    = $installed
@@ -61,5 +73,6 @@ function Get-BobHealth {
         watcher_up        = $watcherUp
         last_seen         = $(if ($rec) { [string]$rec.lastSeen } else { $null })
         last_seen_age_sec = $age
+        gh_posting        = $ghPosting
     }
 }

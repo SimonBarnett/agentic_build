@@ -103,7 +103,7 @@ if ($PSBoundParameters.ContainsKey('TestGitWorkerResult')) {
     $sel = $TestGitWorkerResult
 }
 else {
-    $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
+    $sel = Select-BobGitWorker -Kind mrb -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
 }
 if ($sel.wait) {
     throw "MRB handoff preflight: no eligible $enqueueFuel worker ($($sel.reason)). Fix capacity before spending Grok on the review."

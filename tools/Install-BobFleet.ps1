@@ -25,6 +25,16 @@ Import-Module $psd1 -Force
 if (-not $CwdRoots) { $CwdRoots = @($RepoRoot) }
 $rec = Register-BobMachine -Id $MachineId -CwdRoots $CwdRoots
 
+$ghInstall = Install-BobGitHubCliIfMissing
+if ($ghInstall.gh_posting) {
+    $rec = Update-BobMachineGhPosting -Record $rec
+    Write-JsonFile (Join-Path (Get-BridgeRoot) 'machine.json') $rec
+    $dir = Join-Path (Initialize-FleetRoot) 'machines'
+    Write-JsonFile (Join-Path $dir ($rec.id + '.json')) $rec
+}
+$ghReady = $false
+if ($ghInstall.gh_posting -and $ghInstall.gh_posting.issue_posting_ready) { $ghReady = $true }
+
 $grok = Join-Path $env:USERPROFILE '.grok\bin\grok.exe'
 if (-not $env:BOB_GROK_EXE -and (Test-Path $grok)) {
     [Environment]::SetEnvironmentVariable('BOB_GROK_EXE', $grok, 'User')
@@ -109,6 +119,13 @@ if ($bvFile) {
 }
 
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
+Write-Host ("GitHub CLI:  action={0} ready={1}" -f $ghInstall.action, $ghReady)
+if (-not $ghReady -and $ghInstall.gh_posting) {
+    Write-Host ("             {0}" -f $ghInstall.gh_posting.reason)
+}
+if ($ghInstall.message -and $ghInstall.action -ne 'present') {
+    Write-Host ("             {0}" -f $ghInstall.message)
+}
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"

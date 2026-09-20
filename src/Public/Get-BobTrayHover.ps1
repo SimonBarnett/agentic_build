@@ -974,7 +974,22 @@ function Get-BobTrayHover {
         Save-BobCursorAccountCache -Label $acctPctLabel -PeriodEnd $cend
     }
     $acctLine = ('Cursor Models ({0})' -f $acctPctLabel)
-    $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
+    $ghLine = $null
+    try {
+        $hGh = Get-BobHealth
+        if ($hGh -and $hGh.gh_posting) {
+            $gp = $hGh.gh_posting
+            if ($gp.issue_posting_ready) { $ghLine = 'GitHub post: ready' }
+            else { $ghLine = ('GitHub post: not ready ({0})' -f [string]$gp.reason) }
+        }
+    }
+    catch { }
+    if ($ghLine) {
+        $jobsText = ($acctLine + "`n" + $ghLine + "`n" + ($jobLines -join "`n"))
+    }
+    else {
+        $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
+    }
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {

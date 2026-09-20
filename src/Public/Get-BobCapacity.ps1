@@ -295,6 +295,22 @@ function Get-BobCapacity {
         }
         $row.gitEligible = Test-BobGitEligibleMachine $row
         $row.fuels = @(Get-BobMachineFuels $row)
+        $ghSnap = $null
+        if ($rec -and $rec.gh_posting) { $ghSnap = $rec.gh_posting }
+        elseif ($thisId -and $id -eq $thisId) {
+            try { $ghSnap = Get-BobGhPostingReadiness } catch { }
+        }
+        if ($ghSnap) {
+            $row | Add-Member -NotePropertyName gh_posting -NotePropertyValue $ghSnap -Force
+            $ready = $false
+            if ($null -ne $ghSnap.issue_posting_ready) {
+                try { $ready = [bool]$ghSnap.issue_posting_ready } catch { }
+            }
+            $row | Add-Member -NotePropertyName issue_posting_ready -NotePropertyValue $ready -Force
+        }
+        else {
+            $row | Add-Member -NotePropertyName issue_posting_ready -NotePropertyValue $false -Force
+        }
         $machines += $row
     }
 
@@ -346,6 +362,7 @@ function Select-BobGitWorker {
         $Capacity,
         [string]$Machine,
         [string]$Fuel,
+        [ValidateSet('mrb', 'build')][string]$Kind = 'build',
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
         [string]$Repo
@@ -384,6 +401,9 @@ function Select-BobGitWorker {
         if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $wantFuel)) {
             return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'pin rejected (ineligible fuel)' }
         }
+        if ($Kind -eq 'mrb' -and -not (Test-BobMachineIssuePostingReady $m)) {
+            return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'pin rejected (gh posting not ready)' }
+        }
         return [pscustomobject]@{ wait = $false; machine = [string]$m.id; fuel = $wantFuel }
     }
 
@@ -403,6 +423,7 @@ function Select-BobGitWorker {
             if ((Get-BobMachineJobCount $m) -ne 0) { continue }
             if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $fuelName)) { continue }
             if (-not (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $fuelName -AllowOnDemand:$AllowOnDemand)) { continue }
+            if ($Kind -eq 'mrb' -and -not (Test-BobMachineIssuePostingReady $m)) { continue }
             $candidates += $m
         }
         if ($candidates.Count -eq 0) { continue }

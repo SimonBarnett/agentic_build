@@ -29,9 +29,10 @@ Import-Module "$repo\src\BobBridge.psd1"
 
 ```powershell
 Get-BobMachines
-Get-BobHealth
-Get-BobCapacity
-Select-BobGitWorker                  # optional -Machine / -Fuel
+Get-BobHealth                        # includes gh_posting (present, authenticated, issue_posting_ready, reason)
+Get-BobCapacity                      # machine rows carry gh_posting / issue_posting_ready
+Select-BobGitWorker                  # optional -Machine / -Fuel; -Kind mrb requires issue_posting_ready
+Install-BobGitHubCliIfMissing        # winget GitHub.cli when gh missing; never silent
 Start-BobBuild -Task git -Goal '...' -Profile generic -ReplyChannel $env:USERNAME
 Start-BobBuild -Machine ionos -Fuel grok-build -Cwd $repo -Goal '...' -Profile formprep
 Get-BobBuild -JobId <id>
@@ -81,9 +82,24 @@ A `BobFleet-<id>` task that is `Ready` with LastRunTime 1932 / result 267011 **n
 
 ```powershell
 powershell -NoProfile -File "$repo\tools\Install-BobFleet.ps1" -MachineId <id> -CwdRoots <roots>
-# Install demand-starts the task and sets ExecutionTimeLimit 0 (the poll loop is infinite; 72h would kill it).
+# Installs GitHub CLI via winget when gh is missing (or prints not-ready + reason).
+# Demand-starts the task and sets ExecutionTimeLimit 0 (the poll loop is infinite; 72h would kill it).
 Start-ScheduledTask -TaskName "BobFleet-<id>"   # if already registered
 ```
+
+## GitHub CLI (MRB / git workers)
+
+MRB and git workers post issues and merge PRs through `gh`. Readiness is probed
+(`gh auth status` + `gh repo view` on the product repo) — a set `GH_TOKEN` alone
+is not enough. **`GH_TOKEN`** is preferred; **`GITHUB_TOKEN`** is honoured.
+Scopes: **`issues:write`** and **`pull_requests:write`** on
+`SimonBarnett/agentic_build`. Store the token in the **Windows user environment**
+or use **`gh auth login`** (Credential Manager). Rotate by updating env or
+re-login; `Register-BobMachine` / fleet heartbeat persist `gh_posting` on
+`machine.json`. Preflight failure: run `Install-BobFleet` (or
+`winget install GitHub.cli`), then auth — see `cursor-mrb-dev` for the full
+contract. `Select-BobGitWorker -Kind mrb` never picks a box with
+`issue_posting_ready=false`.
 
 Prove idle watcher: `watcher_up=true` and `last_seen_age_sec` under 90. Prove busy watcher: `Get-BobBuilds -Lane running` plus live `grok.exe` with that job's session id. Do not restart a busy watcher.
 

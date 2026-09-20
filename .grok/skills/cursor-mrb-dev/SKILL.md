@@ -35,15 +35,31 @@ Show remaining: `box-usage` / tray top bar. Catalog mapping:
 ## GitHub posting (preflight)
 
 Before `Start-BobMrbHandoff` starts an agent, the **worker box** must post
-issues and merge PRs: `gh.exe` + `gh auth login` or `GH_TOKEN` with
-`issues:write` and `pull_requests:write`. See `Get-BobGhExe` in
-`tools/Bob-Gh.ps1`. When `BOB_GH_EXE` is set to a path that does not exist,
-`Get-BobGhExe` returns `$null` (it does not fall through to a system `gh.exe`).
-Off-DEV Test-Pack points `BOB_GH_EXE` at `tests/fixtures/Fake-Gh.ps1`.
+issues and merge PRs. Readiness is **not** inferred from a non-empty
+`GH_TOKEN` / `GITHUB_TOKEN` — BobBridge probes live auth:
 
-Grok-build fallback is dispatcher-local until issue #11.
+1. `gh.exe` on PATH or the usual `%ProgramFiles%` / `%LOCALAPPDATA%\GitHubCLI`
+   paths (`Get-BobGhExe` in `src/Private/Get-BobGh.ps1`; Test-Pack sets
+   `BOB_GH_EXE` to `tests/fixtures/Fake-Gh.ps1`).
+2. `gh auth status` succeeds (honours `GH_TOKEN` or `GITHUB_TOKEN` when set).
+3. `gh repo view <product-repo>` succeeds (cheap authorised read).
 
-If preflight fails, fix auth first. Do not start the MRB agent.
+**Non-interactive token contract (unattended fleet workers):**
+
+| Item | Value |
+|------|--------|
+| Env var | `GH_TOKEN` preferred; `GITHUB_TOKEN` honoured by GitHub CLI |
+| Scopes | `issues:write` and `pull_requests:write` on the product repo (`SimonBarnett/agentic_build` unless `-Repo` overrides) |
+| Where it lives | User-level env var **or** `gh auth login` stored in Windows Credential Manager (the path a live worker uses after login — not a repo file) |
+| Rotation | Update the user env var or re-run `gh auth login`; heartbeat refreshes `machine.json` → `gh_posting` |
+| Fleet install | `tools/Install-BobFleet.ps1` calls `Install-BobGitHubCliIfMissing` (winget when available; always prints ready / not-ready) |
+
+`Get-BobHealth.gh_posting` and capacity machine rows expose
+`issue_posting_ready`. `Select-BobGitWorker -Kind mrb` skips machines that
+cannot post.
+
+If preflight fails, fix GitHub CLI + auth first (same remediation strings as
+`Test-BobGhIssuePosting` in `tools/Bob-Gh.ps1`). Do not start the MRB agent.
 
 ### Test-Pack-only seams on `Start-BobMrbHandoff.ps1`
 
