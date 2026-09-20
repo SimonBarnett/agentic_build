@@ -183,6 +183,14 @@ backlog over 32KB on Start/Install; treat `127.0.0.1` as private Ergo
 (not stale/Libera); do not default ionos to loopback without SNI.
 Owner: `docs/bobiverse.md` + `bob-irc` stub.
 
+## 2026-09-20 — park quiet conversational #bobiverse talk
+
+Simon: channel less noisy; one fact per message; only when it changes;
+conversational; name model, worker/MRB/UAT, repo, runtime, hung/responding,
+SHA; DM current status when an agent joins. Alternatives in
+`docs/feature-request-bobiverse-quiet-talk-2026-09-20.md`. Protocol also
+needs an issue on `SimonBarnett/agentic_irc`.
+
 ## 2026-09-20 — cursor/xAI remaining + reset dates
 
 - Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.
