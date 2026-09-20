@@ -36,12 +36,30 @@ function Get-BobiversePython {
     return $null
 }
 
+function Stop-StaleBobiverseIrcAgent {
+    $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match 'irc_agent\.py' -and
+            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -notmatch 'irc\.ntsa\.uk'
+        })
+    foreach ($p in $hits) {
+        try {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-BobiverseLog "killed stale irc_agent pid=$($p.ProcessId) (not irc.ntsa.uk)"
+        }
+        catch { }
+    }
+}
+
 function Test-BobiverseIrcAgentUp {
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match 'bobiverse'
+            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -match 'irc\.ntsa\.uk'
         })
     return ($hits.Count -gt 0)
 }
@@ -82,9 +100,11 @@ function Start-BobiverseIrcAgent {
         return
     }
     $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
-    if (Test-Path $pwFile) {
-        $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
+    if (-not (Test-Path $pwFile)) {
+        Write-BobiverseLog 'skip irc_agent: missing ~/.grok/ergo/connect.password'
+        return
     }
+    $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
     $env:AGENTIC_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_DEBUG = '1'
     Start-Process -FilePath $py -ArgumentList @(
@@ -103,6 +123,7 @@ function Start-BobiverseIrcAgent {
 Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec"
 while ($true) {
     try {
+        Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
         Write-BobIrcStatus | Out-Null
         Import-BobIrcPeerTranscript | Out-Null

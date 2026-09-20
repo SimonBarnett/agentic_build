@@ -923,7 +923,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
     if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
     if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
+    if ([string]$cfg.host -ne 'irc.ntsa.uk') { throw "host=$($cfg.host)" }
     if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
+    $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    if ($installIrc -notmatch 'AGENTIC_IRC_PASSWORD') { throw 'Install-BobIrc must load connect.password' }
 
     $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
     $mootDir = Join-Path $ircHome 'moot'
@@ -958,6 +961,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$hSeats.jobs_text -match 'marchhare-bugets') { throw "jobs_text has ghost: $($hSeats.jobs_text)" }
 
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -notmatch 'irc\.ntsa\.uk') { throw 'Watch-Bobiverse must require irc.ntsa.uk' }
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must POINT via Write-BobIrcStatus' }

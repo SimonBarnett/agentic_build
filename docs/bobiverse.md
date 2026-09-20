@@ -43,4 +43,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\In
 
 `Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden 30s loop: POINT local status, scrape peer POINT lines into `bob-peers\`, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files. `Watch-BobTray` starts the loop the same way it starts `Watch-BobJobs`.
 
-Do not open Libera from CI. SASL env only if the box requires it (`AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD`); do not commit those.
+Do not open IRC from CI. Ergo `PASS` is `~\.grok\ergo\connect.password` (env `AGENTIC_IRC_PASSWORD`); do not commit it. SASL env only if a box still needs it (`AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD`).

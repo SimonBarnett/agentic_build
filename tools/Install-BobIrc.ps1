@@ -71,6 +71,11 @@ if ($already.Count -eq 0) {
     $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     $env:AGENTIC_IRC_DEBUG = '1'
+    $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
+    if (-not (Test-Path $pwFile)) {
+        throw 'missing ~/.grok/ergo/connect.password (copy from ionos; never commit it)'
+    }
+    $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
     Start-Process -FilePath $py -ArgumentList @(
         '-u', $agent,
         '--host', $ircHost,
