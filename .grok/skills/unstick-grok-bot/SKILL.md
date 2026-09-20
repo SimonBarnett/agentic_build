@@ -54,7 +54,7 @@ python $api post --service aiserver.v1.SandBoxService --agent <Name> --method Ge
 python $api post --service aiserver.v1.DashboardService --method GetSandUsageStatus
 ```
 
-`usagePercent: 100` + silent `ACCEPTED_TEMPORAL` (no assistant `send-message`, no limit banner) is empty Grok Bot Sand, not a wedged pod. `hasAvailableUsage: true` / on-demand on does not prove generation. Reset: `nextResetTimestampUtc`. Owner skill: `box-usage`. Do not RecreateSandBox for that.
+`usagePercent: 100` + silent `ACCEPTED_TEMPORAL` (no assistant `send-message`, no limit banner) is empty Grok Bot Sand, not a wedged pod. `hasAvailableUsage: true` / on-demand on does not prove generation. Also `ListGrokBotStripeLinkPaymentMethods`: `OUTCOME_NEEDS_AUTH` means on-demand cannot charge (box 503). Reset: `nextResetTimestampUtc`. Owner skill: `box-usage`. Do not RecreateSandBox for that. Human: Grok Bot Settings > Usage, finish Stripe Link.
 
 ## 4. Recreate the sandbox (when 3 says wedged)
 
