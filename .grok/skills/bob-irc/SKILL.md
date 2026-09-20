@@ -18,5 +18,6 @@ and `docs/bobiverse.md`. Do not duplicate join/recycle/firewall facts here.
 Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
-Parked FR (quiet conversational talk; join and `!bobiverse` are
-one-fact-per-line DMs): `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md`.
+Parked FR (quiet talk: notify on change or one-shot long-running
+warning; join and `!bobiverse` are one-fact-per-line DMs):
+`docs/feature-request-bobiverse-quiet-talk-2026-09-20.md`.

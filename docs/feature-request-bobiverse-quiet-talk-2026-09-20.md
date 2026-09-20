@@ -35,13 +35,23 @@ pile is in the channel. Nobody DMs them the current picture.
    A join briefing and a `!bobiverse` answer are a **sequence** of
    short conversational whispers to that nick, one fact per line, with
    the usual flood delay. Not one packed paragraph.
-3. **Only when it changes.** If the field did not change, do not speak.
-   A ticking `lastSeen=` is not a change. Idle boxes stay quiet.
+3. **Only notify on a real change, or a long-running warning.** If
+   nothing changed, do not speak. A ticking `lastSeen=` is not a
+   change. Idle boxes stay quiet. The other unsolicited speak is a
+   **warning** when a thread has been running a very long time (even
+   if it still looks responding). Say it once when it crosses the bar,
+   conversational, one line — not every Watch tick after that. Speak
+   again only if it flips to hung, the SHA/kind/repo changes, or it
+   finally finishes.
 4. **Conversational English.** A person can read the line in Halloy
    without knowing `BOB v1` keys. Example tone (not a locked template):
 
-   > bob-ionos: still on Cursor Models, MRB of SimonBarnett/agentic_build
-   > at 82a8fb2 — about 12 minutes in, still responding.
+   > ionos is on Cursor Models now.
+
+   Long-running warning (not a locked template):
+
+   > ionos has been on that MRB of agentic_build for over an hour —
+   > still responding, but that's a long time.
 
 5. **Each spoken fact names enough context to stand alone:**
    - **model** (Cursor Models / grok.exe / Copilot / Grok Bot — the
@@ -92,13 +102,17 @@ pile is in the channel. Nobody DMs them the current picture.
   cooldown so it cannot flood Ergo.
 - How many DM lines is enough for an idle box (one "flamingo is idle"
   vs also weekly remaining). Prefer one line when idle.
+- Long-running warning threshold. Default suggestion (not locked):
+  ~30 minutes for a worker, ~20 minutes for MRB, then one channel
+  warning. Do not nag. UNKNOWN until UAT.
 
 ## Alternatives (pick in implementation; recommend A)
 
 **A — Recommended. Quiet talk + `!bobiverse` pull + keep BOB v1 off the human ear**
 
 Watch still writes `bob-peers\<id>.json` locally. Conversational lines
-go to the channel **only on a field change**, one field per line.
+go to the channel **only on a field change or a one-shot long-running
+warning**, one field per line.
 `BOB v1` POINT is not PRIVMSG'd every tick (file/offset is enough for
 the local tray). Join = a sequence of short DM lines. `!bobiverse` =
 the same, on demand, to the asker (not `?status`, not a channel
@@ -116,10 +130,11 @@ both repos move together.
 No change-talk on the channel at all. Status is join-DM + `!bobiverse`.
 Quietest. Use if A still feels chatty.
 
-**D — Rotate one field per tick**
+**D — Rotate one field per tick** (rejected)
 
 Even when nothing changed, speak one rotating field every 30s. Still
-periodic noise. Reject unless A proves too quiet for Halloy.
+periodic noise. The long-running case is a **one-shot warning**, not a
+heartbeat.
 
 **E — Digest NOTICE every N minutes**
 
@@ -160,20 +175,27 @@ Do **not** suggest raising Ergo flood limits or forcing `--host
 
 1. `Write-BobIrcStatus` does not append a channel line unless a **named
    field** changed (model, kind, repo, sha, hung/responding, running
-   job). `lastSeen` / weekly-only ticks stay on disk.
+   job) **or** a job just crossed the long-running warning bar.
+   `lastSeen` / weekly-only ticks stay on disk.
 2. When it does speak: **one field**, conversational, with the LOCKED
    context (model, kind, repo, duration, hung/responding, sha) only as
    needed so the sentence stands alone — not a second kv list.
 3. Populate those fields from the live job (fuel/model, `kind` worker /
    mrb / uat, `repo`, tip SHA, start time, stall/responding).
-4. Tests in `Test-Pack` BT0o: no speak on lastSeen-only; one speak on
-   kind/repo/sha change; no secrets.
+4. Long-running warning: one conversational line the first time elapsed
+   crosses the bar; do not repeat every poll. Repeat only on hung, a
+   real field change, or done.
+5. Tests in `Test-Pack` BT0o: no speak on lastSeen-only; one speak on
+   kind/repo/sha change; one warning when a fixture job is aged past
+   the bar; no second warning on the next tick; no secrets.
 
 ## Acceptance
 
 1. Idle box: no channel PRIVMSG across several Watch ticks.
 2. Job starts / kind flips / SHA moves / hung↔responding: **one**
-   conversational line, not a `BOB v1` dump.
+   conversational line, not a `BOB v1` dump. A job that has been
+   running a very long time: **one** warning line, then silence until
+   something else changes.
 3. New nick JOINs: they receive a **sequence** of conversational DMs
    (one fact per line); the channel does not get a roster dump.
 4. A nick sends `!bobiverse` in `#bobiverse` (or PM): they receive the
@@ -196,7 +218,8 @@ Do **not** suggest raising Ergo flood limits or forcing `--host
 ## Verify on ionos / flamingo
 
 1. Halloy on `#bobiverse`: quiet while idle; one readable line when a
-   job actually changes.
+   job actually changes; one warning if something has been running a
+   very long time (not a repeat every 30s).
 2. Join a spare nick: get conversational DMs, one fact per line (model,
    kind, repo, SHA, how long, hung or not) — not a `BOB v1` wall and
    not one packed whisper.
