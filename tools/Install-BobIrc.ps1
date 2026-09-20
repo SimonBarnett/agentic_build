@@ -53,6 +53,12 @@ $env:BOB_IRC_HOME = $ircHome
 $env:AGENTIC_IRC_HOME = $ircHome
 $env:BOB_IRC_NICK = $nick
 
+$psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
+if (Test-Path $psd1) {
+    Import-Module $psd1 -Force
+    Compact-BobIrcOutbox -Home $ircHome
+}
+
 $ident = Join-Path $ircHome 'identity.json'
 if (-not (Test-Path $ident)) {
     & $py (Join-Path $IrcRoot 'scripts\seal.py') genkey

@@ -154,6 +154,16 @@ card/hover changes.
 - Skill rewritten with diagnose steps for blank card + no-dialog compile fail.
 
 
+## 2026-09-20 — ionos Ergo outbox POINT flood
+
+`Write-BobIrcStatus` appending a POINT every Watch tick filled
+`~\.agentic-irc-bobiverse\outbox.txt` (~1831 lines). `irc_agent.py` drain
+plus Ergo flood limits reconnect-looped `bob-ionos`. Playbook:
+dedupe last outbox POINT after stripping `lastSeen=`; compact POINT-only
+backlog over 32KB on Start/Install; treat `127.0.0.1` as private Ergo
+(not stale/Libera); do not default ionos to loopback without SNI.
+Owner: `docs/bobiverse.md` + `bob-irc` stub.
+
 ## 2026-09-20 — cursor/xAI remaining + reset dates
 
 - Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.

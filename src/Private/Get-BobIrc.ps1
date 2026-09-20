@@ -360,6 +360,54 @@ function Read-BobIrcPeer {
     }
 }
 
+function Get-BobIrcPointDedupeKey {
+    param([string]$Line)
+    if (-not $Line) { return '' }
+    # lastSeen changes every Watch tick; ignore it so identical status does not pile up.
+    return ([string]$Line).Trim() -replace '\s+lastSeen=\S+', ''
+}
+
+function Test-BobIrcOutboxDuplicatePoint {
+    param([string]$Path, [string]$Line)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $false }
+    $last = $null
+    try { $last = Get-Content -LiteralPath $Path -Tail 1 -ErrorAction SilentlyContinue } catch { return $false }
+    if (-not $last) { return $false }
+    return ((Get-BobIrcPointDedupeKey $last) -eq (Get-BobIrcPointDedupeKey $Line))
+}
+
+function Compact-BobIrcOutbox {
+    param(
+        [string]$Home,
+        [int]$ThresholdBytes = 32768
+    )
+    if (-not $Home) { $Home = Get-BobIrcHome }
+    if (-not $Home) { return }
+    $outbox = Join-Path $Home 'outbox.txt'
+    if (-not (Test-Path -LiteralPath $outbox)) { return }
+    $item = Get-Item -LiteralPath $outbox -ErrorAction SilentlyContinue
+    if (-not $item -or [int64]$item.Length -le [int64]$ThresholdBytes) { return }
+    $lines = @(Get-Content -LiteralPath $outbox -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return }
+    $points = @($lines | Where-Object { $_ -and ($_ -match 'MOOT v1 POINT' -or $_ -match 'POINT .+BOB v1 ') })
+    $other = @($lines | Where-Object { $_ -and $_ -notmatch 'MOOT v1 POINT' -and $_ -notmatch 'POINT .+BOB v1 ' })
+    $pointBytes = [Text.Encoding]::UTF8.GetByteCount(($points -join "`n"))
+    if ($pointBytes -le $ThresholdBytes) { return }
+    $keep = @()
+    if ($other.Count -gt 0) { $keep += $other }
+    $selfId = $null
+    try { $selfId = Get-ThisMachineId } catch { }
+    $selfPoints = $points
+    if ($selfId) {
+        $idRe = 'id=' + [regex]::Escape([string]$selfId) + '\b'
+        $mine = @($points | Where-Object { $_ -match $idRe })
+        if ($mine.Count -gt 0) { $selfPoints = $mine }
+    }
+    if ($selfPoints.Count -gt 0) { $keep += $selfPoints[-1] }
+    elseif ($points.Count -gt 0) { $keep += $points[-1] }
+    Set-Content -LiteralPath $outbox -Value $keep -Encoding utf8
+}
+
 function Write-BobIrcStatus {
     $id = Get-ThisMachineId
     if (-not $id) { return }
@@ -436,6 +484,7 @@ function Write-BobIrcStatus {
     $point = ConvertTo-BobIrcPoint $doc
     $line = "MOOT v1 POINT $mid :$point"
     $outbox = Join-Path $home 'outbox.txt'
+    if (Test-BobIrcOutboxDuplicatePoint -Path $outbox -Line $line) { return }
     Add-Content -Path $outbox -Value $line -Encoding utf8
 }
 
