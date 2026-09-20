@@ -45,8 +45,9 @@ Never paste `auth.json`, sand-secrets, or bearer tokens.
 
 | Signal | How |
 |---|---|
-| Remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent` |
-| Empty / overspent | `remaining_pct` null + `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). TipForm shows red `-£x.xx` — not tip_cursor.json fakes |
+| Remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent`. Live confirm: `GrokBotApi.py post --service aiserver.v1.DashboardService --method GetSandUsageStatus` |
+| Empty / 100% | `usagePercent: 100` / `remaining_pct` null. Grok Bot turns then `ACCEPTED_TEMPORAL` with **no** assistant `send-message` and **no** "limit reached" banner (Cursor bug). `hasAvailableUsage: true` + on-demand enabled does not mean they generate. Box-harness send may 503. That is not a RecreateSandBox fix — see `unstick-grok-bot`. |
+| Empty / overspent | `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). TipForm shows red `-£x.xx` — not tip_cursor.json fakes |
 | Reset date | Sand `nextResetTimestampUtc` → `period_end` → `reset DD Mon` |
 | Cache | `~\.grok\bob-bridge\cursor-agent-usage.json` (~15 min); delete to force refresh |
 

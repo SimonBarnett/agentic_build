@@ -48,6 +48,14 @@ python $api post --service aiserver.v1.SandBoxService --agent <Name> --method Ge
 
 `PollGrokBotUserComputerRequests` empty does not mean the turn is healthy.
 
+**Sand weekly 100% (check before Recreate):**
+
+```powershell
+python $api post --service aiserver.v1.DashboardService --method GetSandUsageStatus
+```
+
+`usagePercent: 100` + silent `ACCEPTED_TEMPORAL` (no assistant `send-message`, no limit banner) is empty Grok Bot Sand, not a wedged pod. `hasAvailableUsage: true` / on-demand on does not prove generation. Reset: `nextResetTimestampUtc`. Owner skill: `box-usage`. Do not RecreateSandBox for that.
+
 ## 4. Recreate the sandbox (when 3 says wedged)
 
 Named bots on this Grok Bot desktop **share one cloud sandbox**. Recreate **once** (pass `--agent` so `agentId` is set). Do not Recreate per agent; a second Recreate starts another "Updating Grok Bot's Computer / Transferring your data" and UI sends sit on **Waiting to send**.
@@ -74,7 +82,7 @@ python $api send --agent <Name> --text "Reply with exactly PONG and then stop. D
 
 Tell the human to send a **new** ping in the Grok Bot UI if the turn still has no assistant `send-message`.
 
-If a **second idle agent** (not the stuck one) also `ACCEPTED_TEMPORAL` with no assistant `send-message`, this is a **Temporal harness outage** for the account, not a single-agent wedge. Stronger probe: `CreateGrokBotTemporalAgent` a throwaway agent and PONG it. Also call DashboardService `GetSandUsageStatus`. `usagePercent: 100` with silent ACCEPTED_TEMPORAL matches a known Cursor bug (no "limit reached" UI). `hasAvailableUsage: true` + on-demand enabled does not mean turns generate. Box-harness send may 503. Reset date is `nextResetTimestampUtc`.
+If a **second idle agent** (not the stuck one) also `ACCEPTED_TEMPORAL` with no assistant `send-message`, and Sand is **not** 100%, this is a Temporal harness outage, not a single-agent wedge. Stronger probe: `CreateGrokBotTemporalAgent` a throwaway agent and PONG it.
 
 If that new `grok-bot-turn-<newId>` also never `send-message`, stop RecreateSandBox. `isFork` still uses the same workflow id. `CreateGrokBotAgent` with `harness: box` (forum: box was live when temporal was deaf) may 503 Service Unavailable while temporal still ACCEPTED_TEMPORAL with no reply. Sandbox/desktop recycle will not start a generating turn. Wait for Cursor Grok Bot backend; do not stack more API PONGs. Do not delete the original bots.
 

@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — Sand usagePercent 100 silences Grok Bot
+
+Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
+
 ## 2026-09-20 — grok.exe has no build0.1; resolve equivalent
 
 `grok models` on 1.0.34 is only `grok-4.6` / `grok-4.5` (`-m build0.1` is
