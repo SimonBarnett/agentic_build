@@ -165,40 +165,73 @@ function Get-BobWeeklyRemaining {
     catch { return $null }
 }
 
+function ConvertTo-BobCursorUsageDoc {
+    param($j)
+    if (-not $j) { return $null }
+    $remain = $null
+    $used = $null
+    if ($null -ne $j.remaining_pct) { $remain = [int]$j.remaining_pct }
+    if ($null -ne $j.used_pct) { $used = [int]$j.used_pct }
+    if ($null -eq $used) {
+        if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
+        elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
+        elseif ($null -ne $j.creditUsagePercent) { $used = [double]$j.creditUsagePercent }
+    }
+    if ($null -eq $remain -and $null -ne $used) {
+        $remain = [int][math]::Round(100.0 - [double]$used)
+    }
+    if ($null -eq $remain) { return $null }
+    if ($remain -lt 0) { $remain = 0 }
+    if ($remain -gt 100) { $remain = 100 }
+    if ($null -eq $used) { $used = 100 - $remain }
+    return [pscustomobject]@{
+        remaining_pct = [int]$remain
+        used_pct      = [int][math]::Round([double]$used)
+        source        = 'cursor-agent'
+        kind          = 'weekly'
+    }
+}
+
 function Get-BobCursorAgentWeeklyRemaining {
     # Grok Bot / Cursor-agent account. Not Grok Build (xAI) unified.jsonl.
-    $roots = @()
     if ($env:BOB_CURSOR_USAGE_FILE) {
-        if (Test-Path $env:BOB_CURSOR_USAGE_FILE) { $roots += $env:BOB_CURSOR_USAGE_FILE }
+        if (-not (Test-Path $env:BOB_CURSOR_USAGE_FILE)) { return $null }
+        try {
+            $j = Get-Content $env:BOB_CURSOR_USAGE_FILE -Raw -Encoding UTF8 | ConvertFrom-Json
+            return ConvertTo-BobCursorUsageDoc $j
+        }
+        catch { return $null }
     }
-    else {
-        $gb = Join-Path $env:APPDATA 'Grok Bot'
-        if (Test-Path $gb) {
-            foreach ($name in @('weekly-usage.json', 'cursor-usage.json', 'usage.json')) {
-                $p = Join-Path $gb $name
-                if (Test-Path $p) { $roots += $p }
+    $cache = $null
+    try { $cache = Join-Path (Get-BridgeRoot) 'cursor-agent-usage.json' } catch { }
+    if ($cache -and (Test-Path $cache)) {
+        try {
+            $age = [datetime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($cache)
+            if ($age.TotalMinutes -lt 15) {
+                $j = Get-Content $cache -Raw -Encoding UTF8 | ConvertFrom-Json
+                $doc = ConvertTo-BobCursorUsageDoc $j
+                if ($doc) { return $doc }
             }
         }
+        catch { }
     }
-    foreach ($p in $roots) {
+    $py = $null
+    foreach ($c in @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe')
+        )) {
+        if (Test-Path $c) { $py = $c; break }
+    }
+    $script = Join-Path (Get-ModuleRoot) 'tools\Get-CursorAgentUsage.py'
+    if ($py -and (Test-Path $script)) {
         try {
-            $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
-            $used = $null
-            if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
-            elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
-            elseif ($null -ne $j.creditUsagePercent) { $used = [double]$j.creditUsagePercent }
-            elseif ($j.weeklyUsage -and $null -ne $j.weeklyUsage.percentUsed) { $used = [double]$j.weeklyUsage.percentUsed }
-            if ($null -eq $used) { continue }
-            if ($used -lt 0 -or $used -gt 100) { continue }
-            $remain = [int][math]::Round(100.0 - $used)
-            if ($remain -lt 0) { $remain = 0 }
-            if ($remain -gt 100) { $remain = 100 }
-            return [pscustomobject]@{
-                remaining_pct = $remain
-                used_pct      = [int][math]::Round($used)
-                source        = 'cursor-agent'
-                kind          = 'weekly'
+            $raw = & $py $script 2>$null
+            $j = $raw | ConvertFrom-Json
+            $doc = ConvertTo-BobCursorUsageDoc $j
+            if ($doc -and $cache) {
+                try { Write-JsonFile $cache $doc } catch { }
             }
+            if ($doc) { return $doc }
         }
         catch { }
     }
