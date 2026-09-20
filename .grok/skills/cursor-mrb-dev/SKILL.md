@@ -56,28 +56,21 @@ Workers post via `tools/Start-BobMrb.ps1` (creates missing `mrb` /
 
 ## Loop
 
-1. Tip = the **open PR** head SHA (or named SHA). Unrelated dirty files are
-   out of scope.
-2. **MRB:** `tools/Start-BobMrbHandoff.ps1 -Repo owner/repo -Issue <fr>
-   -Sha <pr-head> -Cwd <clone> -Fuel cursor-models`. Wait for a **new**
-   GitHub issue `MRB FAIL|PASS-nits: ... <sha>` (labels `mrb` + `mrb-fail`
-   or `mrb-pass`). Prior FAIL issue is history.
-3. **FAIL:** do not merge. Immediately
-   `Start-BobBuild -Task git -Fix -Kind build -Mrb <new-mrb-issue>`
-   (or `Start-BobCursor.ps1 -Kind build` when fuel is still cursor-models).
-   Goal = Required fixes only. Worker opens a **new** PR. Comment the PR
-   URL on the FAIL issue.
-4. Repeat step 2 on the new PR until **PASS-nits**.
-5. **PASS-nits:** the MRB worker merges that PR. Nits stay on the issue.
-6. Only **Bob** stamps **ready for human UAT**.
+Driver: `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`). Launch it
+and wait for `DONE`. It starts the PR worker if needed, hands off MRB to a
+**new** `-Kind mrb` agent, retries failed cursor/grok jobs, reads Required
+fixes on FAIL, back-links boards, and exits on PASS-nits. Do not retype
+`Start-BobMrbHandoff` / `Start-BobBuild -Fix` by hand unless the driver
+cannot start. Do not resume the implementer to review their own PR.
 
-Launch: `start-bob-cursor`. Bars: `bob-hostile-mrb`.
+Transaction table: `bob-build-loop`. Bars: `bob-hostile-mrb`. Launch
+primitives: `start-bob-cursor`. Only **Bob** stamps ready for human UAT.
 
 ## Watch
 
-Watch the **GitHub issue and PR**, not the redirected `.log`. Confirm
-`node.exe --model grok-4.6` (MRB) or `--model composer-2.5` (PR) when fuel
-is cursor-models.
+The driver prints `DONE` / `FAILED` only. Watch that, plus the **GitHub
+issue and PR**, not the redirected `.log`. Confirm `node.exe --model
+grok-4.6` (MRB) or `--model composer-2.5` (PR) when fuel is cursor-models.
 
 ## Hard
 

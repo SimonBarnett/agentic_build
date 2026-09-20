@@ -30,18 +30,26 @@ that loop. Today it is a human retyping `Start-BobMrbHandoff.ps1` with a new
 
 ## Ask
 
-1. A loop driver (name as fits existing nouns, e.g. `Start-BobMrbLoop` /
-   `Get-BobMrbBoard`) that: resolves the tip SHA, hands off MRB, waits for the
-   new `mrb`-labelled issue, and records the pass in a state file under the
-   bridge root. No live GitHub in tests.
+1. A loop driver `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`; board
+   reader `Get-BobMrbBoard`) that: starts the PR worker if the FR is parked
+   without a tip SHA, waits for the PR, hands off MRB, waits for the new
+   `mrb`-labelled issue, and records each pass in a state file under the
+   bridge root. The calling agent launches the program and is notified on
+   stdout (`DONE` / `FAILED` only) when MRB PASS-nits. No live GitHub in tests.
 2. Auto back-link: when a new MRB issue is created for a FR that already has an
-   open `mrb-fail` board, comment the new URL on the old board.
+   open `mrb-fail` board, comment the new URL on the old board. When a FIX PR
+   opens, comment that PR URL on the FAIL board.
 3. Fix handoff reads the Required fixes section out of the MRB issue body rather
    than requiring the operator to paste a goal.
-4. Off-DEV Test-Pack cases (Fake-Grok / fixture, no live `gh`, no live
+4. Retry failed cursor-agent / grok.exe **jobs** (process died, enqueue refused,
+   `completion.status` not ok, no PR / no MRB issue). Do not treat an MRB FAIL
+   verdict as a job crash: that is a FIX worker. Fuel is re-read each start;
+   cursor start failure falls back to grok-build.
+5. Off-DEV Test-Pack cases (Fake-Grok / fixture, no live `gh`, no live
    `cursor-agent`) for: handoff argument plumbing, `-Kind` propagation from a job
-   packet, fallback to `grok-build` when Cursor is not logged in, and the
-   per-SHA title contract.
+   packet, fallback to `grok-build` when Cursor is not logged in, the
+   per-SHA title contract, Required-fixes parse, back-link payload, retry, and
+   PASS-nits terminal.
 
 ## Acceptance
 
@@ -50,9 +58,14 @@ that loop. Today it is a human retyping `Start-BobMrbHandoff.ps1` with a new
 2. Given a fixture prior FAIL issue, the driver produces a back-link comment
    payload (asserted off-DEV, not posted).
 3. Loop state file names the feature issue, each SHA, and each verdict.
-4. `cursor-mrb-dev` / `bob-hostile-mrb` updated to point at the driver instead of
-   describing manual repetition.
-5. Worker still cannot emit `PASS-UAT`. Bob stamps UAT.
+4. `cursor-mrb-dev` / `bob-hostile-mrb` / `bob-build-loop` point at the driver
+   instead of describing manual repetition. Skill `bob-job-loop` is the launch.
+5. Worker still cannot emit `PASS-UAT`. The driver does not stamp UAT. Bob stamps
+   UAT.
+6. Failed cursor/grok jobs retry up to `maxJobRetries` (default 3 attempts per
+   phase). Exhaustion prints `FAILED` and exits non-zero.
+7. PASS-nits prints `DONE: MRB PASS-nits ...` and exits 0. No progress lines on
+   stdout (monitor-safe).
 
 ## Non-goals
 

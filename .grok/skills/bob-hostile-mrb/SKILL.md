@@ -18,6 +18,11 @@ source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
+The implementer does not review their own PR. Dispatcher runs
+`tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`) or, for a single
+SHA, starts a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`) as
+soon as the PR exists. The driver comments the new MRB URL on the prior
+FAIL board.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 `

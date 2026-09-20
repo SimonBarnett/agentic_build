@@ -83,7 +83,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -1427,6 +1427,177 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
     catch {
         if ($_.Exception.Message -notmatch 'TestSkipCursor') { throw $_.Exception.Message }
     }
+}
+
+# --- BT0x Start-BobBuildLoop (issue mrb-loop-automation) ---
+. (Join-Path $RepoRoot 'tools\Bob-BuildLoop.ps1')
+
+Invoke-Case 'BT0x1 required-fixes parse' {
+    param($bridgeRoot)
+    $body = @'
+## Verdict
+FAIL
+
+## Required fixes
+- Gate A still red
+- Do not invent API Foo
+
+## Nits
+- typo
+'@
+    $fixes = Get-BobMrbRequiredFixes $body
+    if ($fixes -notmatch 'Gate A still red') { throw "fixes missing gate: $fixes" }
+    if ($fixes -notmatch 'Do not invent API Foo') { throw 'fixes missing API line' }
+    if ($fixes -match 'typo') { throw 'nits leaked into required fixes' }
+    if ($fixes -match 'PASS-UAT') { throw 'UAT must not appear' }
+}
+
+Invoke-Case 'BT0x2 backlink payload' {
+    param($bridgeRoot)
+    $payload = New-BobMrbBacklinkComment -Url 'https://github.com/fixture/repo/issues/9' -Sha 'abc1234dead'
+    if ($payload -notmatch 'https://github.com/fixture/repo/issues/9') { throw "payload missing url: $payload" }
+    if ($payload -notmatch 'abc1234dead') { throw "payload missing sha: $payload" }
+    if ($payload -notmatch '^Next board:') { throw "payload prefix: $payload" }
+    $pr = New-BobFixPrComment -Url 'https://github.com/fixture/repo/pull/4' -Sha 'abc1234dead'
+    if ($pr -notmatch 'FIX PR:') { throw "fix pr payload: $pr" }
+}
+
+Invoke-Case 'BT0x3 state file round-trip' {
+    param($bridgeRoot)
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 19
+    $root = [IO.Path]::GetFullPath($env:BOB_BRIDGE_HOME)
+    if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw "state path not under test bridge: $path (root $root)" }
+    $liveBridge = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.grok\bob-bridge'))
+    if ($path.StartsWith($liveBridge, [StringComparison]::OrdinalIgnoreCase)) { throw 'must not use live bob-bridge' }
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'deadbeefcafebabe' -Cwd (Join-Path $bridgeRoot 'cwd')
+    $row = [pscustomobject]@{ sha = 'deadbeefcafebabe'; pr = 'https://github.com/fixture/repo/pull/2'; mrb = 'https://github.com/fixture/repo/issues/8'; verdict = 'FAIL'; issue = 8 }
+    $state = Add-BobBuildLoopPass -State $state -Pass $row
+    Write-BobBuildLoopState -Path $path -State $state
+    $board = Get-BobMrbBoard -Repo 'fixture/repo' -Issue 19 -Path $path
+    if ([int]$board.issue -ne 19) { throw "issue=$($board.issue)" }
+    if ([string]$board.sha -ne 'deadbeefcafebabe') { throw "sha=$($board.sha)" }
+    if ([string]$board.verdict -ne 'FAIL') { throw "verdict=$($board.verdict)" }
+    if (@($board.passes).Count -ne 1) { throw 'expected one pass row' }
+}
+
+Invoke-Case 'BT0x4 wait_pr retry on dead job' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 1
+    $state.currentPid = 4242
+    $state.currentKind = 'build'
+    $world = [pscustomobject]@{
+        Job          = [pscustomobject]@{ pid = 4242; startError = $null; started = $true }
+        ProcessAlive = $false
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+    if ($d.kind -ne 'build') { throw "kind=$($d.kind)" }
+}
+
+Invoke-Case 'BT0x5 fail starts fix with required fixes' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    $body = @"
+## Verdict
+FAIL
+
+## Required fixes
+- Restore gate A
+"@
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 8
+                title  = 'MRB FAIL: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = $body
+            }
+        )
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'start_fix') { throw "action=$($d.action)" }
+    if ($d.goal -notmatch 'Restore gate A') { throw "goal missing fixes: $($d.goal)" }
+    if ($d.goal -match 'PASS-UAT') { throw 'FIX goal must not stamp UAT' }
+    if ($d.pass.verdict -ne 'FAIL') { throw "pass verdict=$($d.pass.verdict)" }
+}
+
+Invoke-Case 'BT0x6 pass-nits terminal' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.phase = 'wait_mrb'
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 9
+                title  = 'MRB PASS-nits: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/9'
+                body   = "## Verdict`nPASS-nits"
+            }
+        )
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'pass') { throw "action=$($d.action)" }
+    if ($d.stdout -notmatch '^DONE: MRB PASS-nits') { throw "stdout=$($d.stdout)" }
+    if ($d.stdout -match 'PASS-UAT') { throw 'driver must not stamp UAT' }
+    if ($d.patch.phase -ne 'pass') { throw "phase=$($d.patch.phase)" }
+}
+
+Invoke-Case 'BT0x7 retries exhausted' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 3
+    $state.currentPid = 99
+    $world = [pscustomobject]@{
+        Job          = [pscustomobject]@{ pid = 99 }
+        ProcessAlive = $false
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'fail') { throw "action=$($d.action)" }
+    if ($d.stdout -notmatch '^FAILED:') { throw "stdout=$($d.stdout)" }
+}
+
+Invoke-Case 'BT0x8 loop once testworld no live gh' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $starts = New-Object System.Collections.Generic.List[string]
+    $r = & $loop -Issue 19 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -TestStartBuild {
+        param($st, $goal)
+        $starts.Add('build')
+        [pscustomobject]@{ ok = $true; started = $true; jobId = 'job-build'; pid = 1; fuel = 'cursor-models'; branch = 'work/job-build' }
+    }
+    if ($r.action -ne 'start_build') { throw "action=$($r.action)" }
+    if ($r.phase -ne 'wait_pr') { throw "phase=$($r.phase)" }
+    $root = [IO.Path]::GetFullPath($env:BOB_BRIDGE_HOME)
+    if (-not $r.statePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw "state escaped test root: $($r.statePath) (root $root)" }
+    $liveBridge = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE '.grok\bob-bridge'))
+    if ($r.statePath.StartsWith($liveBridge, [StringComparison]::OrdinalIgnoreCase)) { throw 'wrote live bob-bridge' }
+    $board = Get-BobMrbBoard -Repo 'fixture/repo' -Issue 19 -Path $r.statePath
+    if ([int]$board.issue -ne 19) { throw 'board issue missing' }
+    if ($starts.Count -lt 1) { throw 'TestStartBuild not called' }
 }
 
 Write-Host ''

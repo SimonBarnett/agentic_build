@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-20 — build/MRB loop driver (notify on PASS-nits)
+
+`bob-job-loop` / `tools/Start-BobBuildLoop.ps1`: dispatcher launches one
+program; stdout `DONE` on MRB PASS-nits. Starts the PR worker, hands MRB
+to a different `-Kind mrb` agent, retries failed cursor/grok jobs (max 3
+attempts per phase), reads Required fixes on FAIL, back-links boards.
+State under `$BOB_BRIDGE_HOME/loops`. Does not stamp UAT. FR:
+`docs/feature-request-mrb-loop-automation-2026-09-20.md`.
+
 ## 2026-09-20 — PR/MRB transaction: Cursor Models then grok
 
 Simon: Cursor Models (Cursor Grok + Composer) for MRBs and PRs until that
