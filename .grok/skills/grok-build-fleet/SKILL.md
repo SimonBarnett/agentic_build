@@ -137,3 +137,12 @@ Park: `bob-spec-intake`. Plan + enqueue: `bob-build-dispatch`. Driver: `bob-job-
 config/default.json profiles.generic.timeoutSec defaults to **7200** (2h). Multi-phase gap-closes need that headroom. Do **not** lower it for real product work.
 
 Monitor stalls with Watch-BobAgents.ps1 (ACTION_REQUIRED only). A quiet long run is OK â€” timeout is a safety net, not a productivity target. If Get-BobBuild stays running with a live grok process, let it finish.
+
+## GitHub posting readiness (issue #11 / #34)
+
+Unattended workers need a non-interactive token:
+
+- Env: `GH_TOKEN` preferred (`GITHUB_TOKEN` honoured). Scopes: `issues:write` and `pull_requests:write` on the product repo.
+- Presence of the env var is not readiness — `Get-BobGhPostingReadiness` probes `gh auth status` and a cheap `gh repo view`.
+- Remediation: `winget install GitHub.cli` then `gh auth login` / set user env `GH_TOKEN`, or re-run `Install-BobFleet`.
+- Never put tokens in git, job packets, or prompts.

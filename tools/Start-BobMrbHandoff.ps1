@@ -107,7 +107,7 @@ if ($PSBoundParameters.ContainsKey('TestGitWorkerResult')) {
     $sel = $TestGitWorkerResult
 }
 else {
-    $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
+    $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo" -Kind mrb
 }
 if ($sel.wait) {
     $why = "no eligible $enqueueFuel worker ($($sel.reason))"
