@@ -1,4 +1,4 @@
-﻿# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
+# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
 # Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
@@ -114,8 +114,6 @@ namespace BobTrayUi {
             d.szTip = "";
             Shell_NotifyIcon(NIM_MODIFY, ref d);
         }
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
         public const int TTM_POP = 0x041C;
         public const int SW_HIDE = 0;
         public static void HideTooltipWindows() {
