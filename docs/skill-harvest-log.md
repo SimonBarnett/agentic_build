@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-20 — private Ergo + unstick agentId (ionos)
+
+- New skill `bob-irc`: fleet `#bobiverse` is Ergo `irc.ntsa.uk:6697`, not Libera. Join/recycle Watch-Bobiverse only; connect file path not value. Docs remain `docs/bobiverse.md` / `docs/bobiverse-ionos-ircd.md`.
+- `grok-build-fleet` Bobiverse section points at Ergo + `bob-irc`.
+- `unstick-grok-bot`: RecreateSandBox must pass `--agent` (agentId); ACCEPTED user echo with no later `send-message` is a hung turn.
+
 ## 2026-09-20
 
 MRB is a GitHub issue (`Start-BobMrb.ps1`, skill `bob-hostile-mrb`). No MRB PDFs. Feature-request issue + `/docs` markdown is the source of truth.

@@ -44,17 +44,20 @@ python $api post --service aiserver.v1.SandBoxService --agent <Name> --method Ge
 - This box as `hello.label` = computer-use host. Restarting Grok Bot desktop reconnects that host; it does **not** cancel Temporal.
 - `sand-session-marker.json` `aliveAtMs` is start time, not a heartbeat. Use a live `Grok Bot.exe` process (CIM `Name` matches `Grok Bot`).
 - `GetSandBoxRunState` `SAND_BOX_RUN_STATE_RUNNING` + PENDING sends after interrupt = cloud box/turn wedged. Empty "agent's screen" is that pod's VNC.
+- User `GROK_BOT_SEND_STATUS_ACCEPTED` (echo in transcript) with **no later assistant `send-message`** is the same wedge. Roster `last` stays on the previous assistant line.
 
 `PollGrokBotUserComputerRequests` empty does not mean the turn is healthy.
 
 ## 4. Recreate the sandbox (when 3 says wedged)
 
 ```powershell
-python $api post --service aiserver.v1.SandBoxService --method RecreateSandBox --json '{"preserveData":true,"force":true}'
+python $api post --service aiserver.v1.SandBoxService --agent <Name> --method RecreateSandBox --json '{"preserveData":true,"force":true}'
 python $api post --service aiserver.v1.SandBoxService --agent <Name> --method EnsureSandBox --json '{"wake":true}'
 ```
 
-`started: true` then `EnsureSandBox.podId` must **change**. Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
+`--agent` on RecreateSandBox is required (`agentId`). Without it you may recycle a different pod. `started: true` then `EnsureSandBox.podId` must **change**.
+
+Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
 
 Then interrupt until `hadActiveRun` is omitted. **One** short no-tool ping:
 

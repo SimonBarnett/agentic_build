@@ -73,7 +73,7 @@ See `bob-fleet-monitor` and `bob-fleet-tray`.
 
 ## Bobiverse (IRC, not SMB)
 
-Machines cannot see each other's `bridgeHome` (flamingo/marchhare on bobnet, ionos VPS, DEV1 Azure). Status is a MODE2 **free** moot on `#bobiverse`. Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. One-shot: `Install-BobIrc.ps1`. Ongoing: `Watch-Bobiverse.ps1` (30s loop, **no grok.exe**) POINTs local BOB v1 and harvests peer reports into `bob-peers\`. Tray only reads those files. See `docs/bobiverse.md`.
+Machines cannot see each other's `bridgeHome` (flamingo/marchhare on bobnet, ionos VPS, DEV1 Azure). Status is a MODE2 **free** moot on `#bobiverse` over **private Ergo** `irc.ntsa.uk:6697` (not Libera). Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. Skill `bob-irc`. Docs `docs/bobiverse.md`. One-shot: `Install-BobIrc.ps1`. Ongoing: `Watch-Bobiverse.ps1` (30s loop, **no grok.exe**) POINTs local BOB v1 into `bob-peers\`. Tray only reads those files.
 
 ## Hourly skill harvest
 
