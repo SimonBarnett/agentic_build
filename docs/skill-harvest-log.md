@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — PRs #5 and #6 not merged (stale drafts)
+
+Checked both open drafts vs `main`. Merging either would rewind later tray/git-task work (PR #5) or restore hover/iconProbe/hideTip (PR #6, issue #3). Pulled the unique bits that `main` lacked: per-machine `_Watch-Bobiverse-*.ps1` wrappers (kept ionos env-specific wrapper) and the native P+ idle chip screenshot. Closed the PRs as superseded.
+
 ## 2026-09-20 — action GitHub issues #1 #3 #4 #7 #8
 
 - `setup-remote-grok-bot`: flamingo remote CLI+desktop playbook (Mode 3 put+spawn, no-GPU, window-state 0x0). Temporal hangs stay `unstick-grok-bot`.
