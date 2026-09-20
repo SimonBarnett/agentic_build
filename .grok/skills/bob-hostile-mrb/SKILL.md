@@ -2,17 +2,35 @@
 name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a build-agent push as a GitHub issue on the
-  product repo, linked to the feature-request issue/doc. Check the tree for
-  missing features and file feature-request issues for them. Git is the source
-  of truth. Do not write MRB PDFs. Use when the user says MRB, hostile review,
-  review the push, ready for UAT, missing features, or /bob-hostile-mrb.
+  product repo. Bob hands the review off (Copilot / git-task picker); he does
+  not write the MRB in-session. Check for missing features and file FRs. No
+  MRB PDFs. Use when the user says MRB, hostile review, review the push,
+  ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb.
 ---
 
 # Hostile MRB (GitHub issue)
 
 Git (the product repo's issues + `docs/feature-request-*.md`) is the single source of truth. **Do not generate `docs/mrb-*.pdf`.** A markdown comment on the issue is enough.
 
-## Tone
+## Bob hands off (do this first)
+
+Bob **does not write** the review in Grok Bot / this grok.exe session. That burns the wrong seat. Hand off, then wait for the GitHub issue.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 `
+  -Repo owner/repo -Issue <feature-request-n> -Sha <head> -Docs docs/feature-request-....md -Plan docs/build-and-test-plan.md
+# optional -Fleet   (Start-BobBuild -Task git when Copilot cannot take it)
+```
+
+Default is `start-bob-copilot` (`@copilot` on the feature-request issue, then CCA if enabled). CCA 409 still counts as handoff — do not then write the MRB in Grok Bot. `-Fleet` uses `Select-BobGitWorker` / `Start-BobBuild -Task git`.
+
+Tell the human the issue URL. IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
+
+**Chair:** only Bob may declare **ready for human UAT**. The worker posts `FAIL` or `PASS-nits` only. If the worker thinks it passed, they write `candidate PASS-UAT, Bob stamp required`. Bob reads that issue and stamps the phrase, or rejects.
+
+Escape hatch: if Copilot and the fleet picker both cannot start, Bob writes the MRB himself using the rest of this skill. Say that in the issue.
+
+## Tone (worker)
 
 Detailed and brutal. No credit for intent. Success gates in the feature request and `docs/build-and-test-plan.md` are the law.
 
@@ -25,7 +43,7 @@ Detailed and brutal. No credit for intent. Success gates in the feature request 
 
 If there is no issue yet: `gh issue create` on the product repo with title from the feature request, body pointing at the md path, labels `feature-request`. Then MRB comments on **that** issue (or a child issue labeled `mrb` that `Fixes` / links it).
 
-## Missing features (do this every MRB)
+## Missing features (every MRB)
 
 Before the verdict, walk:
 
@@ -41,19 +59,19 @@ Classify each gap:
 | Adjacent / unspecified hole, or an issue with no intake doc | **Request it**: park via `bob-spec-intake` (`docs/feature-request-<slug>-YYYY-MM-DD.md` + GitHub issue `feature-request`). Link the new issue from **Missing features**. |
 | Already parked issue+doc, not in this SHA | List under Missing features with the issue URL. Do not duplicate the issue. |
 
-Request means **file the issue and the markdown**, then push. Do not implement the missing feature in the MRB job. Do not claim UAT-ready while requested FRs that this product needs for the stamp are still open (Bob decides which are in-scope for this stamp).
+Request means **file the issue and the markdown**, then push. Do not implement the missing feature in the MRB job.
 
-## Steps
+## Worker steps
 
 1. Diff the new push against the parked feature request and `docs/build-and-test-plan.md`.
-2. Run the missing-features check above. File any new FRs before or with the MRB post.
+2. Run the missing-features check. File any new FRs before or with the MRB post.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
-4. Post the review with `tools/Start-BobMrb.ps1` (or `gh issue create` / `gh issue comment`):
+4. Post with `tools/Start-BobMrb.ps1` (or `gh issue create` / `gh issue comment`):
    - Title: `MRB FAIL|PASS-nits|PASS-UAT: <feature slug> <sha>`
    - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
-   - Body sections: **Verdict**, **Feature request** (issue URL + doc path), **Missing features** (issue URLs opened or already parked), **Blockers**, **Nits**, **Evidence**, **Required fixes** (ordered)
-5. If not PASS-ready-for-human-UAT: `Send-BobBuildSpec` (or IRC) with the **issue URL** and ordered fixes. Wait for the next push; comment again on the same issue.
-6. Only Bob may declare **ready for human UAT**. Say that phrase in the issue when passing.
+   - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**
+   - Worker must not use verdict `PASS-UAT` (Bob stamp).
+5. If not a UAT candidate: `Send-BobBuildSpec` (or IRC) with the **issue URL** and ordered fixes. Wait for the next push; comment again on the same issue.
 
 ## Pass bar
 
@@ -71,3 +89,4 @@ Request means **file the issue and the markdown**, then push. Do not implement t
 - Breaking v1 while adding v2
 - Empty errors[] on failure paths the spec requires
 - Code landed with no FR, or an open issue with no intake doc, and the MRB did not request them
+- Bob wrote the full MRB in-session when Copilot or a git-task worker could take it

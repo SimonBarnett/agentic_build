@@ -27,13 +27,13 @@ Bob orchestrates. Build agents implement. Prefer legion machines with spare Prem
 1. Park the feature request as a **GitHub issue** plus `docs/feature-request-*.md` (`bob-spec-intake`). Git is the source of truth.
 2. Write / update `docs/build-and-test-plan.md` a build agent can execute.
 3. `Start-BobBuild` (see `bob-build-dispatch` / `grok-build-fleet`).
-4. On each pushed version: **hostile MRB as a GitHub issue** (or comment on the feature-request issue). Missing features get parked as new `feature-request` issues (`bob-hostile-mrb`). `Send-BobBuildSpec` with the **issue URL**. No MRB PDFs.
+4. On each pushed version: Bob **hands off** hostile MRB (`tools/Start-BobMrbHandoff.ps1` / `bob-hostile-mrb`). Worker posts FAIL or PASS-nits on the feature-request issue. Missing features get parked as new `feature-request` issues. `Send-BobBuildSpec` with the **issue URL**. No MRB PDFs.
 5. Repeat until **Bob** passes as **ready for human UAT**. Never claim UAT-ready earlier.
 
 ## Hard rules
 
 - New product repos: **public** under `SimonBarnett` unless Simon says otherwise.
 - Feature work: **do not break** prior versions; use `v2/` / `v3/` (or next free version folder).
-- Do not burn tokens implementing in Bob; fleet does the coding.
+- Do not burn tokens implementing **or writing MRBs** in Bob. Fleet / Copilot does the coding. Bob **hands off** hostile MRB (`Start-BobMrbHandoff.ps1`); only Bob stamps **ready for human UAT**.
 - Never put real `password=` or `XAI_API_KEY=` **assignments** in goals/constraints (`Test-PromptSecrets`). Instructional mentions of the names are OK.
 - Feature requests and plans live in git (`/docs` markdown + GitHub issues). MRB is an issue, not a PDF.

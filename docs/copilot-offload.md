@@ -8,6 +8,12 @@ Cursor/Grok Bot weekly usage is a different seat from Grok Build (`grok.exe` / x
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobCopilot.ps1 -Prompt 'Add tests for Watch-Bobiverse idle heartbeat'
 ```
 
+Hostile MRB (Bob hands off, does not write the review):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 -Issue 8 -Repo SimonBarnett/agentic_build
+```
+
 Assign an existing issue:
 
 ```powershell

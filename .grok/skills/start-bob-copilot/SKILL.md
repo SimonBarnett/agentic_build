@@ -9,7 +9,7 @@ description: >
 
 # Start Bob Copilot
 
-Repo work that can live on GitHub goes to Copilot. Do not implement that work with Grok Bot (Cursor weekly usage) or extra `grok.exe` when Copilot can take it.
+Repo work that can live on GitHub goes to Copilot (including **hostile MRB** posts — Bob uses `tools/Start-BobMrbHandoff.ps1`, which calls this script). Do not implement that work with Grok Bot (Cursor weekly usage) or extra `grok.exe` when Copilot can take it.
 
 Reached via `Select-BobGitWorker` when fuel is `copilot` (same picker as
 `start-bob-cursor`). Grok **hands off** by opening a GitHub issue that

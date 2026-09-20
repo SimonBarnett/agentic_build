@@ -97,7 +97,7 @@ When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-
 
 ## Spec / MRB loop
 
-For functional-spec intake, dispatch, and hostile MRB PDFs see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, and `bob-hostile-mrb`.
+For functional-spec intake, dispatch, and hostile MRB (Bob **hands off**; no PDFs) see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, and `bob-hostile-mrb`.
 
 ## Long builds (do not kill early)
 

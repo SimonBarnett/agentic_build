@@ -31,7 +31,7 @@ When another agent cannot complete a task, they write a **functional specificati
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
 4. Start a build agent via this repo (`Start-BobBuild` / BobBridge), model **`build0.1`**.
 5. Build agent implements, **commits and pushes**.
-6. On each new pushed version, Bob runs a **hostile MRB** as a **GitHub issue** (or comment on the feature-request issue). No MRB PDF. Pass the **issue URL** to the build agent.
+6. On each new pushed version, Bob **hands off** a **hostile MRB** (`Start-BobMrbHandoff.ps1`) as a **GitHub issue**. No MRB PDF. Pass the **issue URL** to the build agent. Only Bob stamps ready for human UAT.
 7. Repeat step 6 until **Bob** passes the work as **ready for human UAT**.
 
 ### Feature request (extends existing repo)
@@ -76,7 +76,7 @@ flowchart TB
 
   subgraph LOOP["Build â†” hostile MRB loop"]
     D1["Build agent implements\ncommit + push"]
-    D2["Bob hostile MRB\nbrutal detailed review"]
+    D2["Bob hands off hostile MRB\nCopilot / git-task"]
     D3["MRB GitHub issue"]
     D4{"Bob passes?"}
     D5["Send issue URL to build agent\nfix â†’ commit + push"]
