@@ -290,7 +290,8 @@ function Import-BobIrcPeerTranscript {
     if (-not $mid) { return @() }
     $tp = Join-Path $home (Join-Path 'moot' ($mid + '.txt'))
     if (-not (Test-Path $tp)) { return @() }
-    $updated = @()
+    # Last POINT per machine wins (moot transcript is append-only).
+    $latest = @{}
     foreach ($raw in @(Get-Content $tp -ErrorAction SilentlyContinue)) {
         if ($raw -notmatch 'POINT' -or $raw -notmatch 'BOB v1 ') { continue }
         $idx = $raw.IndexOf('BOB v1 ')
@@ -300,10 +301,15 @@ function Import-BobIrcPeerTranscript {
         $resolved = Resolve-BobiverseMachineId ([string]$doc.id)
         if (-not $resolved) { continue }
         $doc | Add-Member -NotePropertyName id -NotePropertyValue $resolved -Force
-        $dir = Join-Path $home 'bob-peers'
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        $latest[$resolved] = $doc
+    }
+    $updated = @()
+    $dir = Join-Path $home 'bob-peers'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    foreach ($resolved in @($latest.Keys)) {
+        $doc = $latest[$resolved]
         $peerPath = Join-Path $dir ($resolved + '.json')
-        # Keep prior period_end when an older POINT lacks reset= (import must not wipe).
+        # Keep prior period_end when the latest POINT still lacks reset=.
         if (-not $doc.period_end -and (Test-Path $peerPath)) {
             try {
                 $prev = Read-JsonFile $peerPath
