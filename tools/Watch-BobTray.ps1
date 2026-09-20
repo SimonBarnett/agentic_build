@@ -330,7 +330,6 @@ $script:alertKind = 'none'
 $script:iconRectCache = $null
 $script:cardClosed = $false
 $script:tileHost = $null
-$script:cursorBmp = $null
 $script:notifyTipText = ' '
 $seen = @{
     watcher_down = $false
@@ -475,29 +474,6 @@ function Hide-BobTrayCard {
     Clear-BobNativeTip
 }
 
-function New-BobTrayCursorBitmap {
-    $bmp = New-Object System.Drawing.Bitmap 16, 16
-    $bmp.MakeTransparent()
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.Clear([System.Drawing.Color]::Transparent)
-    $pts = @(
-        (New-Object System.Drawing.Point 2, 1),
-        (New-Object System.Drawing.Point 2, 13),
-        (New-Object System.Drawing.Point 5, 10),
-        (New-Object System.Drawing.Point 8, 15),
-        (New-Object System.Drawing.Point 10, 14),
-        (New-Object System.Drawing.Point 7, 9),
-        (New-Object System.Drawing.Point 12, 9)
-    )
-    $fill = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(20, 20, 20), 1)
-    $g.FillPolygon($fill, $pts)
-    $g.DrawPolygon($pen, $pts)
-    $pen.Dispose(); $fill.Dispose(); $g.Dispose()
-    return $bmp
-}
-
 function Add-BobTrayUsageRow {
     param(
         [int]$X,
@@ -564,13 +540,12 @@ function Rebuild-BobTrayTiles {
     $script:tileHost.Controls.Clear()
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
-    if (-not $script:cursorBmp) { $script:cursorBmp = New-BobTrayCursorBitmap }
     $acctLabel = 'n/a'
     if ($null -ne $AccountPct -and [string]$AccountPct -ne '') { $acctLabel = ('{0}%' -f [int]$AccountPct) }
     $acctName = 'cursor'
     if ($AccountName) { $acctName = [string]$AccountName }
     $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
-        -RemainingPct $AccountPct -BarWidth 372 -Icon $script:cursorBmp
+        -RemainingPct $AccountPct -BarWidth 392 -Icon $null
     $y += 6
     $indent = 18
     foreach ($m in @($Machines)) {
