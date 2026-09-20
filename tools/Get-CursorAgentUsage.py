@@ -85,6 +85,80 @@ def _fetch_usage(token: str) -> dict:
     return _fetch_json(token, "aiserver.v1.DashboardService/GetSandUsageStatus")
 
 
+def _fetch_period(token: str) -> dict | None:
+    # On-demand / extra spend (cents). Sand itself is percent-only.
+    try:
+        return _fetch_json(token, "aiserver.v1.DashboardService/GetCurrentPeriodUsage")
+    except Exception:
+        return None
+
+
+def _as_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_gbp(value, *, minor: bool | None = None) -> float | None:
+    n = _as_float(value)
+    if n is None or n < 0:
+        return None
+    if minor is True:
+        return round(n / 100.0, 2)
+    if minor is False:
+        return round(n, 2)
+    # Unspecified unit: large whole numbers are cents/pence; 12 is £12.
+    if n >= 100 and abs(n - round(n)) < 1e-9:
+        return round(n / 100.0, 2)
+    return round(n, 2)
+
+
+def _dig(obj, *path):
+    cur = obj
+    for key in path:
+        if not isinstance(cur, dict) or key not in cur:
+            return None
+        cur = cur[key]
+    return cur
+
+
+def _extract_overage_gbp(sand: dict, period: dict | None) -> tuple[float | None, str | None]:
+    for key in ("overageGbp", "overage_gbp", "gbpOverage", "overagePounds", "gbp"):
+        pounds = _to_gbp(sand.get(key), minor=False)
+        if pounds is not None:
+            return pounds, f"sand.{key}"
+    for key in ("onDemandSpend", "overageSpend", "extraUsageSpend"):
+        pounds = _to_gbp(sand.get(key))
+        if pounds is not None:
+            return pounds, f"sand.{key}"
+    for key in ("onDemandUsedCents", "overageCents", "spendCents"):
+        pounds = _to_gbp(sand.get(key), minor=True)
+        if pounds is not None:
+            return pounds, f"sand.{key}"
+    pounds = _to_gbp(sand.get("onDemandUsed"))
+    if pounds is not None:
+        return pounds, "sand.onDemandUsed"
+    if not period:
+        return None, None
+    for path, minor, label in (
+        (("individualUsage", "onDemand", "used"), True, "period.individualUsage.onDemand.used"),
+        (("teamUsage", "onDemand", "used"), True, "period.teamUsage.onDemand.used"),
+        (("planUsage", "onDemandSpend"), None, "period.planUsage.onDemandSpend"),
+        (("planUsage", "overageSpend"), None, "period.planUsage.overageSpend"),
+        (("onDemand", "used"), True, "period.onDemand.used"),
+        (("onDemandUsed",), None, "period.onDemandUsed"),
+    ):
+        pounds = _to_gbp(_dig(period, *path), minor=minor)
+        if pounds is not None:
+            return pounds, label
+    return None, None
+
+
 def main() -> int:
     try:
         key = _chrome_key(APP / "Local State")
@@ -93,33 +167,32 @@ def main() -> int:
             print("{}", end="")
             return 1
         body = _fetch_usage(token)
+        period = _fetch_period(token)
         used = body.get("usagePercent")
         if used is None:
             used = body.get("percentUsed")
-        if used is None:
+        used_f = _as_float(used)
+        remain = None
+        if used_f is not None:
+            if 0.0 <= used_f <= 1.0:
+                used_f = used_f * 100.0
+            remain = int(round(100.0 - used_f))
+        overage_gbp, overage_source = _extract_overage_gbp(body, period)
+        if used_f is None and overage_gbp is None:
             print(json.dumps({"ok": False, "error": "no usagePercent"}))
             return 1
-        used_f = float(used)
-        if 0.0 <= used_f <= 1.0:
-            used_f = used_f * 100.0
-        remain = int(round(100.0 - used_f))
-        overspend = None
-        if used_f > 100.0:
-            overspend = int(round(used_f - 100.0))
-        elif remain < 0:
-            overspend = -remain
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "used_pct": int(round(used_f)),
-                    "remaining_pct": remain,
-                    "overspend_pct": overspend,
-                    "source": "cursor-agent",
-                    "kind": "weekly",
-                }
-            )
-        )
+        out = {
+            "ok": True,
+            "source": "cursor-agent",
+            "kind": "weekly",
+        }
+        if used_f is not None:
+            out["used_pct"] = int(round(used_f))
+            out["remaining_pct"] = remain
+        if overage_gbp is not None:
+            out["overage_gbp"] = overage_gbp
+            out["overage_source"] = overage_source
+        print(json.dumps(out))
         return 0
     except Exception as e:
         print(json.dumps({"ok": False, "error": type(e).__name__}))

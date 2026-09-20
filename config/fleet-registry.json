@@ -3,27 +3,55 @@
     "docs":  "docs/bob-fleet-peer-peek.md",
     "staleAfterSec":  900,
     "peekTimeoutMs":  1500,
+    "seats":  [
+                  {
+                      "id":  "ntsa",
+                      "label":  "si@ntsa.uk",
+                      "account":  "si@ntsa.uk",
+                      "machines":  [ "marchhare", "ce-priority-dev1" ]
+                  },
+                  {
+                      "id":  "smartcatalogue",
+                      "label":  "Smart Catalogue",
+                      "account":  "social@smartcatalogue.uk",
+                      "machines":  [ "ionos" ]
+                  },
+                  {
+                      "id":  "clubmadeira",
+                      "label":  "Club Madeira",
+                      "account":  "social@clubmadeira.uk",
+                      "machines":  [ "flamingo" ]
+                  }
+              ],
     "machines":  [
                      {
                          "id":  "ce-priority-dev1",
                          "hostname":  "CE-PRIORITY-DEV1",
-                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge"
+                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge",
+                         "seatId":  "ntsa",
+                         "seatLabel":  "si@ntsa.uk"
                      },
                      {
                          "id":  "flamingo",
                          "hostname":  "FLAMINGO",
                          "bridgeHome":  "C:\\Users\\simon\\.grok\\bob-bridge",
-                         "note":  "Club Madeira social@clubmadeira.uk"
+                         "note":  "Club Madeira social@clubmadeira.uk",
+                         "seatId":  "clubmadeira",
+                         "seatLabel":  "Club Madeira"
                      },
                      {
                          "id":  "marchhare",
                          "hostname":  "MarchHare",
-                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge"
+                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge",
+                         "seatId":  "ntsa",
+                         "seatLabel":  "si@ntsa.uk"
                      },
                      {
                          "id":  "ionos",
                          "hostname":  "WIN-MPRE8VI4U6U",
-                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge"
+                         "bridgeHome":  "C:\\Users\\Administrator\\.grok\\bob-bridge",
+                         "seatId":  "smartcatalogue",
+                         "seatLabel":  "Smart Catalogue"
                      }
                  ]
 }

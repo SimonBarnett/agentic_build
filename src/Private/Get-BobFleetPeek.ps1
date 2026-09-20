@@ -108,12 +108,18 @@ function New-BobRegistryMachine {
     if ($M.hostname) { $hostName = [string]$M.hostname }
     $seen = $null
     if ($M.lastSeen) { $seen = [string]$M.lastSeen }
+    $seatId = $null
+    if ($M.seatId) { $seatId = [string]$M.seatId }
+    $seatLabel = $null
+    if ($M.seatLabel) { $seatLabel = [string]$M.seatLabel }
     return [pscustomobject]@{
         id         = $id
         hostname   = $hostName
         bridgeHome = $home
         peekRoot   = $peek
         lastSeen   = $seen
+        seatId     = $seatId
+        seatLabel  = $seatLabel
         source     = $Source
     }
 }
@@ -127,7 +133,7 @@ function Merge-BobRegistryMachine {
         return
     }
     $cur = $ById[$row.id]
-    foreach ($prop in @('hostname', 'bridgeHome', 'peekRoot', 'lastSeen')) {
+    foreach ($prop in @('hostname', 'bridgeHome', 'peekRoot', 'lastSeen', 'seatId', 'seatLabel')) {
         $v = [string]$cur.$prop
         $n = [string]$row.$prop
         if ($n -and $n.Trim()) {
@@ -232,6 +238,77 @@ function Get-BobFleetRegistry {
         shareRoot      = $shareRoot
         machines       = $rows
     }
+}
+
+function Get-BobDefaultFleetSeats {
+    return @(
+        [pscustomobject]@{
+            id       = 'ntsa'
+            label    = 'si@ntsa.uk'
+            account  = 'si@ntsa.uk'
+            machines = @('marchhare', 'ce-priority-dev1')
+        },
+        [pscustomobject]@{
+            id       = 'smartcatalogue'
+            label    = 'Smart Catalogue'
+            account  = 'social@smartcatalogue.uk'
+            machines = @('ionos')
+        },
+        [pscustomobject]@{
+            id       = 'clubmadeira'
+            label    = 'Club Madeira'
+            account  = 'social@clubmadeira.uk'
+            machines = @('flamingo')
+        }
+    )
+}
+
+function Get-BobFleetSeatMap {
+    [CmdletBinding()]
+    param()
+    $map = @{}
+    foreach ($s in @(Get-BobDefaultFleetSeats)) {
+        foreach ($mid in @($s.machines)) {
+            if (-not $mid) { continue }
+            $id = [string]$mid.Trim().ToLowerInvariant()
+            $map[$id] = [pscustomobject]@{ seatId = [string]$s.id; seatLabel = [string]$s.label }
+        }
+    }
+    $paths = @()
+    try { $paths += ,(Get-BobBundledFleetRegistryPath) } catch { }
+    try { $paths += ,(Join-Path (Get-FleetRoot) 'registry.json') } catch { }
+    if ($env:BOB_FLEET_REGISTRY -and [string]$env:BOB_FLEET_REGISTRY.Trim()) {
+        $paths += [string]$env:BOB_FLEET_REGISTRY.Trim()
+    }
+    foreach ($path in $paths) {
+        if (-not $path -or -not (Test-Path $path)) { continue }
+        try {
+            $doc = Read-JsonFile $path
+            if (-not $doc) { continue }
+            foreach ($s in @($doc.seats)) {
+                if (-not $s) { continue }
+                $sid = [string]$s.id
+                $label = $(if ($s.label) { [string]$s.label } else { $sid })
+                foreach ($mid in @($s.machines)) {
+                    if (-not $mid) { continue }
+                    $id = [string]$mid.Trim().ToLowerInvariant()
+                    $map[$id] = [pscustomobject]@{ seatId = $sid; seatLabel = $label }
+                }
+            }
+            foreach ($m in @($doc.machines)) {
+                if (-not $m -or -not $m.id) { continue }
+                $id = [string]$m.id.Trim().ToLowerInvariant()
+                if (-not $m.seatId -and -not $m.seatLabel) { continue }
+                $cur = $null
+                if ($map.ContainsKey($id)) { $cur = $map[$id] }
+                $sid = $(if ($m.seatId) { [string]$m.seatId } elseif ($cur) { [string]$cur.seatId } else { $id })
+                $label = $(if ($m.seatLabel) { [string]$m.seatLabel } elseif ($cur) { [string]$cur.seatLabel } else { $sid })
+                $map[$id] = [pscustomobject]@{ seatId = $sid; seatLabel = $label }
+            }
+        }
+        catch { }
+    }
+    return ,$map
 }
 
 function Write-BobFleetRegistrySelf {
@@ -461,7 +538,8 @@ function ConvertTo-BobPeekSnapshotJson {
         [string]$WindowsUser,
         [string]$LastSeen,
         $Running,
-        $Inbox
+        $Inbox,
+        $Weekly
     )
     $runParts = New-Object 'System.Collections.Generic.List[string]'
     if ($Running) {
@@ -488,6 +566,9 @@ function ConvertTo-BobPeekSnapshotJson {
         ('"running":[{0}]' -f ($runParts -join ',')),
         ('"inbox":[{0}]' -f ($inParts -join ','))
     )
+    if ($null -ne $Weekly -and [string]$Weekly -ne '') {
+        $fields += ('"weekly":{0}' -f [int]$Weekly)
+    }
     return '{' + ($fields -join ',') + '}'
 }
 
@@ -548,11 +629,16 @@ function ConvertFrom-BobPeekSnapshot {
     }
     $seen = $null
     if ($Snap.lastSeen) { $seen = [string]$Snap.lastSeen }
+    $week = $null
+    if ($null -ne $Snap.weekly -and [string]$Snap.weekly -ne '') {
+        try { $week = [int]$Snap.weekly } catch { $week = $null }
+    }
     return [pscustomobject]@{
         ok       = $true
         id       = $id
         lastSeen = $seen
         hostname = $(if ($Snap.hostname) { [string]$Snap.hostname } else { $null })
+        weekly   = $week
         jobs     = $jobs
         source   = 'snapshot'
     }
@@ -587,12 +673,16 @@ function Read-BobPeerPeekFromPath {
     $machinePath = Join-Path $Path 'machine.json'
     $seen = $null
     $hostName = $null
+    $week = $null
     if (Test-BobPathExistsTimed -Path $machinePath -TimeoutMs $TimeoutMs) {
         $mr = Read-BobJsonTimed -Path $machinePath -TimeoutMs $TimeoutMs
         if (-not $mr.ok) { return $null }
         if ($mr.value) {
             if ($mr.value.lastSeen) { $seen = [string]$mr.value.lastSeen }
             if ($mr.value.hostname) { $hostName = [string]$mr.value.hostname }
+            if ($null -ne $mr.value.weekly -and [string]$mr.value.weekly -ne '') {
+                try { $week = [int]$mr.value.weekly } catch { $week = $null }
+            }
         }
     }
 
@@ -609,6 +699,7 @@ function Read-BobPeerPeekFromPath {
         id       = $Id
         lastSeen = $seen
         hostname = $hostName
+        weekly   = $week
         jobs     = $jobs
         source   = 'bridge-home'
     }
@@ -681,12 +772,18 @@ function Write-BobFleetPeekSnapshot {
     if ($null -eq $inbox) { $inbox = New-Object 'System.Collections.Generic.List[object]' }
     $seen = [DateTime]::UtcNow.ToString('o')
     if ($rec -and $rec.lastSeen) { $seen = [string]$rec.lastSeen }
+    $week = $null
+    try {
+        $w = Get-BobWeeklyRemaining
+        if ($w -and $null -ne $w.remaining_pct) { $week = [int]$w.remaining_pct }
+    }
+    catch { }
     $peekDir = Join-Path (Initialize-FleetRoot) 'peek'
     New-Item -ItemType Directory -Force -Path $peekDir | Out-Null
     # Never assign job arrays as PSCustomObject properties: PS 5.1 collapses them.
     $snapJson = ConvertTo-BobPeekSnapshotJson -Id $id -Hostname $env:COMPUTERNAME `
         -BridgeHome $root -WindowsUser "$env:USERDOMAIN\$env:USERNAME" -LastSeen $seen `
-        -Running $running -Inbox $inbox
+        -Running $running -Inbox $inbox -Weekly $week
     [IO.File]::WriteAllText((Join-Path $peekDir ($id + '.json')), $snapJson)
 
     $share = $null

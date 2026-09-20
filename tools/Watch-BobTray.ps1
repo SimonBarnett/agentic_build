@@ -422,7 +422,7 @@ function Update-Hover {
             if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
             Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name `
                 -AccountPct $h.account_remaining_pct -AccountUsedPct $h.account_used_pct `
-                -AccountOverspendPct $h.account_overspend_pct
+                -AccountOverageGbp $h.account_overage_gbp
             if ($alertLabel) {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -537,7 +537,7 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $AccountName, $AccountPct, $AccountUsedPct, $AccountOverspendPct)
+    param($Machines, $AccountName, $AccountPct, $AccountUsedPct, $AccountOverageGbp)
     if (-not $script:tileHost) { return }
     $script:tileHost.Controls.Clear()
     $y = 0
@@ -545,7 +545,7 @@ function Rebuild-BobTrayTiles {
     $acctName = 'cursor'
     if ($AccountName) { $acctName = [string]$AccountName }
     $acctHeading = Format-BobTrayCursorAccountLabel -Name $acctName -RemainingPct $AccountPct `
-        -UsedPct $AccountUsedPct -OverspendPct $AccountOverspendPct
+        -UsedPct $AccountUsedPct -OverageGbp $AccountOverageGbp
     $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
         -RemainingPct $AccountPct -BarWidth 392 -Icon $null
     $y += 6
@@ -554,9 +554,8 @@ function Rebuild-BobTrayTiles {
         if (-not $m) { continue }
         $id = [string]$m.id
         $pct = $m.remaining_pct
-        $pctLabel = 'n/a'
-        if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
-        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $id, $pctLabel) `
+        $heading = Format-BobTrayMachineHeading -Id $id -SeatLabel $m.seat_label -RemainingPct $pct
+        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading $heading `
             -RemainingPct $pct -BarWidth 354 -Icon $null
         $reach = [string]$m.reach
         $jobTxt = ''

@@ -164,6 +164,62 @@ function Get-BobWeeklyRemaining {
     catch { return $null }
 }
 
+function ConvertTo-BobGbpAmount {
+    param($Value, [switch]$Minor)
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    try { $n = [double]$Value } catch { return $null }
+    if ($n -lt 0) { return $null }
+    if ($Minor) { return [math]::Round($n / 100.0, 2) }
+    if ($n -ge 100 -and [math]::Abs($n - [math]::Round($n)) -lt 1e-9) {
+        return [math]::Round($n / 100.0, 2)
+    }
+    return [math]::Round($n, 2)
+}
+
+function ConvertTo-BobCursorOverageGbp {
+    param($j)
+    if (-not $j) { return $null }
+    foreach ($name in @('overage_gbp', 'overageGbp', 'gbpOverage', 'overagePounds', 'gbp', 'pounds')) {
+        $p = $j.PSObject.Properties[$name]
+        if ($p -and $null -ne $p.Value -and [string]$p.Value -ne '') {
+            $got = ConvertTo-BobGbpAmount $p.Value
+            if ($null -ne $got) { return $got }
+        }
+    }
+    foreach ($name in @('on_demand_used_cents', 'onDemandUsedCents', 'overageCents', 'spendCents')) {
+        $p = $j.PSObject.Properties[$name]
+        if ($p -and $null -ne $p.Value -and [string]$p.Value -ne '') {
+            $got = ConvertTo-BobGbpAmount $p.Value -Minor
+            if ($null -ne $got) { return $got }
+        }
+    }
+    foreach ($name in @('onDemandSpend', 'overageSpend', 'onDemandUsed', 'overage')) {
+        $p = $j.PSObject.Properties[$name]
+        if ($p -and $null -ne $p.Value -and [string]$p.Value -ne '') {
+            $got = ConvertTo-BobGbpAmount $p.Value
+            if ($null -ne $got) { return $got }
+        }
+    }
+    try {
+        $on = $j.individualUsage.onDemand.used
+        if ($null -ne $on -and [string]$on -ne '') {
+            $got = ConvertTo-BobGbpAmount $on -Minor
+            if ($null -ne $got) { return $got }
+        }
+    }
+    catch { }
+    $c = $j.PSObject.Properties['cursor']
+    if ($c -and $null -ne $c.Value -and [string]$c.Value -ne '') {
+        # tip_cursor.json {"cursor":12} is pounds, not percent.
+        try {
+            $n = [double]$c.Value
+            if ($n -ge 0) { return [math]::Round($n, 2) }
+        }
+        catch { }
+    }
+    return $null
+}
+
 function ConvertTo-BobCursorUsageDoc {
     param($j)
     if (-not $j) { return $null }
@@ -186,28 +242,21 @@ function ConvertTo-BobCursorUsageDoc {
             $remain = $fromUsed
         }
     }
-    if ($null -eq $remain) { return $null }
-    if ($null -eq $used) { $used = 100.0 - [double]$remain }
-    $over = $null
-    if ([double]$used -gt 100) {
-        $over = [int][math]::Round([double]$used - 100.0)
-    }
-    elseif ([double]$remain -lt 0) {
-        $over = [int][math]::Round(-[double]$remain)
-    }
+    $overGbp = ConvertTo-BobCursorOverageGbp $j
+    if ($null -eq $remain -and $null -eq $overGbp) { return $null }
+    if ($null -eq $used -and $null -ne $remain) { $used = 100.0 - [double]$remain }
     return [pscustomobject]@{
-        remaining_pct = [int][math]::Round([double]$remain)
-        used_pct      = [int][math]::Round([double]$used)
-        overspend_pct = $over
+        remaining_pct = $(if ($null -ne $remain) { [int][math]::Round([double]$remain) } else { $null })
+        used_pct      = $(if ($null -ne $used) { [int][math]::Round([double]$used) } else { $null })
+        overage_gbp   = $overGbp
         source        = 'cursor-agent'
         kind          = 'weekly'
     }
 }
 
-function Get-BobTipCursorOverspend {
-    # Optional local note. This repo does not write tip_cursor.json; ionos has
-    # been observed with {"cursor":12} meaning overspend percent when Sand
-    # remaining is empty. BOB_TIP_CURSOR_FILE overrides the default path.
+function Get-BobTipCursorOverageGbp {
+    # Optional local note. This repo does not write tip_cursor.json. ionos
+    # {"cursor":12} is pounds of on-demand overage, not a percent.
     $p = $null
     if ($env:BOB_TIP_CURSOR_FILE -and [string]$env:BOB_TIP_CURSOR_FILE.Trim()) {
         $p = [string]$env:BOB_TIP_CURSOR_FILE.Trim()
@@ -218,35 +267,30 @@ function Get-BobTipCursorOverspend {
     if (-not $p -or -not (Test-Path $p)) { return $null }
     try {
         $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not $j) { return $null }
-        $v = $j.cursor
-        if ($null -eq $v -or [string]::IsNullOrWhiteSpace([string]$v)) { return $null }
-        $n = [double]$v
-        if ($n -lt 0) { return $null }
-        return [int][math]::Round($n)
+        return (ConvertTo-BobCursorOverageGbp $j)
     }
     catch { return $null }
 }
 
-function Get-BobCursorOverspendPct {
-    param($RemainingPct, $UsedPct, $OverspendPct)
-    if ($null -ne $UsedPct -and [string]$UsedPct -ne '') {
-        try {
-            if ([double]$UsedPct -gt 100) {
-                return [int][math]::Round([double]$UsedPct - 100)
-            }
-        }
-        catch { }
+function Get-BobCursorOverageGbp {
+    param($RemainingPct, $UsedPct, $OverageGbp)
+    $emptyOrOver = $false
+    if (-not (Test-BobTrayRemainingKnown $RemainingPct)) { $emptyOrOver = $true }
+    elseif ([int]$RemainingPct -lt 0) { $emptyOrOver = $true }
+    elseif ($null -ne $UsedPct -and [string]$UsedPct -ne '' -and [double]$UsedPct -gt 100) { $emptyOrOver = $true }
+    if (-not $emptyOrOver) { return $null }
+    if ($null -ne $OverageGbp -and [string]$OverageGbp -ne '') {
+        $got = ConvertTo-BobGbpAmount $OverageGbp
+        if ($null -ne $got) { return $got }
     }
-    if (Test-BobTrayRemainingKnown $RemainingPct) {
-        $r = [int]$RemainingPct
-        if ($r -lt 0) { return -$r }
-        return $null
-    }
-    if ($null -ne $OverspendPct -and [string]$OverspendPct -ne '') {
-        try { return [int][math]::Abs([int]$OverspendPct) } catch { }
-    }
-    return (Get-BobTipCursorOverspend)
+    return (Get-BobTipCursorOverageGbp)
+}
+
+function Format-BobGbp {
+    param([double]$Pounds)
+    $n = [math]::Round([double]$Pounds, 2)
+    $s = $n.ToString('0.00', [Globalization.CultureInfo]::InvariantCulture)
+    return ('£{0}' -f $s)
 }
 
 function Format-BobTrayCursorAccountLabel {
@@ -255,17 +299,84 @@ function Format-BobTrayCursorAccountLabel {
         [string]$Name = 'cursor',
         $RemainingPct,
         $UsedPct,
+        $OverageGbp,
         $OverspendPct
     )
     if (-not $Name) { $Name = 'cursor' }
-    $over = Get-BobCursorOverspendPct -RemainingPct $RemainingPct -UsedPct $UsedPct -OverspendPct $OverspendPct
-    if ($null -ne $over) {
-        return ('{0} (over +{1}%)' -f $Name, [int]$over)
+    $gbp = Get-BobCursorOverageGbp -RemainingPct $RemainingPct -UsedPct $UsedPct -OverageGbp $OverageGbp
+    if ($null -ne $gbp) {
+        return ('{0} ({1})' -f $Name, (Format-BobGbp $gbp))
     }
+    $emptyOrOver = (-not (Test-BobTrayRemainingKnown $RemainingPct))
+    if (-not $emptyOrOver -and [int]$RemainingPct -lt 0) { $emptyOrOver = $true }
+    if (-not $emptyOrOver -and $null -ne $UsedPct -and [string]$UsedPct -ne '' -and [double]$UsedPct -gt 100) {
+        $emptyOrOver = $true
+    }
+    if ($emptyOrOver) {
+        return ('{0} (empty)' -f $Name)
+    }
+    return ('{0} ({1}%)' -f $Name, [int]$RemainingPct)
+}
+
+function Format-BobTrayMachineHeading {
+    [CmdletBinding()]
+    param(
+        [string]$Id,
+        [string]$SeatLabel,
+        $RemainingPct
+    )
+    $pctLabel = 'n/a'
     if (Test-BobTrayRemainingKnown $RemainingPct) {
-        return ('{0} ({1}%)' -f $Name, [int]$RemainingPct)
+        $pctLabel = ('{0}%' -f [int]$RemainingPct)
     }
-    return ('{0} (empty)' -f $Name)
+    if ($SeatLabel -and [string]$SeatLabel.Trim()) {
+        return ('{0} · {1} ({2})' -f $Id, [string]$SeatLabel.Trim(), $pctLabel)
+    }
+    return ('{0} ({1})' -f $Id, $pctLabel)
+}
+
+function Resolve-BobSeatWeeklyRemaining {
+    param($WeeklyBy, $WeeklyAtBy, $SeatMap, $MachineIds)
+    if (-not $WeeklyBy) { return }
+    $groups = @{}
+    foreach ($mid in @($MachineIds)) {
+        $sid = [string]$mid
+        if ($SeatMap -and $SeatMap.ContainsKey($mid) -and $SeatMap[$mid].seatId) {
+            $sid = [string]$SeatMap[$mid].seatId
+        }
+        if (-not $groups.ContainsKey($sid)) { $groups[$sid] = New-Object System.Collections.Generic.List[string] }
+        [void]$groups[$sid].Add($mid)
+    }
+    foreach ($sid in @($groups.Keys)) {
+        $members = @($groups[$sid])
+        $bestPct = $null
+        $bestAt = $null
+        $known = New-Object System.Collections.Generic.List[int]
+        foreach ($mid in $members) {
+            if (-not $WeeklyBy.ContainsKey($mid)) { continue }
+            if (-not (Test-BobTrayRemainingKnown $WeeklyBy[$mid])) { continue }
+            $pct = [int]$WeeklyBy[$mid]
+            [void]$known.Add($pct)
+            $at = $null
+            if ($WeeklyAtBy -and $WeeklyAtBy.ContainsKey($mid) -and $WeeklyAtBy[$mid]) {
+                try {
+                    $at = [datetime]::Parse([string]$WeeklyAtBy[$mid], $null, [Globalization.DateTimeStyles]::RoundtripKind)
+                }
+                catch { $at = $null }
+            }
+            if ($at -and ($null -eq $bestAt -or $at -gt $bestAt)) {
+                $bestAt = $at
+                $bestPct = $pct
+            }
+        }
+        if ($null -eq $bestPct -and $known.Count -gt 0) {
+            $bestPct = ($known | Measure-Object -Minimum).Minimum
+        }
+        if ($null -eq $bestPct) { continue }
+        foreach ($mid in $members) {
+            $WeeklyBy[$mid] = [int]$bestPct
+        }
+    }
 }
 
 function Get-BobCursorAgentWeeklyRemaining {
@@ -610,6 +721,7 @@ function Get-BobTrayHover {
     }
     $reachBy[$machineId] = 'local'
     $weeklyBy = @{}
+    $weeklyAtBy = @{}
     $week = Get-BobWeeklyRemaining
     $remainPct = $null
     $weekFetched = $null
@@ -617,11 +729,14 @@ function Get-BobTrayHover {
         $remainPct = [int]$week.remaining_pct
         $weekFetched = [string]$week.fetched_at
         $weeklyBy[$machineId] = $remainPct
+        if ($weekFetched) { $weeklyAtBy[$machineId] = $weekFetched }
     }
+    $seatMap = @{}
+    try { $seatMap = Get-BobFleetSeatMap } catch { $seatMap = @{} }
     $cursorWeek = $null
     $cursorRemain = $null
     $cursorUsed = $null
-    $cursorOver = $null
+    $cursorGbp = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
     if ($cursorWeek) {
         if (Test-BobTrayRemainingKnown $cursorWeek.remaining_pct) {
@@ -630,11 +745,11 @@ function Get-BobTrayHover {
         if ($null -ne $cursorWeek.used_pct -and [string]$cursorWeek.used_pct -ne '') {
             $cursorUsed = [int]$cursorWeek.used_pct
         }
-        if ($null -ne $cursorWeek.overspend_pct -and [string]$cursorWeek.overspend_pct -ne '') {
-            $cursorOver = [int]$cursorWeek.overspend_pct
+        if ($null -ne $cursorWeek.overage_gbp -and [string]$cursorWeek.overage_gbp -ne '') {
+            $cursorGbp = [double]$cursorWeek.overage_gbp
         }
     }
-    $cursorOver = Get-BobCursorOverspendPct -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverspendPct $cursorOver
+    $cursorGbp = Get-BobCursorOverageGbp -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverageGbp $cursorGbp
 
     $moot = $null
     try { $moot = Get-BobMootRoster } catch { $moot = $null }
@@ -672,6 +787,7 @@ function Get-BobTrayHover {
         if ($peek.lastSeen) { $seenBy[$mid] = [string]$peek.lastSeen }
         if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) {
             $weeklyBy[$mid] = [int]$peek.weekly
+            if ($peek.lastSeen) { $weeklyAtBy[$mid] = [string]$peek.lastSeen }
         }
         $peerJobs = @()
         if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
@@ -706,6 +822,10 @@ function Get-BobTrayHover {
     foreach ($k in ($byMachine.Keys | Sort-Object)) {
         if ($k -ne $machineId) { $order += $k }
     }
+    Resolve-BobSeatWeeklyRemaining -WeeklyBy $weeklyBy -WeeklyAtBy $weeklyAtBy -SeatMap $seatMap -MachineIds $order
+    if ($weeklyBy.ContainsKey($machineId) -and (Test-BobTrayRemainingKnown $weeklyBy[$machineId])) {
+        $remainPct = [int]$weeklyBy[$machineId]
+    }
 
     $tiles = @()
     $jobLines = @()
@@ -728,8 +848,16 @@ function Get-BobTrayHover {
         if ($reachBy.ContainsKey($mid)) { $reach = [string]$reachBy[$mid] }
         $wPct = $null
         if ($weeklyBy.ContainsKey($mid)) { $wPct = $weeklyBy[$mid] }
+        $seatId = $null
+        $seatLabel = $null
+        if ($seatMap -and $seatMap.ContainsKey($mid)) {
+            $seatId = [string]$seatMap[$mid].seatId
+            $seatLabel = [string]$seatMap[$mid].seatLabel
+        }
         $tile = New-Object psobject -Property @{
             id             = $mid
+            seat_id        = $seatId
+            seat_label     = $seatLabel
             job_count      = $rows.Count
             jobs           = $rows
             reach          = $reach
@@ -737,9 +865,7 @@ function Get-BobTrayHover {
             remaining_pct  = $wPct
         }
         $tiles += ,$tile
-        $pctLabel = 'n/a'
-        if ($null -ne $wPct) { $pctLabel = ('{0}%' -f [int]$wPct) }
-        $jobLines += ('  {0} ({1})' -f $mid, $pctLabel)
+        $jobLines += ('  {0}' -f (Format-BobTrayMachineHeading -Id $mid -SeatLabel $seatLabel -RemainingPct $wPct))
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
             $jobLines += '    not in moot'
         }
@@ -758,7 +884,7 @@ function Get-BobTrayHover {
     if (-not $peerPeek) {
         $jobLines += 'other hosts not in this store'
     }
-    $acctLine = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverspendPct $cursorOver
+    $acctLine = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverageGbp $cursorGbp
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
     $lines = New-Object System.Collections.Generic.List[string]
@@ -796,7 +922,7 @@ function Get-BobTrayHover {
         account_name   = 'cursor'
         account_remaining_pct = $cursorRemain
         account_used_pct = $cursorUsed
-        account_overspend_pct = $cursorOver
+        account_overage_gbp = $cursorGbp
     }
 }
 

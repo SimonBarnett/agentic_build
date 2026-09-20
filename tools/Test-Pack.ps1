@@ -506,7 +506,7 @@ Invoke-Case 'BT0l tray hover' {
     & git -C $peerGit init -q
     & git -C $peerGit remote add origin https://github.com/SimonBarnett/agentic_build.git
     $freshSeen = [DateTime]::UtcNow.ToString('o')
-    [IO.File]::WriteAllText((Join-Path $peerHome 'machine.json'), (@{ id = 'marchhare'; lastSeen = $freshSeen } | ConvertTo-Json))
+    [IO.File]::WriteAllText((Join-Path $peerHome 'machine.json'), (@{ id = 'marchhare'; lastSeen = $freshSeen; weekly = 4 } | ConvertTo-Json))
     $peerJobId = 'dddddddd-1111-2222-3333-444455556666'
     $peerJob = [pscustomobject]@{
         id        = $peerJobId
@@ -521,7 +521,7 @@ Invoke-Case 'BT0l tray hover' {
     $staleHome = Join-Path $bridgeRoot 'peer-stale'
     New-Item -ItemType Directory -Force -Path (Join-Path $staleHome 'fleet\running\ce-priority-dev1') | Out-Null
     $oldSeen = [datetime]::UtcNow.AddHours(-6).ToString('o')
-    [IO.File]::WriteAllText((Join-Path $staleHome 'machine.json'), (@{ id = 'ce-priority-dev1'; lastSeen = $oldSeen } | ConvertTo-Json))
+    [IO.File]::WriteAllText((Join-Path $staleHome 'machine.json'), (@{ id = 'ce-priority-dev1'; lastSeen = $oldSeen; weekly = 8 } | ConvertTo-Json))
 
     $deadHome = Join-Path $bridgeRoot 'peer-missing\does-not-exist'
     $regPath = Join-Path $bridgeRoot 'fleet\registry.json'
@@ -545,16 +545,16 @@ Invoke-Case 'BT0l tray hover' {
     if ($txt -notmatch '(?m)^cursor \(') { throw "h5 missing cursor account: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "h5 missing testhost: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}otherhost \(') { throw "h5 missing otherhost: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare \(') { throw "h5 missing marchhare: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "h5 missing ionos: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1 \(') { throw "h5 missing ce-priority-dev1: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare(?: · [^(\r\n]+)? \(') { throw "h5 missing marchhare: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?: · [^(\r\n]+)? \(') { throw "h5 missing ionos: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1(?: · [^(\r\n]+)? \(') { throw "h5 missing ce-priority-dev1: $txt" }
     if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
-    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare \([^)]+\)\r?\n[ ]+SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare(?: · [^(\r\n]+)? \([^)]+\)\r?\n[ ]+SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
     if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \([^)]+\)\r?\n[ ]+not in moot') { throw "ionos must be not in moot: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?: · [^(\r\n]+)? \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?: · [^(\r\n]+)? \([^)]+\)\r?\n[ ]+not in moot') { throw "ionos must be not in moot: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "do not say unreachable for a box that is not in the moot: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1 \([^)]+\)\r?\n[ ]+lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1(?: · [^(\r\n]+)? \([^)]+\)\r?\n[ ]+lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
     $ids5 = @($h5.machines | ForEach-Object { [string]$_.id })
     if ($ids5[0] -ne 'testhost') { throw "h5 machines[0]=$($ids5[0])" }
     foreach ($need in @('testhost', 'otherhost', 'marchhare', 'ionos', 'ce-priority-dev1')) {
@@ -597,9 +597,21 @@ Invoke-Case 'BT0l tray hover' {
     $ionosTile = @($h5.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
     if ([string]$ionosTile.reach -ne 'not-in-moot') { throw "ionos reach=$($ionosTile.reach)" }
     if ([int]$ionosTile.job_count -ne 0) { throw "ionos job_count=$($ionosTile.job_count) (invented?)" }
+    if ([string]$ionosTile.seat_label -ne 'Smart Catalogue') { throw "ionos seat=$($ionosTile.seat_label)" }
     $mhTile = @($h5.machines | Where-Object { [string]$_.id -eq 'marchhare' })[0]
     if ([int]$mhTile.job_count -lt 1) { throw 'marchhare peek job missing' }
+    if ([string]$mhTile.seat_label -ne 'si@ntsa.uk') { throw "marchhare seat=$($mhTile.seat_label)" }
     $staleTile = @($h5.machines | Where-Object { [string]$_.id -eq 'ce-priority-dev1' })[0]
+    if ([string]$staleTile.seat_label -ne 'si@ntsa.uk') { throw "dev1 seat=$($staleTile.seat_label)" }
+    if ([string]$mhTile.seat_id -ne [string]$staleTile.seat_id) { throw 'marchhare and ce-priority-dev1 must share a seat' }
+    if ([int]$mhTile.remaining_pct -ne 4) { throw "marchhare remaining=$($mhTile.remaining_pct) expected 4 (newer seat sample)" }
+    if ([int]$staleTile.remaining_pct -ne 4) { throw "dev1 remaining=$($staleTile.remaining_pct) must match marchhare seat (not local 8)" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare · si@ntsa\.uk \(') { throw "marchhare tile missing seat label: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1 · si@ntsa\.uk \(') { throw "dev1 tile missing seat label: $txt" }
+    $seats = Get-BobFleetSeatMap
+    if ([string]$seats['flamingo'].seatLabel -ne 'Club Madeira') { throw 'flamingo seat label' }
+    if ([string]$seats['ionos'].seatLabel -ne 'Smart Catalogue') { throw 'ionos seat map' }
+    if ([string]$seats['marchhare'].seatId -ne [string]$seats['ce-priority-dev1'].seatId) { throw 'default seat map must group ntsa machines' }
     if ([string]$staleTile.reach -ne 'stale') { throw "stale reach=$($staleTile.reach)" }
 
     $peekDoc = Join-Path $RepoRoot 'docs\bob-fleet-peer-peek.md'
@@ -617,6 +629,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -notmatch 'Format-BobTrayCursorAccountLabel') { throw 'Watch-BobTray cursor row must use Format-BobTrayCursorAccountLabel' }
+    if ($traySrc -notmatch 'Format-BobTrayMachineHeading') { throw 'Watch-BobTray machine tiles must use Format-BobTrayMachineHeading' }
     if ($traySrc -match "(?s)function Rebuild-BobTrayTiles.*?acctLabel = 'n/a'") { throw 'Rebuild-BobTrayTiles must not default cursor row to n/a' }
     if ($traySrc -match 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must not draw a cursor icon on the account bar' }
     if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
@@ -633,7 +646,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch '#Bobiverse') { throw 'bob-fleet-tray skill must name title #Bobiverse (machineId)' }
-    if ($skillTray -notmatch 'over \+') { throw 'bob-fleet-tray skill must document cursor overspend label' }
+    if ($skillTray -notmatch '£') { throw 'bob-fleet-tray skill must document cursor £ overage' }
+    if ($skillTray -notmatch 'si@ntsa') { throw 'bob-fleet-tray skill must document shared ntsa seat' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
     if ($skillTray -notmatch 'not in moot') { throw 'bob-fleet-tray skill must document not-in-moot tiles' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
@@ -860,7 +874,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     [IO.File]::WriteAllText((Join-Path $macDir 'ionos.json'), '{"id":"ionos"}')
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "missing ionos tile: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?: · [^(\r\n]+)? \(') { throw "missing ionos tile: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "IRC peer marked unreachable: $txt" }
     if ($txt -notmatch 'SimonBarnett/agentic_build') { throw "IRC jobs missing: $txt" }
     $tile = @($h.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
@@ -900,23 +914,25 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$hCur.jobs_text -notmatch '(?m)^cursor \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
 
     $overFile = Join-Path $bridgeRoot 'cursor-over.json'
-    '{"used_pct":112}' | Set-Content -Path $overFile -Encoding utf8
+    '{"used_pct":112,"overage_gbp":12}' | Set-Content -Path $overFile -Encoding utf8
     $env:BOB_CURSOR_USAGE_FILE = $overFile
     $cuOver = Get-BobCursorAgentWeeklyRemaining
     if ([int]$cuOver.used_pct -ne 112) { throw "over used=$($cuOver.used_pct)" }
     if ([int]$cuOver.remaining_pct -ne -12) { throw "over remaining=$($cuOver.remaining_pct) must stay -12 (do not clamp)" }
-    if ([int]$cuOver.overspend_pct -ne 12) { throw "overspend=$($cuOver.overspend_pct)" }
+    if ([double]$cuOver.overage_gbp -ne 12) { throw "overage_gbp=$($cuOver.overage_gbp)" }
     $hOver = Get-BobTrayHover
-    if ([string]$hOver.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "over jobs_text=$($hOver.jobs_text)" }
+    if ([string]$hOver.jobs_text -notmatch '(?m)^cursor \(£12\.00\)') { throw "over jobs_text=$($hOver.jobs_text)" }
     if ([string]$hOver.jobs_text -match '(?m)^cursor \(n/a\)') { throw 'overspend must not paint n/a' }
+    if ([string]$hOver.jobs_text -match 'over \+') { throw 'must not paint over +N%' }
 
     $clamped = Join-Path $bridgeRoot 'cursor-clamped.json'
-    '{"remaining_pct":0,"used_pct":112}' | Set-Content -Path $clamped -Encoding utf8
+    '{"remaining_pct":0,"used_pct":112,"on_demand_used_cents":1200}' | Set-Content -Path $clamped -Encoding utf8
     $env:BOB_CURSOR_USAGE_FILE = $clamped
     $cuClamp = Get-BobCursorAgentWeeklyRemaining
     if ([int]$cuClamp.remaining_pct -ne -12) { throw "clamped remaining=$($cuClamp.remaining_pct) must recompute from used>100" }
+    if ([double]$cuClamp.overage_gbp -ne 12) { throw "cents overage=$($cuClamp.overage_gbp)" }
     $hClamp = Get-BobTrayHover
-    if ([string]$hClamp.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "clamped jobs_text=$($hClamp.jobs_text)" }
+    if ([string]$hClamp.jobs_text -notmatch '(?m)^cursor \(£12\.00\)') { throw "clamped jobs_text=$($hClamp.jobs_text)" }
 
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $bridgeRoot 'no-cursor-usage.json'
     $tipCur = Join-Path $bridgeRoot 'tip_cursor.json'
@@ -924,8 +940,8 @@ Invoke-Case 'BT0o bobiverse irc' {
     $env:BOB_TIP_CURSOR_FILE = $tipCur
     $hTip = Get-BobTrayHover
     if ($null -ne $hTip.account_remaining_pct) { throw 'tip_cursor must not invent remaining_pct' }
-    if ([int]$hTip.account_overspend_pct -ne 12) { throw "tip overspend=$($hTip.account_overspend_pct)" }
-    if ([string]$hTip.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "tip jobs_text=$($hTip.jobs_text)" }
+    if ([double]$hTip.account_overage_gbp -ne 12) { throw "tip overage=$($hTip.account_overage_gbp)" }
+    if ([string]$hTip.jobs_text -notmatch '(?m)^cursor \(£12\.00\)') { throw "tip jobs_text=$($hTip.jobs_text)" }
 
     $env:BOB_TIP_CURSOR_FILE = Join-Path $bridgeRoot 'no-tip-cursor.json'
     $hEmpty = Get-BobTrayHover
@@ -934,10 +950,12 @@ Invoke-Case 'BT0o bobiverse irc' {
 
     $lbl = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct $null
     if ($lbl -ne 'cursor (empty)') { throw "format empty=$lbl" }
-    $lblOver = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct (-12) -UsedPct 112
-    if ($lblOver -ne 'cursor (over +12%)') { throw "format over=$lblOver" }
+    $lblOver = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct (-12) -UsedPct 112 -OverageGbp 12
+    if ($lblOver -ne 'cursor (£12.00)') { throw "format over=$lblOver" }
     $lblOk = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct 2
     if ($lblOk -ne 'cursor (2%)') { throw "format remain=$lblOk" }
+    $mhHead = Format-BobTrayMachineHeading -Id 'marchhare' -SeatLabel 'si@ntsa.uk' -RemainingPct 4
+    if ($mhHead -ne 'marchhare · si@ntsa.uk (4%)') { throw "machine heading=$mhHead" }
 
     $overWeek = Join-Path $bridgeRoot 'weekly-over.jsonl'
     [IO.File]::WriteAllText($overWeek, '{"ts":"2026-09-20T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":112.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
