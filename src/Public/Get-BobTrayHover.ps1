@@ -496,18 +496,18 @@ function Get-BobTrayHover {
         $tiles += ,$tile
         $pctLabel = 'n/a'
         if ($null -ne $wPct) { $pctLabel = ('{0}%' -f [int]$wPct) }
-        $jobLines += ('{0} ({1})' -f $mid, $pctLabel)
+        $jobLines += ('  {0} ({1})' -f $mid, $pctLabel)
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
-            $jobLines += '  not in moot'
+            $jobLines += '    not in moot'
         }
         elseif ($rows.Count -eq 0) {
-            if ($reach -eq 'stale') { $jobLines += '  lastSeen stale' }
-            else { $jobLines += '  no jobs' }
+            if ($reach -eq 'stale') { $jobLines += '    lastSeen stale' }
+            else { $jobLines += '    no jobs' }
         }
         else {
-            if ($reach -eq 'stale') { $jobLines += '  lastSeen stale' }
+            if ($reach -eq 'stale') { $jobLines += '    lastSeen stale' }
             foreach ($j in $rows) {
-                $jobLines += ('  {0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+                $jobLines += ('    {0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
             }
         }
     }
@@ -515,7 +515,10 @@ function Get-BobTrayHover {
     if (-not $peerPeek) {
         $jobLines += 'other hosts not in this store'
     }
-    $jobsText = ($jobLines -join "`n")
+    $acctPctLabel = 'n/a'
+    if ($null -ne $remainPct) { $acctPctLabel = ('{0}%' -f [int]$remainPct) }
+    $acctLine = ('cursor ({0})' -f $acctPctLabel)
+    $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
@@ -549,6 +552,8 @@ function Get-BobTrayHover {
         machines       = $tiles
         peer_peek      = $peerPeek
         tier           = $tier
+        account_name   = 'cursor'
+        account_remaining_pct = $remainPct
     }
 }
 

@@ -293,6 +293,8 @@ $script:alertKind = 'none'
 $script:iconRectCache = $null
 $script:cardClosed = $false
 $script:tileHost = $null
+$script:cursorBmp = $null
+$script:notifyTipText = ' '
 $seen = @{
     watcher_down = $false
     grokbot_down = $false
@@ -384,11 +386,13 @@ function Update-Hover {
         $short = [string]$h.short
         if ($script:attention) { $short = '! ' + $short }
         if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
-        $notify.Text = $short
+        $script:notifyTipText = $short
+        if ($tip -and $tip.Visible) { $notify.Text = ' ' }
+        else { $notify.Text = $short }
         if ($titleLabel) {
             $titleLabel.Text = $script:hoverTitle
             if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
-            Rebuild-BobTrayTiles @($h.machines)
+            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct
             if ($alertLabel) {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -419,59 +423,118 @@ function Hide-BobTrayCard {
     $script:cardClosed = $true
     try { $hideTip.Stop() } catch { }
     try { if ($tip.Visible) { $tip.Hide() } } catch { Write-TrayLog ('tip hide error: ' + $_.Exception.Message) }
+    try {
+        if ($script:notifyTipText) { $notify.Text = $script:notifyTipText }
+    }
+    catch { }
+}
+
+function New-BobTrayCursorBitmap {
+    $bmp = New-Object System.Drawing.Bitmap 16, 16
+    $bmp.MakeTransparent()
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $pts = @(
+        (New-Object System.Drawing.Point 2, 1),
+        (New-Object System.Drawing.Point 2, 13),
+        (New-Object System.Drawing.Point 5, 10),
+        (New-Object System.Drawing.Point 8, 15),
+        (New-Object System.Drawing.Point 10, 14),
+        (New-Object System.Drawing.Point 7, 9),
+        (New-Object System.Drawing.Point 12, 9)
+    )
+    $fill = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(20, 20, 20), 1)
+    $g.FillPolygon($fill, $pts)
+    $g.DrawPolygon($pen, $pts)
+    $pen.Dispose(); $fill.Dispose(); $g.Dispose()
+    return $bmp
+}
+
+function Add-BobTrayUsageRow {
+    param(
+        [int]$X,
+        [int]$Y,
+        [string]$Heading,
+        $RemainingPct,
+        [int]$BarWidth,
+        [System.Drawing.Image]$Icon
+    )
+    $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+    $iconW = 0
+    if ($Icon) {
+        $pic = New-Object System.Windows.Forms.PictureBox
+        $pic.Image = $Icon
+        $pic.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::CenterImage
+        $pic.Size = New-Object System.Drawing.Size 16, 16
+        $pic.BackColor = [System.Drawing.Color]::Transparent
+        $pic.Location = New-Object System.Drawing.Point $X, ($Y + 2)
+        $script:tileHost.Controls.Add($pic)
+        $iconW = 20
+    }
+    $nm = New-Object System.Windows.Forms.Label
+    $nm.AutoSize = $true
+    $nm.Font = $nameFont
+    $nm.ForeColor = $fg
+    $nm.BackColor = [System.Drawing.Color]::Transparent
+    $nm.Text = $Heading
+    $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
+    $script:tileHost.Controls.Add($nm)
+    $barY = $Y + 20
+    $barX = $X + $iconW
+    $bar = New-Object System.Windows.Forms.Panel
+    $bar.Location = New-Object System.Drawing.Point $barX, $barY
+    $bar.Size = New-Object System.Drawing.Size $BarWidth, 10
+    $bar.BackColor = $bg
+    $bar.Tag = $RemainingPct
+    $bar.Visible = $true
+    $bar.Add_Paint({
+            param($s, $e)
+            $p = Get-BobTrayBarPaint -RemainingPct $s.Tag -BarWidth $s.Width
+            $g = $e.Graphics
+            $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
+            $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
+            Add-RoundRect $pathT 0 0 $s.Width 10 5
+            $g.FillPath($track, $pathT)
+            if ($p.known -and $p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
+                $col = [System.Drawing.Color]::FromArgb([int]$p.fill_r, [int]$p.fill_g, [int]$p.fill_b)
+                $fill = New-Object System.Drawing.SolidBrush $col
+                $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
+                Add-RoundRect $pathF 1 1 $p.fill_width 8 4
+                $g.FillPath($fill, $pathF)
+                $pathF.Dispose(); $fill.Dispose()
+            }
+            $pathT.Dispose(); $track.Dispose()
+        })
+    $script:tileHost.Controls.Add($bar)
+    return ($barY + 14)
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines)
+    param($Machines, $AccountName, $AccountPct)
     if (-not $script:tileHost) { return }
     $script:tileHost.Controls.Clear()
     $y = 0
-    $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
-    $smallFont = New-Object System.Drawing.Font 'Segoe UI', 8
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
+    if (-not $script:cursorBmp) { $script:cursorBmp = New-BobTrayCursorBitmap }
+    $acctLabel = 'n/a'
+    if ($null -ne $AccountPct -and [string]$AccountPct -ne '') { $acctLabel = ('{0}%' -f [int]$AccountPct) }
+    $acctName = 'cursor'
+    if ($AccountName) { $acctName = [string]$AccountName }
+    $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
+        -RemainingPct $AccountPct -BarWidth 372 -Icon $script:cursorBmp
+    $y += 6
+    $indent = 18
     foreach ($m in @($Machines)) {
         if (-not $m) { continue }
         $id = [string]$m.id
         $pct = $m.remaining_pct
         $pctLabel = 'n/a'
         if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
-        $nm = New-Object System.Windows.Forms.Label
-        $nm.AutoSize = $true
-        $nm.Font = $nameFont
-        $nm.ForeColor = $fg
-        $nm.BackColor = [System.Drawing.Color]::Transparent
-        $nm.Text = ('{0} ({1})' -f $id, $pctLabel)
-        $nm.Location = New-Object System.Drawing.Point 0, $y
-        $script:tileHost.Controls.Add($nm)
-        $y += 20
-        $paint = Get-BobTrayBarPaint -RemainingPct $pct -BarWidth 392
-        $bar = New-Object System.Windows.Forms.Panel
-        $bar.Location = New-Object System.Drawing.Point 0, $y
-        $bar.Size = New-Object System.Drawing.Size 392, 10
-        $bar.BackColor = $bg
-        $bar.Tag = $pct
-        $bar.Visible = $true
-        $bar.Add_Paint({
-                param($s, $e)
-                $p = Get-BobTrayBarPaint -RemainingPct $s.Tag -BarWidth $s.Width
-                $g = $e.Graphics
-                $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-                $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
-                $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
-                Add-RoundRect $pathT 0 0 $s.Width 10 5
-                $g.FillPath($track, $pathT)
-                if ($p.known -and $p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
-                    $col = [System.Drawing.Color]::FromArgb([int]$p.fill_r, [int]$p.fill_g, [int]$p.fill_b)
-                    $fill = New-Object System.Drawing.SolidBrush $col
-                    $pathF = New-Object System.Drawing.Drawing2D.GraphicsPath
-                    Add-RoundRect $pathF 1 1 $p.fill_width 8 4
-                    $g.FillPath($fill, $pathF)
-                    $pathF.Dispose(); $fill.Dispose()
-                }
-                $pathT.Dispose(); $track.Dispose()
-            })
-        $script:tileHost.Controls.Add($bar)
-        $y += 14
+        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $id, $pctLabel) `
+            -RemainingPct $pct -BarWidth 354 -Icon $null
         $reach = [string]$m.reach
         $jobTxt = ''
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
@@ -494,7 +557,7 @@ function Rebuild-BobTrayTiles {
         $jl.ForeColor = $fg
         $jl.BackColor = [System.Drawing.Color]::Transparent
         $jl.Text = $jobTxt
-        $jl.Location = New-Object System.Drawing.Point 14, $y
+        $jl.Location = New-Object System.Drawing.Point ($indent + 14), $y
         $script:tileHost.Controls.Add($jl)
         $nLines = @($jobTxt -split "`n").Count
         $y += [Math]::Max(18, (16 * $nLines) + 8)
@@ -585,6 +648,8 @@ function Show-BobTrayCard {
     try {
         if ($script:cardClosed -and $Reason -ne 'click') { return }
         if ($Reason -eq 'click') { $script:cardClosed = $false }
+        if ($tip.Visible) { return }
+        try { $notify.Text = ' ' } catch { }
         # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
         # would freeze the UI and the native "P+ idle" tip would win.
         $bottom = $jobsLabel.Bottom
