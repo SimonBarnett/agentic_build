@@ -67,6 +67,10 @@ Prove idle watcher: `watcher_up=true` and `last_seen_age_sec` under 90. Prove bu
 
 See `bob-fleet-monitor` and `bob-fleet-tray`.
 
+## Bobiverse (IRC, not SMB)
+
+Machines cannot see each other's `bridgeHome` (flamingo/marchhare on bobnet, ionos VPS, DEV1 Azure). Status is a MODE2 **free** moot on `#bobiverse`. Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. `Install-BobIrc.ps1` starts `irc_agent.py`. Heartbeat writes `BOB v1` POINT lines. Tray uses `bob-peers\<id>.json` (`irc-fallback`) instead of lying `unreachable`. See `docs/bobiverse.md`.
+
 ## Hourly skill harvest
 
 `tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.

@@ -77,3 +77,12 @@ Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
+$ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
+if (Test-Path $ircInst) {
+    try {
+        & $ircInst -MachineId $MachineId -RepoRoot $RepoRoot
+    }
+    catch {
+        Write-Host "Bobiverse:  skipped ($($_.Exception.Message))"
+    }
+}

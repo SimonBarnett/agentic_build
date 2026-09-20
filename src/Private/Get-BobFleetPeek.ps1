@@ -662,6 +662,11 @@ function Read-BobPeerPeek {
         }
         catch { }
     }
+    try {
+        $irc = Read-BobIrcPeer -Id $Id
+        if ($irc -and $irc.ok) { return $irc }
+    }
+    catch { }
     return $fail
 }
 

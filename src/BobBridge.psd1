@@ -32,7 +32,10 @@
         'Get-BobTrayTitle',
         'Get-BobWeeklyRemaining',
         'Get-BobTrayTipPlacement',
-        'Get-BobFleetRegistry'
+        'Get-BobFleetRegistry',
+        'ConvertTo-BobIrcPoint',
+        'ConvertFrom-BobIrcPoint',
+        'Read-BobIrcPeer'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

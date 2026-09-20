@@ -24,6 +24,11 @@ function Import-Bridge {
     param([string]$BridgeRoot)
     $env:BOB_BRIDGE_HOME = $BridgeRoot
     $env:BOB_GROK_EXE = $fake
+    $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
+    $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
+    $env:BOB_FLEET_BUNDLED = '0'
+    $env:BOB_FLEET_REGISTRY = $null
+    $env:BOB_FLEET_SHARE = $null
     Remove-Module BobBridge -ErrorAction SilentlyContinue
     Import-Module $src -Force
 }
@@ -57,6 +62,8 @@ function Invoke-Case {
         $env:BOB_FLEET_REGISTRY = $null
         $env:BOB_FLEET_SHARE = $null
         $env:BOB_FLEET_BUNDLED = $null
+        $env:BOB_IRC_HOME = $null
+        $env:BOB_IRC_CONFIG = $null
     }
 }
 
@@ -769,6 +776,58 @@ namespace BobTrayShowTest {
         $ps.Dispose()
         $rs.Dispose()
     }
+}
+
+# --- BT0o bobiverse IRC fallback (no SMB) ---
+Invoke-Case 'BT0o bobiverse irc' {
+    param($bridgeRoot)
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $pt = ConvertTo-BobIrcPoint ([pscustomobject]@{
+            id       = 'ionos'
+            weekly   = 4
+            running  = 1
+            queued   = 0
+            lastSeen = [DateTime]::UtcNow.ToString('o')
+            jobs     = @([pscustomobject]@{ repo = 'SimonBarnett/agentic_build'; state = 'running' })
+        })
+    if ($pt -notmatch '^BOB v1 id=ionos') { throw "point=$pt" }
+    $parsed = ConvertFrom-BobIrcPoint $pt
+    if ($parsed.id -ne 'ionos') { throw "parsed id=$($parsed.id)" }
+    if ([int]$parsed.weekly -ne 4) { throw "weekly=$($parsed.weekly)" }
+    if ($parsed.jobs[0].repo -ne 'SimonBarnett/agentic_build') { throw 'job repo missing' }
+
+    $ircHome = Join-Path $bridgeRoot 'irc-home'
+    $peerDir = Join-Path $ircHome 'bob-peers'
+    New-Item -ItemType Directory -Force -Path $peerDir | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $fresh = [DateTime]::UtcNow.ToString('o')
+    $ionosPeer = @{
+        ok       = $true
+        id       = 'ionos'
+        weekly   = 4
+        running  = 1
+        queued   = 0
+        lastSeen = $fresh
+        jobs     = @(@{ repo = 'SimonBarnett/agentic_build'; state = 'running'; machine = 'ionos'; id = 'irc-job-1' })
+        source   = 'irc'
+    } | ConvertTo-Json -Depth 6
+    [IO.File]::WriteAllText((Join-Path $peerDir 'ionos.json'), $ionosPeer)
+    $macDir = Join-Path $bridgeRoot 'fleet\machines'
+    New-Item -ItemType Directory -Force -Path $macDir | Out-Null
+    [IO.File]::WriteAllText((Join-Path $macDir 'ionos.json'), '{"id":"ionos"}')
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if ($txt -notmatch '(?m)^ionos\r?$') { throw "missing ionos tile: $txt" }
+    if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "IRC peer marked unreachable: $txt" }
+    if ($txt -notmatch 'SimonBarnett/agentic_build') { throw "IRC jobs missing: $txt" }
+    $tile = @($h.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
+    if ([string]$tile.reach -ne 'irc-fallback') { throw "reach=$($tile.reach)" }
+
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
+    if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
+    if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
+    if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
 }
 
 Write-Host ''

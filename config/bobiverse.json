@@ -1,0 +1,13 @@
+{
+  "channel": "#bobiverse",
+  "mode": "free",
+  "mootId": "b0b1be15e0000001",
+  "transport": "irc-moot-mode2",
+  "docs": "docs/bobiverse.md",
+  "nicks": {
+    "flamingo": "bob-flamingo",
+    "marchhare": "bob-marchhare",
+    "ionos": "bob-ionos",
+    "ce-priority-dev1": "bob-dev1"
+  }
+}

@@ -308,6 +308,29 @@ function Test-JobsWatcherUp {
     return $hits
 }
 
+function Test-IrcAgentUp {
+    $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match 'irc_agent\.py' -and
+            $_.CommandLine -match 'bobiverse'
+        })
+    return $hits
+}
+
+function Start-IrcWatcher {
+    $hits = Test-IrcAgentUp
+    if ($hits.Count -gt 0) { return }
+    $inst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
+    if (-not (Test-Path $inst)) { return }
+    $mid = $env:BOB_MACHINE_ID
+    if (-not $mid) { $mid = 'flamingo' }
+    Write-TrayLog "starting bobiverse irc nick=$mid"
+    Start-Process -FilePath (Get-Command powershell.exe).Source `
+        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $inst, '-MachineId', $mid) `
+        -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+}
+
 function Start-JobsWatcher {
     $hits = Test-JobsWatcherUp
     if ($hits.Count -gt 0) {
@@ -622,6 +645,7 @@ $iconProbe.Add_Tick({
     })
 
 Start-JobsWatcher
+try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
 try { [void]$tip.Handle } catch { Write-TrayLog ('tip handle create fail: ' + $_.Exception.Message) }
 $notify.Visible = $true

@@ -392,11 +392,15 @@ function Get-BobTrayHover {
         }
         $age = Get-BobLastSeenAgeSec -Record ([pscustomobject]@{ lastSeen = $peek.lastSeen })
         $empty = (@($byMachine[$mid]).Count -eq 0)
+        $fromIrc = ([string]$peek.source -eq 'irc')
         if ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
             $reachBy[$mid] = 'stale'
         }
         elseif (-not $empty -and $null -ne $age -and $age -gt $staleAfter) {
             $reachBy[$mid] = 'stale'
+        }
+        elseif ($fromIrc) {
+            $reachBy[$mid] = 'irc-fallback'
         }
         else {
             $reachBy[$mid] = 'ok'

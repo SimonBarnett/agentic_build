@@ -31,7 +31,7 @@ For each registered id that is **not** this host, try in order, each I/O wrapped
 
 1. Explicit `peekRoot` (directory = peer `BOB_BRIDGE_HOME`, or a `.json` snapshot file).
 2. `{shareRoot}\{id}.json`.
-3. Do **not** auto-probe `\\hostname\C$` from the tray (DNS/SMB misses freeze idle hover). Publish via `peekRoot` or `BOB_FLEET_SHARE` instead. No `Invoke-Command`. No WinRM.
+3. Do **not** auto-probe `\\hostname\C$` from the tray (DNS/SMB misses freeze idle hover). Cross-host status is the `#bobiverse` MODE2 moot (`docs/bobiverse.md`): `BOB v1` POINT lines, `reach=irc-fallback`. `peekRoot` / `BOB_FLEET_SHARE` remain optional. No `Invoke-Command`. No WinRM. No SMB.
 
 First successful read wins. Snapshot file `fleet\peek\{id}.json` is preferred; else `machine.json` plus `fleet\running\{id}\*.json` and `fleet\inbox\{id}\*.json`.
 
