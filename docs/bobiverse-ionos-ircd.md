@@ -9,8 +9,8 @@ Libera banned `bob-ionos`. Fleet status now targets a private Ergo on this IONOS
 | Listen | TLS `:6697` only (loopback `:6667` stays localhost) |
 | Channel | `#bobiverse` (same nicks) |
 | Auth | IRC `PASS` (bcrypt in `ircd.yaml`; plaintext in `~\.grok\ergo\connect.password`) |
-| Task | `BobIrcd-ionos` (AtLogOn, not a Windows service) |
-| Firewall | `Bobiverse IRC TLS 6697` |
+| Task | `BobIrcd-ionos` (AtLogOn, not a Windows service). Start: `Start-ScheduledTask -TaskName 'BobIrcd-ionos'`. Ready with no `ergo.exe` means down. |
+| Firewall | `Bobiverse IRC TLS 6697` (inbound TCP 6697). Do not open public `:6667`. IONOS panel is a separate gate. |
 
 Let’s Encrypt for `irc.ntsa.uk` is live (issued 2026-09-20, HTTP-01). Ergo serves that cert on :6697. `bob-ionos` joined `#bobiverse` as `@bob-ionos`. win-acme renews into `C:\ai\ergo\*.pem` and `install-cert.ps1` recycles `BobIrcd-ionos`.
 

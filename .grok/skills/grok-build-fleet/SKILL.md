@@ -96,7 +96,7 @@ Machines cannot see each other's `bridgeHome` (flamingo/marchhare on bobnet, ion
 
 ## Skill harvest
 
-When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, commit, push). Do not wait for the hourly task.
+When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, commit, push). Do not wait for the hourly task. IRC client and Ergo start/firewall harvests go to `https://github.com/SimonBarnett/agentic_irc`.
 
 `tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
 

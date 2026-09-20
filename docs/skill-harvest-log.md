@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — IRC skills harvest to agentic_irc
+
+Client / SEAL / Ergo start+firewall live in `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/agentic-irc`. `harvest-agent-skills` routes IRC harvests there. `bob-irc` stays Watch-Bobiverse / nicks / verbs and points at that skill for daemon recovery.
+
 ## 2026-09-20 — Stripe Link NEEDS_AUTH blocks Sand on-demand
 
 `ListGrokBotStripeLinkPaymentMethods` returned `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` while `GetSandUsageStatus` was 100% with on-demand enabled. Box send 503. Human must finish payment method in Grok Bot Settings > Usage. `box-usage` + `unstick-grok-bot` step 3.

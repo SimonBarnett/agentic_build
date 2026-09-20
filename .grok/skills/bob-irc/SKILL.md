@@ -22,7 +22,7 @@ Connect secret is `~\.grok\ergo\connect.password` (env `AGENTIC_IRC_PASSWORD`). 
 3. Recycle **Watch-Bobiverse only** (one `_Watch-Bobiverse-<id>.ps1`). Do not `Stop-ScheduledTask BobFleet-*` while `grok.exe` jobs run.
 4. Confirm `irc.log` has `001` from `irc.ntsa.uk` and `JOIN #bobiverse`.
 
-One-shot: `tools\Install-BobIrc.ps1 -MachineId <id>`. Ircd on ionos: `tools\Install-BobIrcd.ps1` / task `BobIrcd-ionos`.
+One-shot: `tools\Install-BobIrc.ps1 -MachineId <id>`. Ircd on ionos: `tools\Install-BobIrcd.ps1` / task `BobIrcd-ionos`. Start/firewall recovery: `https://github.com/SimonBarnett/agentic_irc` skill `agentic-irc`.
 
 `Watch-Bobiverse` skips `irc_agent` when `host` is empty or `irc.libera.chat`. Pass `--host` / `--port` from `bobiverse.json`.
 
