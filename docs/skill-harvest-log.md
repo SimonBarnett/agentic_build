@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-21 — Ergo is Windows service BobIrcd
+
+Ircd on ionos is SCM service `BobIrcd` (NSSM, Automatic, LocalSystem),
+not logon task `BobIrcd-ionos`. Start: `Start-Service BobIrcd`. Cert
+recycle: `C:\ai\ergo\install-cert.ps1`. Installer:
+`tools/Install-BobIrcd.ps1`. Canonical recovery: agentic_irc skill
+`bob-irc`. Docs: `docs/bobiverse-ionos-ircd.md`. Fleet tray/jobs stay
+logon tasks.
+
 ## 2026-09-20 — dispatcher hands every worker PR to a different MRB worker
 
 When a worker opens a PR, the dispatcher immediately `Start-BobMrbHandoff`

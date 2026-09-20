@@ -1,34 +1,83 @@
-# Private Ergo for #bobiverse on this ionos box. Not a Windows service.
+# Private Ergo for #bobiverse on this ionos box as a Windows service (NSSM).
 # Requires C:\ai\ergo (Ergo 2.19.1+) and ircd.yaml already present.
+# Replaces the old AtLogOn task BobIrcd-ionos. Do not register that task again.
 [CmdletBinding()]
 param(
-    [string]$ErgoRoot = 'C:\ai\ergo'
+    [string]$ErgoRoot = 'C:\ai\ergo',
+    [string]$ServiceName = 'BobIrcd'
 )
 
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path $ErgoRoot 'ergo.exe'
 $conf = Join-Path $ErgoRoot 'ircd.yaml'
+$nssm = Join-Path $ErgoRoot 'nssm.exe'
+$logDir = Join-Path $ErgoRoot 'logs'
+$stdout = Join-Path $logDir 'service.log'
 if (-not (Test-Path $exe)) { throw "missing $exe" }
 if (-not (Test-Path $conf)) { throw "missing $conf" }
 
-$taskName = 'BobIrcd-ionos'
-$action = New-ScheduledTaskAction -Execute $exe -Argument 'run --conf ircd.yaml' -WorkingDirectory $ErgoRoot
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 1) `
-    -ExecutionTimeLimit ([TimeSpan]::Zero)
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-try { Start-ScheduledTask -TaskName $taskName } catch { }
+$nssmSrc = 'C:\Program Files\filebrowser\nssm.exe'
+if (-not (Test-Path $nssm)) {
+    if (-not (Test-Path $nssmSrc)) { throw "missing NSSM ($nssm and $nssmSrc)" }
+    Copy-Item $nssmSrc $nssm -Force
+}
+New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+$oldTask = 'BobIrcd-ionos'
+try { Stop-ScheduledTask -TaskName $oldTask -ErrorAction SilentlyContinue } catch { }
+Unregister-ScheduledTask -TaskName $oldTask -Confirm:$false -ErrorAction SilentlyContinue
+
+$existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($existing -and $existing.Status -eq 'Running') {
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+}
+Get-Process ergo -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
+$binPath = "`"$nssm`""
+$display = 'Bobiverse IRC (Ergo)'
+if (-not $existing) {
+    & sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= $display obj= LocalSystem
+    if ($LASTEXITCODE -ne 0) { throw "sc create $ServiceName failed ($LASTEXITCODE)" }
+} else {
+    & sc.exe config $ServiceName binPath= $binPath start= auto DisplayName= $display obj= LocalSystem
+    if ($LASTEXITCODE -ne 0) { throw "sc config $ServiceName failed ($LASTEXITCODE)" }
+}
+& sc.exe description $ServiceName 'Private Ergo ircd for #bobiverse (irc.ntsa.uk:6697 TLS)' | Out-Null
+& sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/5000/restart/10000 | Out-Null
+
+$paramKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName\Parameters"
+if (-not (Test-Path $paramKey)) {
+    New-Item -Path $paramKey -Force | Out-Null
+}
+New-ItemProperty -Path $paramKey -Name Application -Value $exe -PropertyType ExpandString -Force | Out-Null
+New-ItemProperty -Path $paramKey -Name AppParameters -Value 'run --conf ircd.yaml' -PropertyType ExpandString -Force | Out-Null
+New-ItemProperty -Path $paramKey -Name AppDirectory -Value $ErgoRoot -PropertyType ExpandString -Force | Out-Null
+New-ItemProperty -Path $paramKey -Name AppStdout -Value $stdout -PropertyType ExpandString -Force | Out-Null
+New-ItemProperty -Path $paramKey -Name AppStderr -Value $stdout -PropertyType ExpandString -Force | Out-Null
+
+$exitKey = Join-Path $paramKey 'AppExit'
+if (-not (Test-Path $exitKey)) {
+    New-Item -Path $exitKey -Force | Out-Null
+}
+Set-ItemProperty -Path $exitKey -Name '(default)' -Value 'Restart'
 
 if (-not (Get-NetFirewallRule -DisplayName 'Bobiverse IRC TLS 6697' -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName 'Bobiverse IRC TLS 6697' -Direction Inbound -Protocol TCP -LocalPort 6697 -Action Allow -Profile Any | Out-Null
 }
 
-Write-Host "Task:     $taskName"
+Start-Service -Name $ServiceName
+$ok = $false
+foreach ($i in 1..20) {
+    Start-Sleep -Seconds 1
+    $svc = Get-Service -Name $ServiceName
+    $proc = Get-Process ergo -ErrorAction SilentlyContinue
+    if ($svc.Status -eq 'Running' -and $proc) { $ok = $true; break }
+}
+if (-not $ok) { throw "$ServiceName did not come up (service=$( (Get-Service $ServiceName).Status ); ergo process missing)" }
+
+Write-Host "Service:  $ServiceName (Automatic, LocalSystem, NSSM)"
 Write-Host "Listen:   TLS :6697"
-Write-Host "DNS:      add A irc.ntsa.uk -> 217.154.57.228 then issue a public cert (docs/bobiverse-ionos-ircd.md)"
+Write-Host "Start:    Start-Service $ServiceName"
+Write-Host "Recycle:  Restart-Service $ServiceName"
+Write-Host "Old task: $oldTask unregistered"
