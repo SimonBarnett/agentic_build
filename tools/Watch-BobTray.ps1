@@ -293,30 +293,20 @@ function Enable-BobDoubleBuffer {
 }
 
 function Suspend-BobTrayPaint {
-    # Layout only — never WM_SETREDRAW. Turning redraw off then throwing mid-rebuild
-    # left a blank TipForm (Controls.Clear with nothing re-added).
+    # Only the tile host — never SuspendLayout / WM_SETREDRAW on TipForm.
+    # Suspending the form then Controls.Clear left a blank visible card (and
+    # looked like a "new empty dialog" on poll refresh).
     try {
-        if ($script:tip -and -not $script:tip.IsDisposed) { $script:tip.SuspendLayout() }
-        if ($script:tileHost) { $script:tileHost.SuspendLayout() }
+        if ($script:tileHost -and -not $script:tileHost.IsDisposed) { $script:tileHost.SuspendLayout() }
     } catch { }
 }
 
 function Resume-BobTrayPaint {
     try {
-        if ($script:tileHost) {
+        if ($script:tileHost -and -not $script:tileHost.IsDisposed) {
             $script:tileHost.ResumeLayout($true)
             $script:tileHost.Invalidate($true)
-        }
-        if ($script:tip -and -not $script:tip.IsDisposed) {
-            $script:tip.ResumeLayout($true)
-            # Force redraw on in case an older build left WM_SETREDRAW off.
-            try {
-                if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $true) }
-                if ($script:tileHost -and $script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $true) }
-            } catch { }
-            $script:tip.Invalidate($true)
-            $script:tip.Update()
-            $script:tip.Refresh()
+            $script:tileHost.Update()
         }
     } catch { }
 }
@@ -718,6 +708,8 @@ function Add-BobTrayUsageRow {
 function Rebuild-BobTrayTiles {
     param($Machines, $AccountName, $AccountPct, $AccountLabel)
     if (-not $script:tileHost) { return }
+
+    # Format everything first so a throw never leaves a cleared host.
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
     $acctName = 'cursor'
@@ -731,64 +723,87 @@ function Rebuild-BobTrayTiles {
     if ($acctLabel -and ($acctLabel -match '^-' -or $acctLabel.IndexOf([char]0x00A3) -ge 0)) {
         $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
     }
-    Suspend-BobTrayPaint
+
+    # Build into a staging panel, then swap — never Controls.Clear on the live host
+    # while the TipForm is visible (that flashed a blank "new" dialog on poll).
+    $stage = New-Object System.Windows.Forms.Panel
+    $stage.Location = $script:tileHost.Location
+    $stage.Width = $script:tileHost.Width
+    $stage.BackColor = $bg
+    $stage.AutoScroll = $false
+    Enable-BobDoubleBuffer -Control $stage
+    $oldHost = $script:tileHost
+    $script:tileHost = $stage
     try {
-    $script:tileHost.Controls.Clear()
-    $acctColor = $null
-    if ($acctLabel -and (($acctLabel -match '^-') -or ($acctLabel.IndexOf([char]0x00A3) -ge 0))) {
-        $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
-    }
-    $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
-        -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
-    $y += 6
-    $indent = 18
-    foreach ($m in @($Machines)) {
-        if (-not $m) { continue }
-        $id = [string]$m.id
-        $resolved = $null
-        try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
-        # Ghost IRC ids (marchhare-bugets) fail resolve when nicks are loaded.
-        if (-not $resolved) { continue }
-        $id = [string]$resolved
-        $pct = $m.remaining_pct
-        $pctLabel = 'n/a'
-        if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
-        $seat = [string]$m.seat_label
-        if (-not $seat) { $seat = [string]$m.seat_email }
-        $nameHeading = $id
-        if ($seat) { $nameHeading = ('{0}  -  {1}' -f $id, $seat) }
-        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $nameHeading, $pctLabel) `
-            -RemainingPct $pct -BarWidth 354 -Icon $null
-        $reach = [string]$m.reach
-        $jobTxt = ''
-        if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
-        elseif (@($m.jobs).Count -eq 0) {
-            if ($reach -eq 'stale') { $jobTxt = 'lastSeen stale' }
-            else { $jobTxt = 'no jobs' }
-        }
-        else {
-            $bits = @()
-            if ($reach -eq 'stale') { $bits += 'lastSeen stale' }
-            foreach ($j in @($m.jobs)) {
-                $bits += ('{0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+        $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
+            -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
+        $y += 6
+        $indent = 18
+        foreach ($m in @($Machines)) {
+            if (-not $m) { continue }
+            $id = [string]$m.id
+            $resolved = $null
+            try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
+            if (-not $resolved) { continue }
+            $id = [string]$resolved
+            $pct = $m.remaining_pct
+            $pctLabel = 'n/a'
+            if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
+            $seat = [string]$m.seat_label
+            if (-not $seat) { $seat = [string]$m.seat_email }
+            $nameHeading = $id
+            if ($seat) { $nameHeading = ('{0}  -  {1}' -f $id, $seat) }
+            $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $nameHeading, $pctLabel) `
+                -RemainingPct $pct -BarWidth 354 -Icon $null
+            $reach = [string]$m.reach
+            $jobTxt = ''
+            if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
+            elseif (@($m.jobs).Count -eq 0) {
+                if ($reach -eq 'stale') { $jobTxt = 'lastSeen stale' }
+                else { $jobTxt = 'no jobs' }
             }
-            $jobTxt = ($bits -join "`n")
+            else {
+                $bits = @()
+                if ($reach -eq 'stale') { $bits += 'lastSeen stale' }
+                foreach ($j in @($m.jobs)) {
+                    $bits += ('{0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+                }
+                $jobTxt = ($bits -join "`n")
+            }
+            $jl = New-Object System.Windows.Forms.Label
+            $jl.AutoSize = $true
+            $jl.MaximumSize = New-Object System.Drawing.Size 392, 0
+            $jl.Font = $jobFont
+            $jl.ForeColor = $fg
+            $jl.BackColor = [System.Drawing.Color]::Transparent
+            $jl.Text = $jobTxt
+            $jl.Location = New-Object System.Drawing.Point ($indent + 14), $y
+            $script:tileHost.Controls.Add($jl)
+            $nLines = @($jobTxt -split "`n").Count
+            $y += [Math]::Max(18, (16 * $nLines) + 8)
         }
-        $jl = New-Object System.Windows.Forms.Label
-        $jl.AutoSize = $true
-        $jl.MaximumSize = New-Object System.Drawing.Size 392, 0
-        $jl.Font = $jobFont
-        $jl.ForeColor = $fg
-        $jl.BackColor = [System.Drawing.Color]::Transparent
-        $jl.Text = $jobTxt
-        $jl.Location = New-Object System.Drawing.Point ($indent + 14), $y
-        $script:tileHost.Controls.Add($jl)
-        $nLines = @($jobTxt -split "`n").Count
-        $y += [Math]::Max(18, (16 * $nLines) + 8)
+        $script:tileHost.Height = [Math]::Max(10, $y)
     }
-    $script:tileHost.Height = [Math]::Max(10, $y)
-    } finally {
-        Resume-BobTrayPaint
+    catch {
+        $script:tileHost = $oldHost
+        try { $stage.Dispose() } catch { }
+        throw
+    }
+
+    # Atomic swap on the TipForm: add stage, remove old — live card never empty.
+    try {
+        if ($script:tip -and -not $script:tip.IsDisposed) {
+            $idx = $script:tip.Controls.GetChildIndex($oldHost)
+            $script:tip.Controls.Add($stage)
+            if ($idx -ge 0) { $script:tip.Controls.SetChildIndex($stage, $idx) }
+            $script:tip.Controls.Remove($oldHost)
+        }
+        try { $oldHost.Dispose() } catch { }
+    }
+    catch {
+        $script:tileHost = $oldHost
+        try { $stage.Dispose() } catch { }
+        Write-TrayLog ('tile swap error: ' + $_.Exception.Message)
     }
 }
 
