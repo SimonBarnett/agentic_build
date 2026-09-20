@@ -32,8 +32,10 @@ Do not use the MRB model for implementation. Catalog mapping: `grok-build-fleet`
 
 Before `Start-BobMrbHandoff` starts Cursor or grok-build, the **worker box** must be able to open MRB issues:
 
-1. `gh.exe` on PATH or under `%ProgramFiles%\GitHub CLI\`.
-2. **Either** interactive `gh auth login` as a user with `issues:write` on the product repo, **or** non-interactive `GH_TOKEN` / `GITHUB_TOKEN` (same scopes).
+1. `gh.exe` on PATH, under `%ProgramFiles%\GitHub CLI\`, or under `%LOCALAPPDATA%\GitHubCLI\` / `%LOCALAPPDATA%\Programs\GitHub CLI\` (see `Get-BobGhExe` in `tools/Bob-Gh.ps1`).
+2. **Either** interactive `gh auth login` as a user with `issues:write` on the product repo, **or** non-interactive `GH_TOKEN` / `GITHUB_TOKEN` (same scopes). `gh auth status` honours those variables; preflight also runs one cheap `gh repo view` on the product repo so the token is live, not merely present.
+
+On the `grok-build` fallback, `Start-BobMrbHandoff.ps1` refuses to enqueue when the picker selects a **remote** machine it cannot verify; only this box's posting path is probed when worker and dispatcher are the same machine.
 
 If preflight fails, fix auth on that machine first — do not burn the MRB reasoning model on a review that cannot be posted.
 

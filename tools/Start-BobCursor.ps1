@@ -19,7 +19,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 if (-not $here) { $here = Split-Path $MyInvocation.MyCommand.Path }
-Import-Module (Join-Path (Split-Path $here -Parent) 'src\BobBridge.psd1') -Force
+$bobPsd1 = Join-Path (Split-Path $here -Parent) 'src\BobBridge.psd1'
+if (-not (Get-Module -Name BobBridge)) {
+    Import-Module $bobPsd1 -Force
+}
 
 function Get-BobCursorAgentExe {
     foreach ($c in @(

@@ -7,56 +7,38 @@ param(
     [Parameter(Mandatory)][string]$Body,
     [string]$Sha,
     [string]$FeatureIssue,
-    [string]$BaseRef = 'main',
     [switch]$AllowPassUat
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Bob-Gh.ps1')
 
 if ($Verdict -eq 'PASS-UAT' -and -not $AllowPassUat) {
     throw 'PASS-UAT is Bob chair only. Pass -AllowPassUat when stamping ready for human UAT.'
 }
 
-function Get-BobGhExe {
-    foreach ($c in @(
-            (Join-Path ${env:ProgramFiles} 'GitHub CLI\gh.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'GitHubCLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe')
-        )) {
-        if ($c -and (Test-Path $c)) { return $c }
-    }
-    $cmd = Get-Command gh.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
-
-function Ensure-BobGhLabel {
-    param(
-        [Parameter(Mandatory)][string]$Gh,
-        [Parameter(Mandatory)][string]$Repo,
-        [Parameter(Mandatory)][string]$Name,
-        [string]$Color = 'ededed'
-    )
-    $out = & $Gh label create $Name --repo $Repo --color $Color --force 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) { return }
-    if ($out -match '(?i)already exists|name already exists') { return }
-    $json = & $Gh label list --repo $Repo --limit 500 --json name 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0 -and $json) {
-        $names = @($json | ConvertFrom-Json | ForEach-Object { [string]$_.name })
-        if ($names -contains $Name) { return }
-    }
-    if ($out.Trim()) {
-        Write-Warning "Ensure-BobGhLabel $Name on $Repo : $out"
-    }
-}
-
 $gh = Get-BobGhExe
 if (-not $gh) { throw 'gh.exe not found. winget install GitHub.cli ; gh auth login' }
 
-$labels = @('mrb')
-if ($Verdict -eq 'FAIL') { $labels += 'mrb-fail' }
-else { $labels += 'mrb-pass' }
+$wantedLabels = @('mrb')
+if ($Verdict -eq 'FAIL') { $wantedLabels += 'mrb-fail' }
+else { $wantedLabels += 'mrb-pass' }
+
+$appliedLabels = New-Object System.Collections.Generic.List[string]
+$droppedLabels = New-Object System.Collections.Generic.List[string]
+foreach ($l in $wantedLabels) {
+    $color = switch -Regex ($l) {
+        'fail' { 'b60205'; break }
+        'pass' { '0e8a16'; break }
+        default { '5319e7' }
+    }
+    if (Set-BobGhLabelReady -Gh $gh -Repo $Repo -Name $l -Color $color) {
+        [void]$appliedLabels.Add($l)
+    }
+    else {
+        [void]$droppedLabels.Add($l)
+    }
+}
 
 $fullTitle = "MRB ${Verdict}: $Title"
 if ($Sha) { $fullTitle = "$fullTitle $Sha" }
@@ -65,19 +47,30 @@ $bodyText = $Body
 if ($FeatureIssue) {
     $bodyText = "**Feature request:** $FeatureIssue`n`n" + $bodyText
 }
-
-foreach ($l in $labels) {
-    $color = switch -Regex ($l) {
-        'fail' { 'b60205'; break }
-        'pass' { '0e8a16'; break }
-        default { '5319e7' }
-    }
-    Ensure-BobGhLabel -Gh $gh -Repo $Repo -Name $l -Color $color
+if ($droppedLabels.Count -gt 0) {
+    $dropNote = '**Labels not applied (create failed):** ' + ($droppedLabels -join ', ')
+    $bodyText = "$dropNote`n`n" + $bodyText
 }
 
-$labelArgs = @()
-foreach ($l in $labels) { $labelArgs += @('--label', $l) }
+$bodyPath = [IO.Path]::Combine([IO.Path]::GetTempPath(), ('bob-mrb-body-' + [guid]::NewGuid().ToString('N') + '.md'))
+try {
+    [IO.File]::WriteAllText($bodyPath, $bodyText, [System.Text.UTF8Encoding]::new($false))
+    $labelArgs = @()
+    foreach ($l in $appliedLabels) { $labelArgs += @('--label', $l) }
+    $out = & $gh issue create --repo $Repo --title $fullTitle --body-file $bodyPath @labelArgs
+    if ($LASTEXITCODE -ne 0) { throw "gh issue create failed: $out" }
+}
+finally {
+    if (Test-Path -LiteralPath $bodyPath) { Remove-Item -LiteralPath $bodyPath -Force -ErrorAction SilentlyContinue }
+}
 
-$out = & $gh issue create --repo $Repo --title $fullTitle --body $bodyText @labelArgs
-if ($LASTEXITCODE -ne 0) { throw "gh issue create failed: $out" }
-[pscustomobject]@{ ok = $true; url = [string]$out; verdict = $Verdict; repo = $Repo; title = $fullTitle; sha = $Sha }
+[pscustomobject]@{
+    ok             = $true
+    url            = [string]$out
+    verdict        = $Verdict
+    repo           = $Repo
+    title          = $fullTitle
+    sha            = $Sha
+    labelsApplied  = @($appliedLabels)
+    labelsDropped  = @($droppedLabels)
+}

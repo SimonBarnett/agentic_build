@@ -34,7 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
   -Docs docs/feature-request-....md `
   -Plan docs/build-and-test-plan-....md `
   -Mrb https://github.com/SimonBarnett/agentic_build/issues/8 `
-  -Goal '...' -JobId <id> -Cwd <clone>
+  -Goal '...' -Kind build -JobId <id> -Cwd <clone>
 ```
 
 Call the script **in-process** (`& Start-BobCursor.ps1 -Goal $goal -Kind build`). Nested `powershell -File ... -Goal $unquoted` splits the goal on spaces and on tokens that look like flags.

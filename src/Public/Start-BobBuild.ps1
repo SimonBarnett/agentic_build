@@ -44,8 +44,8 @@ function Start-BobBuild {
             # FIX re-runs the picker. A full pin (-Machine and -Fuel) still wins.
             if (-not ($Machine -and $Fuel)) {
                 $pinMachine = $null
-                $pinFuel = $Fuel
-                if (-not $Machine) { $pinFuel = $null; if ($Fuel) { $pinFuel = $Fuel } }
+                $pinFuel = $null
+                if ($Fuel) { $pinFuel = $Fuel }
             }
         }
         $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo
@@ -103,7 +103,6 @@ function Start-BobBuild {
         }
     }
     if (-not $Task) { $Task = 'fleet' }
-    if (-not $Kind) { $Kind = 'build' }
     if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
     $packet = [pscustomobject]@{
         id             = $JobId

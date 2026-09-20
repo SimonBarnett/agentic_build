@@ -14,37 +14,30 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
+. (Join-Path $here 'Bob-Gh.ps1')
 
-function Get-BobGhExe {
-    foreach ($c in @(
-            (Join-Path ${env:ProgramFiles} 'GitHub CLI\gh.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'GitHubCLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe')
-        )) {
-        if ($c -and (Test-Path $c)) { return $c }
+function Assert-BobMrbWorkerCanPost {
+    param(
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][string]$WorkerMachine
+    )
+    $thisId = $null
+    try {
+        $repoRoot = Split-Path $here -Parent
+        Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force -ErrorAction Stop
+        $thisId = Get-ThisMachineId
     }
-    $cmd = Get-Command gh.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
+    catch { }
+    $worker = ([string]$WorkerMachine).Trim().ToLowerInvariant()
+    if ($thisId -and $worker -and ($worker -ne $thisId)) {
+        throw "MRB handoff preflight: cannot verify worker '$WorkerMachine' can post to $Repo. Run the handoff on that machine or fix fleet gh readiness (issue #11)."
+    }
+    $null = Test-BobGhIssuePosting -Repo $Repo
 }
 
-function Test-BobGhIssuePosting {
-    $gh = Get-BobGhExe
-    if (-not $gh) {
-        throw 'MRB handoff preflight: gh.exe not found (winget install GitHub.cli). Fix GitHub CLI before spending Cursor/Grok on the review.'
-    }
-    if ($env:GH_TOKEN -or $env:GITHUB_TOKEN) {
-        return $gh
-    }
-    & $gh auth status 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'MRB handoff preflight: gh auth login required on this worker (or set GH_TOKEN / GITHUB_TOKEN with issues:write). Fail here before starting the reasoning model.'
-    }
-    return $gh
+if ($Fuel -eq 'cursor-models') {
+    $null = Test-BobGhIssuePosting -Repo $Repo
 }
-
-$null = Test-BobGhIssuePosting
 
 $issueUrl = $(if ($Issue) { "https://github.com/$Repo/issues/$Issue" } else { "https://github.com/$Repo" })
 $shaLine = $(if ($Sha) { "SHA $Sha. Review that commit only. Do not stage or commit unrelated dirty files in the checkout." } else { 'HEAD of origin/main on the product repo. Do not stage or commit unrelated dirty files in the checkout.' })
@@ -88,7 +81,13 @@ if ($Fuel -eq 'cursor-models') {
     $mrbModel = Get-BobJobModel -Kind mrb -Fuel grok-build
 }
 
+$sel = Select-BobGitWorker -Fuel grok-build -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
+if ($sel.wait) {
+    throw "MRB handoff preflight: no eligible grok-build worker ($($sel.reason)). Fix capacity before spending Grok on the review."
+}
+Assert-BobMrbWorkerCanPost -Repo $Repo -WorkerMachine ([string]$sel.machine)
+
 if (-not $Cwd) { $Cwd = $repoRoot }
-$q = Start-BobBuild -Task git -Fuel grok-build -Kind mrb -Model $mrbModel -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Mrb $issueUrl -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
+$q = Start-BobBuild -Task git -Fuel grok-build -Kind mrb -Model $mrbModel -Machine $sel.machine -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
 $q | Add-Member -NotePropertyName handed -NotePropertyValue 'grok-build' -Force
 return $q
