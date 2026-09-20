@@ -1,3 +1,83 @@
+function Get-BobFuelModelConfig {
+    $bundled = Join-Path (Get-ModuleRoot) 'config\default.json'
+    $cfg = $null
+    try { $cfg = Read-JsonFile $bundled } catch { }
+    $fuelMap = @{}
+    $families = @{}
+    if ($cfg) {
+        if ($cfg.fuelModelFamilies) {
+            foreach ($p in $cfg.fuelModelFamilies.PSObject.Properties) {
+                $fuelMap[[string]$p.Name] = [string]$p.Value
+            }
+        }
+        if ($cfg.modelFamilies) {
+            foreach ($p in $cfg.modelFamilies.PSObject.Properties) {
+                $families[[string]$p.Name] = @($p.Value)
+            }
+        }
+    }
+    if ($fuelMap.Count -eq 0) {
+        $fuelMap['cursor-models'] = 'cursor'
+        $fuelMap['grok-build'] = 'grok'
+        $fuelMap['grok-bot'] = 'grok'
+        $fuelMap['on-demand'] = 'grok'
+        $fuelMap['copilot'] = 'none'
+    }
+    if ($families.Count -eq 0) {
+        $families['cursor'] = @('^composer-', '^claude-', '^gpt-', '^cursor-', '^muse-', '^grok-4\.')
+        $families['grok'] = @('^grok-', '^build0\.1$', '(?i)^grok-build-', '^build-0\.1$')
+        $families['none'] = @()
+    }
+    return [pscustomobject]@{ fuelModelFamilies = $fuelMap; modelFamilies = $families }
+}
+
+function Test-BobFuelModelCompatible {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Fuel,
+        [string]$Model
+    )
+    $fuel = [string]$Fuel
+    if (-not $fuel) {
+        return [pscustomobject]@{ ok = $true; summary = $null }
+    }
+    $cfg = Get-BobFuelModelConfig
+    $family = $cfg.fuelModelFamilies[$fuel]
+    if (-not $family) {
+        return [pscustomobject]@{
+            ok      = $false
+            summary = "fuel_model_mismatch unknown fuel=$fuel model=$Model"
+        }
+    }
+    $model = [string]$Model
+    if ([string]::IsNullOrWhiteSpace($model)) {
+        return [pscustomobject]@{ ok = $true; summary = $null }
+    }
+    if ($family -eq 'none') {
+        return [pscustomobject]@{
+            ok      = $false
+            summary = "fuel_model_mismatch fuel=$fuel model=$model (copilot takes no model)"
+        }
+    }
+    $patterns = @($cfg.modelFamilies[$family])
+    if (-not $patterns -or $patterns.Count -eq 0) {
+        return [pscustomobject]@{
+            ok      = $false
+            summary = "fuel_model_mismatch fuel=$fuel model=$model (no patterns for family $family)"
+        }
+    }
+    foreach ($pat in $patterns) {
+        if ([string]::IsNullOrWhiteSpace($pat)) { continue }
+        if ($model -match [string]$pat) {
+            return [pscustomobject]@{ ok = $true; summary = $null }
+        }
+    }
+    return [pscustomobject]@{
+        ok      = $false
+        summary = "fuel_model_mismatch fuel=$fuel model=$model"
+    }
+}
+
 function Get-BobJobModel {
     [CmdletBinding()]
     param(
