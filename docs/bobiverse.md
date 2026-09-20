@@ -30,7 +30,7 @@ MOOT v1 POINT b0b1be15e0000001 :BOB v1 id=flamingo weekly=96 running=0 queued=0 
 
 `jobs` is `-` or `owner/repo:state,...`. Weekly remaining is **that machine's** Grok seat. No SQL passwords, no `XAI_API_KEY`.
 
-Parked: quieter conversational talk (one field per message, only when it changes; join briefing as a DM; `!bobiverse` DMs the current network). See `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` and issue #36. Protocol work also belongs on `SimonBarnett/agentic_irc`.
+Parked: quieter conversational talk (one field per message, only when it changes; join and `!bobiverse` still deliver each fact as its own conversational DM line). See `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` and issue #36. Protocol work also belongs on `SimonBarnett/agentic_irc`.
 
 `irc_agent.py` writes `~\.agentic-irc-bobiverse\bob-peers\<id>.json`. The tray paints **one weekly bar per registered `nicks` machine** from that POINT. Ghost IRC ids (`marchhare-bugets`, raw nicks) are dropped. `reach=irc-fallback` for those four seats (prefer over `not in moot`). `not in moot` (not `unreachable`) only for an id that is not a bobiverse seat. The card has an **X** to close.
 

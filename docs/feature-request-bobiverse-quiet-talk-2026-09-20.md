@@ -30,8 +30,11 @@ pile is in the channel. Nobody DMs them the current picture.
 ## LOCKED
 
 1. **Less noise.** The channel is a conversation, not a telemetry dump.
-2. **One piece of information per message.** Do not pack model + task +
-   repo + SHA + runtime + hung into one PRIVMSG.
+2. **One piece of information per message — channel and DM.** Do not
+   pack model + task + repo + SHA + runtime + hung into one PRIVMSG.
+   A join briefing and a `!bobiverse` answer are a **sequence** of
+   short conversational whispers to that nick, one fact per line, with
+   the usual flood delay. Not one packed paragraph.
 3. **Only when it changes.** If the field did not change, do not speak.
    A ticking `lastSeen=` is not a change. Idle boxes stay quiet.
 4. **Conversational English.** A person can read the line in Halloy
@@ -48,17 +51,26 @@ pile is in the channel. Nobody DMs them the current picture.
    - **how long** it has been running (human: "4 minutes", "an hour")
    - **hung or responding**
    - **SHA** (short is fine)
-6. **Join briefing is a DM.** When a `bob-*` (or chair-approved) nick
-   JOINs `#bobiverse` or `MOOT v1 JOIN`s the fleet moot, update **that
-   nick** with current status as a direct message (`PRIVMSG <nick>`),
-   not another channel dump. One briefer (chair, else first sitting
-   roster nick). Do not have every box whisper the same novel.
+6. **Join briefing is a DM sequence.** When a `bob-*` (or chair-approved)
+   nick JOINs `#bobiverse` or `MOOT v1 JOIN`s the fleet moot, update
+   **that nick** as direct messages (`PRIVMSG <nick>`), not a channel
+   dump. One briefer (chair, else first sitting roster nick). Deliver
+   each fact as its own conversational line (same rule as the channel).
+   Do not have every box whisper the same novel.
 7. **`!bobiverse` command.** A nick who sends `!bobiverse` (channel
-   `#bobiverse`, or a PM to a `bob-*`) gets a **direct message** of the
-   current network: each sitting box, conversational, with model, kind
-   (worker / MRB / UAT), repo, how long, hung/responding, SHA. Not a
-   `BOB v1` kv dump. One briefer answers. The channel does not echo the
-   snapshot. Case-insensitive; treat `!bobiverse` as the first token.
+   `#bobiverse`, or a PM to a `bob-*`) gets the current network **as
+   the same kind of conversational DM lines**, one fact at a time, to
+   the asker only. Example tone (not a locked template):
+
+   > ionos is on Cursor Models.
+   > That's an MRB of SimonBarnett/agentic_build.
+   > SHA is 82a8fb2.
+   > About 12 minutes in, still responding.
+   > flamingo is idle.
+
+   Not a `BOB v1` kv dump and not one wall-of-text PRIVMSG. One
+   briefer answers. The channel does not echo the snapshot.
+   Case-insensitive; treat `!bobiverse` as the first token.
 8. **Do not break** the tray. `bob-peers\<id>.json` and weekly bars stay
    populated. BOB v1 on-disk / parse path remains until a replacement
    parser is green. Do not break prior POINT readers in one jump.
@@ -78,8 +90,8 @@ pile is in the channel. Nobody DMs them the current picture.
 - `!bobiverse` cooldown / who may query (any nick on the channel vs
   roster only). Default: any channel nick, with a short per-nick
   cooldown so it cannot flood Ergo.
-- Whether the `!bobiverse` DM is one PRIVMSG or one short line per
-  machine (still only to the asker).
+- How many DM lines is enough for an idle box (one "flamingo is idle"
+  vs also weekly remaining). Prefer one line when idle.
 
 ## Alternatives (pick in implementation; recommend A)
 
@@ -88,9 +100,9 @@ pile is in the channel. Nobody DMs them the current picture.
 Watch still writes `bob-peers\<id>.json` locally. Conversational lines
 go to the channel **only on a field change**, one field per line.
 `BOB v1` POINT is not PRIVMSG'd every tick (file/offset is enough for
-the local tray). Join = one short DM briefing. `!bobiverse` = on-demand
-DM of the whole network to the asker (not `?status`, not a channel
-NOTICE). Channel stays quiet otherwise.
+the local tray). Join = a sequence of short DM lines. `!bobiverse` =
+the same, on demand, to the asker (not `?status`, not a channel
+NOTICE, not one packed whisper). Channel stays quiet otherwise.
 
 **B — Replace BOB v1 with a talk dialect**
 
@@ -117,6 +129,9 @@ than A, but not "one piece at a time". Fallback if A feels chatty.
 **Command reply in-channel** (rejected): answering `!bobiverse` on
 `#bobiverse` puts the snapshot back on the firehose. DM only.
 
+**One packed DM paragraph** (rejected): stuffing the whole network into
+a single whisper. Same one-fact-per-line rule as the channel.
+
 Do **not** suggest raising Ergo flood limits or forcing `--host
 127.0.0.1`. Those are the wrong layer. Do not invent `?status` /
 `!net` as a second command; the token is `!bobiverse`.
@@ -130,9 +145,10 @@ Do **not** suggest raising Ergo flood limits or forcing `--host
 2. On IRC JOIN / `MOOT v1 JOIN` of a fleet nick, the briefer DMs current
    status in conversational English (from `bob-peers\` + live self).
 3. On `!bobiverse` (channel or PM), the same briefer DMs **the asker**
-   the current network. One answerer. Per-nick cooldown. Do not have
+   the current network as **one conversational line per fact** (flood
+   delay between lines). One answerer. Per-nick cooldown. Do not have
    four `bob-*` nicks all whisper. Do not PRIVMSG the snapshot to
-   `#bobiverse`.
+   `#bobiverse`. Do not stuff the network into a single paragraph.
 4. Optional helper to format one change into one short sentence
    (`bobstat` or a sibling). No new moot verb required unless A needs a
    `TALK` distinct from `POINT` — prefer reusing `SAY` in mode=free or a
@@ -158,11 +174,11 @@ Do **not** suggest raising Ergo flood limits or forcing `--host
 1. Idle box: no channel PRIVMSG across several Watch ticks.
 2. Job starts / kind flips / SHA moves / hung↔responding: **one**
    conversational line, not a `BOB v1` dump.
-3. New nick JOINs: they receive a DM briefing; the channel does not get
-   a full roster dump.
-4. A nick sends `!bobiverse` in `#bobiverse` (or PM): they receive a DM
-   of the current network; the channel does not get the snapshot; only
-   one `bob-*` answers.
+3. New nick JOINs: they receive a **sequence** of conversational DMs
+   (one fact per line); the channel does not get a roster dump.
+4. A nick sends `!bobiverse` in `#bobiverse` (or PM): they receive the
+   current network the same way (one conversational DM line at a time);
+   the channel does not get the snapshot; only one `bob-*` answers.
 5. Halloy can read the line without a spec. Tray weekly bars still
    paint.
 6. Off-DEV tests (no live IRC). No `password=` in git or prompts.
@@ -181,8 +197,9 @@ Do **not** suggest raising Ergo flood limits or forcing `--host
 
 1. Halloy on `#bobiverse`: quiet while idle; one readable line when a
    job actually changes.
-2. Join a spare nick: get a DM of who is doing what, on which repo,
-   which SHA, how long, hung or not — not a `BOB v1` wall.
-3. From Halloy, type `!bobiverse` in `#bobiverse`: a DM arrives with the
-   current network; the channel stays quiet.
+2. Join a spare nick: get conversational DMs, one fact per line (model,
+   kind, repo, SHA, how long, hung or not) — not a `BOB v1` wall and
+   not one packed whisper.
+3. From Halloy, type `!bobiverse` in `#bobiverse`: the same style of
+   DM lines arrive for the current network; the channel stays quiet.
 4. One `irc_agent` per box; no 001/JOIN reconnect spam.
