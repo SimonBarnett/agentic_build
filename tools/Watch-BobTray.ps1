@@ -77,6 +77,30 @@ namespace BobTrayUi {
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public const int SW_SHOWNOACTIVATE = 4;
         public const int SW_SHOWNA = 8;
+        public const uint NIM_MODIFY = 1;
+        public const uint NIF_TIP = 0x00000004;
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        public static extern bool Shell_NotifyIcon(uint dwMessage, ref NOTIFYICONDATA lpdata);
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct NOTIFYICONDATA {
+            public int cbSize;
+            public IntPtr hWnd;
+            public uint uID;
+            public uint uFlags;
+            public uint uCallbackMessage;
+            public IntPtr hIcon;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+            public string szTip;
+        }
+        public static void ClearNotifyTip(IntPtr hWnd, uint uID) {
+            NOTIFYICONDATA d = new NOTIFYICONDATA();
+            d.cbSize = Marshal.SizeOf(typeof(NOTIFYICONDATA));
+            d.hWnd = hWnd;
+            d.uID = uID;
+            d.uFlags = NIF_TIP;
+            d.szTip = "";
+            Shell_NotifyIcon(NIM_MODIFY, ref d);
+        }
         public const uint SWP_NOSIZE = 0x0001;
         public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOACTIVATE = 0x0010;
@@ -419,6 +443,24 @@ function Clear-Attention {
     Update-Hover
 }
 
+function Clear-BobNativeTip {
+    try {
+        $flags = [Reflection.BindingFlags]'NonPublic,Instance'
+        $w = $notify.GetType().GetField('window', $flags)
+        $id = $notify.GetType().GetField('id', $flags)
+        if (-not $w -or -not $id) { $notify.Text = ' '; return }
+        $nw = $w.GetValue($notify)
+        if (-not $nw) { $notify.Text = ' '; return }
+        $hwnd = $nw.Handle
+        $uid = [uint32]$id.GetValue($notify)
+        [BobTrayUi.Shell]::ClearNotifyTip($hwnd, $uid)
+        $notify.Text = ' '
+    }
+    catch {
+        try { $notify.Text = ' ' } catch { }
+    }
+}
+
 function Hide-BobTrayCard {
     $script:cardClosed = $true
     try { $hideTip.Stop() } catch { }
@@ -649,7 +691,7 @@ function Show-BobTrayCard {
         if ($script:cardClosed -and $Reason -ne 'click') { return }
         if ($Reason -eq 'click') { $script:cardClosed = $false }
         if ($tip.Visible) { return }
-        try { $notify.Text = ' ' } catch { }
+        Clear-BobNativeTip
         # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
         # would freeze the UI and the native "P+ idle" tip would win.
         $bottom = $jobsLabel.Bottom
@@ -671,17 +713,7 @@ function Show-BobTrayCard {
             catch {
                 Write-TrayLog ("tip ShowParkedAt error reason=${Reason}: " + $_.Exception.Message)
             }
-            if (-not $tip.Visible) {
-                try {
-                    $tip.Show()
-                    if ($tip.Handle -ne [IntPtr]::Zero) {
-                        [void][BobTrayUi.Shell]::ShowWindow($tip.Handle, [BobTrayUi.Shell]::SW_SHOWNA)
-                    }
-                }
-                catch {
-                    Write-TrayLog ("tip Show() error reason=${Reason}: " + $_.Exception.Message)
-                }
-            }
+            # Do not call Form.Show() after ShowParkedAt — that is a second dialog.
             if (-not $tip.Visible) {
                 Write-TrayLog ("tip show fail reason=$Reason visible=false handle=$($tip.IsHandleCreated) loc=$($tip.Left),$($tip.Top) src=$($place.source) parked=$shown")
             }

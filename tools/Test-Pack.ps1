@@ -26,6 +26,7 @@ function Import-Bridge {
     $env:BOB_GROK_EXE = $fake
     $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
     $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
+    $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
     $env:BOB_FLEET_SHARE = $null
@@ -64,6 +65,7 @@ function Invoke-Case {
         $env:BOB_FLEET_BUNDLED = $null
         $env:BOB_IRC_HOME = $null
         $env:BOB_IRC_CONFIG = $null
+        $env:BOB_CURSOR_USAGE_FILE = $null
     }
 }
 
@@ -299,6 +301,7 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.jobs_text -notmatch '(?m)^cursor \(') { throw "idle jobs_text missing cursor account: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.account_name -ne 'cursor') { throw "account_name=$($h.account_name)" }
+    if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
     if ([string]$h.remaining_kind -ne 'weekly') { throw "kind=$($h.remaining_kind)" }
     if ([string]$h.body -notmatch 'weekly remaining') { throw "body missing weekly remaining: $($h.body)" }
@@ -598,7 +601,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -notmatch 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must draw a cursor icon on the account bar' }
-    if ($traySrc -notmatch "notify\.Text = ' '") { throw 'dark card must blank native NotifyIcon tip to avoid double dialog' }
+    if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
+    if ($traySrc -match 'tip\.Show\(\)') { throw 'do not Form.Show after ShowParkedAt (second dialog)' }
     if ($traySrc -notmatch 'Transparent') { throw 'machine-name label BackColor must be Transparent so it does not cover the bar' }
     if ($traySrc -notmatch 'fill_r') { throw 'Watch-BobTray must use gradient fill_r/fill_g/fill_b' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
@@ -856,8 +860,21 @@ Invoke-Case 'BT0o bobiverse irc' {
 
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
+    if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must POINT via Write-BobIrcStatus' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse must poll peer POINT lines' }
+    $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
+    if ($tickSrc -match 'Write-BobIrcStatus') { throw 'fleet tick must not POINT; that is Watch-Bobiverse automation' }
+
+    $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
+    '{"percentUsed":98}' | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+    $cu = Get-BobCursorAgentWeeklyRemaining
+    if ([int]$cu.used_pct -ne 98) { throw "cursor used=$($cu.used_pct)" }
+    if ([int]$cu.remaining_pct -ne 2) { throw "cursor remaining=$($cu.remaining_pct) expected 2 from 98% used" }
+    $hCur = Get-BobTrayHover
+    if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^cursor \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }

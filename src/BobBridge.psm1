@@ -33,6 +33,7 @@ Export-ModuleMember -Function @(
     'Get-BobTrayAlertKind',
     'Get-BobTrayTitle',
     'Get-BobWeeklyRemaining',
+    'Get-BobCursorAgentWeeklyRemaining',
     'Get-BobTrayTipPlacement',
     'Get-BobFleetRegistry',
     'ConvertTo-BobIrcPoint',

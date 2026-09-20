@@ -165,6 +165,46 @@ function Get-BobWeeklyRemaining {
     catch { return $null }
 }
 
+function Get-BobCursorAgentWeeklyRemaining {
+    # Grok Bot / Cursor-agent account. Not Grok Build (xAI) unified.jsonl.
+    $roots = @()
+    if ($env:BOB_CURSOR_USAGE_FILE) {
+        if (Test-Path $env:BOB_CURSOR_USAGE_FILE) { $roots += $env:BOB_CURSOR_USAGE_FILE }
+    }
+    else {
+        $gb = Join-Path $env:APPDATA 'Grok Bot'
+        if (Test-Path $gb) {
+            foreach ($name in @('weekly-usage.json', 'cursor-usage.json', 'usage.json')) {
+                $p = Join-Path $gb $name
+                if (Test-Path $p) { $roots += $p }
+            }
+        }
+    }
+    foreach ($p in $roots) {
+        try {
+            $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+            $used = $null
+            if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
+            elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
+            elseif ($null -ne $j.creditUsagePercent) { $used = [double]$j.creditUsagePercent }
+            elseif ($j.weeklyUsage -and $null -ne $j.weeklyUsage.percentUsed) { $used = [double]$j.weeklyUsage.percentUsed }
+            if ($null -eq $used) { continue }
+            if ($used -lt 0 -or $used -gt 100) { continue }
+            $remain = [int][math]::Round(100.0 - $used)
+            if ($remain -lt 0) { $remain = 0 }
+            if ($remain -gt 100) { $remain = 100 }
+            return [pscustomobject]@{
+                remaining_pct = $remain
+                used_pct      = [int][math]::Round($used)
+                source        = 'cursor-agent'
+                kind          = 'weekly'
+            }
+        }
+        catch { }
+    }
+    return $null
+}
+
 function Test-BobTrayRemainingKnown {
     param($RemainingPct)
     if ($null -eq $RemainingPct) { return $false }
@@ -392,6 +432,12 @@ function Get-BobTrayHover {
         $weekFetched = [string]$week.fetched_at
         $weeklyBy[$machineId] = $remainPct
     }
+    $cursorWeek = $null
+    $cursorRemain = $null
+    try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
+    if ($cursorWeek -and (Test-BobTrayRemainingKnown $cursorWeek.remaining_pct)) {
+        $cursorRemain = [int]$cursorWeek.remaining_pct
+    }
 
     $moot = $null
     try { $moot = Get-BobMootRoster } catch { $moot = $null }
@@ -516,7 +562,7 @@ function Get-BobTrayHover {
         $jobLines += 'other hosts not in this store'
     }
     $acctPctLabel = 'n/a'
-    if ($null -ne $remainPct) { $acctPctLabel = ('{0}%' -f [int]$remainPct) }
+    if ($null -ne $cursorRemain) { $acctPctLabel = ('{0}%' -f [int]$cursorRemain) }
     $acctLine = ('cursor ({0})' -f $acctPctLabel)
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
@@ -553,7 +599,7 @@ function Get-BobTrayHover {
         peer_peek      = $peerPeek
         tier           = $tier
         account_name   = 'cursor'
-        account_remaining_pct = $remainPct
+        account_remaining_pct = $cursorRemain
     }
 }
 
