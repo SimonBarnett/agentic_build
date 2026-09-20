@@ -10,8 +10,9 @@
 **UAT + hostile MRB owner:** Bob
 **Related:** [agentic_build#14](https://github.com/SimonBarnett/agentic_build/pull/14) (POINT dedupe; not this UX)
 
-This issue on **agentic_build** is the intake. Open a matching
-`feature-request` on **agentic_irc** when a token can write that repo.
+Intake issue: https://github.com/SimonBarnett/agentic_build/issues/36
+Open a matching `feature-request` on **agentic_irc** when a token can write
+that repo.
 Do not invent a new IRC verb family. Git-task verbs stay
 `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`.
 
