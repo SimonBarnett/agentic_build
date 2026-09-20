@@ -54,6 +54,25 @@ Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
   (do not early-return null from `ConvertTo-BobCursorUsageDoc`).
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining.
 
+
+## Reset dates
+
+Show weekly reset next to the meter, not only in digests:
+
+- **cursor** row: `reset DD Mon` from Cursor Sand `nextResetTimestampUtc`
+  (via `Get-CursorAgentUsage.py` → `period_end` → `account_reset_label`).
+- **Each machine tile**: that xAI seat's `currentPeriod.end` from
+  `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
+  Same-seat machines share one reset date (and one remaining %).
+- Fleet share: IRC POINT includes `reset=YYYY-MM-DD`. Import must **not** wipe
+  an existing peer `period_end` when an older POINT lacks `reset=`.
+
+Example headings:
+
+`cursor (-£31.94) - reset 23 Sep`
+
+`flamingo - Club Madeira (15%) - reset 27 Sep`
+
 ## UI hard rules (diagnostics 2026-09-20)
 
 - **Click-only card.** Left-click (or Status menu) opens/parks the dark

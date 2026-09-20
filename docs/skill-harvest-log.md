@@ -25,3 +25,9 @@ card/hover changes.
 - Inline overage-red check (no Test-BobCursorOverageLabel from tray).
 - Get-CursorAgentUsage.py: spendLimitUsage.individualUsed → GBP via er-api.
 - Skill rewritten with diagnose steps for blank card + no-dialog compile fail.
+
+
+## 2026-09-20 — cursor/xAI remaining + reset dates
+
+- Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.
+- Import-BobIrcPeerTranscript keeps prior period_end when POINT lacks reset=.

@@ -302,7 +302,17 @@ function Import-BobIrcPeerTranscript {
         $doc | Add-Member -NotePropertyName id -NotePropertyValue $resolved -Force
         $dir = Join-Path $home 'bob-peers'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Write-JsonFile (Join-Path $dir ($resolved + '.json')) $doc
+        $peerPath = Join-Path $dir ($resolved + '.json')
+        # Keep prior period_end when an older POINT lacks reset= (import must not wipe).
+        if (-not $doc.period_end -and (Test-Path $peerPath)) {
+            try {
+                $prev = Read-JsonFile $peerPath
+                if ($prev -and $prev.period_end) {
+                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
+                }
+            } catch { }
+        }
+        Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
     return $updated
