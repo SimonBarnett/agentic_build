@@ -1512,10 +1512,10 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
     }
 }
 
-# --- BT0x Start-BobBuildLoop (issue mrb-loop-automation) ---
+# --- BT0loop Start-BobBuildLoop (issue mrb-loop-automation / #44) ---
 . (Join-Path $RepoRoot 'tools\Bob-BuildLoop.ps1')
 
-Invoke-Case 'BT0x1 required-fixes parse' {
+Invoke-Case 'BT0loop1 required-fixes parse' {
     param($bridgeRoot)
     $body = @'
 ## Verdict
@@ -1535,7 +1535,7 @@ FAIL
     if ($fixes -match 'PASS-UAT') { throw 'UAT must not appear' }
 }
 
-Invoke-Case 'BT0x2 backlink payload' {
+Invoke-Case 'BT0loop2 backlink payload' {
     param($bridgeRoot)
     $payload = New-BobMrbBacklinkComment -Url 'https://github.com/fixture/repo/issues/9' -Sha 'abc1234dead'
     if ($payload -notmatch 'https://github.com/fixture/repo/issues/9') { throw "payload missing url: $payload" }
@@ -1545,7 +1545,7 @@ Invoke-Case 'BT0x2 backlink payload' {
     if ($pr -notmatch 'FIX PR:') { throw "fix pr payload: $pr" }
 }
 
-Invoke-Case 'BT0x3 state file round-trip' {
+Invoke-Case 'BT0loop3 state file round-trip' {
     param($bridgeRoot)
     $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 19
     $root = [IO.Path]::GetFullPath($env:BOB_BRIDGE_HOME)
@@ -1563,7 +1563,7 @@ Invoke-Case 'BT0x3 state file round-trip' {
     if (@($board.passes).Count -ne 1) { throw 'expected one pass row' }
 }
 
-Invoke-Case 'BT0x4 wait_pr retry on dead job' {
+Invoke-Case 'BT0loop4 wait_pr retry on dead job' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
     $state.phase = 'wait_pr'
@@ -1581,7 +1581,94 @@ Invoke-Case 'BT0x4 wait_pr retry on dead job' {
     if ($d.kind -ne 'build') { throw "kind=$($d.kind)" }
 }
 
-Invoke-Case 'BT0x5 fail starts fix with required fixes' {
+Invoke-Case 'BT0loop4b wait_pr retry on start refused (state startError)' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 1
+    $state.currentKind = 'build'
+    $state.startError = 'enqueue refused'
+    $state.currentPid = $null
+    $state.currentJobId = 'job-refused'
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+    if ($d.kind -ne 'build') { throw "kind=$($d.kind)" }
+}
+
+Invoke-Case 'BT0loop4c wait_mrb retry on refused-start world' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
+    $state.phase = 'wait_mrb'
+    $state.jobAttempts = 1
+    $state.currentKind = 'mrb'
+    $state.startError = 'MRB handoff enqueue failed (fixture)'
+    $state.currentPid = $null
+    $state.currentJobId = $null
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+    if ($d.kind -ne 'mrb') { throw "kind=$($d.kind)" }
+}
+
+Invoke-Case 'BT0loop4d wait_pr cursor-models no pid no job' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3 -Fuel 'cursor-models'
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 1
+    $state.currentKind = 'build'
+    $state.currentPid = $null
+    $state.currentJobId = 'cursor-miss'
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+}
+
+Invoke-Case 'BT0loop4e wait_pr cursor-models completion error no pid' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3 -Fuel 'cursor-models'
+    $state.phase = 'wait_pr'
+    $state.jobAttempts = 1
+    $state.currentKind = 'build'
+    $state.currentPid = $null
+    $state.currentJobId = 'cursor-done-bad'
+    $world = [pscustomobject]@{
+        Job          = [pscustomobject]@{ lane = 'outbox'; state = 'done'; completionStatus = 'error'; pid = $null }
+        ProcessAlive = $null
+        Prs          = @()
+        Issues       = @()
+    }
+    $d = Get-BobBuildLoopDecision -State $state -World $world
+    if ($d.action -ne 'retry_job') { throw "action=$($d.action)" }
+}
+
+Invoke-Case 'BT0loop4f retry_job FIX goal keeps required fixes from state' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.lastMrb = 'https://github.com/fixture/repo/issues/8'
+    $state.requiredFixes = '- Restore gate A'
+    $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World ([pscustomobject]@{ Issues = @() })
+    if ($fixes -notmatch 'Restore gate A') { throw "fixes=$fixes" }
+    $goal = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
+    if ($goal -notmatch 'Restore gate A') { throw "goal missing fixes" }
+}
+
+Invoke-Case 'BT0loop5 fail starts fix with required fixes' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
     $state.phase = 'wait_mrb'
@@ -1613,7 +1700,7 @@ FAIL
     if ($d.pass.verdict -ne 'FAIL') { throw "pass verdict=$($d.pass.verdict)" }
 }
 
-Invoke-Case 'BT0x6 pass-nits terminal' {
+Invoke-Case 'BT0loop6 pass-nits terminal' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
     $state.phase = 'wait_mrb'
@@ -1637,7 +1724,7 @@ Invoke-Case 'BT0x6 pass-nits terminal' {
     if ($d.patch.phase -ne 'pass') { throw "phase=$($d.patch.phase)" }
 }
 
-Invoke-Case 'BT0x7 retries exhausted' {
+Invoke-Case 'BT0loop7 retries exhausted' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd') -MaxJobRetries 3
     $state.phase = 'wait_pr'
@@ -1654,7 +1741,7 @@ Invoke-Case 'BT0x7 retries exhausted' {
     if ($d.stdout -notmatch '^FAILED:') { throw "stdout=$($d.stdout)" }
 }
 
-Invoke-Case 'BT0x8 loop once testworld no live gh' {
+Invoke-Case 'BT0loop8 loop once testworld no live gh' {
     param($bridgeRoot)
     $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
     $cwd = Join-Path $bridgeRoot 'cwd'
@@ -1681,6 +1768,36 @@ Invoke-Case 'BT0x8 loop once testworld no live gh' {
     $board = Get-BobMrbBoard -Repo 'fixture/repo' -Issue 19 -Path $r.statePath
     if ([int]$board.issue -ne 19) { throw 'board issue missing' }
     if ($starts.Count -lt 1) { throw 'TestStartBuild not called' }
+}
+
+Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $null
+        Prs          = @(
+            [pscustomobject]@{
+                number    = 2
+                url       = 'https://github.com/fixture/repo/pull/2'
+                title     = 'FR loop'
+                branch    = 'work/fix'
+                sha       = 'abc1234deadbeef'
+                createdAt = [DateTime]::UtcNow.ToString('o')
+            }
+        )
+        Issues       = @()
+    }
+    $r = & $loop -Issue 19 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -TestStartMrb {
+        param($st)
+        [pscustomobject]@{ ok = $false; started = $false; startError = 'MRB handoff enqueue failed (fixture)'; jobId = $null; pid = $null; fuel = 'cursor-models' }
+    }
+    if ($r.action -ne 'start_mrb') { throw "action=$($r.action)" }
+    if ([string]$r.phase -ne 'wait_mrb') { throw "phase=$($r.phase)" }
+    if (-not $r.state.startError) { throw 'expected startError on state after refused MRB start' }
 }
 
 Write-Host ''
