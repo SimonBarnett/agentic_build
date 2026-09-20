@@ -511,13 +511,23 @@ function Get-BobTrayHover {
     $reachBy = @{}
     $seenBy = @{}
     $specBy = @{}
+    $seatIds = @()
+    try { $seatIds = @(Get-BobiverseMachineIds) } catch { $seatIds = @() }
+    $knownTile = @{}
+    if ($machineId) { $knownTile[$machineId] = $true }
+    foreach ($sid in $seatIds) { if ($sid) { $knownTile[$sid] = $true } }
+    $restrictTiles = $knownTile.Count -gt 1 -or ($seatIds.Count -gt 0)
     if ($reg) {
         foreach ($m in @($reg.machines)) {
             $mid = [string]$m.id
             if (-not $mid) { continue }
+            if ($restrictTiles -and -not $knownTile.ContainsKey($mid)) { continue }
             if (-not $byMachine.ContainsKey($mid)) { $byMachine[$mid] = @() }
             $specBy[$mid] = $m
         }
+    }
+    foreach ($sid in $seatIds) {
+        if (-not $byMachine.ContainsKey($sid)) { $byMachine[$sid] = @() }
     }
     if (-not $byMachine.ContainsKey($machineId)) {
         $byMachine[$machineId] = @()
@@ -545,6 +555,9 @@ function Get-BobTrayHover {
     foreach ($j in $jobs) {
         $mid = [string]$j.machine
         if (-not $mid) { $mid = $machineId }
+        if ($restrictTiles -and -not $knownTile.ContainsKey($mid)) {
+            $mid = $machineId
+        }
         if (-not $byMachine.ContainsKey($mid)) {
             $byMachine[$mid] = @()
         }
@@ -601,6 +614,12 @@ function Get-BobTrayHover {
         }
         else {
             $reachBy[$mid] = 'ok'
+        }
+    }
+
+    if ($restrictTiles) {
+        foreach ($k in @($byMachine.Keys)) {
+            if (-not $knownTile.ContainsKey($k)) { $byMachine.Remove($k) }
         }
     }
 

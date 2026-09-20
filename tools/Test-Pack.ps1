@@ -25,7 +25,11 @@ function Import-Bridge {
     $env:BOB_BRIDGE_HOME = $BridgeRoot
     $env:BOB_GROK_EXE = $fake
     $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
-    $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
+    $ircCfg = Join-Path $BridgeRoot 'no-bobiverse.json'
+    if (-not (Test-Path $ircCfg)) {
+        '{"channel":"#test","mode":"free","mootId":"testmoot","nicks":{}}' | Set-Content -Path $ircCfg -Encoding utf8
+    }
+    $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
@@ -625,6 +629,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
     if ($skillTray -notmatch 'not in moot') { throw 'bob-fleet-tray skill must document not-in-moot tiles' }
+    if ($skillTray -notmatch 'bobiverse') { throw 'bob-fleet-tray skill must name bobiverse seats' }
+    if ($skillTray -notmatch 'marchhare-bugets') { throw 'bob-fleet-tray skill must reject ghost IRC ids' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
     if ($skillTray -notmatch 'bob-fleet-peer-peek') { throw 'bob-fleet-tray skill must point at peer-peek transport doc' }
     $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
@@ -916,6 +922,28 @@ Invoke-Case 'BT0o bobiverse irc' {
     $mh = Read-BobIrcPeer -Id marchhare
     if (-not $mh) { throw 'transcript harvest did not write marchhare peer' }
     if ([int]$mh.weekly -ne 40) { throw "harvest weekly=$($mh.weekly)" }
+
+    $ghostTx = @(
+        '1700000001 evil POINT BOB v1 id=marchhare-bugets weekly=9 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-'
+        '1700000002 bob-flamingo POINT BOB v1 id=bob-flamingo weekly=20 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-'
+    ) -join "`n"
+    [IO.File]::WriteAllText((Join-Path $mootDir ($cfg.mootId + '.txt')), $tx + "`n" + $ghostTx)
+    $got2 = @(Import-BobIrcPeerTranscript)
+    if ($got2 -contains 'marchhare-bugets') { throw 'ghost IRC id marchhare-bugets must not be harvested' }
+    if (Test-Path (Join-Path $peerDir 'marchhare-bugets.json')) { throw 'must not write bob-peers/marchhare-bugets.json' }
+    if ($got2 -notcontains 'flamingo') { throw 'id=bob-flamingo POINT must resolve to flamingo' }
+    $macDir2 = Join-Path $bridgeRoot 'fleet\machines'
+    New-Item -ItemType Directory -Force -Path $macDir2 | Out-Null
+    [IO.File]::WriteAllText((Join-Path $macDir2 'marchhare-bugets.json'), '{"id":"marchhare-bugets"}')
+    $hSeats = Get-BobTrayHover
+    $seatIds = @($hSeats.machines | ForEach-Object { [string]$_.id })
+    if ($seatIds -contains 'marchhare-bugets') { throw "ghost tile leaked: $($seatIds -join ',')" }
+    foreach ($need in @('flamingo', 'ionos', 'marchhare', 'ce-priority-dev1')) {
+        if ($seatIds -notcontains $need) { throw "missing bobiverse seat $need : $($seatIds -join ',')" }
+    }
+    $ionosSeat = @($hSeats.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
+    if ([string]$ionosSeat.reach -ne 'irc-fallback') { throw "ionos seat reach=$($ionosSeat.reach) expected irc-fallback" }
+    if ([string]$hSeats.jobs_text -match 'marchhare-bugets') { throw "jobs_text has ghost: $($hSeats.jobs_text)" }
 
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
