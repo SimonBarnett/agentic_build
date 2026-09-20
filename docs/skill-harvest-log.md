@@ -187,7 +187,8 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
 
 Simon: channel less noisy; one fact per message; only when it changes;
 conversational; name model, worker/MRB/UAT, repo, runtime, hung/responding,
-SHA; DM current status when an agent joins. Alternatives in
+SHA; DM current status when an agent joins; `!bobiverse` DMs the current
+network. Alternatives in
 `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md`. Protocol also
 needs an issue on `SimonBarnett/agentic_irc`.
 
