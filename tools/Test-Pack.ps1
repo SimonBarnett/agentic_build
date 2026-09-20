@@ -691,14 +691,12 @@ Invoke-Case 'BT0m tray tip placement' {
 Invoke-Case 'BT0n tray tip show' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
-    if ($traySrc -match "Show-BobTrayCard -Reason 'hover'") { throw 'hover must not park the TOPMOST card (issue #3)' }
-    if ($traySrc -match "Show-BobTrayCard -Reason 'probe'") { throw 'iconProbe must not park the TOPMOST card (issue #3)' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show the dark card on hover' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show the dark card when the cursor is over the icon' }
+    if ($traySrc -notmatch 'Source -ne ''icon''') { throw 'MouseMove must ignore spurious events unless pointer is on the tray icon' }
     if ($traySrc -match '(?s)overTip.{0,240}cardClosed = \$false') { throw 'must not rearm hover by clearing cardClosed when leaving the tip' }
-    if ($traySrc -notmatch '(?s)Reason -ne ''click''.{0,120}return') { throw 'Show-BobTrayCard must refuse non-click reasons' }
-    if ($traySrc -notmatch '(?s)Reason -eq ''click''.{0,80}cardClosed = \$false|if \(\$Reason -ne ''click''\).{0,200}cardClosed = \$false') {
-        throw 'only click/Status may clear cardClosed'
-    }
-    if ($traySrc -notmatch 'function Restore-BobNativeTip') { throw 'hidden card must restore compact NotifyIcon tip' }
+    if ($traySrc -match 'function Restore-BobNativeTip') { throw 'must not restore NotifyIcon.Text (white P+ idle chip is the double dialog)' }
+    if ($traySrc -match '\$notify\.Text = \$') { throw 'must not assign NotifyIcon.Text from a short P+ string' }
     if ($traySrc -notmatch 'IsDisposed') { throw 'TipForm access must guard IsDisposed' }
     if ($traySrc -notmatch 'TryHide') { throw 'TipForm must TryHide so the TOPMOST HWND is actually hidden' }
     if ($traySrc -notmatch 'SWP_HIDEWINDOW') { throw 'TryHide must use SWP_HIDEWINDOW' }
@@ -709,7 +707,7 @@ Invoke-Case 'BT0n tray tip show' {
     if ($peekSrc -notmatch '(?s)function Test-BobHostnameResolves.+Invoke-BobTimed') {
         throw 'Test-BobHostnameResolves must time out DNS so idle tray hover stays instant'
     }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'click'") { throw 'left-click / Status must show card' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'click'") { throw 'left-click must show card (overflow fallback)' }
     if ($traySrc -notmatch 'ShowParkedAt') { throw 'tip form must force-show via ShowParkedAt' }
     if ($traySrc -notmatch 'SetWindowPos') { throw 'tip show must use SetWindowPos' }
     if ($traySrc -notmatch 'SWP_NOACTIVATE') { throw 'SetWindowPos must pass SWP_NOACTIVATE' }
@@ -730,8 +728,8 @@ Invoke-Case 'BT0n tray tip show' {
 
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch '(?i)left-click') { throw 'bob-fleet-tray skill must document left-click card show' }
-    if ($skillTray -notmatch '(?i)native') { throw 'bob-fleet-tray skill must document compact native hover tip' }
-    if ($skillTray -notmatch '(?i)cardClosed') { throw 'bob-fleet-tray skill must document cardClosed stays set after X' }
+    if ($skillTray -notmatch '(?i)P\+ idle') { throw 'bob-fleet-tray skill must name the native P+ idle chip as the fail' }
+    if ($skillTray -notmatch '(?i)Never park') { throw 'bob-fleet-tray skill must forbid parking NotifyIcon.Text' }
     if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
     if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
 
