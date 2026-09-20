@@ -130,15 +130,18 @@ Do not put password= or XAI_API_KEY= assignments in git.
 `$ErrorActionPreference = 'Stop'
 `$prompt = [IO.File]::ReadAllText('$($promptFile.Replace("'","''"))')
 Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
-& '$($ps1.Replace("'","''"))' -p --force --trust --output-format text --model '$($Model.Replace("'","''"))' `$prompt
+`$out = '$($logPath.Replace("'","''"))'
+`$err = '$($logPath.Replace("'","''")).err'
+& '$($ps1.Replace("'","''"))' -p --force --trust --output-format text --model '$($Model.Replace("'","''"))' `$prompt 1>`$out 2>`$err
 "@
         [IO.File]::WriteAllText($launch, $launchBody, $utf8)
         $exe = (Get-Command powershell.exe).Source
         $arg = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launch)
+        # Do not RedirectStandardOutput here: PS 5.1 Start-Process then waits
+        # for the child (handoff blocked ~14 min on the fomprep MRB).
         $p = Start-Process -FilePath $exe `
             -ArgumentList $arg `
             -WorkingDirectory $Cwd -WindowStyle Hidden `
-            -RedirectStandardOutput $logPath -RedirectStandardError "$logPath.err" `
             -PassThru
         $started = $true
         $packet.pid = $p.Id

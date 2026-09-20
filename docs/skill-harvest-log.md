@@ -4,6 +4,13 @@
 
 Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
 
+## 2026-09-20 — Start-BobCursor must not wait on the agent
+
+`Start-Process -RedirectStandardOutput -PassThru` in Windows PowerShell
+5.1 still waited for cursor-agent (handoff `ConvertTo-Json` returned
+after 843s when pid 11464 exited). Redirect inside `launch.ps1` instead;
+parent Start-Process is Hidden + PassThru only.
+
 ## 2026-09-20 — cursor-agent prompt via launch.ps1
 
 `Start-Process -ArgumentList` mangles a multiline MRB prompt (quotes
