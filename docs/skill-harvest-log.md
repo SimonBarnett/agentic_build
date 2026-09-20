@@ -1,5 +1,10 @@
 # Skill harvest log
 
+## 2026-09-20 — MRB requests missing features
+
+`bob-hostile-mrb`: every board walks this FR's acceptance **and** holes with no parked request. Red acceptance stays Required fixes. Unspecified holes / issues with no intake doc are **requested** (`bob-spec-intake` issue + `docs/feature-request-*.md`), not implemented in the MRB job. Body section **Missing features**.
+
+
 ## 2026-09-20 — PRs #5 and #6 not merged (stale drafts)
 
 Checked both open drafts vs `main`. Merging either would rewind later tray/git-task work (PR #5) or restore hover/iconProbe/hideTip (PR #6, issue #3). Pulled the unique bits that `main` lacked: per-machine `_Watch-Bobiverse-*.ps1` wrappers (kept ionos env-specific wrapper) and the native P+ idle chip screenshot. Closed the PRs as superseded.
