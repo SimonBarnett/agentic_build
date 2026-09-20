@@ -425,41 +425,34 @@ function Rebuild-BobTrayTiles {
     foreach ($m in @($Machines)) {
         if (-not $m) { continue }
         $id = [string]$m.id
+        $pct = $m.remaining_pct
+        $pctLabel = 'n/a'
+        if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
         $nm = New-Object System.Windows.Forms.Label
         $nm.AutoSize = $true
         $nm.Font = $nameFont
         $nm.ForeColor = $fg
-        $nm.Text = $id
+        $nm.Text = ('{0} ({1})' -f $id, $pctLabel)
         $nm.Location = New-Object System.Drawing.Point 0, $y
         $script:tileHost.Controls.Add($nm)
         $y += 18
-        $cap = New-Object System.Windows.Forms.Label
-        $cap.AutoSize = $true
-        $cap.Font = $smallFont
-        $cap.ForeColor = $muted
-        $pct = $m.remaining_pct
         $paint = Get-BobTrayBarPaint -RemainingPct $pct -BarWidth 392
-        $cap.Text = [string]$paint.caption
-        $cap.Location = New-Object System.Drawing.Point 0, $y
-        $script:tileHost.Controls.Add($cap)
-        $y += 16
         $bar = New-Object System.Windows.Forms.Panel
         $bar.Location = New-Object System.Drawing.Point 0, $y
         $bar.Size = New-Object System.Drawing.Size 392, 10
         $bar.BackColor = $bg
         $bar.Tag = $pct
-        $bar.Visible = [bool]$paint.show_track
+        $bar.Visible = $true
         $bar.Add_Paint({
                 param($s, $e)
                 $p = Get-BobTrayBarPaint -RemainingPct $s.Tag -BarWidth $s.Width
-                if (-not $p.show_track) { return }
                 $g = $e.Graphics
                 $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
                 $track = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(48, 54, 61))
                 $pathT = New-Object System.Drawing.Drawing2D.GraphicsPath
                 Add-RoundRect $pathT 0 0 $s.Width 10 5
                 $g.FillPath($track, $pathT)
-                if ($p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
+                if ($p.known -and $p.show_fill -and $null -ne $p.fill_width -and $p.fill_width -gt 0) {
                     $pc = [int]$p.remaining_pct
                     $col = [System.Drawing.Color]::FromArgb(63, 185, 80)
                     if ($pc -lt 40) { $col = [System.Drawing.Color]::FromArgb(210, 153, 34) }
@@ -473,7 +466,7 @@ function Rebuild-BobTrayTiles {
                 $pathT.Dispose(); $track.Dispose()
             })
         $script:tileHost.Controls.Add($bar)
-        if ($bar.Visible) { $y += 14 }
+        $y += 14
         $reach = [string]$m.reach
         $jobTxt = ''
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
@@ -495,7 +488,7 @@ function Rebuild-BobTrayTiles {
         $jl.Font = $jobFont
         $jl.ForeColor = $fg
         $jl.Text = $jobTxt
-        $jl.Location = New-Object System.Drawing.Point 0, $y
+        $jl.Location = New-Object System.Drawing.Point 14, $y
         $script:tileHost.Controls.Add($jl)
         $nLines = @($jobTxt -split "`n").Count
         $y += [Math]::Max(18, (16 * $nLines) + 8)

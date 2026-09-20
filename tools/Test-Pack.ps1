@@ -296,7 +296,7 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^testhost\r?$') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
     if ([string]$h.remaining_kind -ne 'weekly') { throw "kind=$($h.remaining_kind)" }
     if ([string]$h.body -notmatch 'weekly remaining') { throw "body missing weekly remaining: $($h.body)" }
@@ -405,7 +405,7 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h2.jobs_text -match '(?i)7e8797e|[0-9a-f]{40}') { throw "jobs_text looks like SHA: $($h2.jobs_text)" }
     $row = @($h2.jobs)[0]
     if ([string]$row.repo -ne 'SimonBarnett/agentic_irc') { throw "repo=$($row.repo)" }
-    if ([string]$h2.jobs_text -notmatch '(?m)^testhost\r?$') { throw "running jobs_text missing testhost tile" }
+    if ([string]$h2.jobs_text -notmatch '(?m)^testhost \(') { throw "running jobs_text missing testhost tile" }
     if ($null -ne $h2.remaining_pct) { throw 'running without weekly log must keep remaining_pct null' }
     $paint2 = Get-BobTrayBarPaint -RemainingPct $h2.remaining_pct -BarWidth 392
     if ($null -ne $paint2.fill_width) { throw 'running without weekly log must not set fill_width' }
@@ -457,8 +457,8 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText((Join-Path $qDir ($qId + '.json')), ($qJob | ConvertTo-Json -Depth 6))
     $h4 = Get-BobTrayHover
     if ([string]$h4.title -ne 'Bob Fleet') { throw "multi-machine title=$($h4.title)" }
-    if ([string]$h4.jobs_text -notmatch '(?m)^testhost\r?$') { throw "multi jobs_text missing testhost tile: $($h4.jobs_text)" }
-    if ([string]$h4.jobs_text -notmatch '(?m)^otherhost\r?$') { throw "multi jobs_text missing otherhost tile: $($h4.jobs_text)" }
+    if ([string]$h4.jobs_text -notmatch '(?m)^testhost \(') { throw "multi jobs_text missing testhost tile: $($h4.jobs_text)" }
+    if ([string]$h4.jobs_text -notmatch '(?m)^otherhost \(') { throw "multi jobs_text missing otherhost tile: $($h4.jobs_text)" }
     if ([string]$h4.jobs_text -notmatch 'SimonBarnett/FormPrep') { throw "otherhost missing owner/repo: $($h4.jobs_text)" }
     $idxThis = ([string]$h4.jobs_text).IndexOf("testhost")
     $idxPeer = ([string]$h4.jobs_text).IndexOf("otherhost")
@@ -516,18 +516,18 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h5.scope -ne 'fleet-peek') { throw "scope=$($h5.scope) expected fleet-peek" }
     if (-not $h5.peer_peek) { throw 'peer_peek should be true when registry has peers' }
     $txt = [string]$h5.jobs_text
-    if ($txt -notmatch '(?m)^testhost\r?$') { throw "h5 missing testhost: $txt" }
-    if ($txt -notmatch '(?m)^otherhost\r?$') { throw "h5 missing otherhost: $txt" }
-    if ($txt -notmatch '(?m)^marchhare\r?$') { throw "h5 missing marchhare: $txt" }
-    if ($txt -notmatch '(?m)^ionos\r?$') { throw "h5 missing ionos: $txt" }
-    if ($txt -notmatch '(?m)^ce-priority-dev1\r?$') { throw "h5 missing ce-priority-dev1: $txt" }
+    if ($txt -notmatch '(?m)^testhost \(') { throw "h5 missing testhost: $txt" }
+    if ($txt -notmatch '(?m)^otherhost \(') { throw "h5 missing otherhost: $txt" }
+    if ($txt -notmatch '(?m)^marchhare \(') { throw "h5 missing marchhare: $txt" }
+    if ($txt -notmatch '(?m)^ionos \(') { throw "h5 missing ionos: $txt" }
+    if ($txt -notmatch '(?m)^ce-priority-dev1 \(') { throw "h5 missing ce-priority-dev1: $txt" }
     if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
-    if ($txt -notmatch '(?m)^marchhare\r?\n  weekly remaining[^\n]*\r?\n  SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -notmatch '(?m)^marchhare \([^)]+\)\r?\n  SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
     if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
-    if ($txt -notmatch '(?m)^ionos\r?\n  weekly remaining') { throw "ionos missing weekly bar line: $txt" }
-    if ($txt -notmatch '(?m)^ionos\r?\n  weekly remaining[^\n]*\r?\n  not in moot') { throw "ionos must be not in moot: $txt" }
+    if ($txt -notmatch '(?m)^ionos \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
+    if ($txt -notmatch '(?m)^ionos \([^)]+\)\r?\n  not in moot') { throw "ionos must be not in moot: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "do not say unreachable for a box that is not in the moot: $txt" }
-    if ($txt -notmatch '(?m)^ce-priority-dev1\r?\n  weekly remaining[^\n]*\r?\n  lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
+    if ($txt -notmatch '(?m)^ce-priority-dev1 \([^)]+\)\r?\n  lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
     $ids5 = @($h5.machines | ForEach-Object { [string]$_.id })
     if ($ids5[0] -ne 'testhost') { throw "h5 machines[0]=$($ids5[0])" }
     foreach ($need in @('testhost', 'otherhost', 'marchhare', 'ionos', 'ce-priority-dev1')) {
@@ -561,7 +561,7 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
     $hSnap = Get-BobTrayHover
     $snapTxt = [string]$hSnap.jobs_text
-    if ($snapTxt -notmatch '(?m)^snapbox\r?\n  weekly remaining[^\n]*\r?\n  SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
+    if ($snapTxt -notmatch '(?m)^snapbox \([^)]+\)\r?\n  SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/agentic_irc') { throw "snapbox missing irc job: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/FormPrep') { throw "snapbox missing FormPrep job: $snapTxt" }
     $snapTile = @($hSnap.machines | Where-Object { [string]$_.id -eq 'snapbox' })[0]
@@ -590,7 +590,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
-    if ($traySrc -notmatch 'show_track') { throw 'Watch-BobTray paint path does not gate on show_track' }
+    if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray must paint weekly bars via Get-BobTrayBarPaint' }
 
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
@@ -821,7 +821,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     [IO.File]::WriteAllText((Join-Path $macDir 'ionos.json'), '{"id":"ionos"}')
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
-    if ($txt -notmatch '(?m)^ionos\r?$') { throw "missing ionos tile: $txt" }
+    if ($txt -notmatch '(?m)^ionos \(') { throw "missing ionos tile: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "IRC peer marked unreachable: $txt" }
     if ($txt -notmatch 'SimonBarnett/agentic_build') { throw "IRC jobs missing: $txt" }
     $tile = @($h.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]

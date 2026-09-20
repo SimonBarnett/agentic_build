@@ -464,9 +464,9 @@ function Get-BobTrayHover {
             remaining_pct  = $wPct
         }
         $tiles += ,$tile
-        $jobLines += $mid
-        if ($null -eq $wPct) { $jobLines += '  weekly remaining  n/a' }
-        else { $jobLines += ('  weekly remaining    {0}%' -f [int]$wPct) }
+        $pctLabel = 'n/a'
+        if ($null -ne $wPct) { $pctLabel = ('{0}%' -f [int]$wPct) }
+        $jobLines += ('{0} ({1})' -f $mid, $pctLabel)
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
             $jobLines += '  not in moot'
         }
