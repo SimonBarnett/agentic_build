@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
   -Goal '...' -JobId <id> -Cwd <clone>
 ```
 
-Writes a packet JSON (repo, branch `work/<job-id>`, spec, plan, MRB issue). Tries `agent.exe -p` when present. Does not scrape Cursor cookies. Does not mark ready for human UAT.
+Writes a packet JSON. Starts **`cursor-agent.exe`** (`-p`). Never `~\.grok\bin\agent.exe` (that file is grok). Does not scrape Cursor cookies. Does not mark ready for human UAT.
 
 ## Packet
 

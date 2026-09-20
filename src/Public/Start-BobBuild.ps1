@@ -18,6 +18,7 @@ function Start-BobBuild {
         [string]$Plan,
         [string]$Mrb,
         [switch]$AllowOnDemand,
+        [switch]$AllowCopilot,
         [switch]$Fix
     )
     if (Test-PromptSecrets -Prompt $Goal) {
@@ -45,7 +46,7 @@ function Start-BobBuild {
                 if (-not $Machine) { $pinFuel = $null; if ($Fuel) { $pinFuel = $Fuel } }
             }
         }
-        $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -Repo $Repo
+        $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo
         if ($sel.wait) {
             return [pscustomobject]@{
                 ok      = $true

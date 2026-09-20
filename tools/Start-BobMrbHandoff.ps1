@@ -1,54 +1,59 @@
 # Bob hands off a hostile MRB. Does not write the review in this session.
-# Default: GitHub issue @copilot (start-bob-copilot). -Fleet uses Start-BobBuild -Task git.
+# Default fuel: cursor-models, then grok-build. Copilot only with -AllowCopilot.
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][int]$Issue,
+    [int]$Issue,
     [string]$Repo = 'SimonBarnett/agentic_build',
     [string]$Sha,
     [string]$Docs,
     [string]$Plan,
     [string]$Cwd,
-    [switch]$Fleet
+    [ValidateSet('cursor-models', 'grok-build')][string]$Fuel = 'cursor-models',
+    [switch]$AllowCopilot
 )
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
-$issueUrl = "https://github.com/$Repo/issues/$Issue"
-$shaLine = $(if ($Sha) { "SHA $Sha." } else { 'HEAD of the product repo.' })
+$issueUrl = $(if ($Issue) { "https://github.com/$Repo/issues/$Issue" } else { "https://github.com/$Repo" })
+$shaLine = $(if ($Sha) { "SHA $Sha." } else { 'HEAD of origin/main on the product repo.' })
 $docsLine = $(if ($Docs) { $Docs } else { 'docs/feature-request-*.md' })
-$planLine = $(if ($Plan) { $Plan } else { 'docs/build-and-test-plan.md' })
+$planLine = $(if ($Plan) { $Plan } else { 'docs/build-and-test-plan*.md' })
 
 $prompt = @"
-Hostile MRB on $issueUrl. Follow skill bob-hostile-mrb (https://github.com/SimonBarnett/agentic_build .grok/skills).
+Hostile MRB of $issueUrl. Follow skill bob-hostile-mrb (https://github.com/SimonBarnett/agentic_build .grok/skills).
 
-$shaLine Diff vs $docsLine and $planLine.
+$shaLine Diff vs $docsLine and $planLine (and the parked PDF if one was supplied).
 
-Walk missing features: this FR's red acceptance = Required fixes on this issue; unspecified holes / issues with no intake doc = park via bob-spec-intake (issue + markdown) and list under Missing features. Do not implement missing features in the MRB job.
+Walk missing features: this FR's red acceptance = Required fixes on the MRB issue; unspecified holes / issues with no intake doc = park via bob-spec-intake (issue + markdown) and list under Missing features. Do not implement missing features in the MRB job.
 
-Post with tools/Start-BobMrb.ps1 (or gh issue comment on $issueUrl). Body: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes. No MRB PDF.
+Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labels mrb + mrb-fail or mrb-pass. Body: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes. No MRB PDF.
 
 Verdict FAIL or PASS-nits only. Do not write the words ready for human UAT. Bob chairs that stamp.
 
-Do not burn Grok Bot weekly usage. Do not put password= or XAI_API_KEY= assignments in the issue.
+Work with Cursor Models or Grok Build only. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not put password= or XAI_API_KEY= assignments in the issue.
 "@
 
-if (-not $Fleet) {
-    $copilot = Join-Path $here 'Start-BobCopilot.ps1'
-    try {
-        $r = & $copilot -Issue $Issue -Repo $Repo -CustomInstructions $prompt
-        $r | Add-Member -NotePropertyName handed -NotePropertyValue 'copilot' -Force
-        return $r
-    }
-    catch {
-        Write-Warning "Copilot handoff failed ($($_.Exception.Message)); trying fleet git-task."
-        $Fleet = $true
+if (-not $Cwd) {
+    $leaf = ($Repo.Split('/')[-1])
+    foreach ($c in @("C:\ai\$leaf", "D:\ai\$leaf", "C:\src\$leaf")) {
+        if (Test-Path (Join-Path $c '.git')) { $Cwd = $c; break }
     }
 }
 
+if ($Fuel -eq 'cursor-models') {
+    $cursor = Join-Path $here 'Start-BobCursor.ps1'
+    $r = & $cursor -Repo "https://github.com/$Repo" -Cwd $Cwd -Docs $Docs -Plan $Plan -Mrb $issueUrl -Goal $prompt
+    if ($r.started) {
+        $r | Add-Member -NotePropertyName handed -NotePropertyValue 'cursor-models' -Force
+        return $r
+    }
+    Write-Warning "Cursor agent did not start ($($r.startError)); falling back to grok-build."
+    $Fuel = 'grok-build'
+}
+
 $repoRoot = Split-Path $here -Parent
-$psd1 = Join-Path $repoRoot 'src\BobBridge.psd1'
-Import-Module $psd1 -Force
+Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force
 if (-not $Cwd) { $Cwd = $repoRoot }
-$q = Start-BobBuild -Task git -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Mrb $issueUrl -Docs $Docs -Plan $Plan
-$q | Add-Member -NotePropertyName handed -NotePropertyValue 'fleet' -Force
+$q = Start-BobBuild -Task git -Fuel grok-build -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Mrb $issueUrl -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
+$q | Add-Member -NotePropertyName handed -NotePropertyValue 'grok-build' -Force
 return $q

@@ -1,4 +1,5 @@
 # Hand a git-task packet to Cursor Agent (cursor-models fuel).
+# Never use ~/.grok/bin/agent.exe — that is grok.exe. Look for cursor-agent.
 # Does not scrape Cursor cookies. Does not mark UAT. Bob chairs MRB.
 [CmdletBinding()]
 param(
@@ -14,6 +15,31 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Get-BobCursorAgentExe {
+    foreach ($c in @(
+            (Join-Path $env:USERPROFILE '.local\bin\cursor-agent.exe'),
+            (Join-Path $env:USERPROFILE '.local\bin\agent.exe'),
+            (Join-Path $env:USERPROFILE '.cursor\bin\cursor-agent.exe'),
+            (Join-Path $env:USERPROFILE '.cursor\bin\agent.exe'),
+            (Join-Path $env:LOCALAPPDATA 'cursor-agent\cursor-agent.cmd'),
+            (Join-Path $env:LOCALAPPDATA 'cursor-agent\cursor-agent.ps1'),
+            (Join-Path $env:LOCALAPPDATA 'cursor-agent\cursor-agent.exe'),
+            (Join-Path $env:LOCALAPPDATA 'cursor-agent\agent.cmd')
+        )) {
+        if ($c -and (Test-Path $c)) {
+            # Refuse grok.exe disguised as agent.exe
+            $grok = Join-Path $env:USERPROFILE '.grok\bin\grok.exe'
+            if ((Test-Path $grok) -and ((Get-Item $c).Length -eq (Get-Item $grok).Length)) { continue }
+            return $c
+        }
+    }
+    foreach ($name in @('cursor-agent.cmd', 'cursor-agent.exe', 'cursor-agent')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+    }
+    return $null
+}
 
 if ($Job) {
     if (-not $Repo) { $Repo = [string]$Job.repo }
@@ -51,41 +77,74 @@ $json = $packet | ConvertTo-Json -Depth 6
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [IO.File]::WriteAllText($path, $json, $utf8)
 
-$agent = $null
-foreach ($c in @(
-        (Join-Path $env:USERPROFILE '.grok\bin\agent.exe'),
-        (Join-Path $env:LOCALAPPDATA 'cursor-agent\agent.exe')
-    )) {
-    if ($c -and (Test-Path $c)) { $agent = $c; break }
-}
-$cmd = Get-Command agent.exe -ErrorAction SilentlyContinue
-if (-not $agent -and $cmd) { $agent = $cmd.Source }
-
+$agent = Get-BobCursorAgentExe
 $started = $false
 $startError = $null
+$logPath = $null
+if ($agent) {
+    $stExe = $agent
+    $stArg = @('status')
+    if ($agent -match '\.cmd$' -or $agent -match '\.ps1$') {
+        $stExe = (Get-Command powershell.exe).Source
+        $ps1 = $agent
+        if ($agent -match '\.cmd$') { $ps1 = Join-Path (Split-Path $agent) 'cursor-agent.ps1' }
+        $stArg = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ps1, 'status')
+    }
+    $st = & $stExe @stArg 2>&1 | Out-String
+    if ($st -match '(?i)not logged in') {
+        $startError = 'cursor-agent not logged in (CURSOR_API_KEY or cursor-agent login)'
+        $agent = $null
+    }
+}
 if ($agent -and $Cwd -and -not ($env:BOB_GROK_EXE -match '(?i)Fake-Grok')) {
     $prompt = @"
-Git task $JobId. Repo $Repo branch $Branch.
-Read $Docs and $Plan. Implement, commit, and push $Branch.
+Git task $JobId. Repo $Repo.
+Read $Docs and $Plan. $Goal
 Do not mark ready for human UAT. Bob chairs MRB ($Mrb).
-Goal: $Goal
+Do not put password= or XAI_API_KEY= assignments in git.
 "@
+    $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    $logPath = Join-Path $logDir ('cursor-agent-' + $JobId + '.log')
     try {
-        Start-Process -FilePath $agent -ArgumentList @('-p', $prompt) -WorkingDirectory $Cwd -WindowStyle Hidden | Out-Null
+        $promptFile = Join-Path $logDir ('cursor-agent-' + $JobId + '.prompt.txt')
+        [IO.File]::WriteAllText($promptFile, $prompt, $utf8)
+        $arg = @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            $(if ($agent -match '\.cmd$') {
+                Join-Path (Split-Path $agent) 'cursor-agent.ps1'
+            } else { $agent }),
+            '-p', '--force', '--trust', '--output-format', 'text', $prompt
+        )
+        $exe = $agent
+        if ($agent -match '\.cmd$' -or $agent -match '\.ps1$') {
+            $exe = (Get-Command powershell.exe).Source
+        }
+        $p = Start-Process -FilePath $exe `
+            -ArgumentList $arg `
+            -WorkingDirectory $Cwd -WindowStyle Hidden `
+            -RedirectStandardOutput $logPath -RedirectStandardError "$logPath.err" `
+            -PassThru
         $started = $true
+        $packet.pid = $p.Id
     }
     catch {
         $startError = $_.Exception.Message
     }
 }
+elseif (-not $agent) {
+    $startError = 'cursor-agent.exe not found (do not use ~/.grok/bin/agent.exe; that is grok)'
+}
 
 [pscustomobject]@{
-    ok          = $true
-    fuel        = 'cursor-models'
-    jobId       = $JobId
-    packetPath  = $path
-    agent       = $agent
-    started     = $started
-    startError  = $startError
-    branch      = $Branch
+    ok         = $true
+    fuel       = 'cursor-models'
+    jobId      = $JobId
+    packetPath = $path
+    agent      = $agent
+    started    = $started
+    startError = $startError
+    logPath    = $logPath
+    branch     = $Branch
+    pid        = $(if ($packet.pid) { $packet.pid } else { $null })
 }

@@ -1,6 +1,12 @@
 function Get-BobFuelOrder {
-    param([switch]$AllowOnDemand)
-    $order = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
+    param(
+        [switch]$AllowOnDemand,
+        [switch]$AllowCopilot
+    )
+    # Default: Cursor Models then Grok Build. Copilot only when -AllowCopilot (CCA often off).
+    $order = @('cursor-models', 'grok-build')
+    if ($AllowCopilot) { $order += 'copilot' }
+    $order += 'grok-bot'
     if ($AllowOnDemand) { $order += 'on-demand' }
     return $order
 }
@@ -246,6 +252,7 @@ function Select-BobGitWorker {
         [string]$Machine,
         [string]$Fuel,
         [switch]$AllowOnDemand,
+        [switch]$AllowCopilot,
         [string]$Repo
     )
     if (-not $Capacity) {
@@ -285,7 +292,7 @@ function Select-BobGitWorker {
         return [pscustomobject]@{ wait = $false; machine = [string]$m.id; fuel = $wantFuel }
     }
 
-    $fuelOrder = @(Get-BobFuelOrder -AllowOnDemand:$AllowOnDemand)
+    $fuelOrder = @(Get-BobFuelOrder -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot)
     if ($wantFuel) { $fuelOrder = @($wantFuel) }
 
     foreach ($fuelName in $fuelOrder) {

@@ -2,10 +2,10 @@
 name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a build-agent push as a GitHub issue on the
-  product repo. Bob hands the review off (Copilot / git-task picker); he does
-  not write the MRB in-session. Check for missing features and file FRs. No
-  MRB PDFs. Use when the user says MRB, hostile review, review the push,
-  ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb.
+  product repo. Bob hands the review off (Cursor Models, then Grok Build).
+  He does not write the MRB in-session. Check for missing features and file
+  FRs. No MRB PDFs. Use when the user says MRB, hostile review, review the
+  push, ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb.
 ---
 
 # Hostile MRB (GitHub issue)
@@ -18,17 +18,18 @@ Bob **does not write** the review in Grok Bot / this grok.exe session. That burn
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 `
-  -Repo owner/repo -Issue <feature-request-n> -Sha <head> -Docs docs/feature-request-....md -Plan docs/build-and-test-plan.md
-# optional -Fleet   (Start-BobBuild -Task git when Copilot cannot take it)
+  -Repo owner/repo -Issue <feature-request-n> -Sha <head> -Cwd C:\ai\<repo> `
+  -Docs docs/feature-request-....md -Plan docs/build-and-test-plan.md
+# default -Fuel cursor-models; falls back to grok-build if cursor-agent.exe is missing
 ```
 
-Default is `start-bob-copilot` (`@copilot` on the feature-request issue, then CCA if enabled). CCA 409 still counts as handoff — do not then write the MRB in Grok Bot. `-Fleet` uses `Select-BobGitWorker` / `Start-BobBuild -Task git`.
+Default is Cursor Agent (`cursor-agent.exe`, never `~\.grok\bin\agent.exe` which is grok). Then Grok Build (`Start-BobBuild -Task git -Fuel grok-build`). Do not use Copilot unless `-AllowCopilot`.
 
 Tell the human the issue URL. IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
 
 **Chair:** only Bob may declare **ready for human UAT**. The worker posts `FAIL` or `PASS-nits` only. If the worker thinks it passed, they write `candidate PASS-UAT, Bob stamp required`. Bob reads that issue and stamps the phrase, or rejects.
 
-Escape hatch: if Copilot and the fleet picker both cannot start, Bob writes the MRB himself using the rest of this skill. Say that in the issue.
+Escape hatch: if Cursor Agent and grok.exe both cannot start, Bob writes the MRB himself using the rest of this skill. Say that in the issue.
 
 ## Tone (worker)
 
@@ -89,4 +90,4 @@ Request means **file the issue and the markdown**, then push. Do not implement t
 - Breaking v1 while adding v2
 - Empty errors[] on failure paths the spec requires
 - Code landed with no FR, or an open issue with no intake doc, and the MRB did not request them
-- Bob wrote the full MRB in-session when Copilot or a git-task worker could take it
+- Bob wrote the full MRB in-session when Cursor Agent or grok.exe could take it
