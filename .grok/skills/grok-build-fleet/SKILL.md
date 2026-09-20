@@ -30,6 +30,7 @@ Import-Module "$repo\src\BobBridge.psd1"
 ```powershell
 Get-BobMachines
 Get-BobHealth
+Get-BobGhPostingReadiness          # gh present + auth probe for product repo
 Get-BobCapacity
 Select-BobGitWorker                  # optional -Machine / -Fuel
 Start-BobBuild -Task git -Goal '...' -Profile generic -ReplyChannel $env:USERNAME
@@ -75,7 +76,11 @@ Poll `Get-BobBuild`. Worker pings `reply_channel` (Grok Bot name) queued/running
 
 ## Watcher dead
 
-`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`, not the tray). `last_seen` / `last_seen_age_sec` come from `machine.json`. `lastSeen` is written at the start of each tick (idle `Invoke-BobFleetTick` included); a live claimed job holds the `-Once` child so age can exceed 90s while healthy.
+`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`, not the tray). `last_seen` / `last_seen_age_sec` come from `machine.json`. `gh_posting` / `Get-BobGhPostingReadiness` reports whether this box can open issues on the product repo (live `gh auth status` + `repo view`, not token sniff). `Select-BobGitWorker -Kind mrb` requires `gh_posting.issue_posting_ready`. `lastSeen` is written at the start of each tick (idle `Invoke-BobFleetTick` included); a live claimed job holds the `-Once` child so age can exceed 90s while healthy.
+
+### GitHub CLI on fleet workers
+
+`Install-BobFleet` calls `Install-BobGitHubCliIfMissing` (winget `GitHub.cli` when absent) and prints readiness. Unattended auth: user-level **`GH_TOKEN`** (or `GITHUB_TOKEN`) with `issues:write` and `pull_requests:write`, or interactive `gh auth login` (Credential Manager). Never commit tokens. Rotate by updating the user env and re-probing `Get-BobGhPostingReadiness`.
 
 A `BobFleet-<id>` task that is `Ready` with LastRunTime 1932 / result 267011 **never started** (registered after this logon).
 

@@ -9,6 +9,8 @@
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-BobHealth',
+        'Get-BobGhPostingReadiness',
+        'Install-BobGitHubCliIfMissing',
         'Get-BobWorkers',
         'Get-BobAgents',
         'Get-BobMachines',

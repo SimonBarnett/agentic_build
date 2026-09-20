@@ -53,7 +53,7 @@ function Start-BobBuild {
             $sel = [pscustomobject]@{ wait = $false; machine = $pinMachine; fuel = $pinFuel; reason = $null }
         }
         else {
-            $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo
+            $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo -Kind $Kind
         }
         if ($sel.wait) {
             return [pscustomobject]@{

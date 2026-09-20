@@ -22,6 +22,17 @@ $env:BOB_MACHINE_ID = $MachineId.ToLowerInvariant()
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
 Import-Module $psd1 -Force
 
+$ghInstall = Install-BobGitHubCliIfMissing
+Write-Host ("GitHub CLI: action={0} present={1} auth={2} issue_posting_ready={3}" -f `
+        $ghInstall.install_action, `
+        $ghInstall.readiness.present, `
+        $ghInstall.readiness.authenticated, `
+        $ghInstall.readiness.issue_posting_ready)
+if (-not $ghInstall.readiness.issue_posting_ready -and $ghInstall.readiness.reason) {
+    Write-Host ("GitHub CLI: {0}" -f $ghInstall.readiness.reason)
+    Write-Host 'GitHub CLI: set user-level GH_TOKEN (issues:write + pull_requests:write) or run gh auth login. Never commit tokens.'
+}
+
 if (-not $CwdRoots) { $CwdRoots = @($RepoRoot) }
 $rec = Register-BobMachine -Id $MachineId -CwdRoots $CwdRoots
 

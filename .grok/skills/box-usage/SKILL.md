@@ -81,6 +81,7 @@ Do not substitute overage GBP or Sand remaining for Cursor Models remaining.
 | Subscription display (e.g. X Premium+) | `~\.grok\settings_cache.json` → `settings.subscription_tier_display` |
 | Live `grok.exe` | `Get-Process grok` / `Get-BobLiveGrokAgents` |
 | BobBridge lanes | `Get-BobBuilds` when available |
+| GitHub issue post ready | `Get-BobHealth.gh_posting` / `Get-BobGhPostingReadiness` |
 | Disk under `~\.grok` | `grok du --json` |
 
 ## Hard rules

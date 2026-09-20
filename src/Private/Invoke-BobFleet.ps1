@@ -110,6 +110,7 @@ function Write-FleetHeartbeat {
     if (-not $rec) { return }
     $rec | Add-Member -NotePropertyName lastSeen -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
     $rec | Add-Member -NotePropertyName windowsUser -NotePropertyValue "$env:USERDOMAIN\$env:USERNAME" -Force
+    $rec = Update-BobMachineGhPostingSnapshot -Record $rec
     Write-JsonFile $path $rec
     Write-JsonFile (Join-Path (Initialize-FleetRoot) (Join-Path 'machines' ($id + '.json'))) $rec
     try { Write-BobFleetPeekSnapshot } catch { }

@@ -10,6 +10,8 @@ Get-ChildItem -Path $PublicDir -Filter '*.ps1' -ErrorAction Stop | ForEach-Objec
 
 Export-ModuleMember -Function @(
     'Get-BobHealth',
+    'Get-BobGhPostingReadiness',
+    'Install-BobGitHubCliIfMissing',
     'Get-BobWorkers',
     'Get-BobAgents',
     'Get-BobMachines',
