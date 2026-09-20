@@ -17,6 +17,7 @@
         'Start-BobBuild',
         'Get-BobCapacity',
         'Get-BobJobModel',
+        'Test-BobFuelModelCompatible',
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Get-ThisMachineId',

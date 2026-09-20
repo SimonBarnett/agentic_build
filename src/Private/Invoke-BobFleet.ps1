@@ -178,6 +178,15 @@ function Invoke-BobFleetOnce {
         return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
     }
 
+    $fuelModel = [pscustomobject]@{ ok = $true; summary = $null }
+    if ($packet.fuel) {
+        $fuelModel = Test-BobFuelModelCompatible -Fuel $packet.fuel -Model $packet.model
+    }
+    if (-not $fuelModel.ok) {
+        $comp = [pscustomobject]@{ status = 'failed'; summary = $fuelModel.summary; needs_human = $true }
+        return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
+    }
+
     $runningPath = Get-FleetJobPath -Lane running -Machine $thisId -JobId $packet.id
     Move-Item -Force $file.FullName $runningPath
     $packet | Add-Member -NotePropertyName state -NotePropertyValue 'running' -Force

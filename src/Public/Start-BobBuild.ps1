@@ -109,7 +109,25 @@ function Start-BobBuild {
         }
     }
     if (-not $Task) { $Task = 'fleet' }
-    if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
+    if (-not $Model) {
+        if ($pickFuel -eq 'copilot') { $Model = $null }
+        else { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
+    }
+    if ($pickFuel) {
+        $fuelModel = Test-BobFuelModelCompatible -Fuel $pickFuel -Model $Model
+    }
+    else {
+        $fuelModel = [pscustomobject]@{ ok = $true; summary = $null }
+    }
+    if (-not $fuelModel.ok) {
+        return [pscustomobject]@{
+            ok     = $false
+            error  = 'fuel_model_mismatch'
+            reason = $fuelModel.summary
+            fuel   = $pickFuel
+            model  = $Model
+        }
+    }
     $packet = [pscustomobject]@{
         id             = $JobId
         from           = $From
