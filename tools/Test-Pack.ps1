@@ -13,6 +13,54 @@ $src = Join-Path $RepoRoot 'src\BobBridge.psd1'
 $fake = Join-Path $RepoRoot 'tools\Fake-Grok.ps1'
 $schemaDir = Join-Path $RepoRoot 'schemas'
 
+function Get-RepoSourceRaw {
+    param([Parameter(Mandatory)][string]$RelativePath)
+    $RelativePath = $RelativePath -replace '/', '\'
+    $relGit = $RelativePath -replace '\\', '/'
+    Push-Location $RepoRoot
+    try {
+        $null = git rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $lines = @(git show "HEAD:${relGit}" 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                if ($lines.Count -eq 0) { return '' }
+                return ($lines -join [Environment]::NewLine) + [Environment]::NewLine
+            }
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    $full = Join-Path $RepoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $full)) { throw "missing repo source $RelativePath" }
+    return Get-Content -LiteralPath $full -Raw
+}
+
+function Write-TestPackDirtyCheckoutWarning {
+    Push-Location $RepoRoot
+    try {
+        $dirty = @(git status --porcelain 2>$null | Where-Object { $_ })
+        if ($dirty.Count -gt 0) {
+            Write-Host 'WARN Test-Pack: dirty checkout; repo-source assertions use HEAD commit, not working tree.' -ForegroundColor Yellow
+            foreach ($line in $dirty) { Write-Host "  $line" -ForegroundColor Yellow }
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Get-CommandAstSimpleName {
+    param([System.Management.Automation.Language.CommandAst]$CommandAst)
+    if ($CommandAst.CommandElements.Count -lt 1) { return $null }
+    $ce = $CommandAst.CommandElements[0]
+    if ($ce -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return $ce.Value
+    }
+    if ($ce -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) { return $null }
+    return $ce.Extent.Text
+}
+
 function New-TestRoot {
     $d = Join-Path $env:TEMP ('bob-bridge-test-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $d | Out-Null
@@ -84,26 +132,38 @@ function Invoke-Case {
 }
 
 # --- BT0 skills ---
+Write-TestPackDirtyCheckoutWarning
 Invoke-Case 'BT0 skills' {
     foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing')) {
-        $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
-        if (-not (Test-Path $p)) { throw "missing $p" }
-        $raw = Get-Content $p -Raw
+        $rel = ".grok\skills\$n\SKILL.md"
+        $raw = Get-RepoSourceRaw $rel
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
     }
 }
 
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
-    $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |
-        Where-Object { $_.FullName -notmatch '\\tests\\fixtures\\' }
-    foreach ($f in $files) {
-        $tokens = $null
-        $errors = $null
-        [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
-        if ($errors -and $errors.Count -gt 0) {
-            throw "$($f.FullName): $($errors[0].Message)"
+    Push-Location $RepoRoot
+    try {
+        $listed = @(git ls-tree -r HEAD --name-only 2>$null | Where-Object {
+                $_ -match '\.(ps1|psm1|psd1)$' -and $_ -notmatch '(^|/)tests/fixtures/'
+            })
+        if ($LASTEXITCODE -ne 0 -or $listed.Count -lt 1) {
+            throw 'BT0 parse requires git HEAD file list'
         }
+        foreach ($relGit in $listed) {
+            $rel = $relGit -replace '/', '\'
+            $raw = Get-RepoSourceRaw $rel
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseInput($raw, [ref]$tokens, [ref]$errors)
+            if ($errors -and $errors.Count -gt 0) {
+                throw "${relGit}: $($errors[0].Message)"
+            }
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 
@@ -120,7 +180,7 @@ Invoke-Case 'BT0b schema' {
     foreach ($name in $required.Keys) {
         $path = Join-Path $schemaDir $name
         if (-not (Test-Path $path)) { throw "missing $name" }
-        $s = Get-Content $path -Raw | ConvertFrom-Json
+        $s = Get-RepoSourceRaw "schemas\$name" | ConvertFrom-Json
         if (-not $s.required) { throw "$name has no required keys" }
         foreach ($k in $required[$name]) {
             if (@($s.required) -notcontains $k) { throw "$name missing required $k" }
@@ -293,13 +353,13 @@ Invoke-Case 'BT0k fleet fake store' {
     if ($null -eq $h.watcher_up) { throw 'health.watcher_up missing' }
     if (-not ($h.PSObject.Properties.Name -contains 'last_seen')) { throw 'health.last_seen missing' }
 
-    $watchSrc = Get-Content $watch -Raw
+    $watchSrc = Get-RepoSourceRaw 'tools\Watch-BobJobs.ps1'
     if ($watchSrc -match '(?m)^\s*\$mid\s*=\s*Get-ThisMachineId\b') { throw 'Watch-BobJobs must not call private Get-ThisMachineId' }
     if ($watchSrc -match 'catch\s*\{\s*Write-Error') { throw 'Watch-BobJobs catch must not Write-Error (kills poller under ErrorAction Stop)' }
     if ($watchSrc -notmatch '(?s)if \(\$Once\).+while \(\$true\).+Invoke-BobFleetTick') {
         throw 'idle Watch-BobJobs loop must Invoke-BobFleetTick so lastSeen stays fresh'
     }
-    $tw = Get-Content (Join-Path $RepoRoot 'src\Private\Test-BobWatcher.ps1') -Raw
+    $tw = Get-RepoSourceRaw 'src\Private\Test-BobWatcher.ps1'
     if ($tw -match 'Watch-BobTray') { throw 'watcher_up must not treat Watch-BobTray as the pull worker' }
 }
 
@@ -320,7 +380,7 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.account_name -ne 'Cursor Models') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
-    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    $hoverSrc = Get-RepoSourceRaw 'src\Public\Get-BobTrayHover.ps1'
     if ($hoverSrc -notmatch 'Get-BobLiveGrokAgents') { throw 'hover must include live grok.exe even if Bob did not start it' }
     $env:BOB_SKIP_LIVE_GROK = '1'
     if (@(Get-BobLiveGrokAgents).Count -ne 0) { throw 'BOB_SKIP_LIVE_GROK must suppress live grok scan' }
@@ -613,7 +673,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($peekRaw -notmatch '(?i)winrm') { throw 'peer-peek doc must name WinRM (and reject it)' }
     if ($peekRaw -notmatch 'unreachable') { throw 'peer-peek doc must define unreachable' }
 
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $traySrc = Get-RepoSourceRaw 'tools\Watch-BobTray.ps1'
     foreach ($bad in @('No fleet jobs running', 'no fleet jobs running', 'Context remaining')) {
         if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains stale UI copy: $bad" }
     }
@@ -631,7 +691,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray must paint weekly bars via Get-BobTrayBarPaint' }
 
-    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    $skillTray = Get-RepoSourceRaw '.grok\skills\bob-fleet-tray\SKILL.md'
     if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
@@ -641,7 +701,7 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'marchhare-bugets') { throw 'bob-fleet-tray skill must reject ghost IRC ids' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
     if ($skillTray -notmatch 'bob-fleet-peer-peek') { throw 'bob-fleet-tray skill must point at peer-peek transport doc' }
-    $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
+    $skillBox = Get-RepoSourceRaw '.grok\skills\box-usage\SKILL.md'
     if ($skillBox -notmatch '(?i)weekly') { throw 'box-usage skill must document weekly vs context' }
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
@@ -681,7 +741,7 @@ Invoke-Case 'BT0m tray tip placement' {
     if ($topBar.source -ne 'icon') { throw 'top-taskbar must use icon' }
     if ($topBar.y -lt 40) { throw "top-taskbar y=$($topBar.y) should sit in work area below icon" }
 
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $traySrc = Get-RepoSourceRaw 'tools\Watch-BobTray.ps1'
     if ($traySrc -notmatch 'Get-BobTrayTipPlacement') { throw 'Watch-BobTray must call Get-BobTrayTipPlacement' }
     if ($traySrc -notmatch 'AlreadyVisible') { throw 'Watch-BobTray must pass AlreadyVisible to placement' }
     if ($traySrc -notmatch '(?s)if \(-not \(Test-BobTrayTipVisible\)\).{0,800}Get-BobTrayTipPlacement') {
@@ -695,7 +755,7 @@ Invoke-Case 'BT0m tray tip placement' {
         if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
     }
 
-    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    $skillTray = Get-RepoSourceRaw '.grok\skills\bob-fleet-tray\SKILL.md'
     if ($skillTray -notmatch 'Get-BobTrayTipPlacement') { throw 'bob-fleet-tray skill must name Get-BobTrayTipPlacement' }
     if ($skillTray -notmatch '(?i)already visible') { throw 'bob-fleet-tray skill must document already-visible sticky contract' }
     if ($skillTray -notmatch 'ShowWithoutActivation') { throw 'bob-fleet-tray skill must document ShowWithoutActivation' }
@@ -703,7 +763,7 @@ Invoke-Case 'BT0m tray tip placement' {
 
 # --- BT0n tray tip show (NC-D01 / NC-D02) ---
 Invoke-Case 'BT0n tray tip show' {
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $traySrc = Get-RepoSourceRaw 'tools\Watch-BobTray.ps1'
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
     if ($traySrc -match "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must not Show-BobTrayCard (hover stacked a second TipForm)' }
     if ($traySrc -match 'Add_MouseMove') { throw 'no hover events: Add_MouseMove must be gone' }
@@ -719,7 +779,7 @@ Invoke-Case 'BT0n tray tip show' {
     if ($traySrc -notmatch 'Initialize-BobTrayTipForm') { throw 'disposed TipForm must recreate via Initialize-BobTrayTipForm' }
     if ($traySrc -notmatch 'LiveCount') { throw 'TipForm must expose LiveCount so only one instance is live' }
     if ($traySrc -match '(?s)function Show-BobTrayCard.{0,500}Update-Hover') { throw 'Show-BobTrayCard must not Get-BobTrayHover/Update-Hover (idle hover would freeze on peer DNS)' }
-    $peekSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobFleetPeek.ps1') -Raw
+    $peekSrc = Get-RepoSourceRaw 'src\Private\Get-BobFleetPeek.ps1'
     if ($peekSrc -notmatch '(?s)function Test-BobHostnameResolves.+Invoke-BobTimed') {
         throw 'Test-BobHostnameResolves must time out DNS so idle tray hover stays instant'
     }
@@ -742,7 +802,7 @@ Invoke-Case 'BT0n tray tip show' {
         if ($traySrc.Contains($bad)) { throw "Watch-BobTray still contains fleet UI copy: $bad" }
     }
 
-    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    $skillTray = Get-RepoSourceRaw '.grok\skills\bob-fleet-tray\SKILL.md'
     if ($skillTray -notmatch '(?i)left-click') { throw 'bob-fleet-tray skill must document left-click card show' }
     if ($skillTray -notmatch '(?i)P\+ idle') { throw 'bob-fleet-tray skill must name the native P+ idle chip as the fail' }
     if ($skillTray -notmatch '(?i)Never park') { throw 'bob-fleet-tray skill must forbid parking NotifyIcon.Text' }
@@ -755,7 +815,7 @@ Invoke-Case 'BT0n tray tip show' {
     if ($traySrc -notmatch '_Watch-Bobiverse') { throw 'Restart watcher must start _Watch-Bobiverse-<id> wrapper' }
     if ($traySrc -notmatch "Restart watcher") { throw 'right-click menu must include Restart watcher' }
     if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-Bobiverse-ionos.ps1'))) { throw 'missing tools/_Watch-Bobiverse-ionos.ps1' }
-    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    $installSrc = Get-RepoSourceRaw 'tools\Install-BobFleet.ps1'
     if ($installSrc -notmatch '_Watch-Bobiverse-') { throw 'Install-BobFleet must register _Watch-Bobiverse-<id>' }
 
     $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
@@ -927,12 +987,12 @@ Invoke-Case 'BT0o bobiverse irc' {
     $tile = @($h.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
     if ([string]$tile.reach -ne 'irc-fallback') { throw "reach=$($tile.reach)" }
 
-    $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
+    $cfg = Get-RepoSourceRaw 'config\bobiverse.json' | ConvertFrom-Json
     if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
     if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
     if ([string]$cfg.host -ne 'irc.ntsa.uk') { throw "host=$($cfg.host)" }
     if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
-    $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    $installIrc = Get-RepoSourceRaw 'tools\Install-BobIrc.ps1'
     if ($installIrc -notmatch 'AGENTIC_IRC_PASSWORD') { throw 'Install-BobIrc must load connect.password' }
 
     $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
@@ -967,7 +1027,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$ionosSeat.reach -ne 'irc-fallback') { throw "ionos seat reach=$($ionosSeat.reach) expected irc-fallback" }
     if ([string]$hSeats.jobs_text -match 'marchhare-bugets') { throw "jobs_text has ghost: $($hSeats.jobs_text)" }
 
-    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    $watchBv = Get-RepoSourceRaw 'tools\Watch-Bobiverse.ps1'
     if ($watchBv -notmatch 'irc\.ntsa\.uk') { throw 'Watch-Bobiverse must require irc.ntsa.uk' }
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
@@ -978,9 +1038,9 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -notmatch 'Test-BobiverseIrcPrivateErgoHost') { throw 'Watch-Bobiverse must share private-Ergo host match' }
     if ($watchBv -match '(?m)^\s*\$ircHost\s*=\s*[''"]127\.0\.0\.1[''"]') { throw 'must not default ionos to 127.0.0.1' }
     if ($watchBv -notmatch 'Compact-BobIrcOutbox') { throw 'Start-BobiverseIrcAgent must compact a fat POINT outbox' }
-    $installIrc2 = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    $installIrc2 = Get-RepoSourceRaw 'tools\Install-BobIrc.ps1'
     if ($installIrc2 -notmatch 'Compact-BobIrcOutbox') { throw 'Install-BobIrc must compact a fat POINT outbox' }
-    $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    $docsBv = Get-RepoSourceRaw 'docs\bobiverse.md'
     if ($docsBv -notmatch 'Outbox POINT backlog') { throw 'docs/bobiverse.md must note POINT backlog disconnect loop' }
 
     $env:BOB_MACHINE_ID = 'testhost'
@@ -1010,7 +1070,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($after.Count -ne 2) { throw "compact kept $($after.Count) lines (want PRIVMSG + latest POINT)" }
     if ($after[0] -notmatch 'keep-me') { throw 'compact dropped non-POINT line' }
     if ($after[1] -notmatch 'id=testhost') { throw 'compact lost self POINT' }
-    $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
+    $tickSrc = Get-RepoSourceRaw 'src\Private\Invoke-BobFleet.ps1'
     if ($tickSrc -match 'Write-BobIrcStatus') { throw 'fleet tick must not POINT; that is Watch-Bobiverse automation' }
 
     $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
@@ -1022,7 +1082,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
     if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $traySrc = Get-RepoSourceRaw 'tools\Watch-BobTray.ps1'
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
 }
@@ -1267,7 +1327,7 @@ Invoke-Case 'BT0q kind mrb packet' {
 # Start-BobCursor must not Win32_Process-launch under Fake-Grok (BOB_GROK_EXE); fleet tick still completes.
 Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     param($bridgeRoot)
-    $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
+    $cfg = Get-RepoSourceRaw 'config\default.json' | ConvertFrom-Json
     $expectedMrb = [string]$cfg.models.mrbCursor
     $cwd = Join-Path $bridgeRoot 'cwd'
     if ($env:BOB_GROK_EXE -notmatch '(?i)Fake-Grok') { throw 'BOB_GROK_EXE must be Fake-Grok for suppress seam' }
@@ -1469,7 +1529,7 @@ Invoke-Case 'BT0v2 mrb handoff identity refuse' {
 
 Invoke-Case 'BT0v3 mrb handoff local packet' {
     param($bridgeRoot)
-    $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
+    $cfg = Get-RepoSourceRaw 'config\default.json' | ConvertFrom-Json
     $expectedMrb = [string]$cfg.models.mrbGrok
     $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
@@ -1509,6 +1569,99 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
     }
     catch {
         if ($_.Exception.Message -notmatch 'TestSkipCursor') { throw $_.Exception.Message }
+    }
+}
+
+# --- BT0p tools BobBridge public surface (issue #15) ---
+Invoke-Case 'BT0p tools bobbridge surface' {
+    $psd1Path = Join-Path $RepoRoot 'src\BobBridge.psd1'
+    $psd1 = Import-PowerShellDataFile -LiteralPath $psd1Path
+    $exported = @($psd1.FunctionsToExport | ForEach-Object { [string]$_ })
+    $moduleFuncs = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    Push-Location $RepoRoot
+    try {
+        $srcFiles = @(git ls-tree -r HEAD --name-only src 2>$null | Where-Object { $_ -match '\.ps1$' })
+    }
+    finally {
+        Pop-Location
+    }
+    foreach ($relGit in $srcFiles) {
+        $rel = $relGit -replace '/', '\'
+        $raw = Get-RepoSourceRaw $rel
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($raw, [ref]$tokens, [ref]$errors)
+        if ($errors -and $errors.Count -gt 0) { throw "parse ${relGit}: $($errors[0].Message)" }
+        foreach ($fd in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            [void]$moduleFuncs.Add([string]$fd.Name)
+        }
+    }
+    $bad = @()
+    Get-ChildItem (Join-Path $RepoRoot 'tools') -Filter *.ps1 | Where-Object {
+            $_.Name -notin @('Test-Pack.ps1', 'Fake-Grok.ps1', 'Fake-Gh.ps1')
+        } | ForEach-Object {
+        $rel = $_.FullName.Substring($RepoRoot.Length).TrimStart('\')
+        $raw = Get-RepoSourceRaw $rel
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($raw, [ref]$tokens, [ref]$errors)
+        if ($errors -and $errors.Count -gt 0) { throw "parse ${rel}: $($errors[0].Message)" }
+        foreach ($cmdAst in $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $name = Get-CommandAstSimpleName -CommandAst $cmdAst
+            if (-not $name) { continue }
+            if ($moduleFuncs.Contains($name) -and ($exported -notcontains $name)) {
+                $bad += "${rel}:$($cmdAst.Extent.StartLineNumber) calls non-exported BobBridge function $name"
+            }
+        }
+    }
+    if ($bad.Count -gt 0) { throw ($bad -join '; ') }
+}
+
+# --- BT0q PSScriptAnalyzer + gate empty-catch lint (issue #15) ---
+Invoke-Case 'BT0q psscriptanalyzer gate lint' {
+    if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+        throw 'PSScriptAnalyzer module required (Install-Module PSScriptAnalyzer -Scope CurrentUser)'
+    }
+    Import-Module PSScriptAnalyzer -ErrorAction Stop
+    $lintHits = @()
+    foreach ($root in @((Join-Path $RepoRoot 'src\Public'), (Join-Path $RepoRoot 'src\Private'))) {
+        Get-ChildItem $root -Recurse -Include *.ps1 -File | ForEach-Object {
+            $diag = @(Invoke-ScriptAnalyzer -Path $_.FullName -IncludeRule @('PSUseApprovedVerbs') -Severity @('Error'))
+            foreach ($d in $diag) {
+                $lintHits += "$($d.ScriptName):$($d.Line) $($d.RuleName) $($d.Message)"
+            }
+        }
+    }
+    foreach ($rel in @(
+            'tools\Start-BobMrbHandoff.ps1',
+            'tools\Start-BobMrb.ps1',
+            'tools\Start-BobCursor.ps1',
+            'tools\Start-BobCopilot.ps1',
+            'tools\Bob-Gh.ps1',
+            'tools\Watch-BobJobs.ps1'
+        )) {
+        $path = Join-Path $RepoRoot $rel
+        $diag = @(Invoke-ScriptAnalyzer -Path $path -IncludeRule @('PSReviewUnusedParameter') -Severity @('Error', 'Warning'))
+        foreach ($d in $diag) {
+            $lintHits += "$($d.ScriptName):$($d.Line) $($d.RuleName) $($d.Message)"
+        }
+    }
+    if ($lintHits.Count -gt 0) { throw ($lintHits -join '; ') }
+
+    $gateTools = @(
+        'tools\Start-BobMrbHandoff.ps1',
+        'tools\Start-BobMrb.ps1',
+        'tools\Start-BobCursor.ps1',
+        'tools\Start-BobCopilot.ps1',
+        'tools\Bob-Gh.ps1',
+        'tools\Watch-BobJobs.ps1'
+    )
+    foreach ($rel in $gateTools) {
+        $raw = Get-RepoSourceRaw $rel
+        $emptyCatch = [regex]::Matches($raw, '(?m)catch\s*\{\s*\}')
+        if ($emptyCatch.Count -gt 0) {
+            throw "$rel has $($emptyCatch.Count) empty catch block(s) on git/MRB handoff path"
+        }
     }
 }
 

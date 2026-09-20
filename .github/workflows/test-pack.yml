@@ -1,0 +1,29 @@
+name: Test-Pack
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-pack:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -MinimumVersion 1.21.0
+
+      - name: Run Test-Pack (offline gate)
+        shell: pwsh
+        run: |
+          & "${{ github.workspace }}/tools/Test-Pack.ps1" -RepoRoot "${{ github.workspace }}"

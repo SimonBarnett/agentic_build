@@ -50,6 +50,7 @@ Export-ModuleMember -Function @(
     'Get-BobFleetRegistry',
     'ConvertTo-BobIrcPoint',
     'ConvertFrom-BobIrcPoint',
+    'Resolve-BobiverseMachineId',
     'Read-BobIrcPeer',
     'Write-BobIrcStatus',
     'Import-BobIrcPeerTranscript',
