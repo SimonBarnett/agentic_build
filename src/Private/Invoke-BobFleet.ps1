@@ -172,6 +172,12 @@ function Invoke-BobFleetOnce {
         return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'stopped'
     }
 
+    $packetKindErr = Get-BobGitPacketKindValidationError -Packet $packet
+    if ($packetKindErr) {
+        $comp = [pscustomobject]@{ status = 'failed'; summary = 'invalid_kind'; needs_human = $true }
+        return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
+    }
+
     $self = Read-JsonFile (Join-Path (Get-BridgeRoot) 'machine.json')
     if (-not (Test-CwdAllowed -Cwd $packet.cwd -MachineRecord $self)) {
         $comp = [pscustomobject]@{ status = 'failed'; summary = 'cwd_not_allowed'; needs_human = $true }
@@ -197,6 +203,7 @@ function Invoke-BobFleetOnce {
                 try {
                     $cursorArgs = @{ Job = $packet }
                     if ($packet.kind) { $cursorArgs['Kind'] = [string]$packet.kind }
+                    if (Test-BobUsesFakeGrok) { $cursorArgs['NoLaunch'] = $true }
                     $hand = & $cursorScript @cursorArgs
                     if ($hand -and $hand.packetPath) { $summary = "handed cursor-models $($hand.packetPath)" }
                 }

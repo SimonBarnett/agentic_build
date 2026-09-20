@@ -19,7 +19,7 @@ function Start-BobBuild {
         [string]$Mrb,
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
-        [ValidateSet('mrb', 'build')][string]$Kind = 'build',
+        [string]$Kind = 'build',
         [string]$Model,
         [switch]$Fix,
         [switch]$PinGitWorker
@@ -109,6 +109,13 @@ function Start-BobBuild {
         }
     }
     if (-not $Task) { $Task = 'fleet' }
+    if ($isGit) {
+        if (-not $Kind) { $Kind = 'build' }
+        $kindErr = Get-BobGitKindValidationError -Kind ([string]$Kind)
+        if ($kindErr) {
+            return [pscustomobject]@{ ok = $false; error = 'invalid_kind'; reason = $kindErr }
+        }
+    }
     if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
     $packet = [pscustomobject]@{
         id             = $JobId
