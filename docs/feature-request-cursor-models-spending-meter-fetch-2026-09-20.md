@@ -9,7 +9,7 @@
 
 ## Status
 
-Parked, not dispatched. Meter **mapping** landed in b443f0a (which meter is fuel). The **fetch** did not.
+**Fetch landed (issue #25):** `Get-CursorAgentUsage.py` reads Spending Cursor Models from `GetCurrentPeriodUsage.planUsage.autoPercentUsed` (percentage points; `1` => 1% used / 99% remaining). `billingCycleEnd` is `period_end` for Cursor Models. Sand stays separate (`sand_used_pct`, `sand_remaining_pct`, `sand_exhausted`, `sand_period_end`) and feeds `Get-BobCapacity` `grok_bot`, not `cursor_models`.
 
 ## Gap vs current tree (at b443f0a)
 

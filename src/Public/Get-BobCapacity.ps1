@@ -304,6 +304,24 @@ function Get-BobCapacity {
         $onDemandEnabled = $true
     }
 
+    $sandRemain = $null
+    $sandEnd = $null
+    if ($cursor) {
+        if ($null -ne $cursor.sand_remaining_pct -and [string]$cursor.sand_remaining_pct -ne '') {
+            $sandRemain = [int]$cursor.sand_remaining_pct
+        }
+        if ($cursor.sand_period_end) { $sandEnd = [string]$cursor.sand_period_end }
+    }
+
+    if ($sandRemain -ne $null -or $sandEnd) {
+        $machines = @($machines | ForEach-Object {
+                $_ | Add-Member -NotePropertyName grok_bot -NotePropertyValue ([pscustomobject]@{
+                        remaining_pct = $sandRemain
+                        period_end    = $sandEnd
+                    }) -Force -PassThru
+            })
+    }
+
     return [pscustomobject]@{
         cursor_models = [pscustomobject]@{
             remaining_pct = $cursorPct

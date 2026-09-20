@@ -197,7 +197,16 @@ function ConvertTo-BobCursorUsageDoc {
     if ($null -eq $used -and $null -ne $remain) { $used = 100 - $remain }
     $periodEnd = $null
     if ($j.period_end) { $periodEnd = [string]$j.period_end }
-    elseif ($j.nextResetTimestampUtc) { $periodEnd = [string]$j.nextResetTimestampUtc }
+    $sandUsed = $null
+    $sandRemain = $null
+    $sandExhausted = $null
+    $sandPeriodEnd = $null
+    if ($null -ne $j.sand_used_pct -and [string]$j.sand_used_pct -ne '') { $sandUsed = [int]$j.sand_used_pct }
+    if ($null -ne $j.sand_remaining_pct -and [string]$j.sand_remaining_pct -ne '') { $sandRemain = [int]$j.sand_remaining_pct }
+    if ($null -ne $j.sand_exhausted -and [string]$j.sand_exhausted -ne '') {
+        try { $sandExhausted = [bool]$j.sand_exhausted } catch { $sandExhausted = $null }
+    }
+    if ($j.sand_period_end) { $sandPeriodEnd = [string]$j.sand_period_end }
     return [pscustomobject]@{
         remaining_pct = $(if ($null -eq $remain) { $null } else { [int]$remain })
         used_pct      = $(if ($null -eq $used) { $null } else { [int][math]::Round([double]$used) })
@@ -206,6 +215,10 @@ function ConvertTo-BobCursorUsageDoc {
         on_demand_used_cents = $cents
         overage_source = $(if ($j.overage_source) { [string]$j.overage_source } else { $null })
         period_end    = $periodEnd
+        sand_used_pct = $sandUsed
+        sand_remaining_pct = $sandRemain
+        sand_exhausted = $sandExhausted
+        sand_period_end = $sandPeriodEnd
         source        = 'cursor-agent'
         kind          = 'weekly'
     }

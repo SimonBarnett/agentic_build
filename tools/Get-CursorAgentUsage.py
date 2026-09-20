@@ -83,6 +83,14 @@ def _fetch_json(token: str, path: str) -> dict:
 
 def _usd_to_gbp(usd: float) -> float | None:
     """Convert USD to GBP. Prefer open.er-api.com; fallback jsDelivr currency-api."""
+    rate_env = os.environ.get("BOB_CURSOR_USD_GBP_RATE", "").strip()
+    if rate_env:
+        try:
+            rate = float(rate_env)
+            if rate > 0:
+                return round(usd * rate, 2)
+        except (TypeError, ValueError):
+            pass
     endpoints = (
         ("https://open.er-api.com/v6/latest/USD", lambda b: float((b.get("rates") or {}).get("GBP") or 0)),
         (
@@ -130,7 +138,21 @@ def _on_demand_usd_cents(period: dict | None) -> tuple[int | None, str | None]:
     return None, None
 
 
+def _parse_pct_points(raw) -> tuple[int | None, int | None]:
+    """Spending Cursor Models: autoPercentUsed is already percentage points (1 => 1% used)."""
+    if raw is None or raw == "":
+        return None, None
+    try:
+        used_f = float(raw)
+    except (TypeError, ValueError):
+        return None, None
+    used_i = int(round(used_f))
+    remain = int(round(100.0 - used_f))
+    return used_i, remain
+
+
 def _parse_used_remain(raw) -> tuple[int | None, int | None]:
+    """Sand usagePercent may be a 0–1 fraction or 0–100 points."""
     if raw is None or raw == "":
         return None, None
     try:
@@ -142,6 +164,74 @@ def _parse_used_remain(raw) -> tuple[int | None, int | None]:
     used_i = int(round(used_f))
     remain = int(round(100.0 - used_f))
     return used_i, remain
+
+
+def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
+    cursor_used = None
+    cursor_remain = None
+    if period:
+        pu = period.get("planUsage") or {}
+        auto = pu.get("autoPercentUsed")
+        if auto is None or auto == "":
+            auto = period.get("autoPercentUsed")
+        cursor_used, cursor_remain = _parse_pct_points(auto)
+
+    sand_used = None
+    sand_remain = None
+    if sand:
+        sand_raw = sand.get("usagePercent")
+        if sand_raw is None:
+            sand_raw = sand.get("percentUsed")
+        sand_used, sand_remain = _parse_used_remain(sand_raw)
+
+    cents, cents_src = _on_demand_usd_cents(period)
+    overage_gbp = None
+    overage_usd = None
+    overage_source = None
+    fx_rate = None
+    if cents is not None:
+        overage_usd = round(cents / 100.0, 2)
+        overage_source = cents_src
+        gbp = _usd_to_gbp(overage_usd)
+        if gbp is not None:
+            overage_gbp = gbp
+            if overage_usd > 0:
+                fx_rate = round(overage_gbp / overage_usd, 6)
+
+    out: dict = {
+        "ok": True,
+        "source": "cursor-agent",
+        "kind": "weekly",
+    }
+    if cursor_used is not None:
+        out["used_pct"] = cursor_used
+        out["remaining_pct"] = cursor_remain
+        out["cursor_models_source"] = "GetCurrentPeriodUsage.planUsage.autoPercentUsed"
+    if sand_used is not None:
+        out["sand_used_pct"] = sand_used
+        out["sand_remaining_pct"] = sand_remain
+        if sand_remain is not None and sand_remain <= 0:
+            out["sand_exhausted"] = True
+    if overage_usd is not None:
+        out["overage_usd"] = overage_usd
+        out["on_demand_used_cents"] = cents
+    if overage_gbp is not None:
+        out["overage_gbp"] = overage_gbp
+    if overage_source:
+        out["overage_source"] = overage_source
+    if fx_rate is not None:
+        out["usd_gbp_rate"] = fx_rate
+
+    period_end = _period_end_iso(period)
+    if period_end:
+        out["period_end"] = period_end
+
+    if sand:
+        sand_end = sand.get("nextResetTimestampUtc") or sand.get("period_end")
+        if sand_end:
+            out["sand_period_end"] = str(sand_end)
+
+    return out
 
 
 def _period_end_iso(period: dict | None) -> str | None:
@@ -165,6 +255,23 @@ def _period_end_iso(period: dict | None) -> str | None:
 
 def main() -> int:
     try:
+        fixture_path = os.environ.get("BOB_CURSOR_AGENT_FIXTURE", "").strip()
+        if fixture_path:
+            fix = json.loads(Path(fixture_path).read_text(encoding="utf-8-sig"))
+            period = fix.get("period")
+            sand = fix.get("sand") or {}
+            out = build_usage_doc(period, sand)
+            if (
+                out.get("used_pct") is None
+                and out.get("sand_used_pct") is None
+                and out.get("overage_gbp") is None
+                and out.get("overage_usd") is None
+            ):
+                print(json.dumps({"ok": False, "error": "no cursor or sand usage"}))
+                return 1
+            print(json.dumps(out))
+            return 0
+
         key = _chrome_key(APP / "Local State")
         token = _access_token(key)
         if not token:
@@ -176,65 +283,13 @@ def main() -> int:
         except Exception:
             period = None
 
-        # Spending "Cursor Models" (includes Cursor Grok + Composer).
-        cursor_used = None
-        cursor_remain = None
-        if period:
-            pu = period.get("planUsage") or {}
-            auto = pu.get("autoPercentUsed")
-            if auto is None or auto == "":
-                auto = period.get("autoPercentUsed")
-            cursor_used, cursor_remain = _parse_used_remain(auto)
-
-        # Grok Bot Sand — separate from Cursor Models fuel.
-        sand_raw = sand.get("usagePercent")
-        if sand_raw is None:
-            sand_raw = sand.get("percentUsed")
-        sand_used, sand_remain = _parse_used_remain(sand_raw)
-
-        cents, cents_src = _on_demand_usd_cents(period)
-        overage_gbp = None
-        overage_usd = None
-        overage_source = None
-        fx_rate = None
-        if cents is not None:
-            overage_usd = round(cents / 100.0, 2)
-            overage_source = cents_src
-            gbp = _usd_to_gbp(overage_usd)
-            if gbp is not None:
-                overage_gbp = gbp
-                if overage_usd > 0:
-                    fx_rate = round(overage_gbp / overage_usd, 6)
-
-        out: dict = {
-            "ok": True,
-            "source": "cursor-agent",
-            "kind": "weekly",
-        }
-        if cursor_used is not None:
-            out["used_pct"] = cursor_used
-            out["remaining_pct"] = cursor_remain
-            out["cursor_models_source"] = "GetCurrentPeriodUsage.planUsage.autoPercentUsed"
-        if sand_used is not None:
-            out["sand_used_pct"] = sand_used
-            out["sand_remaining_pct"] = sand_remain
-            if sand_remain is not None and sand_remain <= 0:
-                out["sand_exhausted"] = True
-        if overage_usd is not None:
-            out["overage_usd"] = overage_usd
-            out["on_demand_used_cents"] = cents
-        if overage_gbp is not None:
-            out["overage_gbp"] = overage_gbp
-        if overage_source:
-            out["overage_source"] = overage_source
-        if fx_rate is not None:
-            out["usd_gbp_rate"] = fx_rate
-
-        period_end = _period_end_iso(period)
-        if period_end:
-            out["period_end"] = period_end
-
-        if cursor_used is None and sand_used is None and overage_gbp is None and overage_usd is None:
+        out = build_usage_doc(period, sand)
+        if (
+            out.get("used_pct") is None
+            and out.get("sand_used_pct") is None
+            and out.get("overage_gbp") is None
+            and out.get("overage_usd") is None
+        ):
             print(json.dumps({"ok": False, "error": "no cursor or sand usage"}))
             return 1
         print(json.dumps(out))
