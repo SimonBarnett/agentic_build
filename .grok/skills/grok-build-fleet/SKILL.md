@@ -41,11 +41,14 @@ Stop-BobBuild -JobId <id>
 ```
 
 `-Task git` makes `-Machine` optional: `Select-BobGitWorker` picks a
-`(machine, fuel)` pair (`cursor-models` first, then `grok-build`,
-`copilot`, `grok-bot`, `on-demand` if `-AllowOnDemand`). Pin with both
-`-Machine` and `-Fuel`. `-Fix` re-runs the picker. Mode 3 DUMB / 2012 is
-not a git worker. Cursor Models is a shared account pool, not a machine
-named cursor.
+`(machine, fuel)` pair (`cursor-models` then `grok-build`; copilot only
+with `-AllowCopilot`). Pin with both `-Machine` and `-Fuel`. `-Fix` re-runs
+the picker. Mode 3 DUMB / 2012 is not a git worker. Cursor Models is a
+shared account pool, not a machine named cursor.
+
+Models (`config/default.json` `models`): **build** = `build0.1` (grok.exe)
+or `composer-2.5` (Cursor). **MRB** = latest reasoning (`grok-4.6` /
+`claude-opus-5-thinking-high`). Do not use the MRB model for implementation.
 
 Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it is the stall monitor: `bob-fleet-monitor` (do not dispatch or kill Bob's jobs).
 

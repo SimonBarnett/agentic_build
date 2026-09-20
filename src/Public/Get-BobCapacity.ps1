@@ -1,3 +1,31 @@
+function Get-BobJobModel {
+    [CmdletBinding()]
+    param(
+        [ValidateSet('mrb', 'build')][string]$Kind = 'build',
+        [string]$Fuel
+    )
+    $bundled = Join-Path (Get-ModuleRoot) 'config\default.json'
+    $cfg = $null
+    try { $cfg = Read-JsonFile $bundled } catch { }
+    $m = $null
+    if ($cfg) { $m = $cfg.models }
+    $fuel = [string]$Fuel
+    if ($Kind -eq 'mrb') {
+        if ($fuel -eq 'cursor-models') {
+            if ($m -and $m.mrbCursor) { return [string]$m.mrbCursor }
+            return 'claude-opus-5-thinking-high'
+        }
+        if ($m -and $m.mrbGrok) { return [string]$m.mrbGrok }
+        return 'grok-4.6'
+    }
+    if ($fuel -eq 'cursor-models') {
+        if ($m -and $m.buildCursor) { return [string]$m.buildCursor }
+        return 'composer-2.5'
+    }
+    if ($m -and $m.buildGrok) { return [string]$m.buildGrok }
+    return 'build0.1'
+}
+
 function Get-BobFuelOrder {
     param(
         [switch]$AllowOnDemand,

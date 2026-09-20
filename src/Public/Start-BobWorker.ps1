@@ -7,6 +7,7 @@ function Start-BobWorker {
         [string]$Title,
         [string]$SessionId,
         [string]$Agent,
+        [string]$Model,
         [switch]$Force,
         [switch]$WhatIfArgv
     )
@@ -58,7 +59,8 @@ function Start-BobWorker {
         $argv = @('grokbot', 'SendGrokBotUserMessage', $Agent)
     }
     else {
-        $argv = Get-BobArgv -Prompt $Prompt -Cwd $cwdFull -SessionId $SessionId -Profile $prof
+        if (-not $Model) { $Model = Get-BobJobModel -Kind build -Fuel grok-build }
+        $argv = Get-BobArgv -Prompt $Prompt -Cwd $cwdFull -SessionId $SessionId -Profile $prof -Model $Model
     }
     $argvPath = Join-Path $dir 'outbox\argv.txt'
     [IO.File]::WriteAllText($argvPath, (($argv | ForEach-Object { $_ }) -join "`n"))

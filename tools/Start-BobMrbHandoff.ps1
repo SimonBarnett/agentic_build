@@ -40,20 +40,23 @@ if (-not $Cwd) {
     }
 }
 
+$repoRoot = Split-Path $here -Parent
+Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force
+$mrbModel = Get-BobJobModel -Kind mrb -Fuel $Fuel
+
 if ($Fuel -eq 'cursor-models') {
     $cursor = Join-Path $here 'Start-BobCursor.ps1'
-    $r = & $cursor -Repo "https://github.com/$Repo" -Cwd $Cwd -Docs $Docs -Plan $Plan -Mrb $issueUrl -Goal $prompt
+    $r = & $cursor -Repo "https://github.com/$Repo" -Cwd $Cwd -Docs $Docs -Plan $Plan -Mrb $issueUrl -Goal $prompt -Kind mrb -Model $mrbModel
     if ($r.started) {
         $r | Add-Member -NotePropertyName handed -NotePropertyValue 'cursor-models' -Force
         return $r
     }
     Write-Warning "Cursor agent did not start ($($r.startError)); falling back to grok-build."
     $Fuel = 'grok-build'
+    $mrbModel = Get-BobJobModel -Kind mrb -Fuel grok-build
 }
 
-$repoRoot = Split-Path $here -Parent
-Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force
 if (-not $Cwd) { $Cwd = $repoRoot }
-$q = Start-BobBuild -Task git -Fuel grok-build -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Mrb $issueUrl -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
+$q = Start-BobBuild -Task git -Fuel grok-build -Kind mrb -Model $mrbModel -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Mrb $issueUrl -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
 $q | Add-Member -NotePropertyName handed -NotePropertyValue 'grok-build' -Force
 return $q

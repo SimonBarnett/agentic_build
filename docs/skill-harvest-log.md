@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-20 — MRB reasoning vs build0.1
+
+MRB jobs use the latest reasoning model (`models.mrbCursor` /
+`models.mrbGrok`). Build workers use `build0.1` or Cursor `composer-2.5`.
+`Get-BobJobModel`; grok.exe `-m`; cursor-agent `--model`.
+
 ## 2026-09-20 — MRB fuel is Cursor then Grok
 
 `Start-BobMrbHandoff` / picker default: `cursor-models` then `grok-build`. Copilot only with `-AllowCopilot`. `Start-BobCursor` must not launch `~\.grok\bin\agent.exe` (that is grok.exe).

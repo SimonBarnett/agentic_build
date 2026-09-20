@@ -89,6 +89,8 @@ function New-FleetPrompt {
     if ($Packet.task) { [void]$lines.Add("Task: $($Packet.task)") }
     [void]$lines.Add("Cwd: $($Packet.cwd)")
     [void]$lines.Add("Profile: $($Packet.profile)")
+    if ($Packet.model) { [void]$lines.Add("Model: $($Packet.model)") }
+    if ($Packet.kind) { [void]$lines.Add("Kind: $($Packet.kind)") }
     if ($Packet.repo) { [void]$lines.Add("Repo: $($Packet.repo)") }
     if ($Packet.branch) { [void]$lines.Add("Branch: $($Packet.branch)") }
     if ($Packet.docs) { [void]$lines.Add("Docs: $($Packet.docs)") }
@@ -228,7 +230,7 @@ function Invoke-BobFleetOnce {
     }
 
     $prompt = New-FleetPrompt -Packet $packet
-    $start = Start-BobWorker -Cwd $packet.cwd -Prompt $prompt -Profile $packet.profile -Title "fleet-$($packet.id)" -SessionId $packet.id -Force
+    $start = Start-BobWorker -Cwd $packet.cwd -Prompt $prompt -Profile $packet.profile -Title "fleet-$($packet.id)" -SessionId $packet.id -Model $packet.model -Force
     $sessionId = $start.sessionId
 
     $followPath = Join-Path (Initialize-FleetRoot) (Join-Path 'followup' (Join-Path $thisId ($packet.id + '.json')))

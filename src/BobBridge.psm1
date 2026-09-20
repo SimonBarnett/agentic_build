@@ -17,6 +17,7 @@ Export-ModuleMember -Function @(
     'Start-BobWorker',
     'Start-BobBuild',
     'Get-BobCapacity',
+    'Get-BobJobModel',
     'Select-BobGitWorker',
     'Copy-BobProjectSkills',
     'Get-BobBuild',

@@ -1080,6 +1080,14 @@ Invoke-Case 'BT0p git-task picker' {
     if ($job.fuel -ne 'cursor-models') { throw "job.fuel=$($job.fuel)" }
     if (-not $job.machine) { throw 'job.machine empty' }
     if ($job.branch -notmatch '^work/') { throw "job.branch=$($job.branch)" }
+    if ([string]$job.kind -ne 'build') { throw "git ping kind=$($job.kind)" }
+    if ([string]$job.model -ne 'composer-2.5') { throw "cursor build model=$($job.model) expected composer-2.5" }
+    $pinModel = Get-BobJobModel -Kind build -Fuel grok-build
+    if ($pinModel -ne 'build0.1') { throw "grok build model=$pinModel expected build0.1" }
+    $mrbC = Get-BobJobModel -Kind mrb -Fuel cursor-models
+    if ($mrbC -ne 'claude-opus-5-thinking-high') { throw "mrb cursor model=$mrbC" }
+    $mrbG = Get-BobJobModel -Kind mrb -Fuel grok-build
+    if ($mrbG -ne 'grok-4.6') { throw "mrb grok model=$mrbG" }
 
     $pinJob = Start-BobBuild -Task git -Machine testhost -Fuel grok-build -Goal ping -Cwd (Join-Path $bridgeRoot 'cwd')
     if ($pinJob.machine -ne 'testhost' -or $pinJob.fuel -ne 'grok-build') {

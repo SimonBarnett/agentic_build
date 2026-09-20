@@ -94,7 +94,8 @@ function Get-BobArgv {
         [Parameter(Mandatory)][string]$Cwd,
         [string]$SessionId,
         [switch]$Resume,
-        $Profile
+        $Profile,
+        [string]$Model
     )
     $argv = New-Object System.Collections.Generic.List[string]
     [void]$argv.Add('--no-auto-update')
@@ -103,6 +104,10 @@ function Get-BobArgv {
     [void]$argv.Add('json')
     [void]$argv.Add('--cwd')
     [void]$argv.Add($Cwd)
+    if ($Model) {
+        [void]$argv.Add('-m')
+        [void]$argv.Add($Model)
+    }
     if ($Resume) {
         [void]$argv.Add('-r')
         [void]$argv.Add($SessionId)

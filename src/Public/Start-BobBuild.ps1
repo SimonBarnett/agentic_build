@@ -19,6 +19,8 @@ function Start-BobBuild {
         [string]$Mrb,
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
+        [ValidateSet('mrb', 'build')][string]$Kind = 'build',
+        [string]$Model,
         [switch]$Fix
     )
     if (Test-PromptSecrets -Prompt $Goal) {
@@ -101,6 +103,8 @@ function Start-BobBuild {
         }
     }
     if (-not $Task) { $Task = 'fleet' }
+    if (-not $Kind) { $Kind = 'build' }
+    if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
     $packet = [pscustomobject]@{
         id             = $JobId
         from           = $From
@@ -122,6 +126,8 @@ function Start-BobBuild {
         docs           = $Docs
         plan           = $Plan
         mrb            = $Mrb
+        kind           = $Kind
+        model          = $Model
     }
     $path = Get-FleetJobPath -Lane inbox -Machine $mid -JobId $JobId
     Write-JsonFile $path $packet
@@ -139,5 +145,7 @@ function Start-BobBuild {
         path    = $path
         lane    = 'inbox'
         branch  = $Branch
+        kind    = $Kind
+        model   = $Model
     }
 }

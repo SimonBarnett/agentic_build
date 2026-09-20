@@ -11,10 +11,15 @@ param(
     [string]$Mrb,
     [string]$Goal,
     [string]$JobId,
-    [string]$Cwd
+    [string]$Cwd,
+    [string]$Model,
+    [ValidateSet('mrb', 'build')][string]$Kind = 'build'
 )
 
 $ErrorActionPreference = 'Stop'
+$here = $PSScriptRoot
+if (-not $here) { $here = Split-Path $MyInvocation.MyCommand.Path }
+Import-Module (Join-Path (Split-Path $here -Parent) 'src\BobBridge.psd1') -Force
 
 function Get-BobCursorAgentExe {
     foreach ($c in @(
@@ -50,10 +55,13 @@ if ($Job) {
     if (-not $Goal) { $Goal = [string]$Job.goal }
     if (-not $JobId) { $JobId = [string]$Job.id }
     if (-not $Cwd) { $Cwd = [string]$Job.cwd }
+    if (-not $Model -and $Job.model) { $Model = [string]$Job.model }
+    if (-not $Kind -and $Job.kind) { $Kind = [string]$Job.kind }
 }
 
 if (-not $JobId) { $JobId = [guid]::NewGuid().ToString() }
 if (-not $Branch) { $Branch = ('work/{0}' -f $JobId) }
+if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel cursor-models }
 
 $packet = [ordered]@{
     task   = 'git'
@@ -66,6 +74,8 @@ $packet = [ordered]@{
     mrb    = $Mrb
     cwd    = $Cwd
     goal   = $Goal
+    kind   = $Kind
+    model  = $Model
     note   = 'Commit and push on the work branch. Do not mark ready for human UAT. Bob chairs MRB.'
 }
 
@@ -114,7 +124,7 @@ Do not put password= or XAI_API_KEY= assignments in git.
             $(if ($agent -match '\.cmd$') {
                 Join-Path (Split-Path $agent) 'cursor-agent.ps1'
             } else { $agent }),
-            '-p', '--force', '--trust', '--output-format', 'text', $prompt
+            '-p', '--force', '--trust', '--output-format', 'text', '--model', $Model, $prompt
         )
         $exe = $agent
         if ($agent -match '\.cmd$' -or $agent -match '\.ps1$') {

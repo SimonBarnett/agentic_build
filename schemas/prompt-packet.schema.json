@@ -20,6 +20,8 @@
     "branch": { "type": "string" },
     "docs": { "type": "string" },
     "plan": { "type": "string" },
-    "mrb": { "type": "string" }
+    "mrb": { "type": "string" },
+    "kind": { "type": "string", "enum": ["mrb", "build"] },
+    "model": { "type": "string" }
   }
 }

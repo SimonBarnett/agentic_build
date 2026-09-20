@@ -23,7 +23,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
 # default -Fuel cursor-models; falls back to grok-build if cursor-agent.exe is missing
 ```
 
-Default is Cursor Agent (`cursor-agent.exe`, never `~\.grok\bin\agent.exe` which is grok). Then Grok Build (`Start-BobBuild -Task git -Fuel grok-build`). Do not use Copilot unless `-AllowCopilot`.
+Default is Cursor Agent (`cursor-agent.cmd`, never `~\.grok\bin\agent.exe` which is grok) on the **latest reasoning model** (`config/default.json` `models.mrbCursor`, currently `claude-opus-5-thinking-high`). Grok Build fallback uses `models.mrbGrok` (`grok-4.6`). Build workers must not use these models — they use `build0.1` / `composer-2.5`. Do not use Copilot unless `-AllowCopilot`.
 
 Tell the human the issue URL. IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
 
