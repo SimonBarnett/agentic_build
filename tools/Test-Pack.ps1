@@ -1512,6 +1512,109 @@ Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
     }
 }
 
+# --- BT0x fuel/model compatibility gate (issue #17) ---
+Invoke-Case 'BT0x1 fuel model enqueue refuse' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $bad = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Fuel grok-build -Model 'composer-2.5'
+    if ($bad.ok) { throw 'mismatched fuel/model must not enqueue' }
+    if ([string]$bad.error -ne 'fuel_model_mismatch') { throw "error=$($bad.error)" }
+    if ([string]$bad.reason -notmatch 'fuel_model_mismatch') { throw "reason=$($bad.reason)" }
+    $inbox = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    if (Test-Path $inbox) {
+        $left = @(Get-ChildItem $inbox -Filter '*.json' -ErrorAction SilentlyContinue).Count
+        if ($left -gt 0) { throw "inbox still has $left packet(s) after refuse" }
+    }
+}
+
+Invoke-Case 'BT0x2 fuel model tick refuse' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $jobId = [guid]::NewGuid().ToString()
+    $packet = [pscustomobject]@{
+        id            = $jobId
+        from          = 'test'
+        goal          = 'PONG'
+        machine       = 'testhost'
+        cwd           = $cwd
+        profile       = 'generic'
+        createdAt     = [DateTime]::UtcNow.ToString('o')
+        fuel          = 'grok-build'
+        model         = 'claude-opus-5-thinking-high'
+        task          = 'fleet'
+        kind          = 'build'
+    }
+    $inDir = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    New-Item -ItemType Directory -Force -Path $inDir | Out-Null
+    $inPath = Join-Path $inDir ($jobId + '.json')
+    [IO.File]::WriteAllText($inPath, ($packet | ConvertTo-Json -Depth 8))
+    $sessDir = Join-Path $bridgeRoot 'fake-grok-home\sessions'
+    $before = 0
+    if (Test-Path $sessDir) { $before = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    Invoke-BobFleetTick | Out-Null
+    $after = 0
+    if (Test-Path $sessDir) { $after = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    if ($after -ne $before) { throw "Fake-Grok sessions grew $before -> $after (grok.exe must not start)" }
+    $done = Get-BobBuild -JobId $jobId
+    if ($done.lane -ne 'outbox') { throw "lane=$($done.lane)" }
+    if ($done.state -ne 'failed') { throw "state=$($done.state)" }
+    if (-not $done.completion -or $done.completion.status -ne 'failed') { throw 'completion not failed' }
+    if ([string]$done.completion.summary -notmatch 'fuel_model_mismatch') { throw "summary=$($done.completion.summary)" }
+}
+
+Invoke-Case 'BT0x3 fuel model matched enqueue' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
+    if (-not $cfg.fuelModelFamilies) { throw 'config fuelModelFamilies missing' }
+    $pairs = [ordered]@{
+        'cursor-models' = [string]$cfg.models.buildCursor
+        'grok-build'    = [string]$cfg.models.buildGrok
+        'grok-bot'      = 'grok-4.6'
+        'on-demand'     = [string]$cfg.models.buildGrokFallback
+        'copilot'       = $null
+    }
+    foreach ($fuel in $pairs.Keys) {
+        $model = $pairs[$fuel]
+        $args = @{
+            Machine = 'testhost'
+            Cwd     = $cwd
+            Goal    = 'PONG'
+            Profile = 'generic'
+            Fuel    = $fuel
+        }
+        if ($model) { $args['Model'] = $model }
+        $q = Start-BobBuild @args
+        if (-not $q.ok) { throw "fuel=$fuel model=$model enqueue failed $($q | ConvertTo-Json -Compress)" }
+        if ([string]$q.fuel -ne $fuel) { throw "fuel=$fuel got $($q.fuel)" }
+        $job = Get-BobBuild -JobId $q.jobId
+        if ($job.lane -ne 'inbox') { throw "fuel=$fuel lane=$($job.lane)" }
+    }
+    $src = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobCapacity.ps1') -Raw
+    if ($src -match 'fuel_model_mismatch fuel=grok-build model=composer') { throw 'hard-coded mismatch string in Get-BobCapacity' }
+    if ($src -notmatch 'Get-BobFuelModelConfig') { throw 'mapping must use Get-BobFuelModelConfig' }
+}
+
+Invoke-Case 'BT0x4 fuel model matched tick' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $q = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic -Fuel grok-build -Model 'build0.1'
+    if (-not $q.ok) { throw "enqueue failed $($q | ConvertTo-Json -Compress)" }
+    $watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
+    & $watch -Once -RepoRoot $RepoRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Watch-BobJobs exit $LASTEXITCODE" }
+    $done = Get-BobBuild -JobId $q.jobId
+    if ($done.lane -ne 'outbox') { throw "lane=$($done.lane)" }
+    if ($done.state -ne 'done') { throw "state=$($done.state)" }
+    if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'matched grok-build tick must complete ok' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
