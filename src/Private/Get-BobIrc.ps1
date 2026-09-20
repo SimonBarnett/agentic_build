@@ -123,6 +123,60 @@ function Get-BobIrcNick {
     return $null
 }
 
+
+function Get-BobSeatPeriodEndCachePath {
+    try { return (Join-Path (Get-BridgeRoot) 'seat-period-end.json') } catch { return $null }
+}
+
+function Read-BobSeatPeriodEndCache {
+    $p = Get-BobSeatPeriodEndCachePath
+    if (-not $p -or -not (Test-Path $p)) {
+        return [pscustomobject]@{ by_machine = @{}; by_seat = @{} }
+    }
+    try {
+        $j = Read-JsonFile $p
+        if (-not $j) { return [pscustomobject]@{ by_machine = @{}; by_seat = @{} } }
+        $bm = @{}
+        $bs = @{}
+        if ($j.by_machine) {
+            foreach ($p2 in $j.by_machine.PSObject.Properties) { $bm[$p2.Name] = [string]$p2.Value }
+        }
+        if ($j.by_seat) {
+            foreach ($p2 in $j.by_seat.PSObject.Properties) { $bs[$p2.Name] = [string]$p2.Value }
+        }
+        return [pscustomobject]@{ by_machine = $bm; by_seat = $bs }
+    }
+    catch {
+        return [pscustomobject]@{ by_machine = @{}; by_seat = @{} }
+    }
+}
+
+function Save-BobSeatPeriodEnd {
+    param(
+        [string]$MachineId,
+        [string]$PeriodEnd,
+        [string]$SeatId
+    )
+    if (-not $PeriodEnd -or [string]::IsNullOrWhiteSpace($PeriodEnd)) { return }
+    $p = Get-BobSeatPeriodEndCachePath
+    if (-not $p) { return }
+    $cache = Read-BobSeatPeriodEndCache
+    if ($MachineId) { $cache.by_machine[$MachineId] = [string]$PeriodEnd }
+    if (-not $SeatId -and $MachineId) {
+        try {
+            $s = Get-BobSeatForMachine -MachineId $MachineId
+            if ($s) { $SeatId = [string]$s.id }
+        } catch { }
+    }
+    if ($SeatId) { $cache.by_seat[$SeatId] = [string]$PeriodEnd }
+    $doc = [pscustomobject]@{
+        by_machine = [pscustomobject]$cache.by_machine
+        by_seat    = [pscustomobject]$cache.by_seat
+        updated_at = [DateTime]::UtcNow.ToString('o')
+    }
+    try { Write-JsonFile $p $doc } catch { }
+}
+
 function ConvertTo-BobIrcPoint {
     param($Doc)
     $mid = [string]$Doc.id
@@ -260,6 +314,7 @@ function Write-BobIrcStatus {
     }
     catch { }
     $seen = [DateTime]::UtcNow.ToString('o')
+    if ($periodEnd) { Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd }
     $doc = [pscustomobject]@{
         ok         = $true
         id         = $id
@@ -318,6 +373,7 @@ function Import-BobIrcPeerTranscript {
                 }
             } catch { }
         }
+        if ($doc.period_end) { Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd ([string]$doc.period_end) }
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }

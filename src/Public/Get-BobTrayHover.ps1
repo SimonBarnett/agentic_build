@@ -672,7 +672,10 @@ function Get-BobTrayHover {
         $weekFetched = [string]$week.fetched_at
         $weeklyBy[$machineId] = $remainPct
     }
-    if ($week -and $week.period_end) { $periodEndBy[$machineId] = [string]$week.period_end }
+    if ($week -and $week.period_end) {
+        $periodEndBy[$machineId] = [string]$week.period_end
+        Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd ([string]$week.period_end)
+    }
     $cursorWeek = $null
     $cursorRemain = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
@@ -790,6 +793,44 @@ function Get-BobTrayHover {
             }
         }
     }
+
+    # Durable fallback: seat-period-end.json survives IRC import wipes.
+    try {
+        $peCache = Read-BobSeatPeriodEndCache
+        foreach ($mid2 in @($order)) {
+            if ($periodEndBy.ContainsKey($mid2) -and $periodEndBy[$mid2]) { continue }
+            if ($peCache.by_machine.ContainsKey($mid2) -and $peCache.by_machine[$mid2]) {
+                $periodEndBy[$mid2] = [string]$peCache.by_machine[$mid2]
+            }
+        }
+        foreach ($seat in @(Get-BobSeatConfig)) {
+            $sid = [string]$seat.id
+            $seatEnd = $null
+            if ($sid -and $peCache.by_seat.ContainsKey($sid) -and $peCache.by_seat[$sid]) {
+                $seatEnd = [string]$peCache.by_seat[$sid]
+            }
+            foreach ($sm in @($seat.machines)) {
+                $smid = [string]$sm
+                if (-not $smid) { continue }
+                if ($periodEndBy.ContainsKey($smid) -and $periodEndBy[$smid]) {
+                    if (-not $seatEnd) { $seatEnd = [string]$periodEndBy[$smid] }
+                    continue
+                }
+                if ($seatEnd) { $periodEndBy[$smid] = $seatEnd }
+            }
+            if ($seatEnd) {
+                foreach ($sm in @($seat.machines)) {
+                    $smid = [string]$sm
+                    if ($smid -and (-not $periodEndBy.ContainsKey($smid) -or -not $periodEndBy[$smid])) {
+                        $periodEndBy[$smid] = $seatEnd
+                    }
+                }
+            }
+        }
+        foreach ($k in @($periodEndBy.Keys)) {
+            if ($periodEndBy[$k]) { Save-BobSeatPeriodEnd -MachineId $k -PeriodEnd ([string]$periodEndBy[$k]) }
+        }
+    } catch { }
 
     $tiles = @()
     $jobLines = @()
