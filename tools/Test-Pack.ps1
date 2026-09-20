@@ -1903,7 +1903,6 @@ Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
     if (-not $r.state.startError) { throw 'expected startError on state after refused MRB start' }
 }
 
-
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
