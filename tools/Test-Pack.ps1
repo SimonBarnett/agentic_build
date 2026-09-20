@@ -683,6 +683,7 @@ Invoke-Case 'BT0n tray tip show' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
     if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show card on hover' }
+    if ($traySrc -notmatch 'Source -ne ''icon''') { throw 'MouseMove must ignore spurious events unless pointer is on the tray icon' }
     if ($traySrc -match '(?s)function Show-BobTrayCard.{0,500}Update-Hover') { throw 'Show-BobTrayCard must not Get-BobTrayHover/Update-Hover (idle hover would freeze on peer DNS)' }
     $peekSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobFleetPeek.ps1') -Raw
     if ($peekSrc -notmatch '(?s)function Test-BobHostnameResolves.+Invoke-BobTimed') {

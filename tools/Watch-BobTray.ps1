@@ -759,6 +759,10 @@ $notify.Add_MouseClick({
         }
     })
 $notify.Add_MouseMove({
+        $rect = $script:iconRectCache
+        if (-not $rect -or [string]$rect.Source -ne 'icon') { return }
+        $pt = [System.Windows.Forms.Cursor]::Position
+        if (-not (Test-BobTrayPointInRect $pt $rect -Pad 6)) { return }
         Show-BobTrayCard -Reason 'hover'
     })
 
