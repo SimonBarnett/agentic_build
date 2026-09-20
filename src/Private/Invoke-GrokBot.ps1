@@ -3,12 +3,17 @@ function Get-GrokBotApiScript {
 }
 
 function Get-PythonExe {
-    foreach ($name in @('python', 'py')) {
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if ($cmd) { return $cmd.Source }
+    foreach ($c in @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+            'C:\Program Files\Python312\python.exe'
+        )) {
+        if ($c -and (Test-Path $c) -and $c -notmatch 'WindowsApps') { return $c }
     }
-    $fallback = 'C:\Program Files\Python312\python.exe'
-    if (Test-Path $fallback) { return $fallback }
+    foreach ($name in @('py', 'python')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source -notmatch 'WindowsApps') { return $cmd.Source }
+    }
     return $null
 }
 
