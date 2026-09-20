@@ -166,6 +166,7 @@ function Invoke-Case {
 # --- BT0 skills ---
 Write-TestPackDirtyCheckoutWarning
 Invoke-Case 'BT0 skills' {
+    throw 'gate probe'
     foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing')) {
         $rel = ".grok\skills\$n\SKILL.md"
         $raw = Get-RepoSourceRaw $rel
