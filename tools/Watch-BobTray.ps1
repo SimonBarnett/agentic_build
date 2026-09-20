@@ -78,6 +78,13 @@ namespace BobTrayUi {
         public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
         [DllImport("user32.dll")]
         public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [DllImport("user32.dll")]
+        public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        public const int WM_SETREDRAW = 0x000B;
+        public static void SetRedraw(IntPtr hwnd, bool enable) {
+            if (hwnd == IntPtr.Zero) return;
+            SendMessage(hwnd, WM_SETREDRAW, enable ? new IntPtr(1) : IntPtr.Zero, IntPtr.Zero);
+        }
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
@@ -185,6 +192,9 @@ namespace BobTrayUi {
                 try { _live.Dispose(); } catch { }
             }
             _live = this;
+            this.DoubleBuffered = true;
+            this.SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
+            this.UpdateStyles();
         }
         protected override void Dispose(bool disposing) {
             if (object.ReferenceEquals(_live, this)) _live = null;
@@ -273,6 +283,44 @@ function Test-BobTrayTipAlive {
         return ($null -ne $script:tip -and -not $script:tip.IsDisposed)
     }
     catch { return $false }
+}
+
+function Enable-BobDoubleBuffer {
+    param([System.Windows.Forms.Control]$Control)
+    if (-not $Control) { return }
+    try {
+        $prop = $Control.GetType().GetProperty('DoubleBuffered', [Reflection.BindingFlags]'Instance,NonPublic')
+        if ($prop) { $prop.SetValue($Control, $true, $null) }
+    } catch { }
+}
+
+function Suspend-BobTrayPaint {
+    try {
+        if ($script:tip -and -not $script:tip.IsDisposed) {
+            $script:tip.SuspendLayout()
+            if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $false) }
+        }
+        if ($script:tileHost) {
+            $script:tileHost.SuspendLayout()
+            if ($script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $false) }
+        }
+    } catch { }
+}
+
+function Resume-BobTrayPaint {
+    try {
+        if ($script:tileHost) {
+            $script:tileHost.ResumeLayout($false)
+            if ($script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $true) }
+            $script:tileHost.Invalidate($true)
+        }
+        if ($script:tip -and -not $script:tip.IsDisposed) {
+            $script:tip.ResumeLayout($true)
+            if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $true) }
+            $script:tip.Invalidate($true)
+            $script:tip.Update()
+        }
+    } catch { }
 }
 
 function Test-BobTrayTipVisible {
@@ -368,7 +416,7 @@ $script:flashOn = $false
 $script:lastAlerts = @()
 $script:jobsPid = $null
 $script:jobsOwned = $false
-$script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID
+$script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID
 $script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
 $script:alertKind = 'none'
@@ -525,7 +573,7 @@ function Update-Hover {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
         $script:hoverTitle = [string]$h.title
-        if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID }
+        if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
         else { $script:remainingPct = [int]$h.remaining_pct }
         $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth 392
@@ -614,7 +662,8 @@ function Add-BobTrayUsageRow {
         [string]$Heading,
         $RemainingPct,
         [int]$BarWidth,
-        [System.Drawing.Image]$Icon
+        [System.Drawing.Image]$Icon,
+        $HeadingColor
     )
     $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
     $iconW = 0
@@ -631,7 +680,8 @@ function Add-BobTrayUsageRow {
     $nm = New-Object System.Windows.Forms.Label
     $nm.AutoSize = $true
     $nm.Font = $nameFont
-    $nm.ForeColor = $fg
+    if ($null -ne $HeadingColor) { $nm.ForeColor = $HeadingColor }
+    else { $nm.ForeColor = $fg }
     $nm.BackColor = [System.Drawing.Color]::Transparent
     $nm.Text = $Heading
     $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
@@ -670,6 +720,8 @@ function Add-BobTrayUsageRow {
 function Rebuild-BobTrayTiles {
     param($Machines, $AccountName, $AccountPct, $AccountLabel)
     if (-not $script:tileHost) { return }
+    Suspend-BobTrayPaint
+    try {
     $script:tileHost.Controls.Clear()
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
@@ -678,8 +730,12 @@ function Rebuild-BobTrayTiles {
     if ($AccountLabel) { $acctLabel = [string]$AccountLabel }
     else { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
     if ($AccountName) { $acctName = [string]$AccountName }
+    $acctColor = $null
+    if ($acctLabel -and (($acctLabel -match '^-') -or (Test-BobCursorOverageLabel -Label $acctLabel))) {
+        $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+    }
     $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
-        -RemainingPct $AccountPct -BarWidth 392 -Icon $null
+        -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
     $y += 6
     $indent = 18
     foreach ($m in @($Machines)) {
@@ -727,6 +783,9 @@ function Rebuild-BobTrayTiles {
         $y += [Math]::Max(18, (16 * $nLines) + 8)
     }
     $script:tileHost.Height = [Math]::Max(10, $y)
+    } finally {
+        Resume-BobTrayPaint
+    }
 }
 
 $bg = [System.Drawing.Color]::FromArgb(22, 27, 34)
@@ -749,6 +808,7 @@ function Initialize-BobTrayTipForm {
     $script:tip.BackColor = $bg
     $script:tip.Padding = New-Object System.Windows.Forms.Padding 14
     $script:tip.Width = 420
+    Enable-BobDoubleBuffer -Control $script:tip
     $script:titleLabel = New-Object System.Windows.Forms.Label
     $script:titleLabel.AutoSize = $true
     $script:titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
@@ -787,6 +847,7 @@ function Initialize-BobTrayTipForm {
     $script:tileHost.Location = New-Object System.Drawing.Point 14, 38
     $script:tileHost.Size = New-Object System.Drawing.Size 392, 10
     $script:tileHost.BackColor = $bg
+    Enable-BobDoubleBuffer -Control $script:tileHost
     $script:alertLabel = New-Object System.Windows.Forms.Label
     $script:alertLabel.AutoSize = $true
     $script:alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8

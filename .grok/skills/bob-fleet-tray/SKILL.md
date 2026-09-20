@@ -1,51 +1,76 @@
 ---
 name: bob-fleet-tray
 description: >
-  System tray icon for Bob Fleet on this Windows box: hidden PowerShell, Font
-  Awesome free robot icon, weekly remaining bar, machine tiles with jobs
-  listed underneath. Use when the user says tray icon, system tray, NotifyIcon,
-  flash the watcher, hover remaining, mouse over tray, or /bob-fleet-tray.
-  Stall policy is bob-fleet-monitor. Usage numbers come from box-usage /
+  System tray icon for Bob Fleet / bobiverse on this Windows box: hidden
+  PowerShell NotifyIcon, Font Awesome robot, dark TipForm card. Use when the
+  user says tray icon, system tray, Bob Fleet card, #Bobiverse, systray,
+  NotifyIcon, flash the watcher, recycle tray, or /bob-fleet-tray. Stall
+  policy is bob-fleet-monitor. Usage numbers come from box-usage /
   Get-BobBoxUsage.ps1 -Hover.
 ---
 
-# Tray (Bob Fleet)
+# Tray (Bob Fleet / #Bobiverse)
 
-`tools/Watch-BobTray.ps1` is the human monitor. Title is **Bob Fleet**. When `config/bobiverse.json` has `nicks`, the card lists **only those machine ids** (flamingo / ionos / marchhare / ce-priority-dev1) plus this host if it is one of them. Never a ghost IRC-derived name (`marchhare-bugets` or a raw nick). Without nicks (hermetic tests), fall back to bundled `config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json` + local `fleet/machines`. This host first. Under each tile: running then queued jobs **on that machine**. Transport is read-only filesystem peek (`docs/bob-fleet-peer-peek.md`). No WinRM. Status is the `#bobiverse` MODE2 roster, not SMB. Empty in-moot tile: `  no jobs`. Registered bobiverse seats prefer `irc-fallback` over `not in moot`. Readable store, old heartbeat: `  lastSeen stale`. Never invent jobs. Never omit a registered bobiverse seat.
+`tools/Watch-BobTray.ps1` is the human monitor. Card title is
+`#Bobiverse (<machineId>)` from `Get-ThisMachineId` / `$env:BOB_MACHINE_ID`
+(bobiverse nick: ionos / flamingo / marchhare / ce-priority-dev1), not the
+Windows hostname and not the old "Bob Fleet" string.
 
-`Install-BobFleet` registers it as `BobFleet-<id>` with `-STA -WindowStyle Hidden`. It starts hidden `Watch-BobJobs.ps1`. Do not leave a blank PowerShell window on the desktop.
+When `config/bobiverse.json` has `nicks`, the card lists **only those machine
+ids** plus this host if it is one of them. Never a ghost IRC-derived name
+(`marchhare-bugets`). Without nicks (hermetic tests), fall back to
+`config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json`.
+Transport is read-only filesystem peek plus IRC moot roster. No WinRM.
 
-## UI
+## Seat deals (next to the name)
 
-- Idle: Font Awesome Free solid **robot** (CC BY 4.0), not grok.exe extract.
-- Left-click: acknowledge if flashing; **always show the dark card**. Right-click: **Status** (same card), Open log, Exit.
-- **Mouse-over**: dark card (`NotifyIcon.MouseMove` plus a 400ms icon-rect probe). `Shell_NotifyIconGetRect` is cached on the timer — do **not** call it from the MouseMove callback. Success is the dark card. The native white `P+ idle …` chip is a fail — never park `NotifyIcon.Text`.
-  - Title: **Bob Fleet** (not `Bob (<machineId>)`).
-  - **Cursor account row** under the title: heading `cursor (N%)` and a full-width weekly bar (no pointer icon). N% is **remaining** = 100 − Grok Bot Sand `usagePercent` (the same “Weekly usage 98%” flyout, which is **used**). Not the Cursor spend-plan remaining/limit. Not the Grok Build xAI seat. Machine tiles use xAI `unified.jsonl` `creditUsagePercent`. Then **indent** machine tiles under that.
-  - **One weekly remaining bar per machine tile** (each box has its own Grok seat). Heading `MACHINENAME (75%)` uses a **transparent** label so it does not cover the bar. Bar fill is a gradient: **100% green, 0% red** (amber in the middle). This host: last `billing: fetched credits config` in `~\.grok\logs\unified.jsonl`, `remaining_pct = round(100 - creditUsagePercent)` when `currentPeriod.type` is weekly. Peers: `weekly=` on their `BOB v1` POINT. Unknown weekly: empty track, `(n/a)`. Never fake 100%. No `auth.json`. No billing HTTP. Session context is not this bar.
-  - **One card only. Exactly one `TipForm`.** `NotifyIcon.Text` stays empty always (`Clear-BobNativeTip` / space-clear). Never restore a short `P+ idle …` native tip after hide or hover — that white chip is the double dialog.
-  - **X** on the card closes it (`Hide-BobTrayCard`). Hover does not re-open until the cursor leaves the **icon** (do not clear `cardClosed` merely because the cursor left the tip).
-  - Never call methods on a disposed `TipForm`; recreate via `Initialize-BobTrayTipForm` only after dispose. `ShowParkedAt` / `TryHide` / `Visible` must no-op or return false when `IsDisposed`. Never `Form.Show()` after `ShowParkedAt`.
-  - Session context from `usage.json` is optional on the job object (`context_remaining_pct`) only. It is **not** the hover bar.
-  - **Machine tiles**: heading `MACHINENAME (75%)` or `(n/a)`, full-width weekly bar beneath, then indented jobs (`owner/repo  duration  state`). A live `grok.exe` on this box is a running job even if Bob did not start it (`active_sessions.json` + process list). Do not list `Grok Bot.exe`. Empty in-moot: `  no jobs`. Not in the `#bobiverse` roster: `  not in moot`. Stale heartbeat: `  lastSeen stale`. Never a commit SHA as the primary label.
-  - Footer: `alert: watcher|stall|weekly|none`.
-  - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restart `hideTip` on show / while the pointer is over the card. Hide via X, hide timer, or `TryHide` (`SWP_HIDEWINDOW`).
-  - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone. Hide with `TryHide` (`SWP_HIDEWINDOW`).
-  - **Log** show/hide failures (and successful first-show) to `watch_bob_tray.log`.
-- **Never park `NotifyIcon.Text`.** Keep it empty (or a single space via `Clear-BobNativeTip` / `HideTooltipWindows`). The short `P+ idle 0%` / `P+ 1 run  9%` string is not a hover surface — it is the stuck white chip to eliminate. Weekly remaining lives on the dark card bars.
+`config/bob-seats.json` (and/or `config/fleet-registry.json` `seats`) maps
+machines to xAI seats. Tile heading is `MACHINENAME - SEAT (N%)`:
 
-## Badge sources
-
-Never pulse weekly remaining when `remaining_pct` is null. Unknown remaining is not &lt;10%.
-
-| `alert:` | Source | Badge |
+| Seat label | Account | Machines |
 |---|---|---|
-| `watcher` | stall monitor `ACTION_REQUIRED: watcher_down` | red/amber flash |
-| `stall` | `ACTION_REQUIRED: agent_stall` / `inbox_stale` / `running_orphan` | red/amber flash |
-| `weekly` | weekly remaining **known** and &lt; 10% | amber pulse once a minute |
-| `none` | no ACTION_REQUIRED; remaining unknown or ≥ 10% | idle robot |
+| Smart Catalogue | social@smartcatalogue.uk | ionos |
+| Club Madeira | social@clubmadeira.uk | flamingo |
+| ntsa | si@ntsa.uk | marchhare, ce-priority-dev1 |
 
-Log: `~\.grok\long-running-background-tasks\watch_bob_tray.log`.
+Machines on the **same seat share one weekly remaining %** (account-level).
+Do not show divergent % for marchhare vs ce-priority-dev1. Prefer the
+conservative (lowest) known remaining for that seat.
+
+Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
+(`si@ntsa.uk`).
+
+## Cursor overage row
+
+Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
+
+- Known remaining: `cursor (N%)` in normal foreground.
+- Empty / overspent: `cursor (-£12.00)` in **red** (negative pounds). Source
+  `%USERPROFILE%\.grok\tip_cursor.json` `{"cursor":12}` means **£12**, not
+  12%. Never paint `n/a` or `over +12%` for this case.
+- Machine tile bars still use xAI `unified.jsonl` weekly remaining.
+
+## UI hard rules (diagnostics 2026-09-20)
+
+- **Click-only card.** Left-click (or Status menu) opens/parks the dark
+  TipForm. **No hover** to show the card (hover caused double TipForm /
+  ghost chips). Close only via **X**.
+- **One TipForm only.** `NotifyIcon.Text` stays blank always
+  (`Clear-BobNativeTip`). Never park `P+ idle …` — that white chip is the
+  bad second dialog.
+- **Single instance.** Mutex `Local\BobFleetTray-<machineId>`. Restart
+  watcher kills every `Watch-BobTray` process (ghosts), rejoins `#bobiverse`,
+  then starts exactly one tray.
+- **No flash on refresh.** Poll/`Update-Hover` rebuilds tiles under
+  `Suspend-BobTrayPaint` (WM_SETREDRAW off + SuspendLayout), then
+  `Resume-BobTrayPaint` (redraw on + Invalidate/Update). TipForm and
+  tileHost are double-buffered. Never Clear+Add controls while the form is
+  painting live without suspending redraw.
+- Icon: Font Awesome Free solid robot. `$notify.Visible = $true` must stay
+  (missing icon = Visible never set / TipForm CreateHandle at startup).
+- Do **not** preload `$script:tip.Handle` at startup.
+- Footer: `alert: watcher|stall|weekly|none`.
+- Log: `~\.grok\long-running-background-tasks\watch_bob_tray.log`.
 
 ## Install / recycle
 
@@ -53,13 +78,29 @@ Log: `~\.grok\long-running-background-tasks\watch_bob_tray.log`.
 powershell -NoProfile -File "$repo\tools\Install-BobFleet.ps1" -MachineId <id> -CwdRoots <roots>
 ```
 
-Recycling the **scheduled task** **kills** the pull worker. Do not recycle `BobFleet-*` while a job is running (see `bob-fleet-monitor`). Hover/flash code changes: recycle **Watch-BobTray.ps1 only** (stop that process, start a new hidden STA `Watch-BobTray.ps1`). Never `Stop-ScheduledTask BobFleet-*` while jobs run.
+Ionos wrapper: `tools\_Watch-BobTray-ionos.ps1` sets `BOB_MACHINE_ID=ionos`
+and bobiverse IRC home, then runs `Watch-BobTray.ps1`.
+
+Hover/flash/card code changes: recycle **Watch-BobTray only** (kill that
+process, start one hidden STA instance). Do not `Stop-ScheduledTask
+BobFleet-*` while build jobs run.
+
+## Diagnose (when the card/icon misbehaves)
+
+1. Count `Watch-BobTray` processes — more than one → kill all, start one.
+2. Log tail `watch_bob_tray.log` for `tray up`, `tip show ok`, poll errors.
+3. Confirm `$notify.Visible` path still sets Visible=$true after start.
+4. Confirm `NotifyIcon.Text` is empty (no white P+ chip).
+5. Confirm title `#Bobiverse (<id>)`, cursor `-£x.xx` red when overspent,
+   seat labels beside names, shared % on ntsa seats.
+6. If card flashes on poll: verify Suspend/Resume paint wraps
+   `Rebuild-BobTrayTiles`.
 
 ## Hard rules
 
 - Not a Windows service.
-- Do not print `auth.json` or tokens in the tooltip.
-- Do not invent weekly %. No billing HTTP scrape. Log field or n/a.
+- Do not print auth.json or tokens.
+- Do not invent weekly %. No billing HTTP scrape.
 - Do not report session context as weekly quota.
-- Job lines are GitHub `owner/repo`, never a commit SHA as the primary label.
-- Do not omit registered peers. Do not invent jobs. Do not WinRM. Recycle Watch-BobTray only after hover/peek code changes.
+- Job lines are GitHub owner/repo, never a commit SHA as primary label.
+- Do not omit registered bobiverse seats. Do not invent jobs. Do not WinRM.

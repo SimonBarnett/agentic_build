@@ -32,6 +32,7 @@ Export-ModuleMember -Function @(
     'Get-BobSeatForMachine',
     'Get-BobSeatConfig',
     'Format-BobCursorAccountLabel',
+    'Test-BobCursorOverageLabel',
     'Get-BobLiveGrokAgents',
     'Get-BobTrayBarPaint',
     'Get-BobTrayBarFillRgb',

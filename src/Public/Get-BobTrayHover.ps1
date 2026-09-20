@@ -375,6 +375,12 @@ function Get-BobCursorOverageGbp {
     return $null
 }
 
+function Test-BobCursorOverageLabel {
+    param([string]$Label)
+    if (-not $Label) { return $false }
+    return ($Label -match '^-') -or ($Label -match [char]0x00A3)
+}
+
 function Format-BobCursorAccountLabel {
     param($RemainingPct, $UsedPct)
     if ($null -ne $RemainingPct -and [string]$RemainingPct -ne '') {
@@ -382,7 +388,7 @@ function Format-BobCursorAccountLabel {
     }
     $gbp = Get-BobCursorOverageGbp
     if ($null -ne $gbp) {
-        return ('{0}{1:N2}' -f [char]0x00A3, [double]$gbp)
+        return ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$gbp))
     }
     if ($null -ne $UsedPct -and [double]$UsedPct -gt 100) {
         # no money figure — fall back only if tip missing
@@ -781,7 +787,7 @@ function Get-BobTrayHover {
     $acctPctLabel = Format-BobCursorAccountLabel -RemainingPct $cursorRemain -UsedPct $cursorUsed
     if ($acctPctLabel -eq 'empty') {
         $gbp = Get-BobCursorOverageGbp
-        if ($null -ne $gbp) { $acctPctLabel = ('{0}{1:N2}' -f [char]0x00A3, [double]$gbp) }
+        if ($null -ne $gbp) { $acctPctLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$gbp)) }
     }
     $acctLine = ('cursor ({0})' -f $acctPctLabel)
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
