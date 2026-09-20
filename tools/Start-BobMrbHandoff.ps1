@@ -9,33 +9,32 @@ param(
     [string]$Plan,
     [string]$Cwd,
     [ValidateSet('cursor-models', 'grok-build')][string]$Fuel = 'cursor-models',
-    [switch]$AllowCopilot
+    [switch]$AllowCopilot,
+    # Test seam (Test-Pack only): inject picker result; skip live cursor-agent.
+    [object]$TestGitWorkerResult,
+    [switch]$TestSkipCursor
 )
 
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 . (Join-Path $here 'Bob-Gh.ps1')
 
+$repoRoot = Split-Path $here -Parent
+Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force
+
 function Assert-BobMrbWorkerCanPost {
     param(
         [Parameter(Mandatory)][string]$Repo,
         [Parameter(Mandatory)][string]$WorkerMachine
     )
-    $thisId = $null
-    try {
-        $repoRoot = Split-Path $here -Parent
-        Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force -ErrorAction Stop
-        $thisId = Get-ThisMachineId
+    $thisId = Get-ThisMachineId
+    if (-not $thisId) {
+        throw 'MRB handoff preflight: cannot resolve this machine identity (set BOB_MACHINE_ID or machine.json). Refusing before spending Cursor/Grok on the review.'
     }
-    catch { }
     $worker = ([string]$WorkerMachine).Trim().ToLowerInvariant()
-    if ($thisId -and $worker -and ($worker -ne $thisId)) {
+    if ($worker -and ($worker -ne $thisId)) {
         throw "MRB handoff preflight: cannot verify worker '$WorkerMachine' can post to $Repo. Run the handoff on that machine or fix fleet gh readiness (issue #11)."
     }
-    $null = Test-BobGhIssuePosting -Repo $Repo
-}
-
-if ($Fuel -eq 'cursor-models') {
     $null = Test-BobGhIssuePosting -Repo $Repo
 }
 
@@ -55,7 +54,7 @@ Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labe
 
 Verdict FAIL or PASS-nits only. Do not write the words ready for human UAT. Bob chairs that stamp.
 
-Work with Cursor Models or Grok Build only. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not put password= or XAI_API_KEY= assignments in the issue.
+Work with Cursor Models or Grok Build only. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not assign secrets in the issue (no password or XAI_API_KEY literals in git).
 "@
 
 if (-not $Cwd) {
@@ -65,11 +64,10 @@ if (-not $Cwd) {
     }
 }
 
-$repoRoot = Split-Path $here -Parent
-Import-Module (Join-Path $repoRoot 'src\BobBridge.psd1') -Force
 $mrbModel = Get-BobJobModel -Kind mrb -Fuel $Fuel
 
-if ($Fuel -eq 'cursor-models') {
+if ($Fuel -eq 'cursor-models' -and -not $TestSkipCursor) {
+    $null = Test-BobGhIssuePosting -Repo $Repo
     $cursor = Join-Path $here 'Start-BobCursor.ps1'
     $r = & $cursor -Repo "https://github.com/$Repo" -Cwd $Cwd -Docs $Docs -Plan $Plan -Mrb $issueUrl -Goal $prompt -Kind mrb -Model $mrbModel
     if ($r.started) {
@@ -81,13 +79,20 @@ if ($Fuel -eq 'cursor-models') {
     $mrbModel = Get-BobJobModel -Kind mrb -Fuel grok-build
 }
 
-$sel = Select-BobGitWorker -Fuel grok-build -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
+if ($PSBoundParameters.ContainsKey('TestGitWorkerResult')) {
+    $sel = $TestGitWorkerResult
+}
+else {
+    $sel = Select-BobGitWorker -Fuel grok-build -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
+}
 if ($sel.wait) {
     throw "MRB handoff preflight: no eligible grok-build worker ($($sel.reason)). Fix capacity before spending Grok on the review."
 }
 Assert-BobMrbWorkerCanPost -Repo $Repo -WorkerMachine ([string]$sel.machine)
 
 if (-not $Cwd) { $Cwd = $repoRoot }
-$q = Start-BobBuild -Task git -Fuel grok-build -Kind mrb -Model $mrbModel -Machine $sel.machine -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Docs $Docs -Plan $Plan -AllowCopilot:$AllowCopilot
-$q | Add-Member -NotePropertyName handed -NotePropertyValue 'grok-build' -Force
+$q = Start-BobBuild -Task git -Fuel grok-build -Kind mrb -Model $mrbModel -Machine $sel.machine -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Docs $Docs -Plan $Plan -Mrb $issueUrl -AllowCopilot:$AllowCopilot
+if (-not $q.wait) {
+    $q | Add-Member -NotePropertyName handed -NotePropertyValue 'grok-build' -Force
+}
 return $q

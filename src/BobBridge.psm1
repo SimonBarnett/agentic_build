@@ -20,6 +20,7 @@ Export-ModuleMember -Function @(
     'Get-BobJobModel',
     'Resolve-BobGrokCliModel',
     'Select-BobGitWorker',
+    'Get-ThisMachineId',
     'Copy-BobProjectSkills',
     'Get-BobBuild',
     'Get-BobBuilds',

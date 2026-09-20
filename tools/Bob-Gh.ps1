@@ -2,9 +2,9 @@
 $ErrorActionPreference = 'Stop'
 
 function Get-BobGhExe {
-    if ($env:BOB_GH_FORCE_ABSENT -eq '1') { return $null }
-    if ($env:BOB_GH_EXE -and (Test-Path -LiteralPath $env:BOB_GH_EXE)) {
-        return $env:BOB_GH_EXE
+    if ($env:BOB_GH_EXE) {
+        if (Test-Path -LiteralPath $env:BOB_GH_EXE) { return $env:BOB_GH_EXE }
+        return $null
     }
     foreach ($c in @(
             (Join-Path ${env:ProgramFiles} 'GitHub CLI\gh.exe'),
@@ -54,11 +54,13 @@ function Set-BobGhLabelReady {
         $names = @($json | ConvertFrom-Json | ForEach-Object { [string]$_.name })
         if ($names -contains $Name) { return $true }
     }
-    if ($out.Trim()) {
-        Write-Warning "Set-BobGhLabelReady $Name on $Repo : $out"
-    }
-    else {
-        Write-Warning "Set-BobGhLabelReady $Name on $Repo : label create failed (exit $createExit)"
+    if ($env:BOB_FAKE_GH_QUIET -ne '1') {
+        if ($out.Trim()) {
+            Write-Warning "Set-BobGhLabelReady $Name on $Repo : $out"
+        }
+        else {
+            Write-Warning "Set-BobGhLabelReady $Name on $Repo : label create failed (exit $createExit)"
+        }
     }
     return $false
 }

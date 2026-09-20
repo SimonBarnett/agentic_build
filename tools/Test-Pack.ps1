@@ -73,6 +73,10 @@ function Invoke-Case {
         $env:BOB_CURSOR_USAGE_FILE = $null
         $env:BOB_SKIP_LIVE_GROK = $null
         $env:BOB_CAPACITY_FILE = $null
+        $env:BOB_GH_EXE = $null
+        $env:BOB_FAKE_GH_MODE = $null
+        $env:BOB_FAKE_GH_LOG = $null
+        $env:BOB_MACHINE_ID = $null
     }
 }
 
@@ -1176,7 +1180,8 @@ Invoke-Case 'BT0q kind mrb packet' {
     if ([string]$packet.model -ne $expectedMrb) { throw "packet.model=$($packet.model) expected $expectedMrb" }
 }
 
-Invoke-Case 'BT0q fleet mrb handoff' {
+# Asserts Start-BobCursor launch is suppressed under Fake-Grok (BOB_GROK_EXE), not node.exe counts.
+Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     param($bridgeRoot)
     $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
     $expectedMrb = [string]$cfg.models.mrbCursor
@@ -1200,21 +1205,20 @@ Invoke-Case 'BT0q fleet mrb handoff' {
     }
     [IO.File]::WriteAllText($capFile, ($liveFix | ConvertTo-Json -Depth 8))
     $env:BOB_CAPACITY_FILE = $capFile
-    $beforeNode = @(Get-Process -Name node -ErrorAction SilentlyContinue).Count
+    if ($env:BOB_GROK_EXE -notmatch '(?i)Fake-Grok') { throw 'BOB_GROK_EXE must be Fake-Grok for suppress seam' }
     $q = Start-BobBuild -Task git -Fuel cursor-models -Kind mrb -Goal 'MRB fleet fixture' -Cwd $cwd -Repo 'https://github.com/SimonBarnett/agentic_build'
     if (-not $q.ok) { throw "enqueue failed $($q | ConvertTo-Json -Compress)" }
     $watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
     & $watch -Once -RepoRoot $RepoRoot | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Watch-BobJobs exit $LASTEXITCODE" }
-    $afterNode = @(Get-Process -Name node -ErrorAction SilentlyContinue).Count
-    if ($afterNode -gt $beforeNode) { throw "node process count grew $beforeNode -> $afterNode (cursor-agent started)" }
     $done = Get-BobBuild -JobId $q.jobId
     if ($done.lane -ne 'outbox') { throw "lane=$($done.lane)" }
     if ($done.state -ne 'done') { throw "state=$($done.state)" }
     if ([string]$done.kind -ne 'mrb') { throw "job.kind=$($done.kind)" }
     if ([string]$done.model -ne $expectedMrb) { throw "job.model=$($done.model)" }
     if ([string]$done.fuel -ne 'cursor-models') { throw "job.fuel=$($done.fuel)" }
-    $env:BOB_CAPACITY_FILE = $null
+    $sum = $(if ($done.completion) { [string]$done.completion.summary } else { [string]$done.summary })
+    if ($sum -notmatch 'handed cursor-models') { throw "summary=$sum (expected Fake-Grok suppress handoff)" }
 }
 
 # --- BT0r–BT0u Start-BobMrb / gh preflight (issue #13) ---
@@ -1222,47 +1226,69 @@ Invoke-Case 'BT0r mrb body-file' {
     param($bridgeRoot)
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
     $log = Join-Path $bridgeRoot 'fake-gh.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
     $env:BOB_GH_EXE = $fakeGh
     $env:BOB_FAKE_GH_MODE = 'ok'
     $env:BOB_FAKE_GH_LOG = $log
-    $body = @'
+    try {
+        $body = @'
 Verdict line with "double quotes", `backticks`, and $dollar.
 
 ```powershell
 Write-Output "fenced"
 ```
 '@
-    $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
-    $r = & $mrb -Repo 'fixture/repo' -Title 'quote test' -Verdict FAIL -Body $body
-    if (-not $r.ok) { throw 'Start-BobMrb failed' }
-    if (-not (Test-Path $log)) { throw 'fake gh log missing' }
-    $row = (Get-Content $log | Select-Object -Last 1) | ConvertFrom-Json
-    if ([string]$row.body -ne $body) { throw 'body round-trip mismatch' }
-    if ($row.argv -notmatch '--body-file') { throw 'gh must use --body-file' }
-    if ($row.argv -match '--body\s') { throw 'gh must not use --body argv' }
+        $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+        $r = & $mrb -Repo 'fixture/repo' -Title 'quote test' -Verdict FAIL -Body $body
+        if (-not $r.ok) { throw 'Start-BobMrb failed' }
+        if (-not (Test-Path $log)) { throw 'fake gh log missing' }
+        $row = (Get-Content $log | Select-Object -Last 1) | ConvertFrom-Json
+        if ([string]$row.body -ne $body) { throw 'body round-trip mismatch' }
+        if ($row.argv -notmatch '--body-file') { throw 'gh must use --body-file' }
+        if ($row.argv -match '--body\s') { throw 'gh must not use --body argv' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+    }
 }
 
 Invoke-Case 'BT0s mrb label skip' {
     param($bridgeRoot)
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
     $log = Join-Path $bridgeRoot 'fake-gh-label.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
     $env:BOB_GH_EXE = $fakeGh
     $env:BOB_FAKE_GH_MODE = 'label-fail'
     $env:BOB_FAKE_GH_LOG = $log
-    $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
-    $r = & $mrb -Repo 'fixture/repo' -Title 'label skip' -Verdict FAIL -Body 'plain body'
-    if (-not $r.ok) { throw 'issue create should succeed without labels' }
-    if ($r.labelsApplied -contains 'mrb-fail') { throw 'mrb-fail should be dropped when create fails' }
-    if ($r.labelsDropped -notcontains 'mrb-fail') { throw "labelsDropped=$($r.labelsDropped -join ',')" }
-    $row = (Get-Content $log | Select-Object -Last 1) | ConvertFrom-Json
-    if ([string]$row.body -notmatch 'Labels not applied') { throw 'body must note dropped labels' }
+    $env:BOB_FAKE_GH_QUIET = '1'
+    try {
+        $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+        $r = & $mrb -Repo 'fixture/repo' -Title 'label skip' -Verdict FAIL -Body 'plain body' 2>$null
+        if (-not $r.ok) { throw 'issue create should succeed without labels' }
+        if ($r.labelsApplied -contains 'mrb-fail') { throw 'mrb-fail should be dropped when create fails' }
+        if ($r.labelsDropped -notcontains 'mrb-fail') { throw "labelsDropped=$($r.labelsDropped -join ',')" }
+        $row = (Get-Content $log | Select-Object -Last 1) | ConvertFrom-Json
+        if ([string]$row.body -notmatch 'Labels not applied') { throw 'body must note dropped labels' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_QUIET = $null
+    }
 }
 
 Invoke-Case 'BT0t gh preflight absent' {
     param($bridgeRoot)
     . (Join-Path $RepoRoot 'tools\Bob-Gh.ps1')
-    $env:BOB_GH_FORCE_ABSENT = '1'
-    $env:BOB_GH_EXE = $null
+    $savedGh = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
     try {
         $null = Test-BobGhIssuePosting -Repo 'fixture/repo'
         throw 'preflight should fail when gh absent'
@@ -1271,7 +1297,7 @@ Invoke-Case 'BT0t gh preflight absent' {
         if ($_.Exception.Message -notmatch 'gh\.exe not found') { throw $_.Exception.Message }
     }
     finally {
-        $env:BOB_GH_FORCE_ABSENT = $null
+        $env:BOB_GH_EXE = $savedGh
     }
 }
 
@@ -1279,7 +1305,8 @@ Invoke-Case 'BT0u gh preflight dead token' {
     param($bridgeRoot)
     . (Join-Path $RepoRoot 'tools\Bob-Gh.ps1')
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
-    $env:BOB_GH_FORCE_ABSENT = $null
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
     $env:BOB_GH_EXE = $fakeGh
     $env:BOB_FAKE_GH_MODE = 'dead'
     try {
@@ -1290,8 +1317,83 @@ Invoke-Case 'BT0u gh preflight dead token' {
         if ($_.Exception.Message -notmatch 'gh auth login') { throw $_.Exception.Message }
     }
     finally {
-        $env:BOB_FAKE_GH_MODE = 'ok'
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
     }
+}
+
+# --- BT0v Start-BobMrbHandoff (issue #16 fix 3) ---
+function New-Bt0vCapacity {
+    param([string]$BridgeRoot)
+    $capFile = Join-Path $BridgeRoot 'capacity-mrb.json'
+    $liveFix = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'testhost'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @($BridgeRoot)
+                grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+            }
+        )
+    }
+    [IO.File]::WriteAllText($capFile, ($liveFix | ConvertTo-Json -Depth 8))
+    return $capFile
+}
+
+Invoke-Case 'BT0v mrb handoff remote refuse' {
+    param($bridgeRoot)
+    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $pick = [pscustomobject]@{ wait = $false; machine = 'flamingo'; fuel = 'grok-build'; reason = $null }
+    try {
+        & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd (Join-Path $bridgeRoot 'cwd')
+        throw 'expected remote worker refuse'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'cannot verify worker') { throw $_.Exception.Message }
+    }
+}
+
+Invoke-Case 'BT0v mrb handoff identity refuse' {
+    param($bridgeRoot)
+    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $pick = [pscustomobject]@{ wait = $false; machine = 'testhost'; fuel = 'grok-build'; reason = $null }
+    try {
+        & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd (Join-Path $bridgeRoot 'cwd')
+        throw 'expected identity refuse'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'cannot resolve this machine identity') { throw $_.Exception.Message }
+    }
+}
+
+Invoke-Case 'BT0v mrb handoff local packet' {
+    param($bridgeRoot)
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
+    $expectedMrb = [string]$cfg.models.mrbGrok
+    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $env:BOB_CAPACITY_FILE = New-Bt0vCapacity -BridgeRoot $bridgeRoot
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $pick = [pscustomobject]@{ wait = $false; machine = 'testhost'; fuel = 'grok-build'; reason = $null }
+    $r = & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd $cwd
+    if (-not $r.ok) { throw "handoff failed $($r | ConvertTo-Json -Compress)" }
+    if ($r.handed -ne 'grok-build') { throw "handed=$($r.handed)" }
+    if (-not (Test-Path $r.path)) { throw 'missing inbox packet' }
+    $packet = Get-Content $r.path -Raw | ConvertFrom-Json
+    $mrbUrl = 'https://github.com/fixture/repo/issues/16'
+    if ([string]$packet.mrb -ne $mrbUrl) { throw "packet.mrb=$($packet.mrb)" }
+    if ([string]$packet.kind -ne 'mrb') { throw "packet.kind=$($packet.kind)" }
+    if ([string]$packet.model -ne $expectedMrb) { throw "packet.model=$($packet.model) expected $expectedMrb" }
 }
 
 Write-Host ''

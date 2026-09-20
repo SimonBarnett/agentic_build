@@ -24,7 +24,9 @@ if ($joined -match '(?i)\brepo\s+view\b') {
 
 if ($joined -match '(?i)\blabel\s+create\b') {
     if ($mode -eq 'label-fail') {
-        [Console]::Error.WriteLine('Fake-Gh: label create denied')
+        if ($env:BOB_FAKE_GH_QUIET -ne '1') {
+            [Console]::Error.WriteLine('Fake-Gh: label create denied')
+        }
         Exit-Mode 1
     }
     Exit-Mode 0
