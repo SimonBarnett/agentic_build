@@ -382,7 +382,9 @@ function Get-BobTrayHover {
             continue
         }
         if ($peek.lastSeen) { $seenBy[$mid] = [string]$peek.lastSeen }
-        foreach ($pj in @($peek.jobs)) {
+        $peerJobs = @()
+        if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
+        foreach ($pj in $peerJobs) {
             if ($pj.id -and $localIds.ContainsKey([string]$pj.id)) { continue }
             $st = [string]$pj.state
             if (-not $st) { $st = 'running' }

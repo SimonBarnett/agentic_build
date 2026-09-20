@@ -370,6 +370,9 @@ function Update-Hover {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $alertLabel.Location = New-Object System.Drawing.Point 14, ($jobsLabel.Bottom + 6)
             }
+            if ($tip.Visible -and $alertLabel) {
+                $tip.Height = [Math]::Max(110, $alertLabel.Bottom + 16)
+            }
             if (-not $script:attention -and -not $paint.pulse -and $notify.Icon -ne $iconIdle) {
                 $notify.Icon = $iconIdle
             }
@@ -446,7 +449,7 @@ $jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
 $jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
 $jobsLabel.ForeColor = $fg
 $jobsLabel.Location = New-Object System.Drawing.Point 14, 62
-$jobsLabel.Text = 'No jobs'
+$jobsLabel.Text = ''
 $alertLabel = New-Object System.Windows.Forms.Label
 $alertLabel.AutoSize = $true
 $alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
@@ -476,7 +479,8 @@ $hideTip.Add_Tick({
 function Show-BobTrayCard {
     param([string]$Reason = 'hover')
     try {
-        Update-Hover
+        # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
+        # would freeze the UI and the native "P+ idle" tip would win.
         $bottom = $jobsLabel.Bottom
         if ($alertLabel) { $bottom = $alertLabel.Bottom }
         $tip.Height = [Math]::Max(110, $bottom + 16)
@@ -522,7 +526,7 @@ function Show-BobTrayCard {
 
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
-$notify.Visible = $true
+$notify.Visible = $false
 $notify.Text = $script:hoverTitle
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
@@ -552,8 +556,9 @@ $notify.Add_MouseClick({
             Show-BobTrayCard -Reason 'click'
         }
     })
-# FR good-systray-vs-dark-card: do not auto-show dark card on MouseMove — it hides the good NotifyIcon tip.
-# Detail card is click-only (see Add_MouseClick above).
+$notify.Add_MouseMove({
+        Show-BobTrayCard -Reason 'hover'
+    })
 
 $flash = New-Object System.Windows.Forms.Timer
 $flash.Interval = 450
@@ -619,6 +624,7 @@ $iconProbe.Add_Tick({
 Start-JobsWatcher
 Update-Hover
 try { [void]$tip.Handle } catch { Write-TrayLog ('tip handle create fail: ' + $_.Exception.Message) }
+$notify.Visible = $true
 $flash.Start()
 $poll.Start()
 $pulse.Start()

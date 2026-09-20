@@ -14,6 +14,9 @@ function Invoke-BobTimed {
         $h = $run.BeginInvoke()
         if (-not $h.AsyncWaitHandle.WaitOne($ms)) {
             try { $run.Stop() } catch { }
+            # Timed-out Dns.GetHostAddresses / UNC ignores Stop(); Dispose would
+            # wait it out and freeze the idle tray card. Leak this instance.
+            $run = $null
             return [pscustomobject]@{ ok = $false; timedOut = $true; value = $null; error = 'timeout' }
         }
         $val = $run.EndInvoke($h)
@@ -32,7 +35,7 @@ function Invoke-BobTimed {
         return [pscustomobject]@{ ok = $false; timedOut = $false; value = $null; error = $_.Exception.Message }
     }
     finally {
-        $run.Dispose()
+        if ($run) { $run.Dispose() }
     }
 }
 
@@ -63,14 +66,16 @@ function Get-BobPeekIoTimeoutMs {
 }
 
 function Test-BobHostnameResolves {
-    param([string]$Hostname)
+    param([string]$Hostname, [int]$TimeoutMs = 400)
     if (-not $Hostname) { return $false }
     if ($Hostname -eq $env:COMPUTERNAME) { return $true }
-    try {
-        $null = [Net.Dns]::GetHostAddresses($Hostname)
+    # Bare Dns.GetHostAddresses on a missing LAN host can block 15-30s and freeze the tray.
+    $r = Invoke-BobTimed -TimeoutMs $TimeoutMs -ArgumentList @($Hostname) -Action {
+        param($Name)
+        [void][Net.Dns]::GetHostAddresses($Name)
         return $true
     }
-    catch { return $false }
+    return [bool]($r.ok -and $r.value)
 }
 
 function Test-BobLoadBundledRegistry {
@@ -364,7 +369,7 @@ function Get-BobPeerLaneJobs {
             $files = @(Get-ChildItem $dir -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
         }
     }
-    $rows = New-Object 'System.Collections.Generic.List[object]'
+    $rows = @()
     foreach ($f in $files) {
         if (-not $f) { continue }
         $j = $null
@@ -383,9 +388,10 @@ function Get-BobPeerLaneJobs {
             $j = Read-JsonFile $f
         }
         $row = ConvertTo-BobPeekJob -Job $j -MachineId $MachineId -Lane $Lane -StampRepo:$StampRepo
-        if ($row -and $row.id) { [void]$rows.Add($row) }
+        if ($row -and $row.id) { $rows += $row }
     }
-    return $rows
+    # Empty @() must not unroll to $null (idle inbox looked like I/O failure).
+    return , $rows
 }
 
 function Read-BobJsonTimed {
@@ -595,9 +601,9 @@ function Read-BobPeerPeekFromPath {
     $inbox = Get-BobPeerLaneJobs -BridgeRoot $Path -MachineId $Id -Lane inbox -TimeoutMs $TimeoutMs
     if ($null -eq $inbox) { return $null }
 
-    $jobs = New-Object 'System.Collections.Generic.List[object]'
-    foreach ($j in $running) { if ($j) { [void]$jobs.Add($j) } }
-    foreach ($j in $inbox) { if ($j) { [void]$jobs.Add($j) } }
+    $jobs = @()
+    foreach ($j in @($running)) { if ($j) { $jobs += $j } }
+    foreach ($j in @($inbox)) { if ($j) { $jobs += $j } }
     return [pscustomobject]@{
         ok       = $true
         id       = $Id
@@ -617,12 +623,9 @@ function Get-BobPeerPeekCandidates {
     if ($ShareRoot -and [string]$ShareRoot.Trim()) {
         $out += (Join-Path ([string]$ShareRoot.Trim()) ($Spec.id + '.json'))
     }
-    $hostName = [string]$Spec.hostname
-    $home = [string]$Spec.bridgeHome
-    if ($hostName -and $home -and (Test-BobHostnameResolves $hostName)) {
-        $unc = ConvertTo-BobUncPath -Hostname $hostName -LocalPath $home
-        if ($unc) { $out += $unc }
-    }
+    # Do not probe \\hostname\C$ from the tray. DNS/SMB misses block 15-30s even
+    # after a timeout wrapper, so idle hover never paints the machine tiles.
+    # Cross-host jobs need peekRoot or BOB_FLEET_SHARE (docs/bob-fleet-peer-peek.md).
     $seen = @{}
     $uniq = @()
     foreach ($p in $out) {

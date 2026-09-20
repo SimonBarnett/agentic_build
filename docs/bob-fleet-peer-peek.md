@@ -31,7 +31,7 @@ For each registered id that is **not** this host, try in order, each I/O wrapped
 
 1. Explicit `peekRoot` (directory = peer `BOB_BRIDGE_HOME`, or a `.json` snapshot file).
 2. `{shareRoot}\{id}.json`.
-3. UNC admin-share of `hostname` + `bridgeHome` (`C:\Users\...` → `\\hostname\C$\Users\...`) **only if the hostname DNS-resolves**. No `Invoke-Command`. No WinRM.
+3. Do **not** auto-probe `\\hostname\C$` from the tray (DNS/SMB misses freeze idle hover). Publish via `peekRoot` or `BOB_FLEET_SHARE` instead. No `Invoke-Command`. No WinRM.
 
 First successful read wins. Snapshot file `fleet\peek\{id}.json` is preferred; else `machine.json` plus `fleet\running\{id}\*.json` and `fleet\inbox\{id}\*.json`.
 
