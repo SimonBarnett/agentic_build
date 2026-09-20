@@ -43,6 +43,8 @@ Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it 
 
 ## Spec
 
+GitHub repo work: `start-bob-copilot` / `tools\Start-BobCopilot.ps1`. Fleet `grok.exe` jobs receive that constraint in `New-FleetPrompt`. Do not implement GitHub-only work on Grok Bot (Cursor weekly usage).
+
 `Start-BobBuild` packet: `goal`, `constraints`, `success`, `cwd`, `profile`, `reply_channel`.
 
 Profiles: `formprep` (`--rules`, no yolo, no SQL-flip UPD, no AllUnprepared, Windows MSSQL only), `teams`, `mud`, `generic`.

@@ -28,12 +28,15 @@ function Start-BobBuild {
         }
     }
 
+    $copilotHint = 'GitHub repo coding: tools/Start-BobCopilot.ps1 (skill start-bob-copilot). Do not use Grok Bot weekly usage for that work.'
+    $cons = @($Constraints)
+    if ($cons -notcontains $copilotHint) { $cons = @($cons + $copilotHint) }
     $packet = [pscustomobject]@{
         id             = $JobId
         from           = $From
         to_session     = $JobId
         goal           = $Goal
-        constraints    = @($Constraints)
+        constraints    = $cons
         success        = $Success
         reply_channel  = $ReplyChannel
         machine        = $mid
