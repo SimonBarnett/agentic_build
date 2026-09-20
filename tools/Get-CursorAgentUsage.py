@@ -64,8 +64,8 @@ def _access_token(key: bytes) -> str | None:
     return _decrypt_v10(key, blob)
 
 
-def _fetch_usage(token: str) -> dict:
-    url = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
+def _fetch_json(token: str, path: str) -> dict:
+    url = "https://api2.cursor.sh/" + path
     req = urllib.request.Request(
         url,
         data=b"{}",
@@ -80,6 +80,11 @@ def _fetch_usage(token: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _fetch_usage(token: str) -> dict:
+    # Grok Bot "Weekly usage 98%" is Sand usagePercent (USED), not plan remaining.
+    return _fetch_json(token, "aiserver.v1.DashboardService/GetSandUsageStatus")
+
+
 def main() -> int:
     try:
         key = _chrome_key(APP / "Local State")
@@ -88,28 +93,16 @@ def main() -> int:
             print("{}", end="")
             return 1
         body = _fetch_usage(token)
-        remain = None
-        used_f = None
-        plan = body.get("planUsage") or {}
-        rem_u = plan.get("remaining")
-        lim_u = plan.get("limit")
-        if rem_u is not None and lim_u:
-            lim = float(lim_u)
-            if lim > 0:
-                remain = int(round(100.0 * float(rem_u) / lim))
-                used_f = 100.0 - remain
-        if remain is None:
-            used = body.get("usagePercent")
-            if used is None:
-                used = body.get("percentUsed")
-            if used is None and plan.get("totalPercentUsed") is not None:
-                tp = float(plan["totalPercentUsed"])
-                used = tp * 100.0 if tp <= 1.0 else tp
-            if used is None:
-                print(json.dumps({"ok": False, "error": "no usagePercent"}))
-                return 1
-            used_f = float(used)
-            remain = int(round(100.0 - used_f))
+        used = body.get("usagePercent")
+        if used is None:
+            used = body.get("percentUsed")
+        if used is None:
+            print(json.dumps({"ok": False, "error": "no usagePercent"}))
+            return 1
+        used_f = float(used)
+        if 0.0 <= used_f <= 1.0:
+            used_f = used_f * 100.0
+        remain = int(round(100.0 - used_f))
         if remain < 0:
             remain = 0
         if remain > 100:
