@@ -5,7 +5,7 @@ description: >
   /docs markdown, dispatch a PR worker, hand off MRB, merge on PASS-nits,
   spawn a FIX worker on every FAIL, until Bob stamps UAT. No MRB PDFs. Use
   when the user says MRB, ready for UAT, bob build loop, or /bob-build-loop.
-  Cursor Models then grok; cursor-mrb-dev runs the handoff.
+  Cursor Models then grok; bob-job-loop runs the program.
 ---
 
 # Bob functional-spec build loop
@@ -19,6 +19,8 @@ Fuel is not a judgment. If Cursor Models remaining > 0, use Cursor Models
 
 Canonical mermaid for README and this skill. Verdict bars: `bob-hostile-mrb`.
 Handoff scripts: `cursor-mrb-dev`. Remaining numbers: `box-usage`.
+Driver (start job, MRB, retry failed cursor/grok jobs, notify on
+PASS-nits): `tools/Start-BobBuildLoop.ps1` / skill `bob-job-loop`.
 
 ## Transaction (do not skip, do not reason)
 
@@ -62,8 +64,9 @@ flowchart TB
 |---|---|
 | Fresh functional spec / new product | `bob-spec-intake` then `bob-build-dispatch` |
 | Feature-request on an existing repo | `bob-spec-intake` then `bob-build-dispatch` |
+| Parked FR; run until PASS-nits | `bob-job-loop` (`Start-BobBuildLoop.ps1`) |
 | PR opened; need review | `bob-hostile-mrb` / `cursor-mrb-dev` |
-| Run MRB then FIX until PASS-nits | `cursor-mrb-dev` |
+| Fuel / login / Kind for a single handoff | `cursor-mrb-dev` |
 | Start/monitor/stop the Windows job | `grok-build-fleet` |
 | Named Grok Bot silent | `unstick-grok-bot` |
 | Cursor Models remaining / Sand / overage | `box-usage` |
