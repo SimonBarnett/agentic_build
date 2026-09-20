@@ -11,6 +11,8 @@ description: >
 
 Repo work that can live on GitHub goes to Copilot. Do not implement that work with Grok Bot (Cursor weekly usage) or extra `grok.exe` when Copilot can take it.
 
+Grok **hands off** by opening a GitHub issue that `@copilot`s Copilot, then tries the cloud-agent task API. If GitHub returns `CCA not enabled`, the issue is still the handoff — do not implement that work in Grok Bot or extra grok.exe.
+
 ## Command
 
 ```powershell

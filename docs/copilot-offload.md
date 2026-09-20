@@ -14,7 +14,11 @@ Assign an existing issue:
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobCopilot.ps1 -Issue 12
 ```
 
-`gh auth login` as the GitHub user (not an installation token). Paid Copilot + cloud agent on: https://github.com/settings/copilot/features
+`gh auth login` as the GitHub user (not an installation token).
+
+Grok always opens a **git issue** with `@copilot`. Cloud-agent assign needs CCA **on that repo** (org policy **Coming soon** is not enough). Until then the issue is the handoff; Copilot will not start a session.
+
+Paid Copilot + cloud agent: https://github.com/settings/copilot/features and the repo Copilot settings.
 
 ## Not for
 
