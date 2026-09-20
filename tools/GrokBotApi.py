@@ -339,33 +339,68 @@ def cmd_send(home: str, agent: str, text: str, wait: bool, timeout: int) -> None
     if not wait:
         emit(result)
         return
-    waited = cmd_wait_inner(home, row["id"], sent_at, timeout, text)
+    waited = cmd_wait_inner(home, access, machine, row["id"], sent_at, timeout, text)
     emit({**result, **waited}, ok=bool(waited.get("ok", True)))
     if not waited.get("ok", True):
         raise SystemExit(2)
 
 
-def cmd_wait_inner(home: str, agent_id: str, after_ms: int, timeout: int, prompt: str) -> dict:
+def newest_send_message_after(access: str, machine: str, agent_id: str, after_ms: int):
+    """Newest assistant send-message after after_ms, or (None, None)."""
+    code, body = grokbot_post(
+        access, machine, "ListGrokBotTranscriptEntries", {"agentId": agent_id}
+    )
+    if code != 200 or not isinstance(body, dict):
+        return None, None
+    best_ts = after_ms
+    best_text = None
+    for e in body.get("entries") or []:
+        if str(e.get("entryKind") or "") != "send-message":
+            continue
+        raw = e.get("body") or ""
+        try:
+            j = json.loads(base64.b64decode(raw))
+        except Exception:
+            continue
+        try:
+            ts = int(j.get("timestampMs") or 0)
+        except (TypeError, ValueError):
+            ts = 0
+        content = ""
+        msg = j.get("message")
+        if isinstance(msg, dict):
+            content = msg.get("content") or ""
+        if not content:
+            content = j.get("content") or ""
+        if not isinstance(content, str):
+            content = str(content)
+        content = content.strip()
+        if ts > best_ts and content:
+            best_ts = ts
+            best_text = content
+    if best_text:
+        return best_text, best_ts
+    return None, None
+
+
+def cmd_wait_inner(
+    home: str, access: str, machine: str, agent_id: str, after_ms: int, timeout: int, prompt: str
+) -> dict:
     deadline = time.time() + timeout
-    prompt_norm = (prompt or "").strip()
     last_seen = None
     while time.time() < deadline:
-        row = None
+        text, ts = newest_send_message_after(access, machine, agent_id, after_ms)
+        if text:
+            return {
+                "ok": True,
+                "text": text,
+                "lastActivityAt": ts,
+                "waitedMs": int(time.time() * 1000) - after_ms,
+            }
         for r in load_roster(home):
             if r.get("id") == agent_id:
-                row = r
+                last_seen = last_text(r).strip()
                 break
-        if row:
-            activity = int(row.get("lastActivityAt") or 0)
-            text = last_text(row).strip()
-            last_seen = text
-            if activity > after_ms and text and text != prompt_norm:
-                return {
-                    "ok": True,
-                    "text": last_text(row),
-                    "lastActivityAt": activity,
-                    "waitedMs": int(time.time() * 1000) - after_ms,
-                }
         time.sleep(2)
     return {
         "ok": False,

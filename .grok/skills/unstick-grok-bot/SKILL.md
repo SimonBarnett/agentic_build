@@ -50,25 +50,29 @@ python $api post --service aiserver.v1.SandBoxService --agent <Name> --method Ge
 
 ## 4. Recreate the sandbox (when 3 says wedged)
 
+Named bots on this Grok Bot desktop **share one cloud sandbox**. Recreate **once** (pass `--agent` so `agentId` is set). Do not Recreate per agent; a second Recreate starts another "Updating Grok Bot's Computer / Transferring your data" and UI sends sit on **Waiting to send**.
+
 ```powershell
 python $api post --service aiserver.v1.SandBoxService --agent <Name> --method RecreateSandBox --json '{"preserveData":true,"force":true}'
 python $api post --service aiserver.v1.SandBoxService --agent <Name> --method EnsureSandBox --json '{"wake":true}'
 ```
 
-`--agent` on RecreateSandBox is required (`agentId`). Without it you may recycle a different pod. `started: true` then `EnsureSandBox.podId` must **change**.
+`--agent` is required. `started: true` then `EnsureSandBox.podId` must **change**. Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
 
-Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
+Wait until transfer is done: `podId` unchanged on two EnsureSandBox samples ~30s apart, `runState` RUNNING, no transfer toast. Do **not** `send` (API or UI) during transfer.
 
-Then interrupt until `hadActiveRun` is omitted. **One** short no-tool ping:
+`Waiting to send` in the UI is PENDING (not in the transcript). Cancel it after the toast is gone.
+
+Preferred ping is the **Grok Bot UI**, one line, after transfer. Interrupt until `hadActiveRun` is omitted first. Pre-unstick API bubbles may never get a `send-message`.
+
+API PONG only after a UI ping has produced an assistant `send-message` (transcript, not roster `lastActivityAt` — that moves on user echoes). `GrokBotApi.py --wait` uses that transcript check.
 
 ```powershell
 python $api interrupt --agent <Name>
 python $api send --agent <Name> --text "Reply with exactly PONG and then stop. Do not use tools." --wait --timeout 90
 ```
 
-`--wait` can time out even after a reply if roster `lastActivityAt` lags; re-check transcript seq / `GetGrokBotSendStatus`.
-
-Tell the human to send a **new** ping in the Grok Bot UI. Pre-unstick bubbles may never land.
+Tell the human to send a **new** ping in the Grok Bot UI if the turn still has no assistant `send-message`.
 
 ## 5. Desktop process gone
 
