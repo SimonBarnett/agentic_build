@@ -735,6 +735,11 @@ Invoke-Case 'BT0n tray tip show' {
     if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
     if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
 
+    $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+    if (-not $onWindows) {
+        Write-Host 'BT0n STA ShowParkedAt smoke skipped (WinForms not available on this host)'
+        return
+    }
     $sta = {
         Add-Type -AssemblyName System.Windows.Forms
         Add-Type -AssemblyName System.Drawing
