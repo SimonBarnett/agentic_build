@@ -74,7 +74,7 @@ python $api send --agent <Name> --text "Reply with exactly PONG and then stop. D
 
 Tell the human to send a **new** ping in the Grok Bot UI if the turn still has no assistant `send-message`.
 
-If a **second idle agent** (not the stuck one) also `ACCEPTED_TEMPORAL` with no assistant `send-message`, this is a **Temporal harness outage** for the account, not a single-agent wedge. Stronger probe: `CreateGrokBotTemporalAgent` a throwaway agent and PONG it. If that new `grok-bot-turn-<newId>` also never `send-message`, stop RecreateSandBox. `isFork` still uses the same workflow id. Sandbox/desktop recycle will not start a generating turn. Wait for Cursor Grok Bot backend; do not stack more API PONGs.
+If a **second idle agent** (not the stuck one) also `ACCEPTED_TEMPORAL` with no assistant `send-message`, this is a **Temporal harness outage** for the account, not a single-agent wedge. Stronger probe: `CreateGrokBotTemporalAgent` a throwaway agent and PONG it. If that new `grok-bot-turn-<newId>` also never `send-message`, stop RecreateSandBox. `isFork` still uses the same workflow id. `CreateGrokBotAgent` with `harness: box` (forum: box was live when temporal was deaf) may 503 Service Unavailable while temporal still ACCEPTED_TEMPORAL with no reply. Sandbox/desktop recycle will not start a generating turn. Wait for Cursor Grok Bot backend; do not stack more API PONGs. Do not delete the original bots.
 
 ## 5. Desktop process gone
 
