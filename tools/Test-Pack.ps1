@@ -602,6 +602,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
     if ($traySrc -notmatch 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must draw a cursor icon on the account bar' }
     if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
+    if ($traySrc -notmatch 'HideTooltipWindows') { throw 'must pop shell tooltips_class32 so native tip does not stack on the card' }
+    if ($traySrc -match 'ShowBalloonTip') { throw 'BalloonTip is a second dialog; use the dark card only' }
     if ($traySrc -match 'tip\.Show\(\)') { throw 'do not Form.Show after ShowParkedAt (second dialog)' }
     if ($traySrc -notmatch 'Transparent') { throw 'machine-name label BackColor must be Transparent so it does not cover the bar' }
     if ($traySrc -notmatch 'fill_r') { throw 'Watch-BobTray must use gradient fill_r/fill_g/fill_b' }

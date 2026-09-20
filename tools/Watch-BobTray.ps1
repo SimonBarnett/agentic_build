@@ -101,6 +101,19 @@ namespace BobTrayUi {
             d.szTip = "";
             Shell_NotifyIcon(NIM_MODIFY, ref d);
         }
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        public const int TTM_POP = 0x041C;
+        public const int SW_HIDE = 0;
+        public static void HideTooltipWindows() {
+            IntPtr h = IntPtr.Zero;
+            for (int i = 0; i < 16; i++) {
+                h = FindWindowEx(IntPtr.Zero, h, "tooltips_class32", null);
+                if (h == IntPtr.Zero) break;
+                SendMessage(h, TTM_POP, IntPtr.Zero, IntPtr.Zero);
+                ShowWindow(h, SW_HIDE);
+            }
+        }
         public const uint SWP_NOSIZE = 0x0001;
         public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOACTIVATE = 0x0010;
@@ -386,14 +399,7 @@ function Set-Attention([string[]]$alerts) {
     $script:attention = $true
     $text = ($alerts | Select-Object -First 1)
     if ($text.Length -gt 60) { $text = $text.Substring(0, 60) }
-    try { $notify.Text = $text } catch { }
-    try {
-        $notify.BalloonTipTitle = $script:hoverTitle
-        $notify.BalloonTipText = (($alerts | Select-Object -First 3) -join "`n")
-        $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Warning
-        $notify.ShowBalloonTip(8000)
-    }
-    catch { }
+    Clear-BobNativeTip
     Write-TrayLog ($alerts -join ' | ')
 }
 
@@ -411,8 +417,7 @@ function Update-Hover {
         if ($script:attention) { $short = '! ' + $short }
         if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
         $script:notifyTipText = $short
-        if ($tip -and $tip.Visible) { $notify.Text = ' ' }
-        else { $notify.Text = $short }
+        Clear-BobNativeTip
         if ($titleLabel) {
             $titleLabel.Text = $script:hoverTitle
             if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
@@ -454,10 +459,12 @@ function Clear-BobNativeTip {
         $hwnd = $nw.Handle
         $uid = [uint32]$id.GetValue($notify)
         [BobTrayUi.Shell]::ClearNotifyTip($hwnd, $uid)
-        $notify.Text = ' '
+        [BobTrayUi.Shell]::HideTooltipWindows()
+        $notify.Text = ''
     }
     catch {
-        try { $notify.Text = ' ' } catch { }
+        try { $notify.Text = '' } catch { try { $notify.Text = ' ' } catch { } }
+        try { [BobTrayUi.Shell]::HideTooltipWindows() } catch { }
     }
 }
 
@@ -465,10 +472,7 @@ function Hide-BobTrayCard {
     $script:cardClosed = $true
     try { $hideTip.Stop() } catch { }
     try { if ($tip.Visible) { $tip.Hide() } } catch { Write-TrayLog ('tip hide error: ' + $_.Exception.Message) }
-    try {
-        if ($script:notifyTipText) { $notify.Text = $script:notifyTipText }
-    }
-    catch { }
+    Clear-BobNativeTip
 }
 
 function New-BobTrayCursorBitmap {
@@ -730,7 +734,7 @@ function Show-BobTrayCard {
 $notify = New-Object System.Windows.Forms.NotifyIcon
 $notify.Icon = $iconIdle
 $notify.Visible = $false
-$notify.Text = $script:hoverTitle
+$notify.Text = ''
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
 $miAck = $menu.Items.Add('Acknowledge')
@@ -741,12 +745,7 @@ $notify.ContextMenuStrip = $menu
 
 $miStatus.Add_Click({
         Update-Hover
-        $notify.BalloonTipTitle = $script:hoverTitle
-        $body = $script:hoverBody
-        if ($body.Length -gt 250) { $body = $body.Substring(0, 250) }
-        $notify.BalloonTipText = $body
-        $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
-        $notify.ShowBalloonTip(8000)
+        Show-BobTrayCard -Reason 'click'
     })
 $miAck.Add_Click({ Clear-Attention })
 $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath } })
@@ -821,6 +820,7 @@ $iconProbe.Add_Tick({
                 }
             }
             if ($tip.Visible) {
+                Clear-BobNativeTip
                 $tipRect = @{ X = $tip.Left; Y = $tip.Top; Width = $tip.Width; Height = $tip.Height }
                 if (Test-BobTrayPointInRect $pt $tipRect -Pad 4) {
                     $hideTip.Stop(); $hideTip.Start()
