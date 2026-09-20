@@ -18,6 +18,10 @@ keeps a `bob-irc` stub (Test-Pack / Install-BobFleet) plus
 `config/bobiverse.json` and `docs/bobiverse*.md`. `harvest-agent-skills`
 routes IRC harvests to agentic_irc.
 
+## 2026-09-20 — unpaid Open Cursor invoices silence Grok Bot
+
+Cursor dashboard: "You may have an unpaid invoice" plus invoice Status Open (20 Sep mid-month cycle starting 16 Sep; 16 Sep cycle starting 14 Sep). Same as Stripe `NEEDS_AUTH` + Sand 100%. Pay Open rows, then one Bob ping. `box-usage`.
+
 ## 2026-09-20 — Stripe Link NEEDS_AUTH blocks Sand on-demand
 
 `ListGrokBotStripeLinkPaymentMethods` returned `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` while `GetSandUsageStatus` was 100% with on-demand enabled. Box send 503. Human must finish payment method in Grok Bot Settings > Usage. `box-usage` + `unstick-grok-bot` step 3.
