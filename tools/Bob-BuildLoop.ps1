@@ -73,6 +73,8 @@ function New-BobBuildLoopState {
         seenPrs        = @()
         passes         = @()
         failReason     = $null
+        startError     = $null
+        requiredFixes  = $null
         createdAt      = $now
         updatedAt      = $now
     }
@@ -141,6 +143,19 @@ function Get-BobMrbRequiredFixes {
         if ($capturing) { [void]$buf.Add($line) }
     }
     return (($buf -join "`n").Trim())
+}
+
+function Resolve-BobBuildLoopRequiredFixes {
+    param($State, $World)
+    if ($State.requiredFixes) { return [string]$State.requiredFixes }
+    if ($State.lastMrb -and $World -and $World.Issues) {
+        foreach ($i in @($World.Issues)) {
+            if ([string]$i.url -eq [string]$State.lastMrb) {
+                return Get-BobMrbRequiredFixes ([string]$i.body)
+            }
+        }
+    }
+    return ''
 }
 
 function New-BobMrbBacklinkComment {
@@ -261,6 +276,7 @@ function Select-BobBuildLoopMrbIssue {
 
 function Test-BobBuildLoopNoArtifact {
     param($State, $World)
+    if ($State.startError) { return $true }
     $job = $World.Job
     if ($job -and [string]$job.startError) { return $true }
     if ($job -and $null -ne $job.started -and $job.started -eq $false) { return $true }
@@ -276,7 +292,10 @@ function Test-BobBuildLoopNoArtifact {
     }
 
     $fuel = [string]$State.fuel
-    if ($fuel -eq 'cursor-models') { return $false }
+    if ($fuel -eq 'cursor-models') {
+        if (-not $job) { return $true }
+        return $false
+    }
 
     if ($job -and [string]$job.lane -eq 'outbox') {
         $st = [string]$job.state
@@ -442,6 +461,7 @@ function Get-BobBuildLoopDecision {
                         currentKind   = 'build'
                         priorMrbIssue = [int]$mrb.number
                         lastMrb       = [string]$mrb.url
+                        requiredFixes = $fixes
                         jobAttempts   = 0
                         mrbFails      = ($fails + 1)
                         currentSha    = $null
