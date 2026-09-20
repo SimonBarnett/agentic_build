@@ -182,6 +182,9 @@ Invoke-Case 'BT0g profile' {
     if ($text -notmatch '--rules') { throw 'formprep argv missing --rules' }
     if ($text -match '--always-approve') { throw 'formprep argv has --always-approve' }
     if ($text -match '--yolo') { throw 'formprep argv has --yolo' }
+    $g = Start-BobWorker -Cwd $cwd -Prompt 'PONG' -Profile generic -WhatIfArgv -Force
+    $gtext = [IO.File]::ReadAllText($g.argvPath)
+    if ($gtext -notmatch 'SimonBarnett/agentic_build') { throw 'build agent argv must pass agentic_build skills' }
 }
 
 # --- BT0h synth ---

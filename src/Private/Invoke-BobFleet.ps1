@@ -89,6 +89,7 @@ function New-FleetPrompt {
     [void]$lines.Add("Profile: $($Packet.profile)")
     [void]$lines.Add('MSSQL: Windows integrated auth as the logon user. No SQL passwords.')
     [void]$lines.Add('GitHub repo coding: tools/Start-BobCopilot.ps1 (skill start-bob-copilot). Do not use Grok Bot weekly usage for that work.')
+    [void]$lines.Add((Get-BobProjectSkillsHint))
     return ($lines -join "`n")
 }
 

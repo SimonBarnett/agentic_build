@@ -111,9 +111,21 @@ function Get-BobArgv {
         [void]$argv.Add('-s')
         [void]$argv.Add($SessionId)
     }
+    $skillHint = $null
+    try { $skillHint = Get-BobProjectSkillsHint } catch { }
+    $rules = $null
     if ($Profile -and -not $Profile.Yolo -and $Profile.Rules) {
+        $rules = ([string]$Profile.Rules).Trim()
+        if ($skillHint -and $rules -notmatch 'SimonBarnett/agentic_build') {
+            $rules = $rules + ' ' + $skillHint
+        }
+    }
+    elseif ($skillHint) {
+        $rules = $skillHint
+    }
+    if ($rules) {
         [void]$argv.Add('--rules')
-        [void]$argv.Add([string]$Profile.Rules)
+        [void]$argv.Add($rules)
     }
     if ($Profile -and $Profile.Yolo) {
         [void]$argv.Add('--yolo')

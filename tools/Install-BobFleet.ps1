@@ -33,17 +33,23 @@ if (-not $env:BOB_GROK_EXE -and (Test-Path $grok)) {
 [Environment]::SetEnvironmentVariable('BOB_BRIDGE_HOME', $BridgeHome, 'User')
 [Environment]::SetEnvironmentVariable('BOB_MACHINE_ID', $rec.id, 'User')
 
-$skillRoot = Join-Path $RepoRoot '.grok\skills'
-$skillDstRoot = Join-Path $env:USERPROFILE '.grok\skills'
 $copied = @()
-if (Test-Path $skillRoot) {
-    foreach ($dir in @(Get-ChildItem $skillRoot -Directory)) {
-        $src = Join-Path $dir.FullName 'SKILL.md'
-        if (-not (Test-Path $src)) { continue }
-        $dstDir = Join-Path $skillDstRoot $dir.Name
-        New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
-        Copy-Item $src (Join-Path $dstDir 'SKILL.md') -Force
-        $copied += $dir.Name
+try {
+    Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
+    $copied = @(Copy-BobProjectSkills)
+}
+catch {
+    $skillRoot = Join-Path $RepoRoot '.grok\skills'
+    $skillDstRoot = Join-Path $env:USERPROFILE '.grok\skills'
+    if (Test-Path $skillRoot) {
+        foreach ($dir in @(Get-ChildItem $skillRoot -Directory)) {
+            $src = Join-Path $dir.FullName 'SKILL.md'
+            if (-not (Test-Path $src)) { continue }
+            $dstDir = Join-Path $skillDstRoot $dir.Name
+            New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            Copy-Item $src (Join-Path $dstDir 'SKILL.md') -Force
+            $copied += $dir.Name
+        }
     }
 }
 

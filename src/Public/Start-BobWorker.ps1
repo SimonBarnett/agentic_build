@@ -90,6 +90,7 @@ function Start-BobWorker {
         }
     }
 
+    try { Copy-BobProjectSkills | Out-Null } catch { }
     Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $Profile -Prompt $Prompt
 
     if ($useBot) {

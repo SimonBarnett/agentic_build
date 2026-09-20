@@ -24,6 +24,6 @@ See `docs/copilot-offload.md`.
 
 ## When Grok starts a build agent
 
-`Start-BobBuild` / fleet prompt includes: GitHub repo coding uses this skill. The build `grok.exe` should call `Start-BobCopilot.ps1` instead of doing that repo work itself.
+`Start-BobWorker` copies this repo's `.grok/skills` (https://github.com/SimonBarnett/agentic_build) into `~/.grok/skills` and adds that path on grok.exe `--rules`. Fleet prompt also names `start-bob-copilot`. The build `grok.exe` should call `Start-BobCopilot.ps1` for GitHub repo work instead of Grok Bot.
 
 Bob fleet jobs that need Windows logon (MSSQL) stay on `grok.exe`.
