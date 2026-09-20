@@ -718,16 +718,22 @@ function Add-BobTrayUsageRow {
 function Rebuild-BobTrayTiles {
     param($Machines, $AccountName, $AccountPct, $AccountLabel)
     if (-not $script:tileHost) { return }
-    Suspend-BobTrayPaint
-    try {
-    $script:tileHost.Controls.Clear()
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
     $acctName = 'cursor'
     if ($AccountName) { $acctName = [string]$AccountName }
     if ($AccountLabel) { $acctLabel = [string]$AccountLabel }
-    else { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
-    if ($AccountName) { $acctName = [string]$AccountName }
+    else {
+        try { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
+        catch { $acctLabel = 'empty' }
+    }
+    $acctColor = $null
+    if ($acctLabel -and ($acctLabel -match '^-' -or $acctLabel.IndexOf([char]0x00A3) -ge 0)) {
+        $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+    }
+    Suspend-BobTrayPaint
+    try {
+    $script:tileHost.Controls.Clear()
     $acctColor = $null
     if ($acctLabel -and (($acctLabel -match '^-') -or ($acctLabel.IndexOf([char]0x00A3) -ge 0))) {
         $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
