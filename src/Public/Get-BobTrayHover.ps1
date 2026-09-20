@@ -1,4 +1,4 @@
-function Test-BobTrayLooksLikeSha {
+﻿function Test-BobTrayLooksLikeSha {
     param([string]$Value)
     if (-not $Value) { return $true }
     $s = [string]$Value.Trim()
@@ -329,8 +329,78 @@ function Get-BobTrayAlertKind {
     return 'none'
 }
 
+
+function Get-BobSeatConfig {
+    $candidates = @()
+    try { $candidates += (Join-Path (Get-ModuleRoot) 'config\bob-seats.json') } catch { }
+    if ($env:BOB_SEATS_FILE) { $candidates = @($env:BOB_SEATS_FILE) + $candidates }
+    foreach ($p in $candidates) {
+        if (-not $p -or -not (Test-Path $p)) { continue }
+        try {
+            $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($j.seats) { return @($j.seats) }
+        } catch { }
+    }
+    return @(
+        [pscustomobject]@{ id = 'smart-catalogue'; label = 'Smart Catalogue'; email = 'social@smartcatalogue.uk'; machines = @('ionos') },
+        [pscustomobject]@{ id = 'club-madeira'; label = 'Club Madeira'; email = 'social@clubmadeira.uk'; machines = @('flamingo') },
+        [pscustomobject]@{ id = 'ntsa'; label = 'ntsa'; email = 'si@ntsa.uk'; machines = @('marchhare', 'ce-priority-dev1') }
+    )
+}
+
+function Get-BobSeatForMachine {
+    param([string]$MachineId)
+    $mid = [string]$MachineId
+    if (-not $mid) { return $null }
+    $mid = $mid.ToLowerInvariant()
+    foreach ($s in @(Get-BobSeatConfig)) {
+        foreach ($m in @($s.machines)) {
+            if ([string]$m -and [string]$m.ToLowerInvariant() -eq $mid) { return $s }
+        }
+    }
+    return $null
+}
+
+function Get-BobCursorOverageGbp {
+    # tip_cursor.json {"cursor":12} means £12 overage (not a percent).
+    $tipPath = Join-Path $env:USERPROFILE '.grok\tip_cursor.json'
+    if (Test-Path $tipPath) {
+        try {
+            $tj = Get-Content $tipPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $tj.cursor -and [string]$tj.cursor -ne '') {
+                return [double]$tj.cursor
+            }
+        } catch { }
+    }
+    return $null
+}
+
+function Format-BobCursorAccountLabel {
+    param($RemainingPct, $UsedPct)
+    if ($null -ne $RemainingPct -and [string]$RemainingPct -ne '') {
+        return ('{0}%' -f [int]$RemainingPct)
+    }
+    $gbp = Get-BobCursorOverageGbp
+    if ($null -ne $gbp) {
+        return ('{0}{1:N2}' -f [char]0x00A3, [double]$gbp)
+    }
+    if ($null -ne $UsedPct -and [double]$UsedPct -gt 100) {
+        # no money figure — fall back only if tip missing
+        return ('over +{0}%' -f [int][math]::Round([double]$UsedPct - 100.0))
+    }
+    return 'empty'
+}
+
+
 function Get-BobTrayTitle {
-    return 'Bob Fleet'
+    param($MachineId)
+    $mid = [string]$MachineId
+    if (-not $mid) {
+        try { $mid = Get-ThisMachineId } catch { }
+    }
+    if (-not $mid -and $env:BOB_MACHINE_ID) { $mid = [string]$env:BOB_MACHINE_ID }
+    if (-not $mid) { $mid = 'this-machine' }
+    return ('#Bobiverse ({0})' -f $mid)
 }
 
 function Get-BobLiveGrokAgents {
@@ -462,7 +532,7 @@ function Get-BobTrayHover {
     $machineId = $null
     try { $machineId = Get-ThisMachineId } catch { }
     if (-not $machineId) { $machineId = 'this-machine' }
-    $title = Get-BobTrayTitle
+    $title = Get-BobTrayTitle -MachineId $machineId
 
     $running = @()
     $queuedJobs = @()
@@ -511,13 +581,23 @@ function Get-BobTrayHover {
     $reachBy = @{}
     $seenBy = @{}
     $specBy = @{}
+    $seatIds = @()
+    try { $seatIds = @(Get-BobiverseMachineIds) } catch { $seatIds = @() }
+    $knownTile = @{}
+    if ($machineId) { $knownTile[$machineId] = $true }
+    foreach ($sid in $seatIds) { if ($sid) { $knownTile[$sid] = $true } }
+    $restrictTiles = $knownTile.Count -gt 1 -or ($seatIds.Count -gt 0)
     if ($reg) {
         foreach ($m in @($reg.machines)) {
             $mid = [string]$m.id
             if (-not $mid) { continue }
+            if ($restrictTiles -and -not $knownTile.ContainsKey($mid)) { continue }
             if (-not $byMachine.ContainsKey($mid)) { $byMachine[$mid] = @() }
             $specBy[$mid] = $m
         }
+    }
+    foreach ($sid in $seatIds) {
+        if (-not $byMachine.ContainsKey($sid)) { $byMachine[$sid] = @() }
     }
     if (-not $byMachine.ContainsKey($machineId)) {
         $byMachine[$machineId] = @()
@@ -545,6 +625,9 @@ function Get-BobTrayHover {
     foreach ($j in $jobs) {
         $mid = [string]$j.machine
         if (-not $mid) { $mid = $machineId }
+        if ($restrictTiles -and -not $knownTile.ContainsKey($mid)) {
+            $mid = $machineId
+        }
         if (-not $byMachine.ContainsKey($mid)) {
             $byMachine[$mid] = @()
         }
@@ -587,20 +670,24 @@ function Get-BobTrayHover {
         $age = Get-BobLastSeenAgeSec -Record ([pscustomobject]@{ lastSeen = $peek.lastSeen })
         $empty = (@($byMachine[$mid]).Count -eq 0)
         $fromIrc = ([string]$peek.source -eq 'irc')
-        if ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
+        # In-moot / IRC peer beats lastSeen-age 'stale' (good card = everyone in the moot).
+        if ($inMoot -or $fromIrc) {
+            $reachBy[$mid] = 'irc-fallback'
+        }
+        elseif ($empty -and ($null -eq $age -or $age -gt $staleAfter)) {
             $reachBy[$mid] = 'stale'
         }
         elseif (-not $empty -and $null -ne $age -and $age -gt $staleAfter) {
             $reachBy[$mid] = 'stale'
         }
-        elseif ($fromIrc) {
-            $reachBy[$mid] = 'irc-fallback'
-        }
-        elseif ($inMoot) {
-            $reachBy[$mid] = 'irc-fallback'
-        }
         else {
             $reachBy[$mid] = 'ok'
+        }
+    }
+
+    if ($restrictTiles) {
+        foreach ($k in @($byMachine.Keys)) {
+            if (-not $knownTile.ContainsKey($k)) { $byMachine.Remove($k) }
         }
     }
 
@@ -608,6 +695,24 @@ function Get-BobTrayHover {
     if ($byMachine.ContainsKey($machineId)) { $order += $machineId }
     foreach ($k in ($byMachine.Keys | Sort-Object)) {
         if ($k -ne $machineId) { $order += $k }
+    }
+
+    # Same xAI seat => one shared remaining % (account-level).
+    foreach ($seat in @(Get-BobSeatConfig)) {
+        $vals = @()
+        foreach ($sm in @($seat.machines)) {
+            $smid = [string]$sm
+            if ($smid -and $weeklyBy.ContainsKey($smid) -and $null -ne $weeklyBy[$smid]) {
+                $vals += ,([int]$weeklyBy[$smid])
+            }
+        }
+        if ($vals.Count -gt 0) {
+            $shared = ($vals | Measure-Object -Minimum).Minimum
+            foreach ($sm in @($seat.machines)) {
+                $smid = [string]$sm
+                if ($smid) { $weeklyBy[$smid] = [int]$shared }
+            }
+        }
     }
 
     $tiles = @()
@@ -631,6 +736,7 @@ function Get-BobTrayHover {
         if ($reachBy.ContainsKey($mid)) { $reach = [string]$reachBy[$mid] }
         $wPct = $null
         if ($weeklyBy.ContainsKey($mid)) { $wPct = $weeklyBy[$mid] }
+        $seatInfo = Get-BobSeatForMachine -MachineId $mid
         $tile = New-Object psobject -Property @{
             id             = $mid
             job_count      = $rows.Count
@@ -638,11 +744,16 @@ function Get-BobTrayHover {
             reach          = $reach
             last_seen      = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
             remaining_pct  = $wPct
+            seat_id        = $(if ($seatInfo) { [string]$seatInfo.id } else { $null })
+            seat_label     = $(if ($seatInfo) { [string]$seatInfo.label } else { $null })
+            seat_email     = $(if ($seatInfo) { [string]$seatInfo.email } else { $null })
         }
         $tiles += ,$tile
         $pctLabel = 'n/a'
         if ($null -ne $wPct) { $pctLabel = ('{0}%' -f [int]$wPct) }
-        $jobLines += ('  {0} ({1})' -f $mid, $pctLabel)
+        $jlName = $mid
+        if ($seatInfo -and $seatInfo.label) { $jlName = ('{0}  -  {1}' -f $mid, $seatInfo.label) }
+        $jobLines += ('  {0} ({1})' -f $jlName, $pctLabel)
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
             $jobLines += '    not in moot'
         }
@@ -661,8 +772,17 @@ function Get-BobTrayHover {
     if (-not $peerPeek) {
         $jobLines += 'other hosts not in this store'
     }
-    $acctPctLabel = 'n/a'
-    if ($null -ne $cursorRemain) { $acctPctLabel = ('{0}%' -f [int]$cursorRemain) }
+    $cursorUsed = $null
+    $cursorOver = $null
+    if ($cursorWeek) {
+        if ($null -ne $cursorWeek.used_pct) { $cursorUsed = $cursorWeek.used_pct }
+        if ($null -ne $cursorWeek.overspend_pct) { $cursorOver = $cursorWeek.overspend_pct }
+    }
+    $acctPctLabel = Format-BobCursorAccountLabel -RemainingPct $cursorRemain -UsedPct $cursorUsed
+    if ($acctPctLabel -eq 'empty') {
+        $gbp = Get-BobCursorOverageGbp
+        if ($null -ne $gbp) { $acctPctLabel = ('{0}{1:N2}' -f [char]0x00A3, [double]$gbp) }
+    }
     $acctLine = ('cursor ({0})' -f $acctPctLabel)
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
@@ -699,7 +819,10 @@ function Get-BobTrayHover {
         peer_peek      = $peerPeek
         tier           = $tier
         account_name   = 'cursor'
+        account_label  = $acctPctLabel
         account_remaining_pct = $cursorRemain
+        account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })
+        account_used_pct = $cursorUsed
     }
 }
 
@@ -861,3 +984,4 @@ function Get-BobTrayTipPlacement {
         moved  = $true
     }
 }
+

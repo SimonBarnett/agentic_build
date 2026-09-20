@@ -3,8 +3,14 @@
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
 # No WinRM. See docs/bob-fleet-peer-peek.md.
-# Replaces the blank Interactive PowerShell window. Not a Windows service.
-# Requires powershell.exe -STA.
+# GOOD UI: dark TipForm on left-click / Status only. No hover events
+# (no MouseMove, no iconProbe). Card stays parked until X (no hideTip).
+# Restart watcher kills Watch-Bobiverse + bobiverse irc_agent, starts
+# _Watch-Bobiverse-<id>, then relaunches this tray. BAD: native
+# NotifyIcon.Text white chip — Clear-BobNativeTip always.
+# Exactly one TipForm; never Form.Show after ShowParkedAt.
+# Replaces the blank Interactive PowerShell window.
+# Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
 param(
     [int]$PollSec = 30,
@@ -118,6 +124,7 @@ namespace BobTrayUi {
         public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOACTIVATE = 0x0010;
         public const uint SWP_SHOWWINDOW = 0x0040;
+        public const uint SWP_HIDEWINDOW = 0x0080;
 
         public static bool TryGetNotifyIconRect(IntPtr hWnd, uint uID, out RECT rect) {
             rect = new RECT();
@@ -167,6 +174,25 @@ namespace BobTrayUi {
         }
     }
     public class TipForm : Form {
+        static TipForm _live;
+        public static TipForm Live { get { return _live; } }
+        public static int LiveCount {
+            get { return (_live != null && !_live.IsDisposed) ? 1 : 0; }
+        }
+        public TipForm() {
+            if (_live != null && !_live.IsDisposed && !object.ReferenceEquals(_live, this)) {
+                try { _live.TryHide(); } catch { }
+                try { _live.Dispose(); } catch { }
+            }
+            _live = this;
+        }
+        protected override void Dispose(bool disposing) {
+            if (object.ReferenceEquals(_live, this)) _live = null;
+            base.Dispose(disposing);
+        }
+        public bool IsUsable {
+            get { return !this.IsDisposed; }
+        }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams {
             get {
@@ -177,28 +203,52 @@ namespace BobTrayUi {
                 return cp;
             }
         }
+        public bool TryHide() {
+            if (this.IsDisposed) return true;
+            try {
+                if (this.IsHandleCreated) {
+                    Shell.SetWindowPos(
+                        this.Handle,
+                        IntPtr.Zero,
+                        0, 0, 0, 0,
+                        Shell.SWP_NOSIZE | Shell.SWP_NOMOVE | Shell.SWP_NOACTIVATE | Shell.SWP_HIDEWINDOW);
+                }
+                if (this.Visible) this.Hide();
+                return this.IsDisposed || !this.Visible;
+            } catch (ObjectDisposedException) {
+                return true;
+            }
+        }
         public bool ShowParkedAt(int x, int y) {
-            this.Left = x;
-            this.Top = y;
-            if (!this.IsHandleCreated) this.CreateHandle();
-            bool pos = Shell.SetWindowPos(
-                this.Handle,
-                Shell.HWND_TOPMOST,
-                x,
-                y,
-                this.Width,
-                this.Height,
-                Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
-            this.Visible = true;
-            if (!this.Visible) {
-                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
-                this.Visible = true;
+            if (this.IsDisposed) return false;
+            try {
+                this.Left = x;
+                this.Top = y;
+                if (!this.IsHandleCreated) this.CreateHandle();
+                if (this.IsDisposed) return false;
+                bool pos = Shell.SetWindowPos(
+                    this.Handle,
+                    Shell.HWND_TOPMOST,
+                    x,
+                    y,
+                    this.Width,
+                    this.Height,
+                    Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
+                if (this.IsDisposed) return false;
+                // Visible bookkeeping only. Do not call Form.Show() — that is a second dialog.
+                if (!this.Visible) this.Visible = true;
+                if (!this.Visible && !this.IsDisposed) {
+                    Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
+                    if (!this.IsDisposed) this.Visible = true;
+                }
+                if (!this.Visible && !this.IsDisposed) {
+                    Shell.ShowWindow(this.Handle, Shell.SW_SHOWNOACTIVATE);
+                    if (!this.IsDisposed) this.Visible = true;
+                }
+                return !this.IsDisposed && this.Visible && pos;
+            } catch (ObjectDisposedException) {
+                return false;
             }
-            if (!this.Visible) {
-                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNOACTIVATE);
-                this.Visible = true;
-            }
-            return this.Visible && pos;
         }
     }
 }
@@ -216,6 +266,19 @@ $logPath = Join-Path $logDir 'watch_bob_tray.log'
 
 function Write-TrayLog([string]$m) {
     Add-Content -Path $logPath -Value ('{0:o} {1}' -f [datetime]::UtcNow, $m) -ErrorAction SilentlyContinue
+}
+
+function Test-BobTrayTipAlive {
+    try {
+        return ($null -ne $script:tip -and -not $script:tip.IsDisposed)
+    }
+    catch { return $false }
+}
+
+function Test-BobTrayTipVisible {
+    if (-not (Test-BobTrayTipAlive)) { return $false }
+    try { return [bool]$script:tip.Visible }
+    catch { return $false }
 }
 
 function Get-BobNotifyIconRect {
@@ -249,24 +312,6 @@ function Get-BobNotifyIconRect {
         Write-TrayLog ('icon rect error: ' + $_.Exception.Message)
     }
     return $null
-}
-
-function Test-BobTrayPointInRect {
-    param($Point, $Rect, [int]$Pad = 0)
-    if ($null -eq $Point -or $null -eq $Rect) { return $false }
-    try {
-        $x = [int]$Point.X
-        $y = [int]$Point.Y
-        $w = [int]$Rect.Width
-        $h = [int]$Rect.Height
-        if ($w -le 0 -or $h -le 0) { return $false }
-        $left = [int]$Rect.X - $Pad
-        $top = [int]$Rect.Y - $Pad
-        $right = [int]$Rect.X + $w + $Pad
-        $bottom = [int]$Rect.Y + $h + $Pad
-        return ($x -ge $left -and $x -le $right -and $y -ge $top -and $y -le $bottom)
-    }
-    catch { return $false }
 }
 
 function Add-RoundRect([System.Drawing.Drawing2D.GraphicsPath]$path, $x, $y, $w, $h, $r) {
@@ -323,13 +368,15 @@ $script:flashOn = $false
 $script:lastAlerts = @()
 $script:jobsPid = $null
 $script:jobsOwned = $false
-$script:hoverTitle = Get-BobTrayTitle
+$script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID
 $script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
 $script:alertKind = 'none'
 $script:iconRectCache = $null
 $script:cardClosed = $false
 $script:tileHost = $null
+$script:tip = $null
+$script:tipRecreating = $false
 $script:notifyTipText = ' '
 $seen = @{
     watcher_down = $false
@@ -363,19 +410,90 @@ function Test-BobiverseWatcherUp {
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
-            $_.CommandLine -match 'Watch-Bobiverse\.ps1'
+            ($_.CommandLine -match 'Watch-Bobiverse\.ps1' -or $_.CommandLine -match '_Watch-Bobiverse')
         })
     return $hits
+}
+
+function Get-BobTrayMachineId {
+    $mid = $null
+    try { $mid = Get-ThisMachineId } catch { }
+    if (-not $mid) { $mid = [string]$env:BOB_MACHINE_ID }
+    if (-not $mid) { $mid = [string]$env:COMPUTERNAME }
+    if ($mid) { return $mid.ToLowerInvariant() }
+    return $null
+}
+
+function Stop-BobiverseMoot {
+    $mid = Get-BobTrayMachineId
+    if ($mid) {
+        $task = "_Watch-Bobiverse-$mid"
+        try {
+            Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+            Write-TrayLog "stopped scheduled task $task"
+        }
+        catch { }
+    }
+    foreach ($p in @(Test-BobiverseWatcherUp)) {
+        try {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-TrayLog "killed Watch-Bobiverse pid=$($p.ProcessId)"
+        }
+        catch { }
+    }
+    foreach ($p in @(Test-IrcAgentUp)) {
+        try {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-TrayLog "killed bobiverse irc_agent pid=$($p.ProcessId)"
+        }
+        catch { }
+    }
+}
+
+function Start-BobiverseMootWrapper {
+    $mid = Get-BobTrayMachineId
+    if ($mid) {
+        $task = "_Watch-Bobiverse-$mid"
+        try {
+            Start-ScheduledTask -TaskName $task -ErrorAction Stop
+            Write-TrayLog "started scheduled task $task"
+            return
+        }
+        catch { }
+    }
+    $ps = (Get-Command powershell.exe).Source
+    $wrapId = Join-Path $RepoRoot ("tools\_Watch-Bobiverse-{0}.ps1" -f $mid)
+    $wrap = Join-Path $RepoRoot 'tools\_Watch-Bobiverse.ps1'
+    $file = $null
+    if ($mid -and (Test-Path $wrapId)) { $file = $wrapId }
+    elseif (Test-Path $wrap) { $file = $wrap }
+    elseif (Test-Path $watchBobiverse) { $file = $watchBobiverse }
+    if (-not $file) {
+        Write-TrayLog 'no Watch-Bobiverse wrapper to start'
+        return
+    }
+    Write-TrayLog "starting moot wrapper $file"
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $file) `
+        -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
 }
 
 function Start-IrcWatcher {
     $hits = Test-BobiverseWatcherUp
     if ($hits.Count -gt 0) { return }
-    if (-not (Test-Path $watchBobiverse)) { return }
-    Write-TrayLog 'starting Watch-Bobiverse (automation, not a Grok session)'
-    Start-Process -FilePath (Get-Command powershell.exe).Source `
-        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $watchBobiverse) `
+    Start-BobiverseMootWrapper
+}
+
+function Restart-BobTrayWatcher {
+    Write-TrayLog 'Restart watcher: rejoin #bobiverse then relaunch tray'
+    Stop-BobiverseMoot
+    Start-BobiverseMootWrapper
+    $ps = (Get-Command powershell.exe).Source
+    $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
         -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    $ctx.ExitThread()
 }
 
 function Start-JobsWatcher {
@@ -407,7 +525,7 @@ function Update-Hover {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
         $script:hoverTitle = [string]$h.title
-        if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle }
+        if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID -MachineId $env:BOB_MACHINE_ID }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
         else { $script:remainingPct = [int]$h.remaining_pct }
         $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth 392
@@ -417,18 +535,23 @@ function Update-Hover {
         if ($short.Length -gt 63) { $short = $short.Substring(0, 63) }
         $script:notifyTipText = $short
         Clear-BobNativeTip
-        if ($titleLabel) {
-            $titleLabel.Text = $script:hoverTitle
-            if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct
-            if ($alertLabel) {
-                $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
+        if ($script:titleLabel) {
+            $script:titleLabel.Text = $script:hoverTitle
+            if ($script:jobsLabel) { $script:jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
+            if ($null -eq $h.account_remaining_pct -or [string]$h.account_remaining_pct -eq '') {
+                if ($null -ne $h.account_overspend_pct) {
+                    # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
+                }
+            }
+            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label
+            if ($script:alertLabel) {
+                $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
                 if ($script:tileHost) { $yAlert = $script:tileHost.Bottom + 8 }
-                $alertLabel.Location = New-Object System.Drawing.Point 14, $yAlert
+                $script:alertLabel.Location = New-Object System.Drawing.Point 14, $yAlert
             }
-            if ($tip.Visible -and $alertLabel) {
-                $tip.Height = [Math]::Max(110, $alertLabel.Bottom + 16)
+            if ((Test-BobTrayTipVisible) -and $script:alertLabel) {
+                $script:tip.Height = [Math]::Max(110, $script:alertLabel.Bottom + 16)
             }
             if (-not $script:attention -and -not $paint.pulse -and $notify.Icon -ne $iconIdle) {
                 $notify.Icon = $iconIdle
@@ -469,8 +592,18 @@ function Clear-BobNativeTip {
 
 function Hide-BobTrayCard {
     $script:cardClosed = $true
-    try { $hideTip.Stop() } catch { }
-    try { if ($tip.Visible) { $tip.Hide() } } catch { Write-TrayLog ('tip hide error: ' + $_.Exception.Message) }
+    try {
+        if (Test-BobTrayTipAlive) {
+            $hidden = $false
+            try { $hidden = [bool]$script:tip.TryHide() } catch { }
+            if (-not $hidden) {
+                try { if ($script:tip.Visible) { $script:tip.Hide() } } catch { }
+            }
+        }
+    }
+    catch {
+        Write-TrayLog ('tip hide error: ' + $_.Exception.Message)
+    }
     Clear-BobNativeTip
 }
 
@@ -535,14 +668,15 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $AccountName, $AccountPct)
+    param($Machines, $AccountName, $AccountPct, $AccountLabel)
     if (-not $script:tileHost) { return }
     $script:tileHost.Controls.Clear()
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
-    $acctLabel = 'n/a'
-    if ($null -ne $AccountPct -and [string]$AccountPct -ne '') { $acctLabel = ('{0}%' -f [int]$AccountPct) }
     $acctName = 'cursor'
+    if ($AccountName) { $acctName = [string]$AccountName }
+    if ($AccountLabel) { $acctLabel = [string]$AccountLabel }
+    else { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
     if ($AccountName) { $acctName = [string]$AccountName }
     $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
         -RemainingPct $AccountPct -BarWidth 392 -Icon $null
@@ -551,10 +685,19 @@ function Rebuild-BobTrayTiles {
     foreach ($m in @($Machines)) {
         if (-not $m) { continue }
         $id = [string]$m.id
+        $resolved = $null
+        try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
+        # Ghost IRC ids (marchhare-bugets) fail resolve when nicks are loaded.
+        if (-not $resolved) { continue }
+        $id = [string]$resolved
         $pct = $m.remaining_pct
         $pctLabel = 'n/a'
         if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
-        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $id, $pctLabel) `
+        $seat = [string]$m.seat_label
+        if (-not $seat) { $seat = [string]$m.seat_email }
+        $nameHeading = $id
+        if ($seat) { $nameHeading = ('{0}  -  {1}' -f $id, $seat) }
+        $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading ('{0} ({1})' -f $nameHeading, $pctLabel) `
             -RemainingPct $pct -BarWidth 354 -Icon $null
         $reach = [string]$m.reach
         $jobTxt = ''
@@ -589,120 +732,150 @@ function Rebuild-BobTrayTiles {
 $bg = [System.Drawing.Color]::FromArgb(22, 27, 34)
 $fg = [System.Drawing.Color]::FromArgb(230, 237, 243)
 $muted = [System.Drawing.Color]::FromArgb(139, 148, 158)
-$tip = New-Object BobTrayUi.TipForm
-$tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
-$tip.ControlBox = $false
-$tip.ShowInTaskbar = $false
-$tip.TopMost = $true
-$tip.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$tip.BackColor = $bg
-$tip.Padding = New-Object System.Windows.Forms.Padding 14
-$tip.Width = 420
-$titleLabel = New-Object System.Windows.Forms.Label
-$titleLabel.AutoSize = $true
-$titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
-$titleLabel.ForeColor = $fg
-$titleLabel.Text = $script:hoverTitle
-$titleLabel.Location = New-Object System.Drawing.Point 14, 12
-$closeBtn = New-Object System.Windows.Forms.Label
-$closeBtn.AutoSize = $true
-$closeBtn.Text = 'X'
-$closeBtn.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 10
-$closeBtn.ForeColor = $muted
-$closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
-$closeBtn.Location = New-Object System.Drawing.Point 392, 10
-$closeBtn.Add_Click({ Hide-BobTrayCard })
-$barCaption = New-Object System.Windows.Forms.Label
-$barCaption.AutoSize = $true
-$barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
-$barCaption.ForeColor = $muted
-$barCaption.Text = 'Weekly remaining  n/a'
-$barCaption.Location = New-Object System.Drawing.Point 14, 40
-$barCaption.Visible = $false
-$barPanel = New-Object System.Windows.Forms.Panel
-$barPanel.Location = New-Object System.Drawing.Point 14, 62
-$barPanel.Size = New-Object System.Drawing.Size 392, 10
-$barPanel.BackColor = $bg
-$barPanel.Visible = $false
-$jobsLabel = New-Object System.Windows.Forms.Label
-$jobsLabel.AutoSize = $true
-$jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
-$jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
-$jobsLabel.ForeColor = $fg
-$jobsLabel.Location = New-Object System.Drawing.Point 14, 62
-$jobsLabel.Text = ''
-$jobsLabel.Visible = $false
-$script:tileHost = New-Object System.Windows.Forms.Panel
-$script:tileHost.Location = New-Object System.Drawing.Point 14, 38
-$script:tileHost.Size = New-Object System.Drawing.Size 392, 10
-$script:tileHost.BackColor = $bg
-$alertLabel = New-Object System.Windows.Forms.Label
-$alertLabel.AutoSize = $true
-$alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
-$alertLabel.ForeColor = $muted
-$alertLabel.Location = New-Object System.Drawing.Point 14, 86
-$alertLabel.Text = 'alert: none'
-$tip.Controls.Add($titleLabel)
-$tip.Controls.Add($closeBtn)
-$tip.Controls.Add($barCaption)
-$tip.Controls.Add($barPanel)
-$tip.Controls.Add($jobsLabel)
-$tip.Controls.Add($script:tileHost)
-$tip.Controls.Add($alertLabel)
-$tip.Add_Shown({
-        $tip.Height = $alertLabel.Bottom + 16
-    })
-$hideTip = New-Object System.Windows.Forms.Timer
-$hideTip.Interval = 3200
-$hideTip.Add_Tick({
-        try {
-            if ($tip.Visible) { $tip.Hide() }
-        }
-        catch {
-            Write-TrayLog ('tip hide error: ' + $_.Exception.Message)
-        }
-        $hideTip.Stop()
-    })
+$script:tip = $null
+
+function Initialize-BobTrayTipForm {
+    if (Test-BobTrayTipAlive) { return }
+    if ($script:tip) {
+        try { $script:tip.Dispose() } catch { }
+        $script:tip = $null
+    }
+    $script:tip = New-Object BobTrayUi.TipForm
+    $script:tip.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+    $script:tip.ControlBox = $false
+    $script:tip.ShowInTaskbar = $false
+    $script:tip.TopMost = $true
+    $script:tip.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $script:tip.BackColor = $bg
+    $script:tip.Padding = New-Object System.Windows.Forms.Padding 14
+    $script:tip.Width = 420
+    $script:titleLabel = New-Object System.Windows.Forms.Label
+    $script:titleLabel.AutoSize = $true
+    $script:titleLabel.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 11
+    $script:titleLabel.ForeColor = $fg
+    $script:titleLabel.Text = $script:hoverTitle
+    $script:titleLabel.Location = New-Object System.Drawing.Point 14, 12
+    $script:closeBtn = New-Object System.Windows.Forms.Label
+    $script:closeBtn.AutoSize = $true
+    $script:closeBtn.Text = 'X'
+    $script:closeBtn.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 10
+    $script:closeBtn.ForeColor = $muted
+    $script:closeBtn.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $script:closeBtn.Location = New-Object System.Drawing.Point 392, 10
+    $script:closeBtn.Add_Click({ Hide-BobTrayCard })
+    $script:barCaption = New-Object System.Windows.Forms.Label
+    $script:barCaption.AutoSize = $true
+    $script:barCaption.Font = New-Object System.Drawing.Font 'Segoe UI', 8.5
+    $script:barCaption.ForeColor = $muted
+    $script:barCaption.Text = 'Weekly remaining  n/a'
+    $script:barCaption.Location = New-Object System.Drawing.Point 14, 40
+    $script:barCaption.Visible = $false
+    $script:barPanel = New-Object System.Windows.Forms.Panel
+    $script:barPanel.Location = New-Object System.Drawing.Point 14, 62
+    $script:barPanel.Size = New-Object System.Drawing.Size 392, 10
+    $script:barPanel.BackColor = $bg
+    $script:barPanel.Visible = $false
+    $script:jobsLabel = New-Object System.Windows.Forms.Label
+    $script:jobsLabel.AutoSize = $true
+    $script:jobsLabel.MaximumSize = New-Object System.Drawing.Size 392, 0
+    $script:jobsLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 9
+    $script:jobsLabel.ForeColor = $fg
+    $script:jobsLabel.Location = New-Object System.Drawing.Point 14, 62
+    $script:jobsLabel.Text = ''
+    $script:jobsLabel.Visible = $false
+    $script:tileHost = New-Object System.Windows.Forms.Panel
+    $script:tileHost.Location = New-Object System.Drawing.Point 14, 38
+    $script:tileHost.Size = New-Object System.Drawing.Size 392, 10
+    $script:tileHost.BackColor = $bg
+    $script:alertLabel = New-Object System.Windows.Forms.Label
+    $script:alertLabel.AutoSize = $true
+    $script:alertLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
+    $script:alertLabel.ForeColor = $muted
+    $script:alertLabel.Location = New-Object System.Drawing.Point 14, 86
+    $script:alertLabel.Text = 'alert: none'
+    $script:tip.Controls.Add($script:titleLabel)
+    $script:tip.Controls.Add($script:closeBtn)
+    $script:tip.Controls.Add($script:barCaption)
+    $script:tip.Controls.Add($script:barPanel)
+    $script:tip.Controls.Add($script:jobsLabel)
+    $script:tip.Controls.Add($script:tileHost)
+    $script:tip.Controls.Add($script:alertLabel)
+    $script:tip.Add_Shown({
+            if (Test-BobTrayTipAlive -and $script:alertLabel) {
+                $script:tip.Height = $script:alertLabel.Bottom + 16
+            }
+        })
+}
+
+Initialize-BobTrayTipForm
 
 function Show-BobTrayCard {
-    param([string]$Reason = 'hover')
+    param([string]$Reason = 'click')
     try {
-        if ($script:cardClosed -and $Reason -ne 'click') { return }
-        if ($Reason -eq 'click') { $script:cardClosed = $false }
-        if ($tip.Visible) { return }
+        # Click / Status only. No hover events. Stay parked until X.
+        if ($Reason -ne 'click') { return }
+        $script:cardClosed = $false
+        if (-not (Test-BobTrayTipAlive)) {
+            Initialize-BobTrayTipForm
+            Write-TrayLog 'tip recreated after dispose'
+        }
+        if (Test-BobTrayTipVisible) { return }
         Clear-BobNativeTip
+        try { $script:iconRectCache = Get-BobNotifyIconRect $notify } catch { }
         # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
         # would freeze the UI and the native "P+ idle" tip would win.
-        $bottom = $jobsLabel.Bottom
+        $bottom = 110
+        if ($script:jobsLabel) { $bottom = $script:jobsLabel.Bottom }
         if ($script:tileHost) { $bottom = $script:tileHost.Bottom }
-        if ($alertLabel) { $bottom = $alertLabel.Bottom }
-        $tip.Height = [Math]::Max(110, $bottom + 16)
-        # NC-T01 / NC-D02: park once on first show. Do not update Location on later MouseMove.
-        if (-not $tip.Visible) {
+        if ($script:alertLabel) { $bottom = $script:alertLabel.Bottom }
+        $script:tip.Height = [Math]::Max(110, $bottom + 16)
+        # Park once on click. Stay in that place until X. No hideTip.
+        if (-not (Test-BobTrayTipVisible)) {
             $iconRect = $script:iconRectCache
             $pt = [System.Windows.Forms.Cursor]::Position
             $work = [System.Windows.Forms.Screen]::FromPoint($pt).WorkingArea
-            $place = Get-BobTrayTipPlacement -TipWidth $tip.Width -TipHeight $tip.Height `
+            $place = Get-BobTrayTipPlacement -TipWidth $script:tip.Width -TipHeight $script:tip.Height `
                 -IconRect $iconRect -Cursor $pt -WorkArea $work -AlreadyVisible $false
-            $tip.Location = New-Object System.Drawing.Point ([int]$place.x), ([int]$place.y)
+            $script:tip.Location = New-Object System.Drawing.Point ([int]$place.x), ([int]$place.y)
             $shown = $false
             try {
-                $shown = [bool]$tip.ShowParkedAt([int]$place.x, [int]$place.y)
+                $shown = [bool]$script:tip.ShowParkedAt([int]$place.x, [int]$place.y)
             }
             catch {
                 Write-TrayLog ("tip ShowParkedAt error reason=${Reason}: " + $_.Exception.Message)
+                if ($_.Exception.Message -match 'disposed') {
+                    try { if ($script:tip) { $script:tip.Dispose() } } catch { }
+                    $script:tip = $null
+                    if (-not $script:tipRecreating) {
+                        $script:tipRecreating = $true
+                        try { Show-BobTrayCard -Reason 'click' }
+                        finally { $script:tipRecreating = $false }
+                    }
+                    return
+                }
             }
             # Do not call Form.Show() after ShowParkedAt — that is a second dialog.
-            if (-not $tip.Visible) {
-                Write-TrayLog ("tip show fail reason=$Reason visible=false handle=$($tip.IsHandleCreated) loc=$($tip.Left),$($tip.Top) src=$($place.source) parked=$shown")
+            if (-not (Test-BobTrayTipVisible)) {
+                $handle = $false
+                $loc = '?'
+                try {
+                    $handle = $script:tip.IsHandleCreated
+                    $loc = "$($script:tip.Left),$($script:tip.Top)"
+                }
+                catch { }
+                Write-TrayLog ("tip show fail reason=$Reason visible=false handle=$handle loc=$loc src=$($place.source) parked=$shown")
             }
             else {
-                Write-TrayLog ("tip show ok reason=$Reason src=$($place.source) loc=$($tip.Left),$($tip.Top) size=$($tip.Width)x$($tip.Height)")
+                Write-TrayLog ("tip show ok reason=$Reason src=$($place.source) loc=$($script:tip.Left),$($script:tip.Top) size=$($script:tip.Width)x$($script:tip.Height)")
             }
         }
     }
     catch {
         Write-TrayLog ("tip show error reason=${Reason}: " + $_.Exception.Message)
+        if ($_.Exception.Message -match 'disposed') {
+            try { if ($script:tip) { $script:tip.Dispose() } } catch { }
+            $script:tip = $null
+        }
     }
 }
 
@@ -715,6 +888,7 @@ $miStatus = $menu.Items.Add('Status')
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')
+$miRestart = $menu.Items.Add('Restart watcher')
 $miExit = $menu.Items.Add('Exit watcher')
 $notify.ContextMenuStrip = $menu
 
@@ -725,6 +899,7 @@ $miStatus.Add_Click({
 $miAck.Add_Click({ Clear-Attention })
 $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath } })
 $ctx = New-Object System.Windows.Forms.ApplicationContext
+$miRestart.Add_Click({ Restart-BobTrayWatcher })
 $miExit.Add_Click({ $ctx.ExitThread() })
 $notify.Add_MouseClick({
         param($s, $e)
@@ -732,13 +907,6 @@ $notify.Add_MouseClick({
             if ($script:attention) { Clear-Attention }
             Show-BobTrayCard -Reason 'click'
         }
-    })
-$notify.Add_MouseMove({
-        $rect = $script:iconRectCache
-        if (-not $rect -or [string]$rect.Source -ne 'icon') { return }
-        $pt = [System.Windows.Forms.Cursor]::Position
-        if (-not (Test-BobTrayPointInRect $pt $rect -Pad 6)) { return }
-        Show-BobTrayCard -Reason 'hover'
     })
 
 $flash = New-Object System.Windows.Forms.Timer
@@ -779,54 +947,26 @@ $pulse.Add_Tick({
         $pulseOff.Stop(); $pulseOff.Start()
     })
 
-$iconProbe = New-Object System.Windows.Forms.Timer
-$iconProbe.Interval = 400
-$iconProbe.Add_Tick({
-        try {
-            $script:iconRectCache = Get-BobNotifyIconRect $notify
-            $pt = [System.Windows.Forms.Cursor]::Position
-            if ($script:iconRectCache -and [string]$script:iconRectCache.Source -eq 'icon') {
-                if (Test-BobTrayPointInRect $pt $script:iconRectCache -Pad 2) {
-                    Show-BobTrayCard -Reason 'probe'
-                }
-                elseif ($script:cardClosed) {
-                    $overTip = $false
-                    if ($tip.Visible) {
-                        $tipRect = @{ X = $tip.Left; Y = $tip.Top; Width = $tip.Width; Height = $tip.Height }
-                        $overTip = Test-BobTrayPointInRect $pt $tipRect -Pad 4
-                    }
-                    if (-not $overTip) { $script:cardClosed = $false }
-                }
-            }
-            if ($tip.Visible) {
-                Clear-BobNativeTip
-                $tipRect = @{ X = $tip.Left; Y = $tip.Top; Width = $tip.Width; Height = $tip.Height }
-                if (Test-BobTrayPointInRect $pt $tipRect -Pad 4) {
-                    $hideTip.Stop(); $hideTip.Start()
-                }
-            }
-        }
-        catch {
-            Write-TrayLog ('icon probe error: ' + $_.Exception.Message)
-        }
-    })
-
 Start-JobsWatcher
 try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
-try { [void]$tip.Handle } catch { Write-TrayLog ('tip handle create fail: ' + $_.Exception.Message) }
+# TipForm handle only on click — startup CreateHandle caused hover stub.
 $notify.Visible = $true
 $flash.Start()
 $poll.Start()
 $pulse.Start()
-$iconProbe.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
-$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop(); $hideTip.Stop(); $iconProbe.Stop()
-$tip.Hide(); $tip.Dispose()
+$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop()
+if (Test-BobTrayTipAlive) {
+    try { [void]$script:tip.TryHide() } catch { try { $script:tip.Hide() } catch { } }
+    try { $script:tip.Dispose() } catch { }
+}
+$script:tip = $null
 $notify.Visible = $false
 $notify.Dispose()
 if ($script:jobsOwned -and $script:jobsPid) {
     try { Stop-Process -Id $script:jobsPid -Force -ErrorAction SilentlyContinue } catch { }
 }
+
 

@@ -25,7 +25,11 @@ function Import-Bridge {
     $env:BOB_BRIDGE_HOME = $BridgeRoot
     $env:BOB_GROK_EXE = $fake
     $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
-    $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
+    $ircCfg = Join-Path $BridgeRoot 'no-bobiverse.json'
+    if (-not (Test-Path $ircCfg)) {
+        '{"channel":"#test","mode":"free","mootId":"testmoot","nicks":{}}' | Set-Content -Path $ircCfg -Encoding utf8
+    }
+    $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
@@ -625,6 +629,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
     if ($skillTray -notmatch 'not in moot') { throw 'bob-fleet-tray skill must document not-in-moot tiles' }
+    if ($skillTray -notmatch 'bobiverse') { throw 'bob-fleet-tray skill must name bobiverse seats' }
+    if ($skillTray -notmatch 'marchhare-bugets') { throw 'bob-fleet-tray skill must reject ghost IRC ids' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
     if ($skillTray -notmatch 'bob-fleet-peer-peek') { throw 'bob-fleet-tray skill must point at peer-peek transport doc' }
     $skillBox = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
@@ -670,7 +676,7 @@ Invoke-Case 'BT0m tray tip placement' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Get-BobTrayTipPlacement') { throw 'Watch-BobTray must call Get-BobTrayTipPlacement' }
     if ($traySrc -notmatch 'AlreadyVisible') { throw 'Watch-BobTray must pass AlreadyVisible to placement' }
-    if ($traySrc -notmatch '(?s)if \(-not \$tip\.Visible\).{0,800}Get-BobTrayTipPlacement') {
+    if ($traySrc -notmatch '(?s)if \(-not \(Test-BobTrayTipVisible\)\).{0,800}Get-BobTrayTipPlacement') {
         throw 'Get-BobTrayTipPlacement must run only when tip is not visible'
     }
     if ($traySrc -match '\$x = \$pt\.X - \$tip\.Width') { throw 'Watch-BobTray still derives Location from cursor X every move' }
@@ -691,15 +697,23 @@ Invoke-Case 'BT0m tray tip placement' {
 Invoke-Case 'BT0n tray tip show' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show card on hover' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show the dark card on hover' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show the dark card when the cursor is over the icon' }
     if ($traySrc -notmatch 'Source -ne ''icon''') { throw 'MouseMove must ignore spurious events unless pointer is on the tray icon' }
+    if ($traySrc -match '(?s)overTip.{0,240}cardClosed = \$false') { throw 'must not rearm hover by clearing cardClosed when leaving the tip' }
+    if ($traySrc -match 'function Restore-BobNativeTip') { throw 'must not restore NotifyIcon.Text (white P+ idle chip is the double dialog)' }
+    if ($traySrc -match '\$notify\.Text = \$') { throw 'must not assign NotifyIcon.Text from a short P+ string' }
+    if ($traySrc -notmatch 'IsDisposed') { throw 'TipForm access must guard IsDisposed' }
+    if ($traySrc -notmatch 'TryHide') { throw 'TipForm must TryHide so the TOPMOST HWND is actually hidden' }
+    if ($traySrc -notmatch 'SWP_HIDEWINDOW') { throw 'TryHide must use SWP_HIDEWINDOW' }
+    if ($traySrc -notmatch 'Initialize-BobTrayTipForm') { throw 'disposed TipForm must recreate via Initialize-BobTrayTipForm' }
+    if ($traySrc -notmatch 'LiveCount') { throw 'TipForm must expose LiveCount so only one instance is live' }
     if ($traySrc -match '(?s)function Show-BobTrayCard.{0,500}Update-Hover') { throw 'Show-BobTrayCard must not Get-BobTrayHover/Update-Hover (idle hover would freeze on peer DNS)' }
     $peekSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobFleetPeek.ps1') -Raw
     if ($peekSrc -notmatch '(?s)function Test-BobHostnameResolves.+Invoke-BobTimed') {
         throw 'Test-BobHostnameResolves must time out DNS so idle tray hover stays instant'
     }
     if ($traySrc -notmatch "Show-BobTrayCard -Reason 'click'") { throw 'left-click must show card (overflow fallback)' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show card when cursor is over icon' }
     if ($traySrc -notmatch 'ShowParkedAt') { throw 'tip form must force-show via ShowParkedAt' }
     if ($traySrc -notmatch 'SetWindowPos') { throw 'tip show must use SetWindowPos' }
     if ($traySrc -notmatch 'SWP_NOACTIVATE') { throw 'SetWindowPos must pass SWP_NOACTIVATE' }
@@ -710,7 +724,7 @@ Invoke-Case 'BT0n tray tip show' {
     if ($traySrc -match '(?s)Add_MouseMove\(\{.{0,400}Get-BobNotifyIconRect') {
         throw 'Do not call Shell_NotifyIconGetRect / Get-BobNotifyIconRect from MouseMove'
     }
-    if ($traySrc -notmatch '(?s)if \(-not \$tip\.Visible\).{0,800}Get-BobTrayTipPlacement') {
+    if ($traySrc -notmatch '(?s)if \(-not \(Test-BobTrayTipVisible\)\).{0,800}Get-BobTrayTipPlacement') {
         throw 'Get-BobTrayTipPlacement must run only when tip is not visible'
     }
     if ($traySrc -match '\$x = \$pt\.X - \$tip\.Width') { throw 'Watch-BobTray still derives Location from cursor X every move' }
@@ -720,9 +734,16 @@ Invoke-Case 'BT0n tray tip show' {
 
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch '(?i)left-click') { throw 'bob-fleet-tray skill must document left-click card show' }
+    if ($skillTray -notmatch '(?i)P\+ idle') { throw 'bob-fleet-tray skill must name the native P+ idle chip as the fail' }
+    if ($skillTray -notmatch '(?i)Never park') { throw 'bob-fleet-tray skill must forbid parking NotifyIcon.Text' }
     if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
     if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
 
+    $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
+    if (-not $onWindows) {
+        Write-Host 'BT0n STA ShowParkedAt smoke skipped (WinForms not available on this host)'
+        return
+    }
     $sta = {
         Add-Type -AssemblyName System.Windows.Forms
         Add-Type -AssemblyName System.Drawing
@@ -742,10 +763,22 @@ namespace BobTrayShowTest {
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public const int SW_SHOWNA = 8;
+        public const uint SWP_NOSIZE = 0x0001;
+        public const uint SWP_NOMOVE = 0x0002;
         public const uint SWP_NOACTIVATE = 0x0010;
         public const uint SWP_SHOWWINDOW = 0x0040;
+        public const uint SWP_HIDEWINDOW = 0x0080;
     }
     public class TipForm : Form {
+        static TipForm _live;
+        public static int LiveCount {
+            get { return (_live != null && !_live.IsDisposed) ? 1 : 0; }
+        }
+        public TipForm() { _live = this; }
+        protected override void Dispose(bool disposing) {
+            if (object.ReferenceEquals(_live, this)) _live = null;
+            base.Dispose(disposing);
+        }
         protected override bool ShowWithoutActivation { get { return true; } }
         protected override CreateParams CreateParams {
             get {
@@ -756,17 +789,28 @@ namespace BobTrayShowTest {
                 return cp;
             }
         }
+        public bool TryHide() {
+            if (this.IsDisposed) return true;
+            try {
+                if (this.IsHandleCreated) {
+                    Shell.SetWindowPos(this.Handle, System.IntPtr.Zero, 0, 0, 0, 0,
+                        Shell.SWP_NOSIZE | Shell.SWP_NOMOVE | Shell.SWP_NOACTIVATE | Shell.SWP_HIDEWINDOW);
+                }
+                if (this.Visible) this.Hide();
+                return this.IsDisposed || !this.Visible;
+            } catch (System.ObjectDisposedException) { return true; }
+        }
         public bool ShowParkedAt(int x, int y) {
-            this.Left = x; this.Top = y;
-            if (!this.IsHandleCreated) this.CreateHandle();
-            Shell.SetWindowPos(this.Handle, Shell.HWND_TOPMOST, x, y, this.Width, this.Height,
-                Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
-            this.Visible = true;
-            if (!this.Visible) {
-                Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
-                this.Visible = true;
-            }
-            return this.Visible;
+            if (this.IsDisposed) return false;
+            try {
+                this.Left = x; this.Top = y;
+                if (!this.IsHandleCreated) this.CreateHandle();
+                if (this.IsDisposed) return false;
+                Shell.SetWindowPos(this.Handle, Shell.HWND_TOPMOST, x, y, this.Width, this.Height,
+                    Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
+                if (!this.Visible) this.Visible = true;
+                return !this.IsDisposed && this.Visible;
+            } catch (System.ObjectDisposedException) { return false; }
         }
     }
 }
@@ -782,10 +826,19 @@ namespace BobTrayShowTest {
             $ok = [bool]$f.ShowParkedAt(48, 48)
             if (-not $f.Visible) { throw 'ShowParkedAt did not set Visible' }
             if (-not $ok) { throw 'ShowParkedAt returned false' }
+            if ([int][BobTrayShowTest.TipForm]::LiveCount -ne 1) { throw 'LiveCount must be 1 while shown' }
+            if (-not $f.TryHide()) { throw 'TryHide failed' }
+            $f.Dispose()
+            $after = $false
+            try { $after = [bool]$f.ShowParkedAt(48, 48) } catch { throw 'ShowParkedAt on disposed form must not throw' }
+            if ($after) { throw 'ShowParkedAt on disposed form must return false' }
+            $hid = $false
+            try { $hid = [bool]$f.TryHide() } catch { throw 'TryHide on disposed form must not throw' }
+            if (-not $hid) { throw 'TryHide on disposed form must return true' }
+            if ([int][BobTrayShowTest.TipForm]::LiveCount -ne 0) { throw 'LiveCount must be 0 after dispose' }
         }
         finally {
-            try { $f.Hide() } catch { }
-            $f.Dispose()
+            try { if (-not $f.IsDisposed) { $f.Hide(); $f.Dispose() } } catch { }
         }
         'ok'
     }
@@ -869,6 +922,28 @@ Invoke-Case 'BT0o bobiverse irc' {
     $mh = Read-BobIrcPeer -Id marchhare
     if (-not $mh) { throw 'transcript harvest did not write marchhare peer' }
     if ([int]$mh.weekly -ne 40) { throw "harvest weekly=$($mh.weekly)" }
+
+    $ghostTx = @(
+        '1700000001 evil POINT BOB v1 id=marchhare-bugets weekly=9 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-'
+        '1700000002 bob-flamingo POINT BOB v1 id=bob-flamingo weekly=20 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-'
+    ) -join "`n"
+    [IO.File]::WriteAllText((Join-Path $mootDir ($cfg.mootId + '.txt')), $tx + "`n" + $ghostTx)
+    $got2 = @(Import-BobIrcPeerTranscript)
+    if ($got2 -contains 'marchhare-bugets') { throw 'ghost IRC id marchhare-bugets must not be harvested' }
+    if (Test-Path (Join-Path $peerDir 'marchhare-bugets.json')) { throw 'must not write bob-peers/marchhare-bugets.json' }
+    if ($got2 -notcontains 'flamingo') { throw 'id=bob-flamingo POINT must resolve to flamingo' }
+    $macDir2 = Join-Path $bridgeRoot 'fleet\machines'
+    New-Item -ItemType Directory -Force -Path $macDir2 | Out-Null
+    [IO.File]::WriteAllText((Join-Path $macDir2 'marchhare-bugets.json'), '{"id":"marchhare-bugets"}')
+    $hSeats = Get-BobTrayHover
+    $seatIds = @($hSeats.machines | ForEach-Object { [string]$_.id })
+    if ($seatIds -contains 'marchhare-bugets') { throw "ghost tile leaked: $($seatIds -join ',')" }
+    foreach ($need in @('flamingo', 'ionos', 'marchhare', 'ce-priority-dev1')) {
+        if ($seatIds -notcontains $need) { throw "missing bobiverse seat $need : $($seatIds -join ',')" }
+    }
+    $ionosSeat = @($hSeats.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
+    if ([string]$ionosSeat.reach -ne 'irc-fallback') { throw "ionos seat reach=$($ionosSeat.reach) expected irc-fallback" }
+    if ([string]$hSeats.jobs_text -match 'marchhare-bugets') { throw "jobs_text has ghost: $($hSeats.jobs_text)" }
 
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }

@@ -11,27 +11,28 @@ description: >
 
 # Tray (Bob Fleet)
 
-`tools/Watch-BobTray.ps1` is the human monitor. Title is **Bob Fleet**. The card lists **every registered fleet machine** (bundled `config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json` + local `fleet/machines`), this host first. Under each tile: running then queued jobs **on that machine**. Transport is read-only filesystem peek (`docs/bob-fleet-peer-peek.md`). No WinRM. Status is the `#bobiverse` MODE2 roster, not SMB. Tile stays for every registered peer. Empty in-moot tile: `  no jobs`. Not on the moot roster: `  not in moot` (do not say `unreachable` unless they are not in the moot). Readable store, old heartbeat: `  lastSeen stale`. Never invent jobs. Never omit a registered peer.
+`tools/Watch-BobTray.ps1` is the human monitor. Title is **Bob Fleet**. When `config/bobiverse.json` has `nicks`, the card lists **only those machine ids** (flamingo / ionos / marchhare / ce-priority-dev1) plus this host if it is one of them. Never a ghost IRC-derived name (`marchhare-bugets` or a raw nick). Without nicks (hermetic tests), fall back to bundled `config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json` + local `fleet/machines`. This host first. Under each tile: running then queued jobs **on that machine**. Transport is read-only filesystem peek (`docs/bob-fleet-peer-peek.md`). No WinRM. Status is the `#bobiverse` MODE2 roster, not SMB. Empty in-moot tile: `  no jobs`. Registered bobiverse seats prefer `irc-fallback` over `not in moot`. Readable store, old heartbeat: `  lastSeen stale`. Never invent jobs. Never omit a registered bobiverse seat.
 
 `Install-BobFleet` registers it as `BobFleet-<id>` with `-STA -WindowStyle Hidden`. It starts hidden `Watch-BobJobs.ps1`. Do not leave a blank PowerShell window on the desktop.
 
 ## UI
 
 - Idle: Font Awesome Free solid **robot** (CC BY 4.0), not grok.exe extract.
-- Left-click: acknowledge if flashing; **always show the dark card** (overflow-chevron fallback when hover is unreliable). Right-click: Status, Open log, Exit.
-- **Mouse-over**: dark card. Hover uses `NotifyIcon.MouseMove` plus a 400ms icon-rect probe (`Shell_NotifyIconGetRect` cached on a timer — do **not** call it from the MouseMove callback). If the native `NotifyIcon.Text` tip is the only thing that appears, that is a fail.
+- Left-click: acknowledge if flashing; **always show the dark card**. Right-click: **Status** (same card), Open log, Exit.
+- **Mouse-over**: dark card (`NotifyIcon.MouseMove` plus a 400ms icon-rect probe). `Shell_NotifyIconGetRect` is cached on the timer — do **not** call it from the MouseMove callback. Success is the dark card. The native white `P+ idle …` chip is a fail — never park `NotifyIcon.Text`.
   - Title: **Bob Fleet** (not `Bob (<machineId>)`).
   - **Cursor account row** under the title: heading `cursor (N%)` and a full-width weekly bar (no pointer icon). N% is **remaining** = 100 − Grok Bot Sand `usagePercent` (the same “Weekly usage 98%” flyout, which is **used**). Not the Cursor spend-plan remaining/limit. Not the Grok Build xAI seat. Machine tiles use xAI `unified.jsonl` `creditUsagePercent`. Then **indent** machine tiles under that.
   - **One weekly remaining bar per machine tile** (each box has its own Grok seat). Heading `MACHINENAME (75%)` uses a **transparent** label so it does not cover the bar. Bar fill is a gradient: **100% green, 0% red** (amber in the middle). This host: last `billing: fetched credits config` in `~\.grok\logs\unified.jsonl`, `remaining_pct = round(100 - creditUsagePercent)` when `currentPeriod.type` is weekly. Peers: `weekly=` on their `BOB v1` POINT. Unknown weekly: empty track, `(n/a)`. Never fake 100%. No `auth.json`. No billing HTTP. Session context is not this bar.
-  - **One card only.** While the dark card is visible, `NotifyIcon.Text` is blank so Windows does not stack the native `P+ idle` tip on top of it.
-  - **X** on the card closes it (`Hide-BobTrayCard`). Hover does not re-open until the cursor leaves the icon.
+  - **One card only. Exactly one `TipForm`.** `NotifyIcon.Text` stays empty always (`Clear-BobNativeTip` / space-clear). Never restore a short `P+ idle …` native tip after hide or hover — that white chip is the double dialog.
+  - **X** on the card closes it (`Hide-BobTrayCard`). Hover does not re-open until the cursor leaves the **icon** (do not clear `cardClosed` merely because the cursor left the tip).
+  - Never call methods on a disposed `TipForm`; recreate via `Initialize-BobTrayTipForm` only after dispose. `ShowParkedAt` / `TryHide` / `Visible` must no-op or return false when `IsDisposed`. Never `Form.Show()` after `ShowParkedAt`.
   - Session context from `usage.json` is optional on the job object (`context_remaining_pct`) only. It is **not** the hover bar.
   - **Machine tiles**: heading `MACHINENAME (75%)` or `(n/a)`, full-width weekly bar beneath, then indented jobs (`owner/repo  duration  state`). A live `grok.exe` on this box is a running job even if Bob did not start it (`active_sessions.json` + process list). Do not list `Grok Bot.exe`. Empty in-moot: `  no jobs`. Not in the `#bobiverse` roster: `  not in moot`. Stale heartbeat: `  lastSeen stale`. Never a commit SHA as the primary label.
   - Footer: `alert: watcher|stall|weekly|none`.
-  - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restarting `hideTip` on MouseMove is OK. Hide via the existing hide timer / leave as today.
-  - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone.
+  - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restart `hideTip` on show / while the pointer is over the card. Hide via X, hide timer, or `TryHide` (`SWP_HIDEWINDOW`).
+  - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone. Hide with `TryHide` (`SWP_HIDEWINDOW`).
   - **Log** show/hide failures (and successful first-show) to `watch_bob_tray.log`.
-- Short `NotifyIcon.Text` (63 chars): weekly remaining + run count, e.g. `P+ 1 run  9%`. Omit the percent when weekly remaining is unknown.
+- **Never park `NotifyIcon.Text`.** Keep it empty (or a single space via `Clear-BobNativeTip` / `HideTooltipWindows`). The short `P+ idle 0%` / `P+ 1 run  9%` string is not a hover surface — it is the stuck white chip to eliminate. Weekly remaining lives on the dark card bars.
 
 ## Badge sources
 

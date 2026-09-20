@@ -10,6 +10,39 @@ function Get-BobiverseConfig {
     return (Read-JsonFile $p)
 }
 
+function Get-BobiverseMachineIds {
+    $cfg = Get-BobiverseConfig
+    $ids = @()
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            $id = [string]$p.Name
+            if ($id) { $ids += $id }
+        }
+    }
+    return @($ids)
+}
+
+function Resolve-BobiverseMachineId {
+    param([string]$Raw)
+    if (-not $Raw) { return $null }
+    $id = [string]$Raw.Trim()
+    if (-not $id) { return $null }
+    $cfg = Get-BobiverseConfig
+    if (-not $cfg -or -not $cfg.nicks) { return $id }
+    $props = @($cfg.nicks.PSObject.Properties)
+    if ($props.Count -eq 0) { return $id }
+    foreach ($p in $props) {
+        if ([string]$p.Name -eq $id) { return [string]$p.Name }
+    }
+    foreach ($p in $props) {
+        $nk = [string]$p.Value
+        if ($nk -and $nk.ToLowerInvariant() -eq $id.ToLowerInvariant()) {
+            return [string]$p.Name
+        }
+    }
+    return $null
+}
+
 function Get-BobIrcHome {
     if ($env:BOB_IRC_HOME -and $env:BOB_IRC_HOME.Trim()) {
         return [IO.Path]::GetFullPath($env:BOB_IRC_HOME.Trim())
@@ -72,6 +105,9 @@ function Test-BobMachineInMoot {
     if ($Roster.idToNick.ContainsKey($MachineId)) {
         $nk = [string]$Roster.idToNick[$MachineId]
         if ($nk -and ($Roster.nicks -contains $nk.ToLowerInvariant())) { return $true }
+        # Registered bobiverse seat (nicks key). Prefer irc-fallback over
+        # not-in-moot even when the live MODE2 roster file is empty/stale.
+        return $true
     }
     return $false
 }
@@ -245,10 +281,13 @@ function Import-BobIrcPeerTranscript {
         if ($idx -lt 0) { continue }
         $doc = ConvertFrom-BobIrcPoint $raw.Substring($idx)
         if (-not $doc) { continue }
+        $resolved = Resolve-BobiverseMachineId ([string]$doc.id)
+        if (-not $resolved) { continue }
+        $doc | Add-Member -NotePropertyName id -NotePropertyValue $resolved -Force
         $dir = Join-Path $home 'bob-peers'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        Write-JsonFile (Join-Path $dir ($doc.id + '.json')) $doc
-        $updated += $doc.id
+        Write-JsonFile (Join-Path $dir ($resolved + '.json')) $doc
+        $updated += $resolved
     }
     return $updated
 }
