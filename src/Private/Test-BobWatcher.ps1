@@ -3,7 +3,7 @@ function Test-BobWatcherUp {
         Where-Object {
             $_.Name -match '^(powershell|pwsh)\.exe$' -and
             $_.CommandLine -and
-            ($_.CommandLine -match 'Watch-BobJobs\.ps1' -or $_.CommandLine -match 'Watch-BobTray\.ps1') -and
+            $_.CommandLine -match 'Watch-BobJobs\.ps1' -and
             $_.CommandLine -notmatch '(?i)-Once\b'
         })
     return ($hits.Count -gt 0)

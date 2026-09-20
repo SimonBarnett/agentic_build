@@ -266,6 +266,15 @@ Invoke-Case 'BT0k fleet fake store' {
     $h = Get-BobHealth
     if ($null -eq $h.watcher_up) { throw 'health.watcher_up missing' }
     if (-not ($h.PSObject.Properties.Name -contains 'last_seen')) { throw 'health.last_seen missing' }
+
+    $watchSrc = Get-Content $watch -Raw
+    if ($watchSrc -match '(?m)^\s*\$mid\s*=\s*Get-ThisMachineId\b') { throw 'Watch-BobJobs must not call private Get-ThisMachineId' }
+    if ($watchSrc -match 'catch\s*\{\s*Write-Error') { throw 'Watch-BobJobs catch must not Write-Error (kills poller under ErrorAction Stop)' }
+    if ($watchSrc -notmatch '(?s)if \(\$Once\).+while \(\$true\).+Invoke-BobFleetTick') {
+        throw 'idle Watch-BobJobs loop must Invoke-BobFleetTick so lastSeen stays fresh'
+    }
+    $tw = Get-Content (Join-Path $RepoRoot 'src\Private\Test-BobWatcher.ps1') -Raw
+    if ($tw -match 'Watch-BobTray') { throw 'watcher_up must not treat Watch-BobTray as the pull worker' }
 }
 
 # --- BT0l tray hover (weekly remaining + machine tiles T1-T7) ---

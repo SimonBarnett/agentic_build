@@ -51,7 +51,7 @@ Poll `Get-BobBuild`. Worker pings `reply_channel` (Grok Bot name) queued/running
 
 ## Watcher dead
 
-`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`). `last_seen` / `last_seen_age_sec` come from `machine.json`. `lastSeen` is written at the start of each tick; a live claimed job holds the loop so age can exceed 90s while healthy.
+`Get-BobHealth.watcher_up` is a live `Watch-BobJobs.ps1` process (not `-Once`, not the tray). `last_seen` / `last_seen_age_sec` come from `machine.json`. `lastSeen` is written at the start of each tick (idle `Invoke-BobFleetTick` included); a live claimed job holds the `-Once` child so age can exceed 90s while healthy.
 
 A `BobFleet-<id>` task that is `Ready` with LastRunTime 1932 / result 267011 **never started** (registered after this logon).
 
