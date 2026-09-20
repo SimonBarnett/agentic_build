@@ -155,23 +155,49 @@ function Get-BobSeatPeriodEndCachePath {
 function Read-BobSeatPeriodEndCache {
     $p = Get-BobSeatPeriodEndCachePath
     if (-not $p -or -not (Test-Path $p)) {
-        return [pscustomobject]@{ by_machine = @{}; by_seat = @{} }
+        return [pscustomobject]@{ by_machine = @{}; by_seat = @{}; weekly_by_machine = @{}; weekly_by_seat = @{} }
     }
     try {
         $j = Read-JsonFile $p
-        if (-not $j) { return [pscustomobject]@{ by_machine = @{}; by_seat = @{} } }
-        $bm = @{}
-        $bs = @{}
+        if (-not $j) { return [pscustomobject]@{ by_machine = @{}; by_seat = @{}; weekly_by_machine = @{}; weekly_by_seat = @{} } }
+        $bm = @{}; $bs = @{}; $wm = @{}; $ws = @{}
         if ($j.by_machine) {
-            foreach ($p2 in $j.by_machine.PSObject.Properties) { $bm[$p2.Name] = [string]$p2.Value }
+            foreach ($p2 in $j.by_machine.PSObject.Properties) {
+                # Back-compat: string value = period_end only
+                if ($p2.Value -is [string] -or $p2.Value -is [datetime]) {
+                    $bm[$p2.Name] = [string]$p2.Value
+                }
+                elseif ($p2.Value) {
+                    if ($p2.Value.period_end) { $bm[$p2.Name] = [string]$p2.Value.period_end }
+                    if ($null -ne $p2.Value.weekly) { $wm[$p2.Name] = [int]$p2.Value.weekly }
+                }
+            }
         }
         if ($j.by_seat) {
-            foreach ($p2 in $j.by_seat.PSObject.Properties) { $bs[$p2.Name] = [string]$p2.Value }
+            foreach ($p2 in $j.by_seat.PSObject.Properties) {
+                if ($p2.Value -is [string] -or $p2.Value -is [datetime]) {
+                    $bs[$p2.Name] = [string]$p2.Value
+                }
+                elseif ($p2.Value) {
+                    if ($p2.Value.period_end) { $bs[$p2.Name] = [string]$p2.Value.period_end }
+                    if ($null -ne $p2.Value.weekly) { $ws[$p2.Name] = [int]$p2.Value.weekly }
+                }
+            }
         }
-        return [pscustomobject]@{ by_machine = $bm; by_seat = $bs }
+        if ($j.weekly_by_machine) {
+            foreach ($p2 in $j.weekly_by_machine.PSObject.Properties) {
+                try { $wm[$p2.Name] = [int]$p2.Value } catch { }
+            }
+        }
+        if ($j.weekly_by_seat) {
+            foreach ($p2 in $j.weekly_by_seat.PSObject.Properties) {
+                try { $ws[$p2.Name] = [int]$p2.Value } catch { }
+            }
+        }
+        return [pscustomobject]@{ by_machine = $bm; by_seat = $bs; weekly_by_machine = $wm; weekly_by_seat = $ws }
     }
     catch {
-        return [pscustomobject]@{ by_machine = @{}; by_seat = @{} }
+        return [pscustomobject]@{ by_machine = @{}; by_seat = @{}; weekly_by_machine = @{}; weekly_by_seat = @{} }
     }
 }
 
@@ -179,24 +205,33 @@ function Save-BobSeatPeriodEnd {
     param(
         [string]$MachineId,
         [string]$PeriodEnd,
-        [string]$SeatId
+        [string]$SeatId,
+        $Weekly
     )
-    if (-not $PeriodEnd -or [string]::IsNullOrWhiteSpace($PeriodEnd)) { return }
     $p = Get-BobSeatPeriodEndCachePath
     if (-not $p) { return }
     $cache = Read-BobSeatPeriodEndCache
-    if ($MachineId) { $cache.by_machine[$MachineId] = [string]$PeriodEnd }
+    if ($MachineId -and $PeriodEnd) { $cache.by_machine[$MachineId] = [string]$PeriodEnd }
+    if ($MachineId -and $null -ne $Weekly -and [string]$Weekly -ne '') {
+        try { $cache.weekly_by_machine[$MachineId] = [int]$Weekly } catch { }
+    }
     if (-not $SeatId -and $MachineId) {
         try {
             $s = Get-BobSeatForMachine -MachineId $MachineId
             if ($s) { $SeatId = [string]$s.id }
         } catch { }
     }
-    if ($SeatId) { $cache.by_seat[$SeatId] = [string]$PeriodEnd }
+    if ($SeatId -and $PeriodEnd) { $cache.by_seat[$SeatId] = [string]$PeriodEnd }
+    if ($SeatId -and $null -ne $Weekly -and [string]$Weekly -ne '') {
+        try { $cache.weekly_by_seat[$SeatId] = [int]$Weekly } catch { }
+    }
+    if (-not $PeriodEnd -and $null -eq $Weekly) { return }
     $doc = [pscustomobject]@{
-        by_machine = [pscustomobject]$cache.by_machine
-        by_seat    = [pscustomobject]$cache.by_seat
-        updated_at = [DateTime]::UtcNow.ToString('o')
+        by_machine         = [pscustomobject]$cache.by_machine
+        by_seat            = [pscustomobject]$cache.by_seat
+        weekly_by_machine  = [pscustomobject]$cache.weekly_by_machine
+        weekly_by_seat     = [pscustomobject]$cache.weekly_by_seat
+        updated_at         = [DateTime]::UtcNow.ToString('o')
     }
     try { Write-JsonFile $p $doc } catch { }
 }
@@ -361,7 +396,7 @@ function Write-BobIrcStatus {
     }
     catch { }
     $seen = [DateTime]::UtcNow.ToString('o')
-    if ($periodEnd) { Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd }
+    Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd -Weekly $week
     $cursorLabel = $null
     $cursorPeriodEnd = $null
     try {
@@ -440,7 +475,7 @@ function Import-BobIrcPeerTranscript {
                 }
             } catch { }
         }
-        if ($doc.period_end) { Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd ([string]$doc.period_end) }
+        Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
             Save-BobCursorAccountCache -Label ([string]$doc.cursor_label) -PeriodEnd $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
         }

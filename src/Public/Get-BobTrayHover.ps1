@@ -674,7 +674,9 @@ function Get-BobTrayHover {
     }
     if ($week -and $week.period_end) {
         $periodEndBy[$machineId] = [string]$week.period_end
-        Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd ([string]$week.period_end)
+    }
+    if ($week) {
+        Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd $(if ($week.period_end) { [string]$week.period_end } else { $null }) -Weekly $(if ($null -ne $week.remaining_pct) { [int]$week.remaining_pct } else { $null })
     }
     $cursorWeek = $null
     $cursorRemain = $null
@@ -724,6 +726,11 @@ function Get-BobTrayHover {
             $weeklyBy[$mid] = [int]$peek.weekly
         }
         if ($peek.period_end) { $periodEndBy[$mid] = [string]$peek.period_end }
+        if (($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) -or $peek.period_end) {
+            try {
+                Save-BobSeatPeriodEnd -MachineId $mid -PeriodEnd $(if ($peek.period_end) { [string]$peek.period_end } else { $null }) -Weekly $(if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) { [int]$peek.weekly } else { $null })
+            } catch { }
+        }
         if ($peek.cursor_label -and [string]$peek.cursor_label -ne 'empty') {
             try { Save-BobCursorAccountCache -Label ([string]$peek.cursor_label) -PeriodEnd $(if ($peek.cursor_period_end) { [string]$peek.cursor_period_end } else { $null }) } catch { }
         }
@@ -806,20 +813,33 @@ function Get-BobTrayHover {
                 $periodEndBy[$mid2] = [string]$peCache.by_machine[$mid2]
             }
         }
+        foreach ($mid2 in @($order)) {
+            if ($weeklyBy.ContainsKey($mid2) -and $null -ne $weeklyBy[$mid2]) { continue }
+            if ($peCache.weekly_by_machine.ContainsKey($mid2) -and $null -ne $peCache.weekly_by_machine[$mid2]) {
+                $weeklyBy[$mid2] = [int]$peCache.weekly_by_machine[$mid2]
+            }
+        }
         foreach ($seat in @(Get-BobSeatConfig)) {
             $sid = [string]$seat.id
             $seatEnd = $null
+            $seatWeek = $null
             if ($sid -and $peCache.by_seat.ContainsKey($sid) -and $peCache.by_seat[$sid]) {
                 $seatEnd = [string]$peCache.by_seat[$sid]
+            }
+            if ($sid -and $peCache.weekly_by_seat.ContainsKey($sid) -and $null -ne $peCache.weekly_by_seat[$sid]) {
+                $seatWeek = [int]$peCache.weekly_by_seat[$sid]
             }
             foreach ($sm in @($seat.machines)) {
                 $smid = [string]$sm
                 if (-not $smid) { continue }
                 if ($periodEndBy.ContainsKey($smid) -and $periodEndBy[$smid]) {
                     if (-not $seatEnd) { $seatEnd = [string]$periodEndBy[$smid] }
-                    continue
                 }
-                if ($seatEnd) { $periodEndBy[$smid] = $seatEnd }
+                elseif ($seatEnd) { $periodEndBy[$smid] = $seatEnd }
+                if ($weeklyBy.ContainsKey($smid) -and $null -ne $weeklyBy[$smid]) {
+                    if ($null -eq $seatWeek) { $seatWeek = [int]$weeklyBy[$smid] }
+                }
+                elseif ($null -ne $seatWeek) { $weeklyBy[$smid] = [int]$seatWeek }
             }
             if ($seatEnd) {
                 foreach ($sm in @($seat.machines)) {
@@ -829,9 +849,21 @@ function Get-BobTrayHover {
                     }
                 }
             }
+            if ($null -ne $seatWeek) {
+                foreach ($sm in @($seat.machines)) {
+                    $smid = [string]$sm
+                    if ($smid -and (-not $weeklyBy.ContainsKey($smid) -or $null -eq $weeklyBy[$smid])) {
+                        $weeklyBy[$smid] = [int]$seatWeek
+                    }
+                }
+            }
         }
         foreach ($k in @($periodEndBy.Keys)) {
-            if ($periodEndBy[$k]) { Save-BobSeatPeriodEnd -MachineId $k -PeriodEnd ([string]$periodEndBy[$k]) }
+            $wk = $null
+            if ($weeklyBy.ContainsKey($k)) { $wk = $weeklyBy[$k] }
+            if ($periodEndBy[$k] -or $null -ne $wk) {
+                Save-BobSeatPeriodEnd -MachineId $k -PeriodEnd $(if ($periodEndBy[$k]) { [string]$periodEndBy[$k] } else { $null }) -Weekly $wk
+            }
         }
     } catch { }
 
