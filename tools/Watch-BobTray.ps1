@@ -736,7 +736,7 @@ function Rebuild-BobTrayTiles {
     $script:tileHost = $stage
     try {
         $acctHeading = ('{0} ({1})' -f $acctName, $acctLabel)
-        if ($AccountReset) { $acctHeading = ('{0}  ·  {1}' -f $acctHeading, [string]$AccountReset) }
+        if ($AccountReset) { $acctHeading = ('{0} - {1}' -f $acctHeading, [string]$AccountReset) }
         $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
             -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
         $y += 6
@@ -756,7 +756,7 @@ function Rebuild-BobTrayTiles {
             $nameHeading = $id
             if ($seat) { $nameHeading = ('{0}  -  {1}' -f $id, $seat) }
             $machHeading = ('{0} ({1})' -f $nameHeading, $pctLabel)
-            if ($m.reset_label) { $machHeading = ('{0}  ·  {1}' -f $machHeading, [string]$m.reset_label) }
+            if ($m.reset_label) { $machHeading = ('{0} - {1}' -f $machHeading, [string]$m.reset_label) }
             $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading $machHeading `
                 -RemainingPct $pct -BarWidth 354 -Icon $null
             $reach = [string]$m.reach
