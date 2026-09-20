@@ -57,9 +57,9 @@ python $api post --service aiserver.v1.SandBoxService --agent <Name> --method Re
 python $api post --service aiserver.v1.SandBoxService --agent <Name> --method EnsureSandBox --json '{"wake":true}'
 ```
 
-`--agent` is required. `started: true` then `EnsureSandBox.podId` must **change**. Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
+`--agent` is required. `started: true` is not done. Poll `EnsureSandBox` until `podId` **differs** from the pre-recreate id (can take 1-3 minutes; Ensure may time out mid-transfer). Then two samples ~30s apart on the **new** id, `runState` RUNNING, no transfer toast. Two stable samples of the **old** id mean recreate has not taken yet. Never print `execDaemon*`, `vncUrl`, `gatewayToken`, `networkToken`.
 
-Wait until transfer is done: `podId` unchanged on two EnsureSandBox samples ~30s apart, `runState` RUNNING, no transfer toast. Do **not** `send` (API or UI) during transfer.
+Do **not** `send` (API or UI) until the new `podId` is stable.
 
 `Waiting to send` in the UI is PENDING (not in the transcript). Cancel it after the toast is gone.
 

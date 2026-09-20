@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — unstick wait for new podId
+
+RecreateSandBox `started: true` is not success. Poll EnsureSandBox until `podId` changes (1-3 min; API can timeout mid-transfer). Two 30s samples of the **old** id mean the box has not rotated.
+
 ## 2026-09-20 — harvest during the job
 
 `harvest-agent-skills` now fires in-session: if a build/fleet job learns a repeatable procedure, write the skill, log, commit, push `origin/main`. Hourly `BobSkillHarvest-*` is backup. `grok-build-fleet` points here.
