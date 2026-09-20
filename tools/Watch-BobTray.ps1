@@ -1,5 +1,5 @@
 ﻿# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
-# Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
+# Title is #Bobiverse (THISMACHINENAME). Primary bar is weekly remaining (CLI billing log).
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
 # No WinRM. See docs/bob-fleet-peer-peek.md.
@@ -420,7 +420,9 @@ function Update-Hover {
         if ($titleLabel) {
             $titleLabel.Text = $script:hoverTitle
             if ($jobsLabel) { $jobsLabel.Text = $(if ($h.jobs_text) { [string]$h.jobs_text } else { '' }) }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct
+            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name `
+                -AccountPct $h.account_remaining_pct -AccountUsedPct $h.account_used_pct `
+                -AccountOverspendPct $h.account_overspend_pct
             if ($alertLabel) {
                 $alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -535,16 +537,16 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $AccountName, $AccountPct)
+    param($Machines, $AccountName, $AccountPct, $AccountUsedPct, $AccountOverspendPct)
     if (-not $script:tileHost) { return }
     $script:tileHost.Controls.Clear()
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
-    $acctLabel = 'n/a'
-    if ($null -ne $AccountPct -and [string]$AccountPct -ne '') { $acctLabel = ('{0}%' -f [int]$AccountPct) }
     $acctName = 'cursor'
     if ($AccountName) { $acctName = [string]$AccountName }
-    $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
+    $acctHeading = Format-BobTrayCursorAccountLabel -Name $acctName -RemainingPct $AccountPct `
+        -UsedPct $AccountUsedPct -OverspendPct $AccountOverspendPct
+    $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
         -RemainingPct $AccountPct -BarWidth 392 -Icon $null
     $y += 6
     $indent = 18

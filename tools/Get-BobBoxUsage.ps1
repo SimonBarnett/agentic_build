@@ -103,7 +103,7 @@ if ($Hover) {
         $h | ConvertTo-Json -Compress -Depth 6
     }
     else {
-        Write-Output '{"title":"Bob Fleet","scope":"local-store","short":"idle","body":"weekly remaining  n/a","remaining_pct":null,"remaining_kind":"weekly"}'
+        Write-Output '{"title":"#Bobiverse (this-machine)","scope":"local-store","short":"idle","body":"weekly remaining  n/a","remaining_pct":null,"remaining_kind":"weekly"}'
     }
     return
 }

@@ -27,6 +27,7 @@ function Import-Bridge {
     $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
     $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
+    $env:BOB_TIP_CURSOR_FILE = Join-Path $BridgeRoot 'no-tip-cursor.json'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
@@ -67,6 +68,7 @@ function Invoke-Case {
         $env:BOB_IRC_HOME = $null
         $env:BOB_IRC_CONFIG = $null
         $env:BOB_CURSOR_USAGE_FILE = $null
+        $env:BOB_TIP_CURSOR_FILE = $null
         $env:BOB_SKIP_LIVE_GROK = $null
     }
 }
@@ -299,11 +301,16 @@ Invoke-Case 'BT0l tray hover' {
 
     $h = Get-BobTrayHover
     if ($null -ne $h.remaining_pct) { throw "idle remaining_pct=$($h.remaining_pct) expected null (no weekly log)" }
-    if ([string]$h.title -ne 'Bob Fleet') { throw "title=$($h.title)" }
+    if ([string](Get-BobTrayTitle -MachineId 'ionos') -ne '#Bobiverse (ionos)') { throw 'Get-BobTrayTitle ionos' }
+    if ([string](Get-BobTrayTitle -MachineId 'flamingo') -ne '#Bobiverse (flamingo)') { throw 'Get-BobTrayTitle flamingo' }
+    if ([string](Get-BobTrayTitle -MachineId 'marchhare') -ne '#Bobiverse (marchhare)') { throw 'Get-BobTrayTitle marchhare' }
+    if ([string](Get-BobTrayTitle -MachineId 'ce-priority-dev1') -ne '#Bobiverse (ce-priority-dev1)') { throw 'Get-BobTrayTitle ce-priority-dev1' }
+    if ([string]$h.title -ne '#Bobiverse (testhost)') { throw "title=$($h.title)" }
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^cursor \(') { throw "idle jobs_text missing cursor account: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^cursor \(empty\)') { throw "idle jobs_text must say cursor (empty): $($h.jobs_text)" }
+    if ([string]$h.jobs_text -match '(?m)^cursor \(n/a\)') { throw 'idle jobs_text must not paint cursor (n/a)' }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.account_name -ne 'cursor') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
@@ -418,7 +425,7 @@ Invoke-Case 'BT0l tray hover' {
 
     $h2 = Get-BobTrayHover
     if ($h2.job_count -ne 1) { throw "job_count=$($h2.job_count)" }
-    if ([string]$h2.title -ne 'Bob Fleet') { throw "running title=$($h2.title)" }
+    if ([string]$h2.title -ne '#Bobiverse (testhost)') { throw "running title=$($h2.title)" }
     if ([string]$h2.body -match '(?i)no fleet jobs running') { throw "running body says no fleet jobs: $($h2.body)" }
     if ([string]$h2.jobs_text -notmatch 'SimonBarnett/agentic_irc') { throw "jobs_text missing owner/repo: $($h2.jobs_text)" }
     if ([string]$h2.jobs_text -match '(?i)7e8797e|[0-9a-f]{40}') { throw "jobs_text looks like SHA: $($h2.jobs_text)" }
@@ -475,7 +482,7 @@ Invoke-Case 'BT0l tray hover' {
     }
     [IO.File]::WriteAllText((Join-Path $qDir ($qId + '.json')), ($qJob | ConvertTo-Json -Depth 6))
     $h4 = Get-BobTrayHover
-    if ([string]$h4.title -ne 'Bob Fleet') { throw "multi-machine title=$($h4.title)" }
+    if ([string]$h4.title -ne '#Bobiverse (testhost)') { throw "multi-machine title=$($h4.title)" }
     if ([string]$h4.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "multi jobs_text missing testhost tile: $($h4.jobs_text)" }
     if ([string]$h4.jobs_text -notmatch '(?m)^[ ]{0,2}otherhost \(') { throw "multi jobs_text missing otherhost tile: $($h4.jobs_text)" }
     if ([string]$h4.jobs_text -notmatch 'SimonBarnett/FormPrep') { throw "otherhost missing owner/repo: $($h4.jobs_text)" }
@@ -531,7 +538,7 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
 
     $h5 = Get-BobTrayHover
-    if ([string]$h5.title -ne 'Bob Fleet') { throw "registry title=$($h5.title)" }
+    if ([string]$h5.title -ne '#Bobiverse (testhost)') { throw "registry title=$($h5.title)" }
     if ([string]$h5.scope -ne 'fleet-peek') { throw "scope=$($h5.scope) expected fleet-peek" }
     if (-not $h5.peer_peek) { throw 'peer_peek should be true when registry has peers' }
     $txt = [string]$h5.jobs_text
@@ -609,6 +616,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Weekly remaining') { throw 'Watch-BobTray must label Weekly remaining' }
     if ($traySrc -notmatch 'Hide-BobTrayCard') { throw 'Watch-BobTray must have an X close (Hide-BobTrayCard)' }
     if ($traySrc -notmatch 'Rebuild-BobTrayTiles') { throw 'Watch-BobTray must paint one weekly bar per machine tile' }
+    if ($traySrc -notmatch 'Format-BobTrayCursorAccountLabel') { throw 'Watch-BobTray cursor row must use Format-BobTrayCursorAccountLabel' }
+    if ($traySrc -match "(?s)function Rebuild-BobTrayTiles.*?acctLabel = 'n/a'") { throw 'Rebuild-BobTrayTiles must not default cursor row to n/a' }
     if ($traySrc -match 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must not draw a cursor icon on the account bar' }
     if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
     if ($traySrc -notmatch 'HideTooltipWindows') { throw 'must pop shell tooltips_class32 so native tip does not stack on the card' }
@@ -623,6 +632,8 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
     if ($skillTray -notmatch 'Bob Fleet') { throw 'bob-fleet-tray skill must name title Bob Fleet' }
+    if ($skillTray -notmatch '#Bobiverse') { throw 'bob-fleet-tray skill must name title #Bobiverse (machineId)' }
+    if ($skillTray -notmatch 'over \+') { throw 'bob-fleet-tray skill must document cursor overspend label' }
     if ($skillTray -notmatch 'alert:') { throw 'bob-fleet-tray skill must document badge sources' }
     if ($skillTray -notmatch 'not in moot') { throw 'bob-fleet-tray skill must document not-in-moot tiles' }
     if ($skillTray -notmatch 'lastSeen stale') { throw 'bob-fleet-tray skill must document lastSeen stale' }
@@ -887,6 +898,56 @@ Invoke-Case 'BT0o bobiverse irc' {
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
     if ([string]$hCur.jobs_text -notmatch '(?m)^cursor \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
+
+    $overFile = Join-Path $bridgeRoot 'cursor-over.json'
+    '{"used_pct":112}' | Set-Content -Path $overFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $overFile
+    $cuOver = Get-BobCursorAgentWeeklyRemaining
+    if ([int]$cuOver.used_pct -ne 112) { throw "over used=$($cuOver.used_pct)" }
+    if ([int]$cuOver.remaining_pct -ne -12) { throw "over remaining=$($cuOver.remaining_pct) must stay -12 (do not clamp)" }
+    if ([int]$cuOver.overspend_pct -ne 12) { throw "overspend=$($cuOver.overspend_pct)" }
+    $hOver = Get-BobTrayHover
+    if ([string]$hOver.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "over jobs_text=$($hOver.jobs_text)" }
+    if ([string]$hOver.jobs_text -match '(?m)^cursor \(n/a\)') { throw 'overspend must not paint n/a' }
+
+    $clamped = Join-Path $bridgeRoot 'cursor-clamped.json'
+    '{"remaining_pct":0,"used_pct":112}' | Set-Content -Path $clamped -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $clamped
+    $cuClamp = Get-BobCursorAgentWeeklyRemaining
+    if ([int]$cuClamp.remaining_pct -ne -12) { throw "clamped remaining=$($cuClamp.remaining_pct) must recompute from used>100" }
+    $hClamp = Get-BobTrayHover
+    if ([string]$hClamp.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "clamped jobs_text=$($hClamp.jobs_text)" }
+
+    $env:BOB_CURSOR_USAGE_FILE = Join-Path $bridgeRoot 'no-cursor-usage.json'
+    $tipCur = Join-Path $bridgeRoot 'tip_cursor.json'
+    '{"cursor":12}' | Set-Content -Path $tipCur -Encoding utf8
+    $env:BOB_TIP_CURSOR_FILE = $tipCur
+    $hTip = Get-BobTrayHover
+    if ($null -ne $hTip.account_remaining_pct) { throw 'tip_cursor must not invent remaining_pct' }
+    if ([int]$hTip.account_overspend_pct -ne 12) { throw "tip overspend=$($hTip.account_overspend_pct)" }
+    if ([string]$hTip.jobs_text -notmatch '(?m)^cursor \(over \+12%\)') { throw "tip jobs_text=$($hTip.jobs_text)" }
+
+    $env:BOB_TIP_CURSOR_FILE = Join-Path $bridgeRoot 'no-tip-cursor.json'
+    $hEmpty = Get-BobTrayHover
+    if ([string]$hEmpty.jobs_text -notmatch '(?m)^cursor \(empty\)') { throw "empty jobs_text=$($hEmpty.jobs_text)" }
+    if ([string]$hEmpty.jobs_text -match '(?m)^cursor \(n/a\)') { throw 'empty must not paint n/a' }
+
+    $lbl = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct $null
+    if ($lbl -ne 'cursor (empty)') { throw "format empty=$lbl" }
+    $lblOver = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct (-12) -UsedPct 112
+    if ($lblOver -ne 'cursor (over +12%)') { throw "format over=$lblOver" }
+    $lblOk = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct 2
+    if ($lblOk -ne 'cursor (2%)') { throw "format remain=$lblOk" }
+
+    $overWeek = Join-Path $bridgeRoot 'weekly-over.jsonl'
+    [IO.File]::WriteAllText($overWeek, '{"ts":"2026-09-20T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":112.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
+    $wOver = Get-BobWeeklyRemaining -LogPath $overWeek
+    if ($null -eq $wOver) { throw 'weekly parser must not drop used>100' }
+    if ([int]$wOver.used_pct -ne 112) { throw "weekly over used=$($wOver.used_pct)" }
+    if ([int]$wOver.remaining_pct -ne -12) { throw "weekly over remain=$($wOver.remaining_pct)" }
+
+    $pySrc = Get-Content (Join-Path $RepoRoot 'tools\Get-CursorAgentUsage.py') -Raw
+    if ($pySrc -match '(?m)^\s*if remain < 0:\s*$[\s\S]{0,40}remain = 0') { throw 'Get-CursorAgentUsage.py must not clamp remaining to 0' }
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }

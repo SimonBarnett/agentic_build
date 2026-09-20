@@ -103,16 +103,18 @@ def main() -> int:
         if 0.0 <= used_f <= 1.0:
             used_f = used_f * 100.0
         remain = int(round(100.0 - used_f))
-        if remain < 0:
-            remain = 0
-        if remain > 100:
-            remain = 100
+        overspend = None
+        if used_f > 100.0:
+            overspend = int(round(used_f - 100.0))
+        elif remain < 0:
+            overspend = -remain
         print(
             json.dumps(
                 {
                     "ok": True,
-                    "used_pct": int(round(used_f if used_f is not None else (100 - remain))),
+                    "used_pct": int(round(used_f)),
                     "remaining_pct": remain,
+                    "overspend_pct": overspend,
                     "source": "cursor-agent",
                     "kind": "weekly",
                 }

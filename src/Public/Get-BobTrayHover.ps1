@@ -147,10 +147,9 @@ function Get-BobWeeklyRemaining {
         $usedRaw = $cfg.creditUsagePercent
         if ($null -eq $usedRaw -or [string]::IsNullOrWhiteSpace([string]$usedRaw)) { return $null }
         $used = [double]$usedRaw
-        if ($used -lt 0 -or $used -gt 100) { return $null }
+        if ($used -lt 0) { return $null }
+        # used > 100 is overspend; keep a negative remaining_pct. Do not invent 0%.
         $remain = [int][math]::Round(100.0 - $used)
-        if ($remain -lt 0) { $remain = 0 }
-        if ($remain -gt 100) { $remain = 100 }
         $periodEnd = $null
         if ($cfg.currentPeriod -and $cfg.currentPeriod.end) { $periodEnd = [string]$cfg.currentPeriod.end }
         return [pscustomobject]@{
@@ -170,26 +169,103 @@ function ConvertTo-BobCursorUsageDoc {
     if (-not $j) { return $null }
     $remain = $null
     $used = $null
-    if ($null -ne $j.remaining_pct) { $remain = [int]$j.remaining_pct }
-    if ($null -ne $j.used_pct) { $used = [int]$j.used_pct }
-    if ($null -eq $used) {
-        if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
-        elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
-        elseif ($null -ne $j.creditUsagePercent) { $used = [double]$j.creditUsagePercent }
+    if ($null -ne $j.remaining_pct -and [string]$j.remaining_pct -ne '') {
+        $remain = [double]$j.remaining_pct
     }
-    if ($null -eq $remain -and $null -ne $used) {
-        $remain = [int][math]::Round(100.0 - [double]$used)
+    if ($null -ne $j.used_pct -and [string]$j.used_pct -ne '') {
+        $used = [double]$j.used_pct
+    }
+    if ($null -eq $used) {
+        if ($null -ne $j.percentUsed -and [string]$j.percentUsed -ne '') { $used = [double]$j.percentUsed }
+        elseif ($null -ne $j.usagePercent -and [string]$j.usagePercent -ne '') { $used = [double]$j.usagePercent }
+        elseif ($null -ne $j.creditUsagePercent -and [string]$j.creditUsagePercent -ne '') { $used = [double]$j.creditUsagePercent }
+    }
+    if ($null -ne $used) {
+        $fromUsed = 100.0 - [double]$used
+        if ($null -eq $remain -or [double]$used -gt 100) {
+            $remain = $fromUsed
+        }
     }
     if ($null -eq $remain) { return $null }
-    if ($remain -lt 0) { $remain = 0 }
-    if ($remain -gt 100) { $remain = 100 }
-    if ($null -eq $used) { $used = 100 - $remain }
+    if ($null -eq $used) { $used = 100.0 - [double]$remain }
+    $over = $null
+    if ([double]$used -gt 100) {
+        $over = [int][math]::Round([double]$used - 100.0)
+    }
+    elseif ([double]$remain -lt 0) {
+        $over = [int][math]::Round(-[double]$remain)
+    }
     return [pscustomobject]@{
-        remaining_pct = [int]$remain
+        remaining_pct = [int][math]::Round([double]$remain)
         used_pct      = [int][math]::Round([double]$used)
+        overspend_pct = $over
         source        = 'cursor-agent'
         kind          = 'weekly'
     }
+}
+
+function Get-BobTipCursorOverspend {
+    # Optional local note. This repo does not write tip_cursor.json; ionos has
+    # been observed with {"cursor":12} meaning overspend percent when Sand
+    # remaining is empty. BOB_TIP_CURSOR_FILE overrides the default path.
+    $p = $null
+    if ($env:BOB_TIP_CURSOR_FILE -and [string]$env:BOB_TIP_CURSOR_FILE.Trim()) {
+        $p = [string]$env:BOB_TIP_CURSOR_FILE.Trim()
+    }
+    else {
+        $p = Join-Path $env:USERPROFILE '.grok\tip_cursor.json'
+    }
+    if (-not $p -or -not (Test-Path $p)) { return $null }
+    try {
+        $j = Get-Content $p -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $j) { return $null }
+        $v = $j.cursor
+        if ($null -eq $v -or [string]::IsNullOrWhiteSpace([string]$v)) { return $null }
+        $n = [double]$v
+        if ($n -lt 0) { return $null }
+        return [int][math]::Round($n)
+    }
+    catch { return $null }
+}
+
+function Get-BobCursorOverspendPct {
+    param($RemainingPct, $UsedPct, $OverspendPct)
+    if ($null -ne $UsedPct -and [string]$UsedPct -ne '') {
+        try {
+            if ([double]$UsedPct -gt 100) {
+                return [int][math]::Round([double]$UsedPct - 100)
+            }
+        }
+        catch { }
+    }
+    if (Test-BobTrayRemainingKnown $RemainingPct) {
+        $r = [int]$RemainingPct
+        if ($r -lt 0) { return -$r }
+        return $null
+    }
+    if ($null -ne $OverspendPct -and [string]$OverspendPct -ne '') {
+        try { return [int][math]::Abs([int]$OverspendPct) } catch { }
+    }
+    return (Get-BobTipCursorOverspend)
+}
+
+function Format-BobTrayCursorAccountLabel {
+    [CmdletBinding()]
+    param(
+        [string]$Name = 'cursor',
+        $RemainingPct,
+        $UsedPct,
+        $OverspendPct
+    )
+    if (-not $Name) { $Name = 'cursor' }
+    $over = Get-BobCursorOverspendPct -RemainingPct $RemainingPct -UsedPct $UsedPct -OverspendPct $OverspendPct
+    if ($null -ne $over) {
+        return ('{0} (over +{1}%)' -f $Name, [int]$over)
+    }
+    if (Test-BobTrayRemainingKnown $RemainingPct) {
+        return ('{0} ({1}%)' -f $Name, [int]$RemainingPct)
+    }
+    return ('{0} (empty)' -f $Name)
 }
 
 function Get-BobCursorAgentWeeklyRemaining {
@@ -330,7 +406,17 @@ function Get-BobTrayAlertKind {
 }
 
 function Get-BobTrayTitle {
-    return 'Bob Fleet'
+    [CmdletBinding()]
+    param([string]$MachineId)
+    if (-not $MachineId -or -not [string]$MachineId.Trim()) {
+        try { $MachineId = Get-ThisMachineId } catch { $MachineId = $null }
+    }
+    if (-not $MachineId -and $env:BOB_MACHINE_ID) {
+        $MachineId = [string]$env:BOB_MACHINE_ID
+    }
+    if ($MachineId) { $MachineId = [string]$MachineId.Trim().ToLowerInvariant() }
+    if (-not $MachineId) { $MachineId = 'this-machine' }
+    return ('#Bobiverse ({0})' -f $MachineId)
 }
 
 function Get-BobLiveGrokAgents {
@@ -462,7 +548,7 @@ function Get-BobTrayHover {
     $machineId = $null
     try { $machineId = Get-ThisMachineId } catch { }
     if (-not $machineId) { $machineId = 'this-machine' }
-    $title = Get-BobTrayTitle
+    $title = Get-BobTrayTitle -MachineId $machineId
 
     $running = @()
     $queuedJobs = @()
@@ -534,10 +620,21 @@ function Get-BobTrayHover {
     }
     $cursorWeek = $null
     $cursorRemain = $null
+    $cursorUsed = $null
+    $cursorOver = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
-    if ($cursorWeek -and (Test-BobTrayRemainingKnown $cursorWeek.remaining_pct)) {
-        $cursorRemain = [int]$cursorWeek.remaining_pct
+    if ($cursorWeek) {
+        if (Test-BobTrayRemainingKnown $cursorWeek.remaining_pct) {
+            $cursorRemain = [int]$cursorWeek.remaining_pct
+        }
+        if ($null -ne $cursorWeek.used_pct -and [string]$cursorWeek.used_pct -ne '') {
+            $cursorUsed = [int]$cursorWeek.used_pct
+        }
+        if ($null -ne $cursorWeek.overspend_pct -and [string]$cursorWeek.overspend_pct -ne '') {
+            $cursorOver = [int]$cursorWeek.overspend_pct
+        }
     }
+    $cursorOver = Get-BobCursorOverspendPct -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverspendPct $cursorOver
 
     $moot = $null
     try { $moot = Get-BobMootRoster } catch { $moot = $null }
@@ -661,9 +758,7 @@ function Get-BobTrayHover {
     if (-not $peerPeek) {
         $jobLines += 'other hosts not in this store'
     }
-    $acctPctLabel = 'n/a'
-    if ($null -ne $cursorRemain) { $acctPctLabel = ('{0}%' -f [int]$cursorRemain) }
-    $acctLine = ('cursor ({0})' -f $acctPctLabel)
+    $acctLine = Format-BobTrayCursorAccountLabel -Name 'cursor' -RemainingPct $cursorRemain -UsedPct $cursorUsed -OverspendPct $cursorOver
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
     $lines = New-Object System.Collections.Generic.List[string]
@@ -700,6 +795,8 @@ function Get-BobTrayHover {
         tier           = $tier
         account_name   = 'cursor'
         account_remaining_pct = $cursorRemain
+        account_used_pct = $cursorUsed
+        account_overspend_pct = $cursorOver
     }
 }
 
