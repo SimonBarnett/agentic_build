@@ -293,30 +293,30 @@ function Enable-BobDoubleBuffer {
 }
 
 function Suspend-BobTrayPaint {
+    # Layout only — never WM_SETREDRAW. Turning redraw off then throwing mid-rebuild
+    # left a blank TipForm (Controls.Clear with nothing re-added).
     try {
-        if ($script:tip -and -not $script:tip.IsDisposed) {
-            $script:tip.SuspendLayout()
-            if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $false) }
-        }
-        if ($script:tileHost) {
-            $script:tileHost.SuspendLayout()
-            if ($script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $false) }
-        }
+        if ($script:tip -and -not $script:tip.IsDisposed) { $script:tip.SuspendLayout() }
+        if ($script:tileHost) { $script:tileHost.SuspendLayout() }
     } catch { }
 }
 
 function Resume-BobTrayPaint {
     try {
         if ($script:tileHost) {
-            $script:tileHost.ResumeLayout($false)
-            if ($script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $true) }
+            $script:tileHost.ResumeLayout($true)
             $script:tileHost.Invalidate($true)
         }
         if ($script:tip -and -not $script:tip.IsDisposed) {
             $script:tip.ResumeLayout($true)
-            if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $true) }
+            # Force redraw on in case an older build left WM_SETREDRAW off.
+            try {
+                if ($script:tip.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tip.Handle, $true) }
+                if ($script:tileHost -and $script:tileHost.IsHandleCreated) { [BobTrayUi.Shell]::SetRedraw($script:tileHost.Handle, $true) }
+            } catch { }
             $script:tip.Invalidate($true)
             $script:tip.Update()
+            $script:tip.Refresh()
         }
     } catch { }
 }
@@ -729,7 +729,7 @@ function Rebuild-BobTrayTiles {
     else { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
     if ($AccountName) { $acctName = [string]$AccountName }
     $acctColor = $null
-    if ($acctLabel -and (($acctLabel -match '^-') -or (Test-BobCursorOverageLabel -Label $acctLabel))) {
+    if ($acctLabel -and (($acctLabel -match '^-') -or ($acctLabel.IndexOf([char]0x00A3) -ge 0))) {
         $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
     }
     $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading ('{0} ({1})' -f $acctName, $acctLabel) `
