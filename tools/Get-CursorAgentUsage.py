@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read Grok Bot / Cursor-agent weekly usage + on-demand overage (money). Prints JSON only."""
+"""Read Cursor Spending (Cursor Models) + Sand + on-demand overage. Prints JSON only."""
 from __future__ import annotations
 
 import base64
@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 from ctypes import wintypes
+from datetime import datetime, timezone
 from pathlib import Path
 
 APP = Path(os.environ.get("APPDATA", "")) / "Grok Bot"
@@ -117,7 +118,6 @@ def _on_demand_usd_cents(period: dict | None) -> tuple[int | None, str | None]:
         if cents < 0:
             continue
         return cents, f"period.spendLimitUsage.{key}"
-    # Fallback: plan overage past included (totalSpend - includedSpend)
     pu = period.get("planUsage") or {}
     try:
         total = float(pu.get("totalSpend"))
@@ -128,6 +128,39 @@ def _on_demand_usd_cents(period: dict | None) -> tuple[int | None, str | None]:
     except (TypeError, ValueError):
         pass
     return None, None
+
+
+def _parse_used_remain(raw) -> tuple[int | None, int | None]:
+    if raw is None or raw == "":
+        return None, None
+    try:
+        used_f = float(raw)
+    except (TypeError, ValueError):
+        return None, None
+    if 0.0 <= used_f <= 1.0:
+        used_f = used_f * 100.0
+    used_i = int(round(used_f))
+    remain = int(round(100.0 - used_f))
+    return used_i, remain
+
+
+def _period_end_iso(period: dict | None) -> str | None:
+    if not period:
+        return None
+    for key in ("billingCycleEnd", "periodEnd", "endDate", "end"):
+        v = period.get(key)
+        if v is None or v == "":
+            continue
+        try:
+            ms = int(float(v))
+            if ms > 10_000_000_000:
+                return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+        except (TypeError, ValueError):
+            pass
+        return str(v)
+    return None
 
 
 def main() -> int:
@@ -143,18 +176,21 @@ def main() -> int:
         except Exception:
             period = None
 
-        used = sand.get("usagePercent")
-        if used is None:
-            used = sand.get("percentUsed")
-        used_f = None
-        remain = None
-        if used is not None and used != "":
-            used_f = float(used)
-            if 0.0 <= used_f <= 1.0:
-                used_f = used_f * 100.0
-            remain = int(round(100.0 - used_f))
-            # Keep true remaining; negative means over on the percent meter.
-            # Do not clamp to 0 — callers decide empty vs money.
+        # Spending "Cursor Models" (includes Cursor Grok + Composer).
+        cursor_used = None
+        cursor_remain = None
+        if period:
+            pu = period.get("planUsage") or {}
+            auto = pu.get("autoPercentUsed")
+            if auto is None or auto == "":
+                auto = period.get("autoPercentUsed")
+            cursor_used, cursor_remain = _parse_used_remain(auto)
+
+        # Grok Bot Sand — separate from Cursor Models fuel.
+        sand_raw = sand.get("usagePercent")
+        if sand_raw is None:
+            sand_raw = sand.get("percentUsed")
+        sand_used, sand_remain = _parse_used_remain(sand_raw)
 
         cents, cents_src = _on_demand_usd_cents(period)
         overage_gbp = None
@@ -167,7 +203,6 @@ def main() -> int:
             gbp = _usd_to_gbp(overage_usd)
             if gbp is not None:
                 overage_gbp = gbp
-                # stash rate for debugging
                 if overage_usd > 0:
                     fx_rate = round(overage_gbp / overage_usd, 6)
 
@@ -176,9 +211,15 @@ def main() -> int:
             "source": "cursor-agent",
             "kind": "weekly",
         }
-        if used_f is not None:
-            out["used_pct"] = int(round(used_f))
-            out["remaining_pct"] = remain
+        if cursor_used is not None:
+            out["used_pct"] = cursor_used
+            out["remaining_pct"] = cursor_remain
+            out["cursor_models_source"] = "GetCurrentPeriodUsage.planUsage.autoPercentUsed"
+        if sand_used is not None:
+            out["sand_used_pct"] = sand_used
+            out["sand_remaining_pct"] = sand_remain
+            if sand_remain is not None and sand_remain <= 0:
+                out["sand_exhausted"] = True
         if overage_usd is not None:
             out["overage_usd"] = overage_usd
             out["on_demand_used_cents"] = cents
@@ -189,37 +230,12 @@ def main() -> int:
         if fx_rate is not None:
             out["usd_gbp_rate"] = fx_rate
 
-        # Cursor Sand weekly reset (preferred) then billing cycle end (ms).
-        period_end = None
-        nrt = sand.get("nextResetTimestampUtc")
-        if nrt:
-            period_end = str(nrt)
-        if not period_end and period:
-            for key in ("billingCycleEnd", "periodEnd", "endDate", "end"):
-                v = period.get(key)
-                if v is None or v == "":
-                    continue
-                try:
-                    # ms epoch
-                    ms = int(float(v))
-                    if ms > 10_000_000_000:
-                        from datetime import datetime, timezone
-                        period_end = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    else:
-                        period_end = str(v)
-                except (TypeError, ValueError):
-                    period_end = str(v)
-                break
+        period_end = _period_end_iso(period)
         if period_end:
             out["period_end"] = period_end
 
-        # Sand exhausted (or unknown remaining) with money: keep remaining_pct null for label path
-        if remain is not None and remain <= 0:
-            out["remaining_pct"] = None
-            out["sand_exhausted"] = True
-
-        if used_f is None and overage_gbp is None and overage_usd is None:
-            print(json.dumps({"ok": False, "error": "no usagePercent"}))
+        if cursor_used is None and sand_used is None and overage_gbp is None and overage_usd is None:
+            print(json.dumps({"ok": False, "error": "no cursor or sand usage"}))
             return 1
         print(json.dumps(out))
         return 0

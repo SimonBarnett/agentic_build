@@ -173,21 +173,19 @@ function ConvertTo-BobCursorUsageDoc {
     $overGbp = $null
     $overUsd = $null
     $cents = $null
+    # remaining_pct / used_pct are Spending Cursor Models (not Sand).
     if ($null -ne $j.remaining_pct -and [string]$j.remaining_pct -ne '') {
         $remain = [int]$j.remaining_pct
     }
     if ($null -ne $j.used_pct -and [string]$j.used_pct -ne '') { $used = [double]$j.used_pct }
     if ($null -eq $used) {
         if ($null -ne $j.percentUsed) { $used = [double]$j.percentUsed }
-        elseif ($null -ne $j.usagePercent) { $used = [double]$j.usagePercent }
         elseif ($null -ne $j.creditUsagePercent) { $used = [double]$j.creditUsagePercent }
     }
     if ($null -eq $remain -and $null -ne $used) {
         $remain = [int][math]::Round(100.0 - [double]$used)
     }
-    if ($j.sand_exhausted -eq $true -or ($null -ne $remain -and [int]$remain -le 0 -and ($null -ne $j.overage_gbp -or $null -ne $j.overage_usd))) {
-        $remain = $null
-    }
+    # Legacy: usagePercent without used_pct was Sand — do not map to Cursor Models remaining.
     if ($null -ne $j.overage_gbp -and [string]$j.overage_gbp -ne '') { $overGbp = [double]$j.overage_gbp }
     if ($null -ne $j.overage_usd -and [string]$j.overage_usd -ne '') { $overUsd = [double]$j.overage_usd }
     if ($null -ne $j.on_demand_used_cents -and [string]$j.on_demand_used_cents -ne '') { $cents = [int]$j.on_demand_used_cents }

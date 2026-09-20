@@ -1025,6 +1025,39 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
 }
 
+# --- BT0o2 Cursor Models spending meter vs Sand (issue #21) ---
+Invoke-Case 'BT0o2 cursor models spending meter' {
+    param($bridgeRoot)
+    $cursorFile = Join-Path $bridgeRoot 'cursor-spending-meter-fixture.json'
+    @'
+{
+  "ok": true,
+  "used_pct": 1,
+  "remaining_pct": 99,
+  "period_end": "2026-10-16T00:00:00Z",
+  "sand_used_pct": 100,
+  "sand_remaining_pct": 0,
+  "sand_exhausted": true,
+  "overage_gbp": 54.14,
+  "overage_usd": 68.5
+}
+'@ | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+    $cu = Get-BobCursorAgentWeeklyRemaining
+    if ([int]$cu.used_pct -ne 1) { throw "cursor models used=$($cu.used_pct) expected 1" }
+    if ([int]$cu.remaining_pct -ne 99) { throw "cursor models remaining=$($cu.remaining_pct) expected 99 (not Sand/overage)" }
+    if ($null -eq $cu.overage_gbp) { throw 'overage_gbp must remain a separate field' }
+    $cap = Get-BobCapacity
+    if ([int]$cap.cursor_models.remaining_pct -ne 99) { throw "capacity cursor_models=$($cap.cursor_models.remaining_pct)" }
+    if ([int]$cap.cursor_models.remaining_pct -le 0) {
+        throw 'Sand 100% + overage must not block cursor-models fuel'
+    }
+    $hCur = Get-BobTrayHover
+    if ([int]$hCur.account_remaining_pct -ne 99) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(99%\)') { throw "jobs_text must show Cursor Models (99%): $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -match [char]0x00A3) { throw 'jobs_text must not show Sand overage GBP as Cursor Models remaining' }
+}
+
 # --- BT0p git-task capacity picker (issue #8) ---
 Invoke-Case 'BT0p git-task picker' {
     param($bridgeRoot)
