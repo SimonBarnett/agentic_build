@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-20 — harvest during the job
+
+`harvest-agent-skills` now fires in-session: if a build/fleet job learns a repeatable procedure, write the skill, log, commit, push `origin/main`. Hourly `BobSkillHarvest-*` is backup. `grok-build-fleet` points here.
+
 ## 2026-09-20 — unstick: shared sandbox + Waiting to send
 
 - Recreate once per shared Grok Bot sandbox, not per agent. Wait for transfer toast / stable `podId` before any ping.

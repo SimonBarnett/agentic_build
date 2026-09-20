@@ -1,15 +1,21 @@
 ---
 name: harvest-agent-skills
 description: >
-  Hourly scan for repeatable procedures worth promoting into agentic_build
-  .grok/skills. Use when the user says harvest skills, promote a playbook,
-  skill harvest, hourly skill check, or /harvest-agent-skills. Does not
-  dispatch product builds (that is grok-build-fleet / bob-build-dispatch).
+  Promote repeatable fleet/build playbooks into agentic_build .grok/skills on
+  GitHub (SimonBarnett/agentic_build). Use when you learn a new procedure while
+  doing build work, or the user says harvest skills, add it to the skills,
+  promote a playbook, skill harvest, hourly skill check, or /harvest-agent-skills.
+  Do not wait for the hourly task. Does not dispatch product builds
+  (grok-build-fleet / bob-build-dispatch).
 ---
 
 # Harvest agent skills
 
-Run on the fleet machine (cwd `C:\ai\agentic_build` on ionos). Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit, push `origin/main`.
+Remote: `https://github.com/SimonBarnett/agentic_build` (`origin/main`). Local clone `C:\ai\agentic_build` on ionos (else `D:\ai\...` / `C:\src\...`).
+
+**During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit, push `origin/main`. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
+
+Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit, push `origin/main`.
 
 ## Scan
 

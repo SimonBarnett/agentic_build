@@ -75,7 +75,9 @@ See `bob-fleet-monitor` and `bob-fleet-tray`.
 
 Machines cannot see each other's `bridgeHome` (flamingo/marchhare on bobnet, ionos VPS, DEV1 Azure). Status is a MODE2 **free** moot on `#bobiverse` over **private Ergo** `irc.ntsa.uk:6697` (not Libera). Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. Skill `bob-irc`. Docs `docs/bobiverse.md`. One-shot: `Install-BobIrc.ps1`. Ongoing: `Watch-Bobiverse.ps1` (30s loop, **no grok.exe**) POINTs local BOB v1 into `bob-peers\`. Tray only reads those files.
 
-## Hourly skill harvest
+## Skill harvest
+
+When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, commit, push). Do not wait for the hourly task.
 
 `tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
 
