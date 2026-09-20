@@ -29,11 +29,11 @@ function Test-BobGhIssuePosting {
     }
     & $gh auth status 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw 'MRB handoff preflight: gh auth login required on this worker (or set GH_TOKEN / GITHUB_TOKEN with issues:write). Fail here before starting the reasoning model.'
+        throw 'MRB handoff preflight: gh auth login required on this worker (or set GH_TOKEN / GITHUB_TOKEN with issues:write and pull_requests:write). Fail here before starting the MRB agent.'
     }
     $null = & $gh repo view $Repo --json name -q .name 2>&1
     if ($LASTEXITCODE -ne 0) {
-        throw "MRB handoff preflight: cannot read repo $Repo with current gh auth (need issues:write). Fail here before starting the reasoning model."
+        throw "MRB handoff preflight: cannot read repo $Repo with current gh auth (need issues:write and pull_requests:write). Fail here before starting the MRB agent."
     }
     return $gh
 }

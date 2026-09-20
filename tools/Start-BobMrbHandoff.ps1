@@ -1,5 +1,6 @@
 # Bob hands off a hostile MRB. Does not write the review in this session.
-# Default fuel: cursor-models, then grok-build. Copilot only with -AllowCopilot.
+# Default fuel: cursor-models while remaining > 0, then grok-build.
+# Copilot only with -AllowCopilot. Never Other Models.
 [CmdletBinding()]
 param(
     [int]$Issue,
@@ -44,17 +45,20 @@ $docsLine = $(if ($Docs) { $Docs } else { 'docs/feature-request-*.md' })
 $planLine = $(if ($Plan) { $Plan } else { 'docs/build-and-test-plan*.md' })
 
 $prompt = @"
-Hostile MRB of $issueUrl. Follow skill bob-hostile-mrb (https://github.com/SimonBarnett/agentic_build .grok/skills).
+Hostile MRB of $issueUrl. Follow skill bob-hostile-mrb and the transaction in bob-build-loop (https://github.com/SimonBarnett/agentic_build .grok/skills).
 
-$shaLine Diff vs $docsLine and $planLine (and the parked PDF if one was supplied).
+$shaLine This is a PR head. Diff vs $docsLine and $planLine (and the parked PDF if one was supplied).
 
 Walk missing features: this FR's red acceptance = Required fixes on the MRB issue; unspecified holes / issues with no intake doc = park via bob-spec-intake (issue + markdown) and list under Missing features. Do not implement missing features in the MRB job.
 
-Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labels mrb + mrb-fail or mrb-pass. Body: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes. No MRB PDF.
+Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labels mrb + mrb-fail or mrb-pass. Body: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes, PR. No MRB PDF.
 
 Verdict FAIL or PASS-nits only. Do not write the words ready for human UAT. Bob chairs that stamp.
 
-Work with Cursor Models or Grok Build only. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not assign secrets in the issue (no password or XAI_API_KEY literals in git).
+PASS-nits: merge the PR (gh pr merge). Nits do not block the merge.
+FAIL: do not merge. Required fixes only. Do not start the FIX worker yourself.
+
+Work with Cursor Models (Cursor Grok / Composer) or grok.exe only. Do not use Other Models. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not assign secrets in the issue (no password or XAI_API_KEY literals in git).
 "@
 
 if (-not $Cwd) {

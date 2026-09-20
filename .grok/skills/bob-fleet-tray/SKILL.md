@@ -43,32 +43,37 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor overage row
+## Cursor Models remaining (top bar)
 
-Top account row is **Cursor Models** (shared account pool, not a machine
-named cursor). Machine rows are Grok Build weekly + which fuels that box
-can strike (`cursor-models`, `grok-build`, `copilot`, `grok-bot`). A tile
-labelled cursor with a Bot reset date is **Grok Bot weekly on that glass**,
-not the top bar.
+Top account row is **Cursor Models remaining %** (shared pool: Cursor Grok
++ Composer). That number is the MRB/PR fuel gate (`bob-build-loop`). It is
+not a machine named cursor. Machine rows are Grok Build weekly + which
+fuels that box can strike (`cursor-models`, `grok-build`, `copilot`,
+`grok-bot`). A tile labelled cursor with a Bot reset date is **Grok Bot
+weekly on that glass**, not the top bar.
 
-- Known remaining: `cursor (N%)` in normal foreground.
-- Empty / overspent (Sand weekly exhausted): `cursor (-Â£x.xx)` in **red**.
-  Money comes from Cursor `GetCurrentPeriodUsage`
-  `spendLimitUsage.individualUsed` (USD cents), converted to GBP via live FX
-  (`open.er-api.com`, fallback `cdn.jsdelivr.net`) â€” **not** `tip_cursor.json`
-  and not "12% => Â£12".
-- When remaining is null but overage exists, still emit the overage label
-  (do not early-return null from `ConvertTo-BobCursorUsageDoc`).
+- Known Cursor Models remaining: `Cursor Models (N%)` in normal foreground,
+  where N matches Spending "Cursor Models · Includes Cursor Grok and
+  Composer" remaining (100 - used). 20 Sep 2026 21:25 this was ~99% (1%
+  used), not the Sand overage.
+- Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage
+  GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents
+  → GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overage,
+  not as the fuel remaining figure.
+- Empty Cursor Models remaining (0%): then fuel falls through to grok.exe.
+  Sand 100% does not by itself mean Cursor Models is empty.
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining
   (`creditUsagePercent` on `billing: fetched credits config`).
+- Numbers: `box-usage`.
 
 
 ## Reset dates
 
 Show weekly reset next to the meter, not only in digests:
 
-- **cursor** row: `reset DD Mon` from Cursor Sand `nextResetTimestampUtc`
-  (via `Get-CursorAgentUsage.py` â†’ `period_end` â†’ `account_reset_label`).
+- **Cursor Models** row: `reset DD Mon` from the Cursor Models period
+  (`period_end` → `account_reset_label`). Do not use Grok Bot Sand reset
+  as a stand-in when the Cursor Models bar is what the fuel gate reads.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from
   `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
   Same-seat machines share one reset date (and one remaining %).
@@ -78,9 +83,12 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`cursor (-Â£31.94) - reset 23 Sep`
+`Cursor Models (99%) - reset 16 Oct`
 
 `flamingo - Club Madeira (15%) - reset 27 Sep`
+
+Do not show `Cursor Models (-GBP x.xx)` as the remaining figure. That was
+Sand overage mislabelled (20 Sep 2026 tray vs Spending).
 
 ## UI hard rules (diagnostics 2026-09-20)
 
@@ -135,8 +143,8 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 2. Log tail `watch_bob_tray.log` for `tray up`, `tip show ok`, poll errors.
 3. Confirm `$notify.Visible` path still sets Visible=$true after start.
 4. Confirm `NotifyIcon.Text` is empty (no white P+ chip).
-5. Confirm title `#Bobiverse (<id>)`, cursor `-Â£x.xx` red when overspent,
-   seat labels beside names, shared % on ntsa seats.
+5. Confirm title `#Bobiverse (<id>)`, Cursor Models remaining % on the top
+   bar (not Sand overage), seat labels beside names, shared % on ntsa seats.
 6. Click / Status does nothing: TipForm C# failed to compile â€” check for
    duplicate `SendMessage` P/Invoke or Add-Type errors in the log.
 7. Refresh clears the card: rebuild cleared controls while redraw was

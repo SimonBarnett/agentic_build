@@ -95,7 +95,7 @@ function Start-BobBuild {
     $cons = @($Constraints)
     if ($cons -notcontains $copilotHint) { $cons = @($cons + $copilotHint) }
     if ($isGit) {
-        $gitHint = 'Git task: commit and push the work branch. IRC verbs SPEC WAIT BUILD PUSH MRB FIX UAT (no vendor names). Do not mark ready for human UAT. Bob chairs MRB.'
+        $gitHint = 'Git task: open a PR from the work branch. Never push main. Never merge. IRC verbs SPEC WAIT BUILD PUSH MRB FIX UAT (no vendor names). Do not mark ready for human UAT. Bob chairs UAT. PASS-nits merges; FAIL spawns a FIX worker.'
         if ($cons -notcontains $gitHint) { $cons = @($cons + $gitHint) }
         if ($pickFuel -eq 'cursor-models') {
             $curHint = 'Fuel cursor-models: tools/Start-BobCursor.ps1 (skill start-bob-cursor). Do not start grok.exe for this job.'

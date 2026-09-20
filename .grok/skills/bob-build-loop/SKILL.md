@@ -2,40 +2,77 @@
 name: bob-build-loop
 description: >
   Orchestrate Bob functional-spec work: park feature requests as git issues +
-  /docs markdown, write build/test plans, dispatch git-task workers, hostile
-  MRB as GitHub issues until ready for human UAT. No MRB PDFs. Use when the
-  user says MRB, ready for UAT, bob build loop, or /bob-build-loop. Cursor
-  MRB/FIX until PASS-nits is cursor-mrb-dev.
+  /docs markdown, dispatch a PR worker, hand off MRB, merge on PASS-nits,
+  spawn a FIX worker on every FAIL, until Bob stamps UAT. No MRB PDFs. Use
+  when the user says MRB, ready for UAT, bob build loop, or /bob-build-loop.
+  Cursor Models then grok; cursor-mrb-dev runs the handoff.
 ---
 
 # Bob functional-spec build loop
 
-Bob orchestrates. Build agents implement. Prefer legion machines with spare Premium+ capacity (often `ionos`). Fuel: Cursor Models then Grok Build (`cursor-mrb-dev` for MRB/FIX until PASS-nits). Builders: `composer-2.5` or `build0.1` (else `grok-4.5`). MRB: latest reasoning (`claude-opus-5-thinking-high` / `grok-4.6`).
+Bob orchestrates. He does not implement and does not write the MRB. A worker
+agent (Cursor Models, else grok.exe) does both. Copilot only with
+`-AllowCopilot`.
+
+Fuel is not a judgment. If Cursor Models remaining > 0, use Cursor Models
+(Cursor Grok + Composer). If remaining is 0, use grok.exe. Never Other Models.
+
+Canonical mermaid for README and this skill. Verdict bars: `bob-hostile-mrb`.
+Handoff scripts: `cursor-mrb-dev`. Remaining numbers: `box-usage`.
+
+## Transaction (do not skip, do not reason)
+
+| Event | Next action | Who |
+|---|---|---|
+| FR + plan parked | `Start-BobBuild -Task git` | dispatcher |
+| Worker finished on `work/<job>` | Open a PR against `main`. Never push `main`. Never merge. | that worker |
+| PR opened | `Start-BobMrbHandoff` on the PR head SHA | dispatcher |
+| MRB **FAIL** | Do not merge. Immediately `Start-BobBuild -Task git -Fix` with Required fixes. Worker opens a **new** PR. | dispatcher |
+| MRB **PASS-nits** | MRB worker merges the PR (`gh pr merge`). Nits do not block. | that MRB worker |
+| candidate PASS-UAT | Stamp or reject the phrase **ready for human UAT** | Bob only |
+
+Fuel is re-read at every dispatch (`Select-BobGitWorker`). Cursor Models remaining
+> 0 -> `cursor-models`. Else `grok-build`.
+
+```mermaid
+flowchart TB
+  PARK["Park FR: GitHub issue + /docs md"]
+  PLAN["Write build-and-test plan"]
+  FUEL{"Cursor Models remaining > 0?"}
+  CUR["Fuel cursor-models\nMRB: Cursor Grok grok-4.6\nPR: Composer composer-2.5"]
+  GROK["Fuel grok-build\nMRB: grok.exe grok-4.6\nPR: build0.1 else grok-4.5"]
+  BUILD["BUILD worker\nbranch work/job\nopen PR\nnever push main\nnever merge"]
+  MRB["MRB worker reviews that PR"]
+  VER{"Verdict"}
+  FAIL["FAIL: do not merge\nspawn BUILD worker now"]
+  PASS["PASS-nits: MRB worker merges PR"]
+  UAT["Bob stamps ready for human UAT"]
+
+  PARK --> PLAN --> FUEL
+  FUEL -->|yes| CUR --> BUILD
+  FUEL -->|no| GROK --> BUILD
+  BUILD --> MRB --> VER
+  VER -->|FAIL| FAIL --> FUEL
+  VER -->|PASS-nits| PASS --> UAT
+```
 
 ## When which skill
 
 | Situation | Skill |
 |---|---|
 | Fresh functional spec / new product | `bob-spec-intake` then `bob-build-dispatch` |
-| Feature-request on an existing repo | `bob-spec-intake` (issue + markdown) then `bob-build-dispatch` |
-| New commits landed; need review | `bob-hostile-mrb` (hand off; Cursor loop `cursor-mrb-dev`) |
-| Cursor MRB then FIX until PASS-nits | `cursor-mrb-dev` |
+| Feature-request on an existing repo | `bob-spec-intake` then `bob-build-dispatch` |
+| PR opened; need review | `bob-hostile-mrb` / `cursor-mrb-dev` |
+| Run MRB then FIX until PASS-nits | `cursor-mrb-dev` |
 | Start/monitor/stop the Windows job | `grok-build-fleet` |
-| Named Grok Bot (Bob) silent in chat | `unstick-grok-bot` |
-| Live chat with a build agent on Ergo | `bob-irc` / `agentic-irc` |
-
-## Loop (do not skip)
-
-1. Park the feature request as a **GitHub issue** plus `docs/feature-request-*.md` (`bob-spec-intake`). Git is the source of truth.
-2. Write / update `docs/build-and-test-plan.md` a build agent can execute.
-3. `Start-BobBuild` (see `bob-build-dispatch` / `grok-build-fleet`).
-4. On each pushed version: Bob **hands off** hostile MRB (`cursor-mrb-dev` / `bob-hostile-mrb`). Worker posts a **new** issue `MRB FAIL|PASS-nits: ... <sha>`. Missing features get parked as new `feature-request` issues. No MRB PDFs.
-5. On FAIL, dispatch a **build** worker (`Start-BobCursor -Kind build` or grok-build), then re-MRB the new SHA. Repeat until **PASS-nits**. Only **Bob** stamps **ready for human UAT**.
+| Named Grok Bot silent | `unstick-grok-bot` |
+| Cursor Models remaining / Sand / overage | `box-usage` |
 
 ## Hard rules
 
 - New product repos: **public** under `SimonBarnett` unless Simon says otherwise.
 - Feature work: **do not break** prior versions; use `v2/` / `v3/` (or next free version folder).
-- Do not burn tokens implementing **or writing MRBs** in Bob. Cursor Models then Grok Build do the coding and the hostile review. Bob **hands off** (`Start-BobMrbHandoff.ps1`); only Bob stamps **ready for human UAT**. Copilot only with `-AllowCopilot`.
-- Never put real `password=` or `XAI_API_KEY=` **assignments** in goals/constraints (`Test-PromptSecrets`). Instructional mentions of the names are OK.
-- Feature requests and plans live in git (`/docs` markdown + GitHub issues). MRB is an issue, not a PDF.
+- Worker output is a **PR**. MRB output is FAIL (spawn worker) or PASS-nits (merge).
+- Never Other Models (`claude-opus-5-thinking-high` and friends) for this loop.
+- Never put `password=` or `XAI_API_KEY=` **assignments** in goals (`Test-PromptSecrets`).
+- MRB is a GitHub issue, not a PDF.

@@ -1,5 +1,16 @@
 # Skill harvest log
 
+## 2026-09-20 — PR/MRB transaction: Cursor Models then grok
+
+Simon: Cursor Models (Cursor Grok + Composer) for MRBs and PRs until that
+pool is empty, then grok.exe. Never Other Models. Tray/capacity must show
+Cursor Models remaining % (20 Sep Spending: 1% used; tray had labelled
+Sand overage as Cursor Models). Both MRB and implementation are handed off.
+Workers open PRs. PASS-nits: MRB agent merges. Every FAIL: spawn a FIX
+worker. Table + mermaid in `bob-build-loop` / README. `models.mrbCursor`
+is Cursor Grok `grok-4.6`, not `claude-opus-5-thinking-high`. FR:
+`docs/feature-request-pr-mrb-cursor-models-transaction-2026-09-20.md`.
+
 ## 2026-09-20 — customer paid their bill
 
 Standalone `cursor-sand-billing`: Grok Bot deaf → Sand 100% / Stripe `NEEDS_AUTH` / Open invoices at `cursor.com/dashboard/billing` (not Spending). After Paid, one ping. Do not Recreate. `box-usage` still owns the numbers.

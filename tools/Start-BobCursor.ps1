@@ -86,7 +86,11 @@ $packet = [ordered]@{
     goal   = $Goal
     kind   = $kindResolved
     model  = $Model
-    note   = 'Commit and push on the work branch. Do not mark ready for human UAT. Bob chairs MRB.'
+    note   = $(if ($kindResolved -eq 'mrb') {
+            'Review the PR. PASS-nits: merge it (nits do not block). FAIL: do not merge; Required fixes only. Do not mark ready for human UAT.'
+        } else {
+            'Open a PR from the work branch. Never push main. Never merge. Do not mark ready for human UAT. Bob chairs UAT.'
+        })
 }
 
 $outDir = $env:BOB_BRIDGE_HOME

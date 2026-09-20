@@ -1,13 +1,15 @@
 ---
 name: box-usage
 description: >
-  Show Grok Build / Premium+ (xAI) and Grok Bot / Cursor Sand usage on a Windows
-  box: weekly remaining %, reset dates, on-demand GBP overage, live grok
-  processes, sessions, BobBridge jobs, and ~/.grok disk. Use when the user asks
-  usage, quota, remaining, reset date, overage, how maxed, Premium+ headroom,
-  Cursor Sand, unpaid invoice, paid their bill, or /box-usage. Pair with
-  cursor-sand-billing when Grok Bot is silent at Sand 100%. Pair with bob-fleet-tray for the TipForm card and
-  grok-build-fleet when choosing ionos vs marchhare vs flamingo.
+  Show Cursor Models remaining % (the MRB/PR fuel), Grok Build / Premium+
+  (xAI), and Grok Bot / Cursor Sand on a Windows box: remaining %, reset
+  dates, on-demand GBP overage, live grok processes, sessions, BobBridge
+  jobs, and ~/.grok disk. Use when the user asks usage, quota, remaining,
+  Cursor Models, reset date, overage, how maxed, Premium+ headroom, Cursor
+  Sand, unpaid invoice, paid their bill, or /box-usage. Pair with
+  cursor-sand-billing when Grok Bot is silent at Sand 100%. Pair with
+  bob-fleet-tray for the TipForm card and grok-build-fleet when choosing
+  ionos vs marchhare vs flamingo.
 ---
 
 # Box usage (this machine)
@@ -22,8 +24,9 @@ $repo = if (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } elseif (T
 Import-Module "$repo\src\BobBridge.psd1" -Force
 # xAI / Grok Build weekly remaining + reset:
 Get-BobWeeklyRemaining
-# Cursor / Grok Bot Sand remaining + GBP overage + reset:
+# Cursor Models remaining (MRB/PR fuel) + Sand + GBP overage + reset:
 Get-BobCursorAgentWeeklyRemaining
+Get-BobCapacity | Select-Object -ExpandProperty cursor_models
 # Full tray hover JSON (title, cursor row, machine tiles with seat + reset):
 Get-BobTrayHover | ConvertTo-Json -Depth 6
 # Or:
@@ -42,14 +45,28 @@ Never paste `auth.json`, sand-secrets, or bearer tokens.
 | Seat map | `config/bob-seats.json`: ionos=Smart Catalogue, flamingo=Club Madeira, marchhare+ce-priority-dev1=ntsa (si@ntsa.uk). Same seat → one shared remaining % (min) and one shared reset |
 | Publish to fleet | `Write-BobIrcStatus` writes `weekly` + `period_end` and POINT `reset=YYYY-MM-DD` |
 
-## Cursor / Grok Bot Sand (account row)
+## Cursor dashboard meters (do not mix)
+
+Spending (`cursor.com/dashboard/spending`) has three included bars. Fuel for
+MRB/PR is **only** the first.
+
+| Meter | Fuel | How to show |
+|---|---|---|
+| **Cursor Models** (Includes Cursor Grok and Composer) | `cursor-models` for MRB and PRs | Tray top bar `Cursor Models (N%)` where N is **remaining**. `Get-BobCapacity.cursor_models.remaining_pct`. Picker uses this: remaining > 0 -> Cursor, else grok.exe |
+| Other Models | none (do not use for this loop) | Do not display as Cursor Models |
+| Grok Bot weekly (Sand) | `grok-bot` only | Not the top bar. 100% used silences Grok Bot (`cursor-sand-billing`) |
+
+20 Sep 2026 21:25: Cursor Models **1% used** (~99% left), Other Models 6%,
+Grok Bot 100%. Tray wrongly showed `Cursor Models (-GBP 54.14)` (Sand overage).
+Do not substitute overage GBP or Sand remaining for Cursor Models remaining.
 
 | Signal | How |
 |---|---|
-| Remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent`. Live confirm: `GrokBotApi.py post --service aiserver.v1.DashboardService --method GetSandUsageStatus` |
-| Empty / 100% | `usagePercent: 100` / `remaining_pct` null. Grok Bot turns then `ACCEPTED_TEMPORAL` with **no** assistant `send-message` and **no** "limit reached" banner (Cursor bug). `hasAvailableUsage: true` + on-demand `enabled` does not mean they generate. Confirm Stripe: `GrokBotApi.py post --method ListGrokBotStripeLinkPaymentMethods`. `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` = on-demand cannot charge (box send 503). Cursor dashboard banner **You may have an unpaid invoice** + invoice Status **Open** is the same block (ionos 2026-09-20: Open mid-month 16 Sep cycle and Open 14 Sep cycle). Human pays Open invoices / finishes Stripe Link in billing settings. Not a RecreateSandBox fix — see `unstick-grok-bot`. |
-| Empty / overspent | `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). TipForm shows red `-£x.xx` — not tip_cursor.json fakes |
-| Reset date | Sand `nextResetTimestampUtc` → `period_end` → `reset DD Mon` |
+| Cursor Models remaining % | Must match Spending "Cursor Models" (100 - used). `Get-BobCapacity.cursor_models.remaining_pct`. Do not invent. |
+| Sand remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent`. Live confirm: `GrokBotApi.py post --service aiserver.v1.DashboardService --method GetSandUsageStatus`. This is **not** Cursor Models fuel. |
+| Empty / 100% Sand | `usagePercent: 100` / Sand `remaining_pct` null. Grok Bot turns then `ACCEPTED_TEMPORAL` with **no** assistant `send-message` and **no** "limit reached" banner (Cursor bug). `hasAvailableUsage: true` + on-demand `enabled` does not mean they generate. Confirm Stripe: `GrokBotApi.py post --method ListGrokBotStripeLinkPaymentMethods`. `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` = on-demand cannot charge (box send 503). Cursor dashboard banner **You may have an unpaid invoice** + invoice Status **Open** is the same block (ionos 2026-09-20: Open mid-month 16 Sep cycle and Open 14 Sep cycle). Human pays Open invoices / finishes Stripe Link in billing settings. Not a RecreateSandBox fix — see `unstick-grok-bot`. |
+| Empty / overspent | `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). Show as overage, **not** as Cursor Models remaining. Not tip_cursor.json fakes |
+| Reset date | Cursor Models / Sand `period_end` → `reset DD Mon` |
 | Cache | `~\.grok\bob-bridge\cursor-agent-usage.json` (~15 min); delete to force refresh |
 
 ## TipForm wiring

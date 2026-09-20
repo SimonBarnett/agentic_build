@@ -100,7 +100,10 @@ function New-FleetPrompt {
     [void]$lines.Add('GitHub repo coding: tools/Start-BobCopilot.ps1 (skill start-bob-copilot). Do not use Grok Bot weekly usage for that work.')
     if ([string]$Packet.task -eq 'git') {
         [void]$lines.Add('IRC verbs (no vendor names): SPEC WAIT BUILD PUSH MRB FIX UAT.')
-        [void]$lines.Add('Commit and push the work branch. Do not mark ready for human UAT. Bob chairs MRB.')
+        [void]$lines.Add('Open a PR from the work branch. Never push main. Never merge. Do not mark ready for human UAT. Bob chairs UAT.')
+        if ([string]$Packet.kind -eq 'mrb') {
+            [void]$lines.Add('MRB: PASS-nits merge the PR (nits do not block). FAIL do not merge; Required fixes only. Dispatcher starts the FIX worker.')
+        }
         if ([string]$Packet.fuel -eq 'cursor-models') {
             [void]$lines.Add('Fuel cursor-models: tools/Start-BobCursor.ps1 (skill start-bob-cursor). Do not start grok.exe.')
         }

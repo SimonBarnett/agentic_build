@@ -2,7 +2,7 @@
     "max_workers_per_machine":  0,
     "models":  {
                    "mrbGrok":  "grok-4.6",
-                   "mrbCursor":  "claude-opus-5-thinking-high",
+                   "mrbCursor":  "grok-4.6",
                    "buildGrok":  "build0.1",
                    "buildGrokFallback":  "grok-4.5",
                    "buildCursor":  "composer-2.5"

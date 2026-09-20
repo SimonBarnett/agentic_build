@@ -11,7 +11,9 @@ description: >
 
 Peer of `start-bob-copilot`. Reached via the same capacity picker (`Select-BobGitWorker`), not a separate human ritual.
 
-Bills Cursor Models (shared account pool on every Cursor-capable box). Not Grok Build weekly. Not Copilot credits. Bob still chairs MRB / UAT.
+Bills Cursor Models (shared account pool: Cursor Grok + Composer). Not Grok
+Build weekly. Not Other Models. Not Copilot credits. Bob still chairs UAT.
+Transaction: `bob-build-loop`.
 
 ## When
 
@@ -23,7 +25,9 @@ Binary is `%LOCALAPPDATA%\cursor-agent\cursor-agent.cmd` (or `.ps1`). Never `~\.
 
 ## Kind / model
 
-`-Kind mrb` -> `Get-BobJobModel` latest reasoning (`claude-opus-5-thinking-high`). `-Kind build` (default) -> `composer-2.5`. Confirm on the live `node.exe` command line `--model`.
+`-Kind mrb` -> Cursor Grok (`models.mrbCursor`, `grok-4.6`). `-Kind build`
+(default) -> Composer `composer-2.5`. Confirm on the live `node.exe`
+command line `--model`. Never Other Models.
 
 ## Command
 
@@ -43,7 +47,10 @@ Writes a packet JSON. Starts **cursor-agent** (`-p --model`) via `launch.ps1` th
 
 Do not put the prompt on `Start-Process -ArgumentList` (Windows splits quotes). Do not `Start-Process -RedirectStandardOutput` (PS 5.1 waits for the agent). Start with `Win32_Process.Create` so the agent outlives the grok.exe Job Object. Redirect inside `launch.ps1`. Skip empty Docs/Plan so the prompt is not `Read  and .`.
 
-Watch **GitHub**, not the redirected `.log` (stdout is often empty until exit). Does not scrape Cursor cookies. Does not mark ready for human UAT.
+Watch **GitHub** (PR + MRB issue), not the redirected `.log` (stdout is
+often empty until exit). Build kind: open a PR, do not merge. MRB kind:
+PASS-nits merge that PR; FAIL do not merge. Does not scrape Cursor cookies.
+Does not mark ready for human UAT.
 
 ## Packet
 
@@ -51,7 +58,7 @@ Watch **GitHub**, not the redirected `.log` (stdout is often empty until exit). 
 task: git
 fuel: cursor-models
 repo / branch / docs / plan / mrb
-return: issue comment + POINT UAT
+return: PR URL (build) or MRB issue + merge-or-not (mrb)
 ```
 
 No vendor name required in IRC verbs (`SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`).

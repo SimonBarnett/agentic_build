@@ -25,13 +25,13 @@ Write `docs/build-and-test-plan.md` in the target repo (commit + push) that a bu
 
 Git tasks: `Start-BobBuild -Task git` with **optional** `-Machine` / `-Fuel`.
 Default is `Select-BobGitWorker` (capacity pair, not a nick called cursor).
-Fuel order: `cursor-models` -> `grok-build` (`-AllowCopilot` adds copilot).
-Override remains: `-Machine flamingo -Fuel grok-build` for formprep / MSSQL.
-`-Fix` re-runs the picker. **Builders** use `build0.1` when grok.exe
-lists it, else `grok-4.5` (`models.buildGrokFallback`); Cursor
-`composer-2.5`. **MRB** uses the latest reasoning model
-(`grok-4.6` / `claude-opus-5-thinking-high`). Cursor MRB/FIX until
-PASS-nits: `cursor-mrb-dev`.
+Fuel order: Cursor Models remaining > 0 -> `cursor-models`, else
+`grok-build` (`-AllowCopilot` adds copilot). Override remains:
+`-Machine flamingo -Fuel grok-build` for formprep / MSSQL. `-Fix`
+re-runs the picker. **PR workers** use Cursor Composer `composer-2.5`
+or `build0.1` when grok.exe lists it, else `grok-4.5`. **MRB** uses
+Cursor Grok `grok-4.6` (cursor-agent) or grok.exe `grok-4.6`. Never
+Other Models. Transaction: `bob-build-loop`. Handoff: `cursor-mrb-dev`.
 
 Ids: `ionos`, `marchhare`, `dev1`, `flamingo` — not hostnames. DUMB / 2012
 is not a git worker.
@@ -42,14 +42,15 @@ Load BobBridge from the local agentic_build clone (`C:\ai\agentic_build`, `D:\ai
 
 Point `-Cwd` at the **product** repo checkout on that machine (clone first if needed).
 
-Goal should tell the build agent to read `docs/functional-spec.md` and `docs/build-and-test-plan.md`, implement the first ticket/phases, commit and push, and paste the test summary.
+Goal should tell the build agent to read `docs/functional-spec.md` and `docs/build-and-test-plan.md`, implement the first ticket/phases, **open a PR**, and paste the test summary. Never push `main`. Never merge.
 
 Constraints (examples):
 
 - Do not invent APIs or procedure names the spec forbids
 - Do not put password= or API key **assignments** in prompts or commits
-- Build workers: `build0.1` if `grok models` has it, else `grok-4.5` (or Cursor `composer-2.5`). Do not use the MRB reasoning model for implementation.
+- PR workers: Composer `composer-2.5`, or `build0.1` if `grok models` has it, else `grok-4.5`. Do not use Other Models.
 - Keep prior version folders intact on feature work
+- Success = PR URL, not a push to main
 
 `ReplyChannel` is usually `Bob`. Profile is usually `generic` (use `formprep` only for Priority Form Prep on DEV).
 
@@ -59,7 +60,7 @@ Prefer instructional wording for secrets ("do not set an API key environment var
 
 - Tell the human `jobId` + machine.
 - Poll `Get-BobBuild` / reply_channel pings (see `grok-build-fleet`).
-- On successful push from the build agent, run `bob-hostile-mrb` (GitHub issue, not a PDF).
+- On the worker PR, run `bob-hostile-mrb` / `cursor-mrb-dev` (GitHub issue, not a PDF). FAIL spawns a FIX worker. PASS-nits merges.
 
 ## Long jobs
 

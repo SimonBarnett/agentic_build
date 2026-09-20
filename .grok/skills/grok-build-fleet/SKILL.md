@@ -41,16 +41,17 @@ Stop-BobBuild -JobId <id>
 ```
 
 `-Task git` makes `-Machine` optional: `Select-BobGitWorker` picks a
-`(machine, fuel)` pair (`cursor-models` then `grok-build`; copilot only
-with `-AllowCopilot`). Pin with both `-Machine` and `-Fuel`. `-Fix` re-runs
-the picker. Mode 3 DUMB / 2012 is not a git worker. Cursor Models is a
-shared account pool, not a machine named cursor.
+`(machine, fuel)` pair (Cursor Models remaining > 0 then grok-build;
+copilot only with `-AllowCopilot`). Pin with both `-Machine` and `-Fuel`.
+`-Fix` re-runs the picker. Mode 3 DUMB / 2012 is not a git worker. Cursor
+Models remaining % is the shared top-bar pool, not a machine named cursor.
 
-Models (`config/default.json` `models`): **build** = `build0.1` when
-`grok models` lists it, else `buildGrokFallback` (`grok-4.5`); Cursor
-`composer-2.5`. **MRB** = latest reasoning (`grok-4.6` /
-`claude-opus-5-thinking-high`). Do not use the MRB model for implementation.
-`Resolve-BobGrokCliModel` maps unknown grok `-m` ids so workers start.
+Models (`config/default.json` `models`): **PR / build** = Cursor Composer
+`composer-2.5`, or `build0.1` when `grok models` lists it else
+`buildGrokFallback` (`grok-4.5`). **MRB** = Cursor Grok `grok-4.6` on
+cursor-agent, else grok.exe `grok-4.6`. Fuel: Cursor Models remaining > 0
+then grok.exe. Never Other Models. `Resolve-BobGrokCliModel` maps unknown
+grok `-m` ids so workers start. Transaction: `bob-build-loop`.
 
 Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it is the stall monitor: `bob-fleet-monitor` (do not dispatch or kill Bob's jobs).
 
@@ -102,7 +103,10 @@ When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-
 
 ## Spec / MRB loop
 
-For functional-spec intake, dispatch, and hostile MRB (Bob **hands off**; no PDFs) see `bob-build-loop`, `bob-spec-intake`, `bob-build-dispatch`, `bob-hostile-mrb`, and `cursor-mrb-dev` (Cursor MRB/FIX until PASS-nits).
+For functional-spec intake, PR dispatch, and hostile MRB (Bob **hands off**;
+PASS-nits merges; FAIL spawns a worker; no PDFs) see `bob-build-loop`,
+`bob-spec-intake`, `bob-build-dispatch`, `bob-hostile-mrb`, and
+`cursor-mrb-dev`.
 
 ## Long builds (do not kill early)
 

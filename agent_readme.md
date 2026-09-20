@@ -1,6 +1,8 @@
 # Agent handover — Grok Build fleet
 
-You dispatch **Grok Builds** (`grok.exe`) on named Windows machines. You do not WinRM, you do not install a Windows service, and you do not put SQL passwords in prompts.
+You dispatch **git-task workers** on named Windows machines. Cursor Models
+while remaining > 0, else `grok.exe`. Workers **open PRs**. You do not WinRM,
+you do not install a Windows service, and you do not put SQL passwords in prompts.
 
 Grok Bot desktop is running on every build machine. `grok.exe` runs as the **Windows logon user**. That user already has MSSQL (integrated auth).
 

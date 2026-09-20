@@ -16,33 +16,37 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | grok-build-fleet | Start/monitor/stop jobs; heal Watch-BobJobs; git-task picker |
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
-| cursor-mrb-dev | Cursor MRB then FIX until PASS-nits (`Start-BobMrbHandoff.ps1` / `Start-BobCursor.ps1`) |
-| bob-build-loop | Orchestrator: park, dispatch, hand off MRB, UAT stamp |
+| cursor-mrb-dev | Hand off MRB then FIX until PASS-nits; PASS-nits merges; FAIL spawns a worker |
+| bob-build-loop | Orchestrator: park, PR worker, MRB, merge or FIX, UAT stamp |
 | bob-spec-intake | Park FR as GitHub issue + `/docs` markdown |
 | bob-build-dispatch | Write build-and-test plan + `Start-BobBuild -Task git` |
-| bob-hostile-mrb | Bob **hands off** hostile MRB; missing features become new FRs; no PDF |
+| bob-hostile-mrb | Bob **hands off** MRB of a PR; PASS-nits merges; FAIL spawns FIX; no PDF |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` (not Libera) |
 
-When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. A git-task worker (Cursor Models, grok.exe, Grok Bot; Copilot only with `-AllowCopilot`) implements. Builders: **`build0.1`** when `grok models` lists it, else **`grok-4.5`**; Cursor **`composer-2.5`**. MRB uses the latest reasoning model (`grok-4.6` / `claude-opus-5-thinking-high`). Machines: `ionos`, `flamingo`, `marchhare`, `ce-priority-dev1`.
+When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. Both the PR and the MRB are handed to a worker agent.
+
+**Fuel (no judgment):** if Cursor Models remaining > 0, use Cursor Models (Cursor Grok + Composer). If remaining is 0, use grok.exe. Never Other Models. Copilot only with `-AllowCopilot`. Tray top bar must show that Cursor Models remaining %.
+
+**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Machines: `ionos`, `flamingo`, `marchhare`, `ce-priority-dev1`. Every worker opens a **PR**. PASS-nits: the MRB agent **merges**. Every FAIL: spawn a FIX worker. Only Bob stamps UAT.
 
 ### New product (fresh functional spec)
 
 1. Create a **new public** GitHub repository under `SimonBarnett`.
 2. Commit the functional specification under `/docs`.
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
-4. `Start-BobBuild -Task git` (picker chooses machine+fuel unless you pin). Prefer `build0.1` on grok-build when listed, else `grok-4.5`.
-5. Worker implements, **commits and pushes**.
-6. On each pushed SHA: Bob **hands off** hostile MRB (`tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
-7. On **FAIL**, dispatch a **build** worker (`Start-BobCursor -Kind build` or grok-build), commit and push, then re-MRB the new SHA. Repeat until **PASS-nits**. Only **Bob** stamps **ready for human UAT**.
+4. `Start-BobBuild -Task git` (picker: Cursor Models remaining > 0, else grok-build).
+5. Worker implements on `work/<job>` and **opens a PR**. Never push `main`. Never merge.
+6. Bob **hands off** hostile MRB on that PR (`tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
+7. **FAIL:** do not merge; immediately dispatch a FIX worker; that worker opens a **new** PR; re-MRB. **PASS-nits:** the MRB agent merges the PR (nits do not block). Repeat until PASS-nits. Only **Bob** stamps **ready for human UAT**.
 
 ### Feature request (extends existing repo)
 
 1. Must **not break** previous versions.
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
-4. `Start-BobBuild -Task git` to implement, commit, and push.
-5. Same per-SHA MRB loop as above (new issue per SHA; FAIL → build worker → re-MRB until PASS-nits; Bob stamps UAT). Git is the source of truth.
+4. `Start-BobBuild -Task git` to implement and **open a PR**.
+5. Same PR/MRB transaction as above (new issue per PR head; FAIL → FIX worker → new PR → re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
 
@@ -58,34 +62,33 @@ flowchart TB
   A1 --> A2 --> A3
   A3 --> PARK
   F1 --> PARK["Bob parks issue + markdown"]
+  PARK --> PLAN["Write build-and-test plan"]
 
-  subgraph DISPATCH["Git-task dispatch"]
-    P1["Select-BobGitWorker"]
-    P2["Pair: machine, fuel"]
-    P3["cursor-models / grok-build / copilot / grok-bot"]
-    P4["Start-BobBuild -Task git"]
-  end
+  PLAN --> FUEL{"Cursor Models remaining > 0?"}
+  FUEL -->|yes| CUR["Fuel cursor-models\nMRB: Cursor Grok grok-4.6\nPR: Composer composer-2.5"]
+  FUEL -->|no| GROK["Fuel grok-build\nMRB: grok.exe grok-4.6\nPR: build0.1 else grok-4.5"]
 
-  PARK --> P1 --> P2 --> P3 --> P4
+  CUR --> BUILD
+  GROK --> BUILD
 
   subgraph BUILD["Worker"]
-    D1["Implement, commit, push"]
+    D1["Implement on work/job"]
+    D2["Open PR. Never push main. Never merge."]
   end
 
-  P4 --> D1
+  BUILD --> MRB
 
-  subgraph MRB["Hostile MRB"]
-    M1["Bob: Start-BobMrbHandoff.ps1"]
-    M2["Cursor Models then Grok Build"]
-    M3["New GitHub issue per SHA: FAIL or PASS-nits"]
-    M4["Missing features: park new FRs"]
-    M5{"Bob UAT stamp?"}
+  subgraph MRB["Hostile MRB (handed off)"]
+    M1["Start-BobMrbHandoff.ps1"]
+    M2["New GitHub issue per PR head: FAIL or PASS-nits"]
+    M3["Missing features: park new FRs"]
   end
 
-  D1 --> M1 --> M2 --> M3 --> M4 --> M5
-  M5 -->|No| FIX["Send-BobBuildSpec / IRC FIX\nissue URL + ordered fixes"]
-  FIX --> P1
-  M5 -->|Yes| UAT["Ready for human UAT"]
+  MRB --> VER{"Verdict"}
+  VER -->|FAIL| FIX["Do not merge\nspawn FIX worker now"]
+  FIX --> FUEL
+  VER -->|PASS-nits| MERGE["MRB agent merges the PR"]
+  MERGE --> UAT["Bob stamps ready for human UAT"]
 ```
 
 ### Talking to build agents
@@ -101,8 +104,8 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 
 ### Guardrails
 
-- Bob orchestrates and stamps UAT. Workers implement. Bob **hands off** hostile MRB (Copilot / git-task); he does not write it in Grok Bot.
-- Cursor Models is a shared account pool on the tray top bar, not a machine named `cursor`.
+- Bob orchestrates and stamps UAT. Workers open PRs. Bob **hands off** hostile MRB; the MRB agent merges on PASS-nits. Every FAIL spawns a FIX worker. No in-session MRB or implementation.
+- Cursor Models remaining % is the tray top bar and the fuel gate, not a machine named `cursor`, not Grok Bot Sand, not Other Models.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
 

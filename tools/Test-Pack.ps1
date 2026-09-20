@@ -1130,7 +1130,7 @@ Invoke-Case 'BT0p git-task picker' {
     $pinModel = Get-BobJobModel -Kind build -Fuel grok-build
     if ($pinModel -ne 'build0.1') { throw "grok build model=$pinModel expected build0.1" }
     $mrbC = Get-BobJobModel -Kind mrb -Fuel cursor-models
-    if ($mrbC -ne 'claude-opus-5-thinking-high') { throw "mrb cursor model=$mrbC" }
+    if ($mrbC -ne 'grok-4.6') { throw "mrb cursor model=$mrbC" }
     $mrbG = Get-BobJobModel -Kind mrb -Fuel grok-build
     if ($mrbG -ne 'grok-4.6') { throw "mrb grok model=$mrbG" }
     $equiv = Resolve-BobGrokCliModel -Wanted 'build0.1'

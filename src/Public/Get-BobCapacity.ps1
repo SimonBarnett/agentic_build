@@ -13,7 +13,7 @@ function Get-BobJobModel {
     if ($Kind -eq 'mrb') {
         if ($fuel -eq 'cursor-models') {
             if ($m -and $m.mrbCursor) { return [string]$m.mrbCursor }
-            return 'claude-opus-5-thinking-high'
+            return 'grok-4.6'
         }
         if ($m -and $m.mrbGrok) { return [string]$m.mrbGrok }
         return 'grok-4.6'
