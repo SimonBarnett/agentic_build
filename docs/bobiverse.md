@@ -41,6 +41,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\In
 # other boxes: omit -Chair (JOIN)
 ```
 
-`Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden 30s loop: POINT local status, scrape peer POINT lines into `bob-peers\`, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files. `Watch-BobTray` starts the loop the same way it starts `Watch-BobJobs`.
+`Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden 30s loop: POINT local status, scrape peer POINT lines into `bob-peers\`, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files.
+
+`Install-BobFleet` registers `_Watch-Bobiverse-<id>` (ionos: `_Watch-Bobiverse-ionos`). Tray **Restart watcher** kills `Watch-Bobiverse` + bobiverse `irc_agent`, starts that wrapper, then relaunches the tray so the box rejoins `#bobiverse`. Do not kill `Watch-BobJobs`.
 
 Do not open Libera from CI. SASL env only if the box requires it (`AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD`); do not commit those.

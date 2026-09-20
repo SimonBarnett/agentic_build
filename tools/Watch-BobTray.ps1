@@ -3,9 +3,11 @@
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
 # No WinRM. See docs/bob-fleet-peer-peek.md.
-# GOOD UI: dark TipForm on left-click / Status only. Hover must not
-# Show-BobTrayCard (that stacked a second card). BAD: native
-# NotifyIcon.Text white chip (P+ idle …) — Clear-BobNativeTip always.
+# GOOD UI: dark TipForm on left-click / Status only. No hover events
+# (no MouseMove, no iconProbe). Card stays parked until X (no hideTip).
+# Restart watcher kills Watch-Bobiverse + bobiverse irc_agent, starts
+# _Watch-Bobiverse-<id>, then relaunches this tray. BAD: native
+# NotifyIcon.Text white chip — Clear-BobNativeTip always.
 # Exactly one TipForm; never Form.Show after ShowParkedAt.
 # Replaces the blank Interactive PowerShell window.
 # Not a Windows service. Requires powershell.exe -STA.
@@ -312,24 +314,6 @@ function Get-BobNotifyIconRect {
     return $null
 }
 
-function Test-BobTrayPointInRect {
-    param($Point, $Rect, [int]$Pad = 0)
-    if ($null -eq $Point -or $null -eq $Rect) { return $false }
-    try {
-        $x = [int]$Point.X
-        $y = [int]$Point.Y
-        $w = [int]$Rect.Width
-        $h = [int]$Rect.Height
-        if ($w -le 0 -or $h -le 0) { return $false }
-        $left = [int]$Rect.X - $Pad
-        $top = [int]$Rect.Y - $Pad
-        $right = [int]$Rect.X + $w + $Pad
-        $bottom = [int]$Rect.Y + $h + $Pad
-        return ($x -ge $left -and $x -le $right -and $y -ge $top -and $y -le $bottom)
-    }
-    catch { return $false }
-}
-
 function Add-RoundRect([System.Drawing.Drawing2D.GraphicsPath]$path, $x, $y, $w, $h, $r) {
     $d = $r * 2
     $path.AddArc($x, $y, $d, $d, 180, 90)
@@ -426,19 +410,90 @@ function Test-BobiverseWatcherUp {
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
-            $_.CommandLine -match 'Watch-Bobiverse\.ps1'
+            ($_.CommandLine -match 'Watch-Bobiverse\.ps1' -or $_.CommandLine -match '_Watch-Bobiverse')
         })
     return $hits
+}
+
+function Get-BobTrayMachineId {
+    $mid = $null
+    try { $mid = Get-ThisMachineId } catch { }
+    if (-not $mid) { $mid = [string]$env:BOB_MACHINE_ID }
+    if (-not $mid) { $mid = [string]$env:COMPUTERNAME }
+    if ($mid) { return $mid.ToLowerInvariant() }
+    return $null
+}
+
+function Stop-BobiverseMoot {
+    $mid = Get-BobTrayMachineId
+    if ($mid) {
+        $task = "_Watch-Bobiverse-$mid"
+        try {
+            Stop-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue
+            Write-TrayLog "stopped scheduled task $task"
+        }
+        catch { }
+    }
+    foreach ($p in @(Test-BobiverseWatcherUp)) {
+        try {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-TrayLog "killed Watch-Bobiverse pid=$($p.ProcessId)"
+        }
+        catch { }
+    }
+    foreach ($p in @(Test-IrcAgentUp)) {
+        try {
+            Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-TrayLog "killed bobiverse irc_agent pid=$($p.ProcessId)"
+        }
+        catch { }
+    }
+}
+
+function Start-BobiverseMootWrapper {
+    $mid = Get-BobTrayMachineId
+    if ($mid) {
+        $task = "_Watch-Bobiverse-$mid"
+        try {
+            Start-ScheduledTask -TaskName $task -ErrorAction Stop
+            Write-TrayLog "started scheduled task $task"
+            return
+        }
+        catch { }
+    }
+    $ps = (Get-Command powershell.exe).Source
+    $wrapId = Join-Path $RepoRoot ("tools\_Watch-Bobiverse-{0}.ps1" -f $mid)
+    $wrap = Join-Path $RepoRoot 'tools\_Watch-Bobiverse.ps1'
+    $file = $null
+    if ($mid -and (Test-Path $wrapId)) { $file = $wrapId }
+    elseif (Test-Path $wrap) { $file = $wrap }
+    elseif (Test-Path $watchBobiverse) { $file = $watchBobiverse }
+    if (-not $file) {
+        Write-TrayLog 'no Watch-Bobiverse wrapper to start'
+        return
+    }
+    Write-TrayLog "starting moot wrapper $file"
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $file) `
+        -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
 }
 
 function Start-IrcWatcher {
     $hits = Test-BobiverseWatcherUp
     if ($hits.Count -gt 0) { return }
-    if (-not (Test-Path $watchBobiverse)) { return }
-    Write-TrayLog 'starting Watch-Bobiverse (automation, not a Grok session)'
-    Start-Process -FilePath (Get-Command powershell.exe).Source `
-        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $watchBobiverse) `
+    Start-BobiverseMootWrapper
+}
+
+function Restart-BobTrayWatcher {
+    Write-TrayLog 'Restart watcher: rejoin #bobiverse then relaunch tray'
+    Stop-BobiverseMoot
+    Start-BobiverseMootWrapper
+    $ps = (Get-Command powershell.exe).Source
+    $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
         -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    $ctx.ExitThread()
 }
 
 function Start-JobsWatcher {
@@ -532,7 +587,6 @@ function Clear-BobNativeTip {
 
 function Hide-BobTrayCard {
     $script:cardClosed = $true
-    try { $hideTip.Stop() } catch { }
     try {
         if (Test-BobTrayTipAlive) {
             $hidden = $false
@@ -744,25 +798,11 @@ function Initialize-BobTrayTipForm {
 }
 
 Initialize-BobTrayTipForm
-$hideTip = New-Object System.Windows.Forms.Timer
-$hideTip.Interval = 3200
-$hideTip.Add_Tick({
-        try {
-            if (Test-BobTrayTipVisible) {
-                try { [void]$script:tip.TryHide() } catch { $script:tip.Hide() }
-            }
-        }
-        catch {
-            Write-TrayLog ('tip hide error: ' + $_.Exception.Message)
-        }
-        $hideTip.Stop()
-        Clear-BobNativeTip
-    })
 
 function Show-BobTrayCard {
     param([string]$Reason = 'click')
     try {
-        # Click / Status only. MouseMove and iconProbe must not stack a second TipForm.
+        # Click / Status only. No hover events. Stay parked until X.
         if ($Reason -ne 'click') { return }
         $script:cardClosed = $false
         if (-not (Test-BobTrayTipAlive)) {
@@ -771,6 +811,7 @@ function Show-BobTrayCard {
         }
         if (Test-BobTrayTipVisible) { return }
         Clear-BobNativeTip
+        try { $script:iconRectCache = Get-BobNotifyIconRect $notify } catch { }
         # Paint from the last poll. Do not Get-BobTrayHover here: peer DNS/UNC
         # would freeze the UI and the native "P+ idle" tip would win.
         $bottom = 110
@@ -778,7 +819,7 @@ function Show-BobTrayCard {
         if ($script:tileHost) { $bottom = $script:tileHost.Bottom }
         if ($script:alertLabel) { $bottom = $script:alertLabel.Bottom }
         $script:tip.Height = [Math]::Max(110, $bottom + 16)
-        # NC-T01 / NC-D02: park once on first show. Do not update Location on later MouseMove.
+        # Park once on click. Stay in that place until X. No hideTip.
         if (-not (Test-BobTrayTipVisible)) {
             $iconRect = $script:iconRectCache
             $pt = [System.Windows.Forms.Cursor]::Position
@@ -816,7 +857,6 @@ function Show-BobTrayCard {
             }
             else {
                 Write-TrayLog ("tip show ok reason=$Reason src=$($place.source) loc=$($script:tip.Left),$($script:tip.Top) size=$($script:tip.Width)x$($script:tip.Height)")
-                try { $hideTip.Stop(); $hideTip.Start() } catch { }
             }
         }
     }
@@ -838,6 +878,7 @@ $miStatus = $menu.Items.Add('Status')
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')
+$miRestart = $menu.Items.Add('Restart watcher')
 $miExit = $menu.Items.Add('Exit watcher')
 $notify.ContextMenuStrip = $menu
 
@@ -848,6 +889,7 @@ $miStatus.Add_Click({
 $miAck.Add_Click({ Clear-Attention })
 $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath } })
 $ctx = New-Object System.Windows.Forms.ApplicationContext
+$miRestart.Add_Click({ Restart-BobTrayWatcher })
 $miExit.Add_Click({ $ctx.ExitThread() })
 $notify.Add_MouseClick({
         param($s, $e)
@@ -855,10 +897,6 @@ $notify.Add_MouseClick({
             if ($script:attention) { Clear-Attention }
             Show-BobTrayCard -Reason 'click'
         }
-    })
-$notify.Add_MouseMove({
-        # Hover only pops the native chip. Never Show-BobTrayCard here.
-        Clear-BobNativeTip
     })
 
 $flash = New-Object System.Windows.Forms.Timer
@@ -899,25 +937,6 @@ $pulse.Add_Tick({
         $pulseOff.Stop(); $pulseOff.Start()
     })
 
-$iconProbe = New-Object System.Windows.Forms.Timer
-$iconProbe.Interval = 400
-$iconProbe.Add_Tick({
-        try {
-            $script:iconRectCache = Get-BobNotifyIconRect $notify
-            $pt = [System.Windows.Forms.Cursor]::Position
-            Clear-BobNativeTip
-            if (Test-BobTrayTipVisible) {
-                $tipRect = @{ X = $script:tip.Left; Y = $script:tip.Top; Width = $script:tip.Width; Height = $script:tip.Height }
-                if (Test-BobTrayPointInRect $pt $tipRect -Pad 4) {
-                    $hideTip.Stop(); $hideTip.Start()
-                }
-            }
-        }
-        catch {
-            Write-TrayLog ('icon probe error: ' + $_.Exception.Message)
-        }
-    })
-
 Start-JobsWatcher
 try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
@@ -926,10 +945,9 @@ $notify.Visible = $true
 $flash.Start()
 $poll.Start()
 $pulse.Start()
-$iconProbe.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
-$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop(); $hideTip.Stop(); $iconProbe.Stop()
+$poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop()
 if (Test-BobTrayTipAlive) {
     try { [void]$script:tip.TryHide() } catch { try { $script:tip.Hide() } catch { } }
     try { $script:tip.Dispose() } catch { }

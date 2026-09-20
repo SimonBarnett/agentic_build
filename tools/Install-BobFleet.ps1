@@ -76,11 +76,34 @@ catch {
     $started = "register-only (start failed: $($_.Exception.Message))"
 }
 
+$bvWrapId = Join-Path $RepoRoot ("tools\_Watch-Bobiverse-{0}.ps1" -f $rec.id)
+$bvWrap = Join-Path $RepoRoot 'tools\_Watch-Bobiverse.ps1'
+$bvInner = Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1'
+$bvFile = $null
+if (Test-Path $bvWrapId) { $bvFile = $bvWrapId }
+elseif (Test-Path $bvWrap) { $bvFile = $bvWrap }
+elseif (Test-Path $bvInner) { $bvFile = $bvInner }
+$bvTask = "_Watch-Bobiverse-$($rec.id)"
+$bvStarted = 'skipped (no wrapper script)'
+if ($bvFile) {
+    $bvArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bvFile`""
+    $bvAction = New-ScheduledTaskAction -Execute $ps -Argument $bvArg -WorkingDirectory $RepoRoot
+    Register-ScheduledTask -TaskName $bvTask -Action $bvAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+    try {
+        Start-ScheduledTask -TaskName $bvTask
+        $bvStarted = 'started now'
+    }
+    catch {
+        $bvStarted = "register-only (start failed: $($_.Exception.Message))"
+    }
+}
+
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
+Write-Host "Bobiverse:   $bvTask -> $bvFile ($bvStarted)"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'

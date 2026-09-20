@@ -18,18 +18,18 @@ description: >
 ## UI
 
 - Idle: Font Awesome Free solid **robot** (CC BY 4.0), not grok.exe extract.
-- Left-click: acknowledge if flashing; **always show the dark card**. Right-click: **Status** (same card), Open log, Exit. Hover must **not** open the card (MouseMove/probe stacked a second TipForm on the good one).
-- **Mouse-over**: `Clear-BobNativeTip` only (keep `NotifyIcon.Text` blank). Do **not** call `Show-BobTrayCard` from `MouseMove` or the 400ms icon-rect probe. `Shell_NotifyIconGetRect` is cached on the timer — do **not** call it from the MouseMove callback. The native white `P+ idle …` chip is a fail.
+- Left-click: acknowledge if flashing; **always show the dark card**. Right-click: **Status** (same card), **Restart watcher**, Open log, Exit. **No hover events** (`Add_MouseMove` and `iconProbe` are gone — hover still stacked the wrong dialog in front of the good click card).
+- **No mouse-over handlers.** Do not `Add_MouseMove`. Do not run a 400ms icon-rect probe. `Shell_NotifyIconGetRect` is cached **on click** inside `Show-BobTrayCard`. The native white `P+ idle …` chip is a fail.
   - Title: **Bob Fleet** (not `Bob (<machineId>)`).
   - **Cursor account row** under the title: heading `cursor (N%)` and a full-width weekly bar (no pointer icon). N% is **remaining** = 100 − Grok Bot Sand `usagePercent` (the same “Weekly usage 98%” flyout, which is **used**). Not the Cursor spend-plan remaining/limit. Not the Grok Build xAI seat. Machine tiles use xAI `unified.jsonl` `creditUsagePercent`. Then **indent** machine tiles under that.
   - **One weekly remaining bar per machine tile** (each box has its own Grok seat). Heading `MACHINENAME (75%)` uses a **transparent** label so it does not cover the bar. Bar fill is a gradient: **100% green, 0% red** (amber in the middle). This host: last `billing: fetched credits config` in `~\.grok\logs\unified.jsonl`, `remaining_pct = round(100 - creditUsagePercent)` when `currentPeriod.type` is weekly. Peers: `weekly=` on their `BOB v1` POINT. Unknown weekly: empty track, `(n/a)`. Never fake 100%. No `auth.json`. No billing HTTP. Session context is not this bar.
   - **One card only. Exactly one `TipForm`.** `NotifyIcon.Text` stays empty always (`Clear-BobNativeTip` / space-clear). Never restore a short `P+ idle …` native tip after hide or hover — that white chip is the double dialog.
-  - **X** on the card closes it (`Hide-BobTrayCard`). Stays closed until left-click or Status (do not re-open from hover/probe).
+  - **X** on the card closes it (`Hide-BobTrayCard`). Stays closed until left-click or Status. **No `hideTip` auto-hide.** The card stays parked in the same place until X.
   - Never call methods on a disposed `TipForm`; recreate via `Initialize-BobTrayTipForm` only after dispose. `ShowParkedAt` / `TryHide` / `Visible` must no-op or return false when `IsDisposed`. Never `Form.Show()` after `ShowParkedAt`.
   - Session context from `usage.json` is optional on the job object (`context_remaining_pct`) only. It is **not** the hover bar.
   - **Machine tiles**: heading `MACHINENAME (75%)` or `(n/a)`, full-width weekly bar beneath, then indented jobs (`owner/repo  duration  state`). A live `grok.exe` on this box is a running job even if Bob did not start it (`active_sessions.json` + process list). Do not list `Grok Bot.exe`. Empty in-moot: `  no jobs`. Not in the `#bobiverse` roster: `  not in moot`. Stale heartbeat: `  lastSeen stale`. Never a commit SHA as the primary label.
   - Footer: `alert: watcher|stall|weekly|none`.
-  - **Park once** (`Get-BobTrayTipPlacement`): on first show, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the first MouseMove cursor offset only. While the card is **already visible**, do not re-invoke placement with new cursor coords and do not update `Location`. Restart `hideTip` on show / while the pointer is over the card. Hide via X, hide timer, or `TryHide` (`SWP_HIDEWINDOW`).
+  - **Park once** (`Get-BobTrayTipPlacement`): on click, set `Location` from the notify-icon rect (above-left, clamped to the working area). If the rect is unavailable, use the click cursor. While the card is **already visible**, do not re-invoke placement and do not update `Location`. Hide **only** via X / `TryHide` (`SWP_HIDEWINDOW`). No hide timer.
   - **No activate**: tip form is `ShowWithoutActivation` / `WS_EX_NOACTIVATE` (`0x08000000`). Show with `SetWindowPos` `SWP_NOACTIVATE|SWP_SHOWWINDOW` (`ShowParkedAt`); do not rely on `Form.Show()` alone. Hide with `TryHide` (`SWP_HIDEWINDOW`).
   - **Log** show/hide failures (and successful first-show) to `watch_bob_tray.log`.
 - **Never park `NotifyIcon.Text`.** Keep it empty (or a single space via `Clear-BobNativeTip` / `HideTooltipWindows`). The short `P+ idle 0%` / `P+ 1 run  9%` string is not a hover surface — it is the stuck white chip to eliminate. Weekly remaining lives on the dark card bars.
@@ -53,7 +53,9 @@ Log: `~\.grok\long-running-background-tasks\watch_bob_tray.log`.
 powershell -NoProfile -File "$repo\tools\Install-BobFleet.ps1" -MachineId <id> -CwdRoots <roots>
 ```
 
-Recycling the **scheduled task** **kills** the pull worker. Do not recycle `BobFleet-*` while a job is running (see `bob-fleet-monitor`). Hover/flash code changes: recycle **Watch-BobTray.ps1 only** (stop that process, start a new hidden STA `Watch-BobTray.ps1`). Never `Stop-ScheduledTask BobFleet-*` while jobs run.
+Recycling the **scheduled task** **kills** the pull worker. Do not recycle `BobFleet-*` while a job is running (see `bob-fleet-monitor`). Tray UI changes: recycle **Watch-BobTray.ps1 only** (stop that process, start a new hidden STA `Watch-BobTray.ps1`). Never `Stop-ScheduledTask BobFleet-*` while jobs run.
+
+**Restart watcher** (right-click menu): kill `Watch-Bobiverse` + bobiverse `irc_agent`, start `_Watch-Bobiverse-<id>` (scheduled task or `tools\_Watch-Bobiverse-<id>.ps1`, ionos = `_Watch-Bobiverse-ionos`), then relaunch the tray. That rejoins `#bobiverse`. Do not kill `Watch-BobJobs`. `Install-BobFleet` also registers `_Watch-Bobiverse-<id>` AtLogOn.
 
 ## Hard rules
 
@@ -62,4 +64,4 @@ Recycling the **scheduled task** **kills** the pull worker. Do not recycle `BobF
 - Do not invent weekly %. No billing HTTP scrape. Log field or n/a.
 - Do not report session context as weekly quota.
 - Job lines are GitHub `owner/repo`, never a commit SHA as the primary label.
-- Do not omit registered peers. Do not invent jobs. Do not WinRM. Recycle Watch-BobTray only after hover/peek code changes.
+- Do not omit registered peers. Do not invent jobs. Do not WinRM. Recycle Watch-BobTray only after tray/peek code changes. Restart watcher must rejoin `#bobiverse`.

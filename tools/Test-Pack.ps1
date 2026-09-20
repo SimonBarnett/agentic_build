@@ -699,6 +699,9 @@ Invoke-Case 'BT0n tray tip show' {
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
     if ($traySrc -match "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must not Show-BobTrayCard (hover stacked a second TipForm)' }
     if ($traySrc -match "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must not Show-BobTrayCard' }
+    if ($traySrc -match 'Add_MouseMove') { throw 'no hover events: Add_MouseMove must be gone' }
+    if ($traySrc -match '\$iconProbe') { throw 'no hover events: iconProbe timer must be gone' }
+    if ($traySrc -match '\$hideTip') { throw 'card must stay parked until X; hideTip auto-hide must be gone' }
     if ($traySrc -notmatch '(?s)Reason -ne ''click''.{0,120}return') { throw 'Show-BobTrayCard must refuse non-click reasons' }
     if ($traySrc -match '(?s)overTip.{0,240}cardClosed = \$false') { throw 'must not rearm hover by clearing cardClosed when leaving the tip' }
     if ($traySrc -match 'function Restore-BobNativeTip') { throw 'must not restore NotifyIcon.Text (white P+ idle chip is the double dialog)' }
@@ -721,9 +724,20 @@ Invoke-Case 'BT0n tray tip show' {
     if ($traySrc -notmatch 'tip show fail') { throw 'Watch-BobTray must log tip show failures' }
     if ($traySrc -notmatch 'tip hide error') { throw 'Watch-BobTray must log tip hide failures' }
     if ($traySrc -notmatch 'iconRectCache') { throw 'icon rect must be cached off the NotifyIcon callback' }
+    if ($traySrc -notmatch '(?s)function Show-BobTrayCard.{0,900}Get-BobNotifyIconRect') {
+        throw 'Show-BobTrayCard must cache Get-BobNotifyIconRect on click (no iconProbe)'
+    }
     if ($traySrc -match '(?s)Add_MouseMove\(\{.{0,400}Get-BobNotifyIconRect') {
         throw 'Do not call Shell_NotifyIconGetRect / Get-BobNotifyIconRect from MouseMove'
     }
+    if ($traySrc -notmatch 'Restart-BobTrayWatcher') { throw 'tray must Restart-BobTrayWatcher so Restart rejoins #bobiverse' }
+    if ($traySrc -notmatch 'Stop-BobiverseMoot') { throw 'Restart watcher must kill Watch-Bobiverse + bobiverse irc_agent' }
+    if ($traySrc -notmatch '_Watch-Bobiverse') { throw 'Restart watcher must start _Watch-Bobiverse-<id> wrapper' }
+    if ($traySrc -notmatch "Restart watcher") { throw 'right-click menu must include Restart watcher' }
+    $wrapIonos = Get-Content (Join-Path $RepoRoot 'tools\_Watch-Bobiverse-ionos.ps1') -Raw
+    if ($wrapIonos -notmatch 'Watch-Bobiverse\.ps1') { throw '_Watch-Bobiverse-ionos must invoke Watch-Bobiverse.ps1' }
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch '_Watch-Bobiverse-') { throw 'Install-BobFleet must register _Watch-Bobiverse-<id>' }
     if ($traySrc -notmatch '(?s)if \(-not \(Test-BobTrayTipVisible\)\).{0,800}Get-BobTrayTipPlacement') {
         throw 'Get-BobTrayTipPlacement must run only when tip is not visible'
     }
@@ -738,6 +752,9 @@ Invoke-Case 'BT0n tray tip show' {
     if ($skillTray -notmatch '(?i)Never park') { throw 'bob-fleet-tray skill must forbid parking NotifyIcon.Text' }
     if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
     if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
+    if ($skillTray -notmatch '(?i)No hover') { throw 'bob-fleet-tray skill must forbid hover events' }
+    if ($skillTray -notmatch '(?i)hideTip') { throw 'bob-fleet-tray skill must say no hideTip auto-hide' }
+    if ($skillTray -notmatch '_Watch-Bobiverse-ionos') { throw 'bob-fleet-tray skill must name _Watch-Bobiverse-ionos Restart path' }
 
     $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
     if (-not $onWindows) {
@@ -988,6 +1005,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
     if ($traySrc -notmatch 'Resolve-BobiverseMachineId') { throw 'Watch-BobTray must drop tiles that fail Resolve-BobiverseMachineId' }
+    if ($traySrc -notmatch 'Restart-BobTrayWatcher') { throw 'tray Restart watcher must rejoin #bobiverse' }
+    if ($traySrc -notmatch 'Stop-BobiverseMoot') { throw 'Restart must kill Watch-Bobiverse + bobiverse irc_agent' }
+    if ($traySrc -notmatch '_Watch-Bobiverse-ionos|_Watch-Bobiverse-\{0\}') { throw 'Restart must start _Watch-Bobiverse-<id> wrapper' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-Bobiverse-ionos.ps1'))) { throw 'missing tools/_Watch-Bobiverse-ionos.ps1' }
 }
 
 Write-Host ''
