@@ -1088,6 +1088,13 @@ Invoke-Case 'BT0p git-task picker' {
     if ($mrbC -ne 'claude-opus-5-thinking-high') { throw "mrb cursor model=$mrbC" }
     $mrbG = Get-BobJobModel -Kind mrb -Fuel grok-build
     if ($mrbG -ne 'grok-4.6') { throw "mrb grok model=$mrbG" }
+    $equiv = Resolve-BobGrokCliModel -Wanted 'build0.1'
+    if ($equiv -eq 'build0.1') { throw 'Resolve-BobGrokCliModel must not pass unknown build0.1 to grok.exe -m' }
+    if ($equiv -ne 'grok-4.5' -and $equiv -ne 'grok-4.6') { throw "build0.1 equivalent=$equiv" }
+    $argvBuild = Start-BobWorker -Cwd (Join-Path $bridgeRoot 'cwd') -Prompt 'PONG' -Profile generic -Model 'build0.1' -WhatIfArgv -Force
+    $argvText = ($argvBuild.argv -join ' ')
+    if ($argvText -match '(^|\s)-m\s+build0\.1(\s|$)') { throw "argv still has -m build0.1: $argvText" }
+    if ($argvText -notmatch '(^|\s)-m\s+grok-4\.(5|6)(\s|$)') { throw "argv missing grok catalog -m: $argvText" }
 
     $pinJob = Start-BobBuild -Task git -Machine testhost -Fuel grok-build -Goal ping -Cwd (Join-Path $bridgeRoot 'cwd')
     if ($pinJob.machine -ne 'testhost' -or $pinJob.fuel -ne 'grok-build') {

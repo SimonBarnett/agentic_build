@@ -17,6 +17,7 @@
         'Start-BobBuild',
         'Get-BobCapacity',
         'Get-BobJobModel',
+        'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Copy-BobProjectSkills',
         'Get-BobBuild',

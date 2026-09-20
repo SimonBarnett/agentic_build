@@ -27,8 +27,9 @@ Git tasks: `Start-BobBuild -Task git` with **optional** `-Machine` / `-Fuel`.
 Default is `Select-BobGitWorker` (capacity pair, not a nick called cursor).
 Fuel order: `cursor-models` -> `grok-build` (`-AllowCopilot` adds copilot).
 Override remains: `-Machine flamingo -Fuel grok-build` for formprep / MSSQL.
-`-Fix` re-runs the picker. **Builders** use `build0.1` (grok.exe) or
-`composer-2.5` (Cursor). **MRB** uses the latest reasoning model
+`-Fix` re-runs the picker. **Builders** use `build0.1` when grok.exe
+lists it, else `grok-4.5` (`models.buildGrokFallback`); Cursor
+`composer-2.5`. **MRB** uses the latest reasoning model
 (`grok-4.6` / `claude-opus-5-thinking-high`).
 
 Ids: `ionos`, `marchhare`, `dev1`, `flamingo` — not hostnames. DUMB / 2012
@@ -46,7 +47,7 @@ Constraints (examples):
 
 - Do not invent APIs or procedure names the spec forbids
 - Do not put password= or API key **assignments** in prompts or commits
-- Build workers: `build0.1` (or Cursor `composer-2.5`). Do not use the MRB reasoning model for implementation.
+- Build workers: `build0.1` if `grok models` has it, else `grok-4.5` (or Cursor `composer-2.5`). Do not use the MRB reasoning model for implementation.
 - Keep prior version folders intact on feature work
 
 `ReplyChannel` is usually `Bob`. Profile is usually `generic` (use `formprep` only for Priority Form Prep on DEV).

@@ -46,9 +46,11 @@ with `-AllowCopilot`). Pin with both `-Machine` and `-Fuel`. `-Fix` re-runs
 the picker. Mode 3 DUMB / 2012 is not a git worker. Cursor Models is a
 shared account pool, not a machine named cursor.
 
-Models (`config/default.json` `models`): **build** = `build0.1` (grok.exe)
-or `composer-2.5` (Cursor). **MRB** = latest reasoning (`grok-4.6` /
+Models (`config/default.json` `models`): **build** = `build0.1` when
+`grok models` lists it, else `buildGrokFallback` (`grok-4.5`); Cursor
+`composer-2.5`. **MRB** = latest reasoning (`grok-4.6` /
 `claude-opus-5-thinking-high`). Do not use the MRB model for implementation.
+`Resolve-BobGrokCliModel` maps unknown grok `-m` ids so workers start.
 
 Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it is the stall monitor: `bob-fleet-monitor` (do not dispatch or kill Bob's jobs).
 

@@ -23,14 +23,14 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` (not Libera) |
 
-When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. A git-task worker (Copilot, Cursor Models, grok.exe, Grok Bot) implements. Model **`build0.1`** when the worker is grok.exe. Machines: `ionos`, `flamingo`, `marchhare`, `ce-priority-dev1`.
+When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. A git-task worker (Cursor Models, grok.exe, Grok Bot; Copilot only with `-AllowCopilot`) implements. Builders: **`build0.1`** when `grok models` lists it, else **`grok-4.5`**; Cursor **`composer-2.5`**. MRB uses the latest reasoning model (`grok-4.6` / `claude-opus-5-thinking-high`). Machines: `ionos`, `flamingo`, `marchhare`, `ce-priority-dev1`.
 
 ### New product (fresh functional spec)
 
 1. Create a **new public** GitHub repository under `SimonBarnett`.
 2. Commit the functional specification under `/docs`.
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
-4. `Start-BobBuild -Task git` (picker chooses machine+fuel unless you pin). Prefer `build0.1` on grok-build.
+4. `Start-BobBuild -Task git` (picker chooses machine+fuel unless you pin). Prefer `build0.1` on grok-build when listed, else `grok-4.5`.
 5. Worker implements, **commits and pushes**.
 6. Bob **hands off** hostile MRB (`tools/Start-BobMrbHandoff.ps1`) onto the feature-request issue. Worker posts FAIL or PASS-nits, parks missing features as new FRs. No MRB PDF.
 7. Repeat until **Bob** stamps **ready for human UAT**.
@@ -75,7 +75,7 @@ flowchart TB
 
   subgraph MRB["Hostile MRB"]
     M1["Bob: Start-BobMrbHandoff.ps1"]
-    M2["Copilot or git-task worker"]
+    M2["Cursor Models then Grok Build"]
     M3["GitHub issue: FAIL or PASS-nits"]
     M4["Missing features: park new FRs"]
     M5{"Bob UAT stamp?"}

@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-20 — grok.exe has no build0.1; resolve equivalent
+
+`grok models` on 1.0.34 is only `grok-4.6` / `grok-4.5` (`-m build0.1` is
+unknown model id). Keep `models.buildGrok=build0.1`. `Resolve-BobGrokCliModel`
+maps it to `models.buildGrokFallback` (`grok-4.5`) before `grok.exe -m`.
+When the catalog lists `build0.1`, the preferred id is used as-is.
+Cursor builders stay `composer-2.5`; MRB stays `grok-4.6` /
+`claude-opus-5-thinking-high`. `-m grok-4.6` already bills `grok-4.6-build`.
+
 ## 2026-09-20 — MRB reasoning vs build0.1
 
 MRB jobs use the latest reasoning model (`models.mrbCursor` /

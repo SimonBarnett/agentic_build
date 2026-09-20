@@ -9,7 +9,7 @@ description: >
 
 # Bob functional-spec build loop
 
-Bob orchestrates. Build agents implement. Prefer legion machines with spare Premium+ capacity (often `ionos`). Prefer model `build0.1` when the CLI/packet supports it; otherwise note in constraints.
+Bob orchestrates. Build agents implement. Prefer legion machines with spare Premium+ capacity (often `ionos`). Builders: `build0.1` when `grok models` lists it, else `grok-4.5`. MRB: latest reasoning (`grok-4.6` / `claude-opus-5-thinking-high`).
 
 ## When which skill
 

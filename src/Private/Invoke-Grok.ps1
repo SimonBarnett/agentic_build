@@ -105,8 +105,12 @@ function Get-BobArgv {
     [void]$argv.Add('--cwd')
     [void]$argv.Add($Cwd)
     if ($Model) {
-        [void]$argv.Add('-m')
-        [void]$argv.Add($Model)
+        $cli = $Model
+        try { $cli = Resolve-BobGrokCliModel -Wanted $Model } catch { }
+        if ($cli) {
+            [void]$argv.Add('-m')
+            [void]$argv.Add($cli)
+        }
     }
     if ($Resume) {
         [void]$argv.Add('-r')

@@ -26,6 +26,55 @@ function Get-BobJobModel {
     return 'build0.1'
 }
 
+function Get-BobGrokCatalogIds {
+    $ids = New-Object System.Collections.Generic.List[string]
+    $cache = Join-Path $env:USERPROFILE '.grok\models_cache.json'
+    if (Test-Path $cache) {
+        try {
+            $j = Read-JsonFile $cache
+            if ($j.models) {
+                foreach ($p in $j.models.PSObject.Properties) { [void]$ids.Add([string]$p.Name) }
+            }
+        }
+        catch { }
+    }
+    if ($ids.Count -eq 0) {
+        [void]$ids.Add('grok-4.6')
+        [void]$ids.Add('grok-4.5')
+    }
+    return $ids
+}
+
+function Resolve-BobGrokCliModel {
+    # grok.exe -m rejects unknown ids (build0.1 is not in `grok models` today).
+    # Map to a catalog id so builders still start. Prefer buildGrokFallback.
+    [CmdletBinding()]
+    param([string]$Wanted)
+    if (-not $Wanted) { return $null }
+    $ids = Get-BobGrokCatalogIds
+    if ($ids.Contains($Wanted)) { return $Wanted }
+    if ($Wanted -match '^(grok-\d+\.\d+)-build$') {
+        $base = $Matches[1]
+        if ($ids.Contains($base)) { return $base }
+    }
+    $isBuild = $Wanted -match '(?i)^(build0\.1|grok-build-0\.1|build-0\.1)$'
+    if ($isBuild) {
+        $cfg = $null
+        try { $cfg = Read-JsonFile (Join-Path (Get-ModuleRoot) 'config\default.json') } catch { }
+        $fb = $null
+        if ($cfg -and $cfg.models -and $cfg.models.buildGrokFallback) {
+            $fb = [string]$cfg.models.buildGrokFallback
+        }
+        if ($fb -and $ids.Contains($fb)) { return $fb }
+        if ($ids.Contains('grok-4.5')) { return 'grok-4.5' }
+        if ($ids.Contains('grok-4.6')) { return 'grok-4.6' }
+        if ($ids.Count -gt 0) { return [string]$ids[$ids.Count - 1] }
+    }
+    if ($ids.Contains('grok-4.6')) { return 'grok-4.6' }
+    if ($ids.Count -gt 0) { return [string]$ids[0] }
+    return $Wanted
+}
+
 function Get-BobFuelOrder {
     param(
         [switch]$AllowOnDemand,
