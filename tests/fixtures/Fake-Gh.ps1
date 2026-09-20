@@ -78,5 +78,26 @@ if ($joined -match '(?i)\bissue\s+create\b') {
     Exit-Mode 0
 }
 
+if ($joined -match '(?i)\bissue\s+comment\b') {
+    Write-FakeGhLog 'issue comment'
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bpr\s+list\b') {
+    Write-FakeGhLog 'pr list'
+    $json = $env:BOB_FAKE_GH_PR_JSON
+    if (-not $json) { $json = '[]' }
+    Write-Output $json
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bissue\s+list\b') {
+    Write-FakeGhLog 'issue list'
+    $json = $env:BOB_FAKE_GH_ISSUE_JSON
+    if (-not $json) { $json = '[]' }
+    Write-Output $json
+    Exit-Mode 0
+}
+
 Write-Error "Fake-Gh: unhandled: $joined"
 Exit-Mode 1
