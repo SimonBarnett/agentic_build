@@ -15,12 +15,14 @@ Skills (copied by Install-BobFleet into ~\.grok\skills):
 | Skill | Role |
 |---|---|
 | grok-build-fleet | Start/monitor/stop builds; heal Watch-BobJobs |
-| ob-build-loop | Orchestrator overview for the functional-spec loop |
-| ob-spec-intake | Park functional / feature-request PDFs under /docs |
-| ob-build-dispatch | Write build-and-test plan + Start-BobBuild |
-| ob-hostile-mrb | Hostile MRB PDF into /docs until ready for human UAT |
+| start-bob-copilot | Start GitHub Copilot cloud agent from Grok |
+| bob-build-loop | Orchestrator: issue + docs, dispatch, MRB issue |
+| bob-spec-intake | Park feature request as GitHub issue + /docs markdown |
+| bob-build-dispatch | Write build-and-test plan + Start-BobBuild |
+| bob-hostile-mrb | Hostile MRB as a GitHub issue (no PDF) |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
-When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **feature-request PDF** that extends an existing repo. Bob orchestrates; build agents implement. Use model **`build0.1`** and spread jobs across legion machines (`marchhare`, `dev1`, â€¦) to balance token load.
+
+When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; build agents implement. Use model **`build0.1`** and spread jobs across legion machines (`marchhare`, `dev1`, …) to balance token load.
 
 ### New product (fresh functional spec)
 
@@ -29,10 +31,7 @@ When another agent cannot complete a task, they write a **functional specificati
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
 4. Start a build agent via this repo (`Start-BobBuild` / BobBridge), model **`build0.1`**.
 5. Build agent implements, **commits and pushes**.
-6. On each new pushed version, Bob runs a **hostile MRB** (detailed, brutal review):
-   - Produce a PDF review.
-   - Commit and push it to `/docs`.
-   - Pass the review URL/path to the build agent to fix, commit, and push.
+6. On each new pushed version, Bob runs a **hostile MRB** as a **GitHub issue** (or comment on the feature-request issue). No MRB PDF. Pass the **issue URL** to the build agent.
 7. Repeat step 6 until **Bob** passes the work as **ready for human UAT**.
 
 ### Feature request (extends existing repo)
@@ -41,7 +40,7 @@ When another agent cannot complete a task, they write a **functional specificati
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Add the feature-request functional specification under `/docs` and commit/push.
 4. Start a build agent (model `build0.1`) to implement, commit, and push.
-5. Same hostile MRB PDF â†’ `/docs` â†’ build-agent fix loop until Bob passes for human UAT.
+5. Same hostile MRB **GitHub issue** loop until Bob passes for human UAT. Git is the source of truth.
 
 ### Flow
 
@@ -51,7 +50,7 @@ flowchart TB
     A1["Other agent: cannot do task"]
     A2["Writes functional specification"]
     A3["Sends spec to Bob"]
-    F1["Feature-request PDF"]
+    F1["Feature-request issue + md"]
     F2["Extends existing repo"]
   end
 
@@ -78,9 +77,9 @@ flowchart TB
   subgraph LOOP["Build â†” hostile MRB loop"]
     D1["Build agent implements\ncommit + push"]
     D2["Bob hostile MRB\nbrutal detailed review"]
-    D3["MRB PDF â†’ /docs\ncommit + push"]
+    D3["MRB GitHub issue"]
     D4{"Bob passes?"}
-    D5["Send review URL to build agent\nfix â†’ commit + push"]
+    D5["Send issue URL to build agent\nfix â†’ commit + push"]
   end
 
   B4 --> D1

@@ -48,7 +48,7 @@ Prefer instructional wording for secrets ("do not set an API key environment var
 
 - Tell the human `jobId` + machine.
 - Poll `Get-BobBuild` / reply_channel pings (see `grok-build-fleet`).
-- On successful push from the build agent, run `bob-hostile-mrb`.
+- On successful push from the build agent, run `bob-hostile-mrb` (GitHub issue, not a PDF).
 
 ## Long jobs
 

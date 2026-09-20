@@ -1,10 +1,10 @@
 ---
 name: bob-spec-intake
 description: >
-  Park a functional specification or feature-request PDF into a SimonBarnett
-  repo /docs (new public repo or versioned folders). Use when another agent
-  sends a functional spec, feature-request PDF, says park in docs, create repo
-  for spec, or /bob-spec-intake. Does not start the build agent by itself.
+  Park a functional specification or feature request as git: GitHub issue plus
+  /docs markdown. Keep a source PDF only if one was supplied; do not generate
+  review PDFs. Use when another agent sends a spec or feature request, says
+  park in docs, or /bob-spec-intake. Does not start the build agent by itself.
 ---
 
 # Spec intake to /docs
@@ -14,20 +14,19 @@ description: >
 1. Choose a clear public repo name under `SimonBarnett` (kebab-case).
 2. Create the public GitHub repo if it does not exist.
 3. Commit under `/docs`:
-   - Original PDF (or source): `docs/functional-spec-<slug>-YYYY-MM-DD.pdf`
-   - Markdown mirror: `docs/functional-spec.md` (LOCKED constants, unknowns, Phase 0, acceptance).
-4. Optionally add a short README pointing at `/docs`.
-5. Push. Tell the human the commit SHA and doc URLs.
+   - Markdown: `docs/functional-spec.md` (LOCKED constants, unknowns, Phase 0, acceptance).
+   - Keep a source PDF **only if the sender provided one**. Do not invent a PDF.
+4. Open a GitHub issue titled from the spec, body linking the md path, label `feature-request`.
+5. Push. Tell the human the issue URL and commit SHA.
 6. Next: run `bob-build-dispatch` (unless the human said park-only / later).
 
 ## Feature request (extends existing repo)
 
 1. Confirm target repo. **Do not break** prior versions.
 2. Prefer new work in `v2/`, `v3/`, when the feature is a parallel product surface; keep root/`v1` frozen if the spec says so.
-3. Commit under `/docs`:
-   - `docs/feature-request-<slug>-YYYY-MM-DD.pdf`
-   - `docs/feature-request-<slug>-YYYY-MM-DD.md` with summary plus **gap vs current tree** (what already exists vs what is missing).
-4. Push. Do not start implementation unless asked.
+3. Commit `docs/feature-request-<slug>-YYYY-MM-DD.md` with summary plus **gap vs current tree**. Keep a source PDF only if one was supplied.
+4. Open a GitHub issue (`feature-request`) linking that markdown. That issue is the MRB home.
+5. Push. Do not start implementation unless asked.
 5. Next: `bob-build-dispatch` when the human says go.
 
 ## Docs quality bar
