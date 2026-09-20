@@ -724,6 +724,9 @@ function Get-BobTrayHover {
             $weeklyBy[$mid] = [int]$peek.weekly
         }
         if ($peek.period_end) { $periodEndBy[$mid] = [string]$peek.period_end }
+        if ($peek.cursor_label -and [string]$peek.cursor_label -ne 'empty') {
+            try { Save-BobCursorAccountCache -Label ([string]$peek.cursor_label) -PeriodEnd $(if ($peek.cursor_period_end) { [string]$peek.cursor_period_end } else { $null }) } catch { }
+        }
         $peerJobs = @()
         if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
         foreach ($pj in $peerJobs) {
@@ -904,6 +907,24 @@ function Get-BobTrayHover {
     if ($acctPctLabel -eq 'empty') {
         $gbp = Get-BobCursorOverageGbp
         if ($null -ne $gbp) { $acctPctLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$gbp)) }
+    }
+    # Fleet-shared Cursor Sand (Grok Bot) — MarchHare etc. often have no local token.
+    if (-not $acctPctLabel -or $acctPctLabel -eq 'empty') {
+        try {
+            $cc = Read-BobCursorAccountCache
+            if ($cc -and $cc.label -and [string]$cc.label -ne 'empty') {
+                $acctPctLabel = [string]$cc.label
+                if (-not $cursorWeek) { $cursorWeek = [pscustomobject]@{} }
+                if ($cc.period_end -and -not $cursorWeek.period_end) {
+                    $cursorWeek | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$cc.period_end) -Force
+                }
+            }
+        } catch { }
+    }
+    if ($acctPctLabel -and $acctPctLabel -ne 'empty') {
+        $cend = $null
+        if ($cursorWeek -and $cursorWeek.period_end) { $cend = [string]$cursorWeek.period_end }
+        Save-BobCursorAccountCache -Label $acctPctLabel -PeriodEnd $cend
     }
     $acctLine = ('cursor ({0})' -f $acctPctLabel)
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))

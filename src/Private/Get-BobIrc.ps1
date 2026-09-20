@@ -124,6 +124,30 @@ function Get-BobIrcNick {
 }
 
 
+
+function Get-BobCursorAccountCachePath {
+    try { return (Join-Path (Get-BridgeRoot) 'cursor-account.json') } catch { return $null }
+}
+
+function Save-BobCursorAccountCache {
+    param([string]$Label, [string]$PeriodEnd)
+    if (-not $Label -or $Label -eq 'empty') { return }
+    $p = Get-BobCursorAccountCachePath
+    if (-not $p) { return }
+    $doc = [pscustomobject]@{
+        label      = [string]$Label
+        period_end = $(if ($PeriodEnd) { [string]$PeriodEnd } else { $null })
+        updated_at = [DateTime]::UtcNow.ToString('o')
+    }
+    try { Write-JsonFile $p $doc } catch { }
+}
+
+function Read-BobCursorAccountCache {
+    $p = Get-BobCursorAccountCachePath
+    if (-not $p -or -not (Test-Path $p)) { return $null }
+    try { return Read-JsonFile $p } catch { return $null }
+}
+
 function Get-BobSeatPeriodEndCachePath {
     try { return (Join-Path (Get-BridgeRoot) 'seat-period-end.json') } catch { return $null }
 }
@@ -204,7 +228,18 @@ function ConvertTo-BobIrcPoint {
             $reset = $rd.ToUniversalTime().ToString('yyyy-MM-dd')
         } catch { $reset = '-' }
     }
-    $line = "BOB v1 id=$mid weekly=$w reset=$reset running=$run queued=$q lastSeen=$seen jobs=$jobs"
+    $cur = '-'
+    if ($Doc.cursor_label -and [string]$Doc.cursor_label -ne '' -and [string]$Doc.cursor_label -ne 'empty') {
+        $cur = ([string]$Doc.cursor_label).Replace(' ', '')
+    }
+    $crst = '-'
+    if ($Doc.cursor_period_end) {
+        try {
+            $cd = [datetime]::Parse([string]$Doc.cursor_period_end, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            $crst = $cd.ToUniversalTime().ToString('yyyy-MM-dd')
+        } catch { $crst = '-' }
+    }
+    $line = "BOB v1 id=$mid weekly=$w reset=$reset cur=$cur crst=$crst running=$run queued=$q lastSeen=$seen jobs=$jobs"
     if ($line.Length -gt 350) { $line = $line.Substring(0, 349) + '-' }
     return $line
 }
@@ -244,16 +279,26 @@ function ConvertFrom-BobIrcPoint {
     if ($kv.ContainsKey('reset') -and [string]$kv['reset'] -ne '-') {
         $periodEnd = [string]$kv['reset']
     }
+    $cursorLabel = $null
+    if ($kv.ContainsKey('cur') -and [string]$kv['cur'] -ne '-') {
+        $cursorLabel = [string]$kv['cur']
+    }
+    $cursorPeriodEnd = $null
+    if ($kv.ContainsKey('crst') -and [string]$kv['crst'] -ne '-') {
+        $cursorPeriodEnd = [string]$kv['crst']
+    }
     return [pscustomobject]@{
-        ok         = $true
-        id         = $mid
-        weekly     = $weekly
-        period_end = $periodEnd
-        running    = $run
-        queued     = $q
-        lastSeen   = $(if ($kv['lastSeen'] -and $kv['lastSeen'] -ne '-') { [string]$kv['lastSeen'] } else { $null })
-        jobs       = $jobs
-        source     = 'irc'
+        ok                = $true
+        id                = $mid
+        weekly            = $weekly
+        period_end        = $periodEnd
+        cursor_label      = $cursorLabel
+        cursor_period_end = $cursorPeriodEnd
+        running           = $run
+        queued            = $q
+        lastSeen          = $(if ($kv['lastSeen'] -and $kv['lastSeen'] -ne '-') { [string]$kv['lastSeen'] } else { $null })
+        jobs              = $jobs
+        source            = 'irc'
     }
 }
 
@@ -267,14 +312,16 @@ function Read-BobIrcPeer {
     $jobs = @()
     foreach ($j in @($doc.jobs)) { $jobs += ,$j }
     return [pscustomobject]@{
-        ok         = $true
-        id         = [string]$doc.id
-        lastSeen   = $(if ($doc.lastSeen) { [string]$doc.lastSeen } else { $null })
-        hostname   = $null
-        jobs       = $jobs
-        weekly     = $doc.weekly
-        period_end = $(if ($doc.period_end) { [string]$doc.period_end } else { $null })
-        source     = 'irc'
+        ok                = $true
+        id                = [string]$doc.id
+        lastSeen          = $(if ($doc.lastSeen) { [string]$doc.lastSeen } else { $null })
+        hostname          = $null
+        jobs              = $jobs
+        weekly            = $doc.weekly
+        period_end        = $(if ($doc.period_end) { [string]$doc.period_end } else { $null })
+        cursor_label      = $(if ($doc.cursor_label) { [string]$doc.cursor_label } else { $null })
+        cursor_period_end = $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
+        source            = 'irc'
     }
 }
 
@@ -315,16 +362,36 @@ function Write-BobIrcStatus {
     catch { }
     $seen = [DateTime]::UtcNow.ToString('o')
     if ($periodEnd) { Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd }
+    $cursorLabel = $null
+    $cursorPeriodEnd = $null
+    try {
+        $cw = Get-BobCursorAgentWeeklyRemaining
+        if ($cw) {
+            $cursorLabel = Format-BobCursorAccountLabel -RemainingPct $cw.remaining_pct -UsedPct $cw.used_pct
+            if ($cursorLabel -eq 'empty') {
+                $gbp = $null
+                try { $gbp = Get-BobCursorOverageGbp } catch { }
+                if ($null -eq $gbp -and $null -ne $cw.overage_gbp) { $gbp = [double]$cw.overage_gbp }
+                if ($null -ne $gbp) { $cursorLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$gbp)) }
+            }
+            if ($cw.period_end) { $cursorPeriodEnd = [string]$cw.period_end }
+            if ($cursorLabel -and $cursorLabel -ne 'empty') {
+                Save-BobCursorAccountCache -Label $cursorLabel -PeriodEnd $cursorPeriodEnd
+            }
+        }
+    } catch { }
     $doc = [pscustomobject]@{
-        ok         = $true
-        id         = $id
-        weekly     = $week
-        period_end = $periodEnd
-        running    = @($running).Count + $liveN
-        queued     = @($inbox).Count
-        lastSeen   = $seen
-        jobs       = $jobs
-        source     = 'irc'
+        ok                = $true
+        id                = $id
+        weekly            = $week
+        period_end        = $periodEnd
+        cursor_label      = $cursorLabel
+        cursor_period_end = $cursorPeriodEnd
+        running           = @($running).Count + $liveN
+        queued            = @($inbox).Count
+        lastSeen          = $seen
+        jobs              = $jobs
+        source            = 'irc'
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -374,6 +441,9 @@ function Import-BobIrcPeerTranscript {
             } catch { }
         }
         if ($doc.period_end) { Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd ([string]$doc.period_end) }
+        if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
+            Save-BobCursorAccountCache -Label ([string]$doc.cursor_label) -PeriodEnd $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
+        }
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
