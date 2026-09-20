@@ -76,6 +76,7 @@ function Invoke-Case {
         $env:BOB_GH_EXE = $null
         $env:BOB_FAKE_GH_MODE = $null
         $env:BOB_FAKE_GH_LOG = $null
+        $env:BOB_FAKE_GH_QUIET = $null
         $env:BOB_MACHINE_ID = $null
     }
 }
@@ -1180,12 +1181,19 @@ Invoke-Case 'BT0q kind mrb packet' {
     if ([string]$packet.model -ne $expectedMrb) { throw "packet.model=$($packet.model) expected $expectedMrb" }
 }
 
-# Asserts Start-BobCursor launch is suppressed under Fake-Grok (BOB_GROK_EXE), not node.exe counts.
+# Start-BobCursor must not Win32_Process-launch under Fake-Grok (BOB_GROK_EXE); fleet tick still completes.
 Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     param($bridgeRoot)
     $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
     $expectedMrb = [string]$cfg.models.mrbCursor
     $cwd = Join-Path $bridgeRoot 'cwd'
+    if ($env:BOB_GROK_EXE -notmatch '(?i)Fake-Grok') { throw 'BOB_GROK_EXE must be Fake-Grok for suppress seam' }
+    $cursor = Join-Path $RepoRoot 'tools\Start-BobCursor.ps1'
+    $direct = & $cursor -Repo 'https://github.com/SimonBarnett/agentic_build' -Cwd $cwd -Goal 'MRB suppress probe' -Kind mrb -Mrb 'https://github.com/SimonBarnett/agentic_build/issues/1'
+    if ($direct.started) { throw 'Start-BobCursor must not launch cursor-agent when BOB_GROK_EXE is Fake-Grok' }
+    if ($direct.pid) { throw "unexpected pid=$($direct.pid)" }
+    if (-not $direct.packetPath -or -not (Test-Path $direct.packetPath)) { throw 'missing cursor handoff packet' }
+
     $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
     $env:BOB_MACHINE_ID = 'testhost'
     $capFile = Join-Path $bridgeRoot 'capacity.json'
@@ -1205,7 +1213,6 @@ Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     }
     [IO.File]::WriteAllText($capFile, ($liveFix | ConvertTo-Json -Depth 8))
     $env:BOB_CAPACITY_FILE = $capFile
-    if ($env:BOB_GROK_EXE -notmatch '(?i)Fake-Grok') { throw 'BOB_GROK_EXE must be Fake-Grok for suppress seam' }
     $q = Start-BobBuild -Task git -Fuel cursor-models -Kind mrb -Goal 'MRB fleet fixture' -Cwd $cwd -Repo 'https://github.com/SimonBarnett/agentic_build'
     if (-not $q.ok) { throw "enqueue failed $($q | ConvertTo-Json -Compress)" }
     $watch = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
@@ -1217,8 +1224,7 @@ Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     if ([string]$done.kind -ne 'mrb') { throw "job.kind=$($done.kind)" }
     if ([string]$done.model -ne $expectedMrb) { throw "job.model=$($done.model)" }
     if ([string]$done.fuel -ne 'cursor-models') { throw "job.fuel=$($done.fuel)" }
-    $sum = $(if ($done.completion) { [string]$done.completion.summary } else { [string]$done.summary })
-    if ($sum -notmatch 'handed cursor-models') { throw "summary=$sum (expected Fake-Grok suppress handoff)" }
+    if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'fleet cursor-models handoff must complete ok' }
 }
 
 # --- BT0r–BT0u Start-BobMrb / gh preflight (issue #13) ---
@@ -1344,11 +1350,14 @@ function New-Bt0vCapacity {
     return $capFile
 }
 
-Invoke-Case 'BT0v mrb handoff remote refuse' {
+Invoke-Case 'BT0v1 mrb handoff remote refuse' {
     param($bridgeRoot)
     $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
     $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
     $env:BOB_MACHINE_ID = 'testhost'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
     $pick = [pscustomobject]@{ wait = $false; machine = 'flamingo'; fuel = 'grok-build'; reason = $null }
     try {
         & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -1359,9 +1368,12 @@ Invoke-Case 'BT0v mrb handoff remote refuse' {
     }
 }
 
-Invoke-Case 'BT0v mrb handoff identity refuse' {
+Invoke-Case 'BT0v2 mrb handoff identity refuse' {
     param($bridgeRoot)
     $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
     $pick = [pscustomobject]@{ wait = $false; machine = 'testhost'; fuel = 'grok-build'; reason = $null }
     try {
         & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -1372,28 +1384,49 @@ Invoke-Case 'BT0v mrb handoff identity refuse' {
     }
 }
 
-Invoke-Case 'BT0v mrb handoff local packet' {
+Invoke-Case 'BT0v3 mrb handoff local packet' {
     param($bridgeRoot)
     $cfg = Get-Content (Join-Path $RepoRoot 'config\default.json') -Raw | ConvertFrom-Json
     $expectedMrb = [string]$cfg.models.mrbGrok
     $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $ghLog = Join-Path $bridgeRoot 'handoff-gh.jsonl'
     $cwd = Join-Path $bridgeRoot 'cwd'
     $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
     $env:BOB_MACHINE_ID = 'testhost'
     $env:BOB_CAPACITY_FILE = New-Bt0vCapacity -BridgeRoot $bridgeRoot
     $env:BOB_GH_EXE = $fakeGh
     $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $ghLog
     $pick = [pscustomobject]@{ wait = $false; machine = 'testhost'; fuel = 'grok-build'; reason = $null }
     $r = & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel grok-build -TestSkipCursor -TestGitWorkerResult $pick -Cwd $cwd
     if (-not $r.ok) { throw "handoff failed $($r | ConvertTo-Json -Compress)" }
     if ($r.handed -ne 'grok-build') { throw "handed=$($r.handed)" }
     if (-not (Test-Path $r.path)) { throw 'missing inbox packet' }
+    if (-not (Test-Path $ghLog)) { throw 'gh preflight log missing' }
+    $ghRows = @(Get-Content $ghLog | ForEach-Object { $_ | ConvertFrom-Json })
+    if (-not ($ghRows | Where-Object { $_.command -eq 'auth status' })) { throw 'preflight must log auth status' }
+    $repoProbe = @($ghRows | Where-Object { $_.command -eq 'repo view' })
+    if ($repoProbe.Count -lt 1) { throw 'preflight must log repo view' }
+    if (($repoProbe[0].argv -join ' ') -notmatch 'fixture/repo') { throw 'repo view must target fixture/repo' }
     $packet = Get-Content $r.path -Raw | ConvertFrom-Json
     $mrbUrl = 'https://github.com/fixture/repo/issues/16'
     if ([string]$packet.mrb -ne $mrbUrl) { throw "packet.mrb=$($packet.mrb)" }
     if ([string]$packet.kind -ne 'mrb') { throw "packet.kind=$($packet.kind)" }
     if ([string]$packet.model -ne $expectedMrb) { throw "packet.model=$($packet.model) expected $expectedMrb" }
+}
+
+Invoke-Case 'BT0w mrb handoff skip cursor fuel refuse' {
+    param($bridgeRoot)
+    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $pick = [pscustomobject]@{ wait = $false; machine = 'testhost'; fuel = 'grok-build'; reason = $null }
+    try {
+        & $handoff -Issue 16 -Repo 'fixture/repo' -Fuel cursor-models -TestSkipCursor -TestGitWorkerResult $pick -Cwd (Join-Path $bridgeRoot 'cwd')
+        throw 'cursor-models + TestSkipCursor must refuse'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'TestSkipCursor') { throw $_.Exception.Message }
+    }
 }
 
 Write-Host ''

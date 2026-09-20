@@ -11,12 +11,26 @@ function Exit-Mode {
 $mode = [string]$env:BOB_FAKE_GH_MODE
 if (-not $mode) { $mode = 'ok' }
 
+function Write-FakeGhLog {
+    param([string]$Command)
+    $log = $env:BOB_FAKE_GH_LOG
+    if (-not $log) { return }
+    $entry = [ordered]@{
+        ts      = [DateTime]::UtcNow.ToString('o')
+        argv    = $joined
+        command = $Command
+    }
+    [IO.File]::AppendAllText($log, (($entry | ConvertTo-Json -Compress) + [Environment]::NewLine))
+}
+
 if ($joined -match '(?i)\bauth\s+status\b') {
+    Write-FakeGhLog 'auth status'
     if ($mode -eq 'dead') { Exit-Mode 1 }
     Exit-Mode 0
 }
 
 if ($joined -match '(?i)\brepo\s+view\b') {
+    Write-FakeGhLog 'repo view'
     if ($mode -eq 'dead') { Exit-Mode 1 }
     Write-Output 'fixture-repo'
     Exit-Mode 0

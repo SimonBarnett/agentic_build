@@ -21,7 +21,8 @@ function Start-BobBuild {
         [switch]$AllowCopilot,
         [ValidateSet('mrb', 'build')][string]$Kind = 'build',
         [string]$Model,
-        [switch]$Fix
+        [switch]$Fix,
+        [switch]$PinGitWorker
     )
     if (Test-PromptSecrets -Prompt $Goal) {
         return [pscustomobject]@{ ok = $false; error = 'refuse'; reason = 'goal contains password= or XAI_API_KEY' }
@@ -48,7 +49,12 @@ function Start-BobBuild {
                 if ($Fuel) { $pinFuel = $Fuel }
             }
         }
-        $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo
+        if ($PinGitWorker -and $pinMachine -and $pinFuel) {
+            $sel = [pscustomobject]@{ wait = $false; machine = $pinMachine; fuel = $pinFuel; reason = $null }
+        }
+        else {
+            $sel = Select-BobGitWorker -Machine $pinMachine -Fuel $pinFuel -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot -Repo $Repo
+        }
         if ($sel.wait) {
             return [pscustomobject]@{
                 ok      = $true

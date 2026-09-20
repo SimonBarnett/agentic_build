@@ -54,13 +54,11 @@ function Set-BobGhLabelReady {
         $names = @($json | ConvertFrom-Json | ForEach-Object { [string]$_.name })
         if ($names -contains $Name) { return $true }
     }
-    if ($env:BOB_FAKE_GH_QUIET -ne '1') {
-        if ($out.Trim()) {
-            Write-Warning "Set-BobGhLabelReady $Name on $Repo : $out"
-        }
-        else {
-            Write-Warning "Set-BobGhLabelReady $Name on $Repo : label create failed (exit $createExit)"
-        }
+    if ($out.Trim()) {
+        Write-Warning "Set-BobGhLabelReady $Name on $Repo : $out"
+    }
+    else {
+        Write-Warning "Set-BobGhLabelReady $Name on $Repo : label create failed (exit $createExit)"
     }
     return $false
 }

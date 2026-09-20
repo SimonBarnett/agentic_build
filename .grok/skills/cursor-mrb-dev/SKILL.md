@@ -37,9 +37,19 @@ Show remaining: `box-usage` / tray top bar. Catalog mapping:
 Before `Start-BobMrbHandoff` starts an agent, the **worker box** must post
 issues and merge PRs: `gh.exe` + `gh auth login` or `GH_TOKEN` with
 `issues:write` and `pull_requests:write`. See `Get-BobGhExe` in
-`tools/Bob-Gh.ps1`. Grok-build fallback is dispatcher-local until issue #11.
+`tools/Bob-Gh.ps1`. When `BOB_GH_EXE` is set to a path that does not exist,
+`Get-BobGhExe` returns `$null` (it does not fall through to a system `gh.exe`).
+Off-DEV Test-Pack points `BOB_GH_EXE` at `tests/fixtures/Fake-Gh.ps1`.
+
+Grok-build fallback is dispatcher-local until issue #11.
 
 If preflight fails, fix auth first. Do not start the MRB agent.
+
+### Test-Pack-only seams on `Start-BobMrbHandoff.ps1`
+
+`-TestSkipCursor` and `-TestGitWorkerResult` exist only for `tools/Test-Pack.ps1`.
+`-TestSkipCursor` requires `-Fuel grok-build` and `-TestGitWorkerResult`. Do not
+use them in live MRB dispatch.
 
 Workers post via `tools/Start-BobMrb.ps1` (creates missing `mrb` /
 `mrb-pass` / `mrb-fail` labels).
