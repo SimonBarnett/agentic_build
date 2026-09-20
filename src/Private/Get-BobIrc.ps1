@@ -192,6 +192,16 @@ function Write-BobIrcStatus {
     foreach ($j in @($inbox)) {
         $jobs += ,[pscustomobject]@{ repo = (Get-BobJobRepoStamp $j); state = 'queued' }
     }
+    $liveN = 0
+    foreach ($g in @(Get-BobLiveGrokAgents)) {
+        $liveN++
+        $repo = 'grok.exe'
+        if ($g.cwd) {
+            $slug = Get-GitHubSlugFromCwd $g.cwd
+            if ($slug -and $slug -ne '?' -and $slug -ne $env:USERNAME) { $repo = $slug }
+        }
+        $jobs += ,[pscustomobject]@{ repo = $repo; state = 'running' }
+    }
     $week = $null
     try {
         $w = Get-BobWeeklyRemaining
@@ -203,7 +213,7 @@ function Write-BobIrcStatus {
         ok       = $true
         id       = $id
         weekly   = $week
-        running  = @($running).Count
+        running  = @($running).Count + $liveN
         queued   = @($inbox).Count
         lastSeen = $seen
         jobs     = $jobs

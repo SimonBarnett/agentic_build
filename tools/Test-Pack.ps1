@@ -27,6 +27,7 @@ function Import-Bridge {
     $env:BOB_IRC_HOME = Join-Path $BridgeRoot 'irc-home'
     $env:BOB_IRC_CONFIG = Join-Path $BridgeRoot 'no-bobiverse.json'
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
+    $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
     $env:BOB_FLEET_SHARE = $null
@@ -66,6 +67,7 @@ function Invoke-Case {
         $env:BOB_IRC_HOME = $null
         $env:BOB_IRC_CONFIG = $null
         $env:BOB_CURSOR_USAGE_FILE = $null
+        $env:BOB_SKIP_LIVE_GROK = $null
     }
 }
 
@@ -303,6 +305,10 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.account_name -ne 'cursor') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -notmatch 'Get-BobLiveGrokAgents') { throw 'hover must include live grok.exe even if Bob did not start it' }
+    $env:BOB_SKIP_LIVE_GROK = '1'
+    if (@(Get-BobLiveGrokAgents).Count -ne 0) { throw 'BOB_SKIP_LIVE_GROK must suppress live grok scan' }
     if ([string]$h.remaining_kind -ne 'weekly') { throw "kind=$($h.remaining_kind)" }
     if ([string]$h.body -notmatch 'weekly remaining') { throw "body missing weekly remaining: $($h.body)" }
     if ([string]$h.body -match '(?i)context remaining') { throw "body still says context remaining: $($h.body)" }

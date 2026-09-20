@@ -300,6 +300,60 @@ function Get-BobTrayTitle {
     return 'Bob Fleet'
 }
 
+function Get-BobLiveGrokAgents {
+    # grok.exe on this box, including sessions Bob did not start. Not Grok Bot.exe.
+    if ($env:BOB_SKIP_LIVE_GROK -eq '1') { return @() }
+    $byPid = @{}
+    $sessPath = Join-Path $env:USERPROFILE '.grok\active_sessions.json'
+    if (Test-Path $sessPath) {
+        try {
+            foreach ($s in @(Get-Content $sessPath -Raw -Encoding UTF8 | ConvertFrom-Json)) {
+                if (-not $s.pid) { continue }
+                $byPid[[int]$s.pid] = $s
+            }
+        }
+        catch { }
+    }
+    $out = @()
+    $procs = @()
+    try {
+        $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -eq 'grok.exe' -or ($_.ExecutablePath -and $_.ExecutablePath -match '[\\/]grok\.exe$')
+            })
+    }
+    catch { return @() }
+    foreach ($p in $procs) {
+        $cmd = [string]$p.CommandLine
+        if ($cmd -match '--type=') { continue }
+        if ([string]$p.Name -match 'Grok Bot') { continue }
+        $pid = [int]$p.ProcessId
+        $meta = $null
+        if ($byPid.ContainsKey($pid)) { $meta = $byPid[$pid] }
+        $cwd = $null
+        $sid = ('grok-' + $pid)
+        $opened = $null
+        if ($meta) {
+            if ($meta.cwd) { $cwd = [string]$meta.cwd }
+            if ($meta.session_id) { $sid = [string]$meta.session_id }
+            if ($meta.opened_at) { $opened = [string]$meta.opened_at }
+        }
+        if (-not $opened -and $p.CreationDate) {
+            try { $opened = [Management.ManagementDateTimeConverter]::ToDateTime($p.CreationDate).ToUniversalTime().ToString('o') } catch { }
+        }
+        $out += ,[pscustomobject]@{
+            id        = $sid
+            sessionId = $sid
+            pid       = $pid
+            cwd       = $cwd
+            claimedAt = $opened
+            machine   = $null
+            state     = 'running'
+            source    = 'live-grok'
+        }
+    }
+    return $out
+}
+
 function Get-BobTrayRepoLabel {
     param($Job, [switch]$SkipGit)
     if ($Job -and $Job.repo) {
@@ -392,6 +446,19 @@ function Get-BobTrayHover {
     }
     foreach ($b in $queuedJobs) {
         $row = ConvertTo-BobTrayJobRow -Job $b -DefaultMachine $machineId -State 'queued'
+        $jobs += ,$row
+        if ($row.id) { $localIds[$row.id] = $true }
+    }
+    $fleetSessions = @{}
+    foreach ($b in @($running)) {
+        if ($b.sessionId) { $fleetSessions[[string]$b.sessionId] = $true }
+        if ($b.id) { $fleetSessions[[string]$b.id] = $true }
+    }
+    foreach ($g in @(Get-BobLiveGrokAgents)) {
+        if ($g.id -and ($localIds.ContainsKey([string]$g.id) -or $fleetSessions.ContainsKey([string]$g.id))) { continue }
+        if ($g.sessionId -and $fleetSessions.ContainsKey([string]$g.sessionId)) { continue }
+        $row = ConvertTo-BobTrayJobRow -Job $g -DefaultMachine $machineId -State 'running'
+        if ($row.repo -eq '?' -or $row.repo -eq $env:USERNAME) { $row.repo = 'grok.exe' }
         $jobs += ,$row
         if ($row.id) { $localIds[$row.id] = $true }
     }
