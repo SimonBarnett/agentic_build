@@ -24,6 +24,6 @@ jobs:
           Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force -MinimumVersion 1.21.0 -AllowClobber -Repository PSGallery
 
       - name: Run Test-Pack (offline gate)
-        shell: pwsh
+        shell: powershell
         run: |
           & "${{ github.workspace }}/tools/Test-Pack.ps1" -RepoRoot "${{ github.workspace }}"
