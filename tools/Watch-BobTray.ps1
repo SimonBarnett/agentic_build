@@ -172,6 +172,7 @@ Remove-Module BobBridge -ErrorAction SilentlyContinue
 Import-Module $psd1 -Force
 
 $watchJobs = Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1'
+$watchBobiverse = Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1'
 $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir 'watch_bob_tray.log'
@@ -320,16 +321,22 @@ function Test-IrcAgentUp {
     return $hits
 }
 
+function Test-BobiverseWatcherUp {
+    $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine -match 'Watch-Bobiverse\.ps1'
+        })
+    return $hits
+}
+
 function Start-IrcWatcher {
-    $hits = Test-IrcAgentUp
+    $hits = Test-BobiverseWatcherUp
     if ($hits.Count -gt 0) { return }
-    $inst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
-    if (-not (Test-Path $inst)) { return }
-    $mid = $env:BOB_MACHINE_ID
-    if (-not $mid) { $mid = 'flamingo' }
-    Write-TrayLog "starting bobiverse irc nick=$mid"
+    if (-not (Test-Path $watchBobiverse)) { return }
+    Write-TrayLog 'starting Watch-Bobiverse (automation, not a Grok session)'
     Start-Process -FilePath (Get-Command powershell.exe).Source `
-        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $inst, '-MachineId', $mid) `
+        -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $watchBobiverse) `
         -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
 }
 

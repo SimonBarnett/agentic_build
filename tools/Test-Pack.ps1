@@ -838,6 +838,24 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
     if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
     if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
+
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $mootDir = Join-Path $ircHome 'moot'
+    New-Item -ItemType Directory -Force -Path $mootDir | Out-Null
+    $tx = '1700000000 bob-marchhare POINT BOB v1 id=marchhare weekly=40 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-'
+    [IO.File]::WriteAllText((Join-Path $mootDir ($cfg.mootId + '.txt')), $tx)
+    $got = @(Import-BobIrcPeerTranscript)
+    $mh = Read-BobIrcPeer -Id marchhare
+    if (-not $mh) { throw 'transcript harvest did not write marchhare peer' }
+    if ([int]$mh.weekly -ne 40) { throw "harvest weekly=$($mh.weekly)" }
+
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
+    if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must POINT via Write-BobIrcStatus' }
+    if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse must poll peer POINT lines' }
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
+    if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
 }
 
 Write-Host ''

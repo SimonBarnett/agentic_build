@@ -36,7 +36,9 @@
         'Get-BobFleetRegistry',
         'ConvertTo-BobIrcPoint',
         'ConvertFrom-BobIrcPoint',
-        'Read-BobIrcPeer'
+        'Read-BobIrcPeer',
+        'Write-BobIrcStatus',
+        'Import-BobIrcPeerTranscript'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

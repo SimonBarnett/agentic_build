@@ -102,7 +102,6 @@ function Write-FleetHeartbeat {
     Write-JsonFile $path $rec
     Write-JsonFile (Join-Path (Initialize-FleetRoot) (Join-Path 'machines' ($id + '.json'))) $rec
     try { Write-BobFleetPeekSnapshot } catch { }
-    try { Write-BobIrcStatus } catch { }
 }
 
 function Test-FleetCancel {

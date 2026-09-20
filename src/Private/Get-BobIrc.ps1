@@ -219,3 +219,26 @@ function Write-BobIrcStatus {
     $outbox = Join-Path $home 'outbox.txt'
     Add-Content -Path $outbox -Value $line -Encoding utf8
 }
+
+function Import-BobIrcPeerTranscript {
+    $cfg = Get-BobiverseConfig
+    if (-not $cfg) { return @() }
+    $home = Get-BobIrcHome
+    $mid = [string]$cfg.mootId
+    if (-not $mid) { return @() }
+    $tp = Join-Path $home (Join-Path 'moot' ($mid + '.txt'))
+    if (-not (Test-Path $tp)) { return @() }
+    $updated = @()
+    foreach ($raw in @(Get-Content $tp -ErrorAction SilentlyContinue)) {
+        if ($raw -notmatch 'POINT' -or $raw -notmatch 'BOB v1 ') { continue }
+        $idx = $raw.IndexOf('BOB v1 ')
+        if ($idx -lt 0) { continue }
+        $doc = ConvertFrom-BobIrcPoint $raw.Substring($idx)
+        if (-not $doc) { continue }
+        $dir = Join-Path $home 'bob-peers'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Write-JsonFile (Join-Path $dir ($doc.id + '.json')) $doc
+        $updated += $doc.id
+    }
+    return $updated
+}
