@@ -1,8 +1,13 @@
 # Skill harvest log
 
-## 2026-09-20 — IRC skills harvest to agentic_irc
+## 2026-09-20 — bob-irc canonical in agentic_irc
 
-Client / SEAL / Ergo start+firewall live in `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/agentic-irc`. `harvest-agent-skills` routes IRC harvests there. `bob-irc` stays Watch-Bobiverse / nicks / verbs and points at that skill for daemon recovery.
+All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo
+start/firewall, Watch-Bobiverse recycle, Halloy) live in
+`https://github.com/SimonBarnett/agentic_irc` `.grok/skills/`. This repo
+keeps a `bob-irc` stub (Test-Pack / Install-BobFleet) plus
+`config/bobiverse.json` and `docs/bobiverse*.md`. `harvest-agent-skills`
+routes IRC harvests to agentic_irc.
 
 ## 2026-09-20 — Stripe Link NEEDS_AUTH blocks Sand on-demand
 

@@ -13,7 +13,7 @@ description: >
 
 Remote: `https://github.com/SimonBarnett/agentic_build` (`origin/main`). Local clone `C:\ai\agentic_build` on ionos (else `D:\ai\...` / `C:\src\...`).
 
-IRC client, SEAL, moot, file, dumb, invite-airc, and Ergo start/firewall: harvest into `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/` (clone `C:\ai\agentic_irc`). Fleet Watch-Bobiverse / nicks / verbs stay `bob-irc` here.
+All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo start/firewall, Watch-Bobiverse recycle, Halloy): harvest into `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/` (clone `C:\ai\agentic_irc`). This repo keeps a `bob-irc` stub plus `config/bobiverse.json`.
 
 **During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit, push `origin/main`. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
 
