@@ -24,6 +24,12 @@ $nick = [string]$cfg.nicks.$MachineId
 if (-not $nick) { $nick = 'bob-' + $MachineId }
 $channel = [string]$cfg.channel
 $mootId = [string]$cfg.mootId
+$ircHost = [string]$cfg.host
+$ircPort = 6697
+if ($cfg.port) { $ircPort = [int]$cfg.port }
+if (-not $ircHost -or $ircHost -eq 'irc.libera.chat') {
+    throw 'config/bobiverse.json host must be the private IRC server (not irc.libera.chat)'
+}
 New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
 
 $py = $null
@@ -67,6 +73,8 @@ if ($already.Count -eq 0) {
     $env:AGENTIC_IRC_DEBUG = '1'
     Start-Process -FilePath $py -ArgumentList @(
         '-u', $agent,
+        '--host', $ircHost,
+        '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
         '--home', $ircHome,

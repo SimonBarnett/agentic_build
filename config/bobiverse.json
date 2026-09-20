@@ -4,6 +4,8 @@
   "mootId": "b0b1be15e0000001",
   "transport": "irc-moot-mode2",
   "docs": "docs/bobiverse.md",
+  "host": "",
+  "port": 6697,
   "nicks": {
     "flamingo": "bob-flamingo",
     "marchhare": "bob-marchhare",

@@ -1,6 +1,6 @@
 # Bobiverse (MODE2 moot on `#bobiverse`)
 
-Fleet machines do **not** SMB-peek each other. Flamingo and MarchHare sit on bobnet copper; ionos is a VPS; DEV1 is the customer Azure box. Status rides Libera TLS IRC.
+Fleet machines do **not** SMB-peek each other. Flamingo and MarchHare sit on bobnet copper; ionos is a VPS; DEV1 is the customer Azure box. Status rides a private Ergo on ionos (`irc.ntsa.uk:6697` TLS), not Libera. See `docs/bobiverse-ionos-ircd.md`.
 
 ## Channel
 
@@ -9,7 +9,7 @@ Fleet machines do **not** SMB-peek each other. Flamingo and MarchHare sit on bob
 | Channel | `#bobiverse` |
 | Mode | MODE2 moot, `free` (every builder may POINT) |
 | Moot id | `b0b1be15e0000001` |
-| Transport | `MOOT v1 POINT` trailing text `BOB v1 …` (clear; not a secret) |
+| Transport | `MOOT v1 POINT` trailing text `BOB v1 …` (clear; not a secret) on `irc.ntsa.uk:6697` |
 
 Nicks (one builder agent per machine):
 

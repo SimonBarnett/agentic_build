@@ -74,17 +74,30 @@ function Start-BobiverseIrcAgent {
     if ($cfg.nicks) { $nick = [string]$cfg.nicks.$mid }
     if (-not $nick) { $nick = 'bob-' + $mid }
     $channel = [string]$cfg.channel
+    $ircHost = [string]$cfg.host
+    $ircPort = 6697
+    if ($cfg.port) { $ircPort = [int]$cfg.port }
+    if (-not $ircHost -or $ircHost -eq 'irc.libera.chat') {
+        Write-BobiverseLog 'skip irc_agent: no private host (libera disabled)'
+        return
+    }
+    $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
+    if (Test-Path $pwFile) {
+        $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
+    }
     $env:AGENTIC_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_DEBUG = '1'
     Start-Process -FilePath $py -ArgumentList @(
         '-u', $agent,
+        '--host', $ircHost,
+        '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
         '--home', $ircHome,
         '--announce-key',
         '--hello', "$mid-builder"
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
-    Write-BobiverseLog "started irc_agent nick=$nick"
+    Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
 
 Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec"
