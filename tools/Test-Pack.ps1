@@ -72,12 +72,13 @@ function Invoke-Case {
         $env:BOB_IRC_CONFIG = $null
         $env:BOB_CURSOR_USAGE_FILE = $null
         $env:BOB_SKIP_LIVE_GROK = $null
+        $env:BOB_CAPACITY_FILE = $null
     }
 }
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'bob-irc')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -303,13 +304,13 @@ Invoke-Case 'BT0l tray hover' {
 
     $h = Get-BobTrayHover
     if ($null -ne $h.remaining_pct) { throw "idle remaining_pct=$($h.remaining_pct) expected null (no weekly log)" }
-    if ([string]$h.title -ne 'Bob Fleet') { throw "title=$($h.title)" }
+    if ([string]$h.title -ne '#Bobiverse (testhost)') { throw "title=$($h.title)" }
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^cursor \(') { throw "idle jobs_text missing cursor account: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^Cursor Models \(') { throw "idle jobs_text missing Cursor Models account: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
-    if ([string]$h.account_name -ne 'cursor') { throw "account_name=$($h.account_name)" }
+    if ([string]$h.account_name -ne 'Cursor Models') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
@@ -422,7 +423,7 @@ Invoke-Case 'BT0l tray hover' {
 
     $h2 = Get-BobTrayHover
     if ($h2.job_count -ne 1) { throw "job_count=$($h2.job_count)" }
-    if ([string]$h2.title -ne 'Bob Fleet') { throw "running title=$($h2.title)" }
+    if ([string]$h2.title -ne '#Bobiverse (testhost)') { throw "running title=$($h2.title)" }
     if ([string]$h2.body -match '(?i)no fleet jobs running') { throw "running body says no fleet jobs: $($h2.body)" }
     if ([string]$h2.jobs_text -notmatch 'SimonBarnett/agentic_irc') { throw "jobs_text missing owner/repo: $($h2.jobs_text)" }
     if ([string]$h2.jobs_text -match '(?i)7e8797e|[0-9a-f]{40}') { throw "jobs_text looks like SHA: $($h2.jobs_text)" }
@@ -479,7 +480,7 @@ Invoke-Case 'BT0l tray hover' {
     }
     [IO.File]::WriteAllText((Join-Path $qDir ($qId + '.json')), ($qJob | ConvertTo-Json -Depth 6))
     $h4 = Get-BobTrayHover
-    if ([string]$h4.title -ne 'Bob Fleet') { throw "multi-machine title=$($h4.title)" }
+    if ([string]$h4.title -ne '#Bobiverse (testhost)') { throw "multi-machine title=$($h4.title)" }
     if ([string]$h4.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "multi jobs_text missing testhost tile: $($h4.jobs_text)" }
     if ([string]$h4.jobs_text -notmatch '(?m)^[ ]{0,2}otherhost \(') { throw "multi jobs_text missing otherhost tile: $($h4.jobs_text)" }
     if ([string]$h4.jobs_text -notmatch 'SimonBarnett/FormPrep') { throw "otherhost missing owner/repo: $($h4.jobs_text)" }
@@ -535,23 +536,23 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
 
     $h5 = Get-BobTrayHover
-    if ([string]$h5.title -ne 'Bob Fleet') { throw "registry title=$($h5.title)" }
+    if ([string]$h5.title -ne '#Bobiverse (testhost)') { throw "registry title=$($h5.title)" }
     if ([string]$h5.scope -ne 'fleet-peek') { throw "scope=$($h5.scope) expected fleet-peek" }
     if (-not $h5.peer_peek) { throw 'peer_peek should be true when registry has peers' }
     $txt = [string]$h5.jobs_text
-    if ($txt -notmatch '(?m)^cursor \(') { throw "h5 missing cursor account: $txt" }
+    if ($txt -notmatch '(?m)^Cursor Models \(') { throw "h5 missing Cursor Models account: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "h5 missing testhost: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}otherhost \(') { throw "h5 missing otherhost: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare \(') { throw "h5 missing marchhare: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "h5 missing ionos: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1 \(') { throw "h5 missing ce-priority-dev1: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare\b') { throw "h5 missing marchhare: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos\b') { throw "h5 missing ionos: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1\b') { throw "h5 missing ce-priority-dev1: $txt" }
     if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
-    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare \([^)]+\)\r?\n[ ]+SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
     if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \([^)]+\)\r?\n[ ]+not in moot') { throw "ionos must be not in moot: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?:  -  [^\r\n(]+)? \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+not in moot') { throw "ionos must be not in moot: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "do not say unreachable for a box that is not in the moot: $txt" }
-    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1 \([^)]+\)\r?\n[ ]+lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+lastSeen stale') { throw "stale peer must say lastSeen stale: $txt" }
     $ids5 = @($h5.machines | ForEach-Object { [string]$_.id })
     if ($ids5[0] -ne 'testhost') { throw "h5 machines[0]=$($ids5[0])" }
     foreach ($need in @('testhost', 'otherhost', 'marchhare', 'ionos', 'ce-priority-dev1')) {
@@ -585,7 +586,7 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
     $hSnap = Get-BobTrayHover
     $snapTxt = [string]$hSnap.jobs_text
-    if ($snapTxt -notmatch '(?m)^[ ]{0,2}snapbox \([^)]+\)\r?\n[ ]+SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
+    if ($snapTxt -notmatch '(?m)^[ ]{0,2}snapbox \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/agentic_irc') { throw "snapbox missing irc job: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/FormPrep') { throw "snapbox missing FormPrep job: $snapTxt" }
     $snapTile = @($hSnap.machines | Where-Object { [string]$_.id -eq 'snapbox' })[0]
@@ -697,9 +698,11 @@ Invoke-Case 'BT0m tray tip placement' {
 Invoke-Case 'BT0n tray tip show' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show the dark card on hover' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show the dark card when the cursor is over the icon' }
-    if ($traySrc -notmatch 'Source -ne ''icon''') { throw 'MouseMove must ignore spurious events unless pointer is on the tray icon' }
+    if ($traySrc -match "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must not Show-BobTrayCard (hover stacked a second TipForm)' }
+    if ($traySrc -match 'Add_MouseMove') { throw 'no hover events: Add_MouseMove must be gone' }
+    if ($traySrc -match '\$iconProbe') { throw 'no hover events: iconProbe timer must be gone' }
+    if ($traySrc -match '\$hideTip') { throw 'card must stay parked until X; hideTip auto-hide must be gone' }
+    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'click'") { throw 'left-click / Status must show the dark card' }
     if ($traySrc -match '(?s)overTip.{0,240}cardClosed = \$false') { throw 'must not rearm hover by clearing cardClosed when leaving the tip' }
     if ($traySrc -match 'function Restore-BobNativeTip') { throw 'must not restore NotifyIcon.Text (white P+ idle chip is the double dialog)' }
     if ($traySrc -match '\$notify\.Text = \$') { throw 'must not assign NotifyIcon.Text from a short P+ string' }
@@ -738,6 +741,15 @@ Invoke-Case 'BT0n tray tip show' {
     if ($skillTray -notmatch '(?i)Never park') { throw 'bob-fleet-tray skill must forbid parking NotifyIcon.Text' }
     if ($skillTray -notmatch 'ShowParkedAt') { throw 'bob-fleet-tray skill must document ShowParkedAt' }
     if ($skillTray -notmatch '(?i)watch_bob_tray\.log') { throw 'bob-fleet-tray skill must name the tray log' }
+    if ($skillTray -notmatch '(?i)hideTip') { throw 'bob-fleet-tray skill must say no hideTip auto-hide' }
+    if ($skillTray -notmatch '_Watch-Bobiverse-ionos') { throw 'bob-fleet-tray skill must name _Watch-Bobiverse-ionos Restart path' }
+    if ($traySrc -notmatch 'Stop-BobiverseMoot') { throw 'Restart watcher must kill Watch-Bobiverse + bobiverse irc_agent' }
+    if ($traySrc -notmatch 'Restart-BobTrayWatcher') { throw 'tray Restart watcher must rejoin #bobiverse' }
+    if ($traySrc -notmatch '_Watch-Bobiverse') { throw 'Restart watcher must start _Watch-Bobiverse-<id> wrapper' }
+    if ($traySrc -notmatch "Restart watcher") { throw 'right-click menu must include Restart watcher' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-Bobiverse-ionos.ps1'))) { throw 'missing tools/_Watch-Bobiverse-ionos.ps1' }
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch '_Watch-Bobiverse-') { throw 'Install-BobFleet must register _Watch-Bobiverse-<id>' }
 
     $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
     if (-not $onWindows) {
@@ -902,7 +914,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     [IO.File]::WriteAllText((Join-Path $macDir 'ionos.json'), '{"id":"ionos"}')
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
-    if ($txt -notmatch '(?m)^[ ]{0,2}ionos \(') { throw "missing ionos tile: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}ionos\b') { throw "missing ionos tile: $txt" }
     if ($txt -match '(?m)^ionos\r?\n  unreachable') { throw "IRC peer marked unreachable: $txt" }
     if ($txt -notmatch 'SimonBarnett/agentic_build') { throw "IRC jobs missing: $txt" }
     $tile = @($h.machines | Where-Object { [string]$_.id -eq 'ionos' })[0]
@@ -961,10 +973,123 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([int]$cu.remaining_pct -ne 2) { throw "cursor remaining=$($cu.remaining_pct) expected 2 from 98% used" }
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^cursor \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
+}
+
+# --- BT0p git-task capacity picker (issue #8) ---
+Invoke-Case 'BT0p git-task picker' {
+    param($bridgeRoot)
+    $fixture = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99; period_end = '2026-10-01T00:00:00Z' }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ remaining_pct = 0; available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'ionos'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 100; period_end = '2026-09-27T00:00:00Z' }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0; period_end = '2026-09-23T00:00:00Z' }
+                fuels = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
+            }
+            [pscustomobject]@{
+                id = 'flamingo'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 85; period_end = '2026-09-27T00:00:00Z' }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
+            }
+            [pscustomobject]@{
+                id = 'marchhare'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 4; period_end = '2026-09-26T00:00:00Z' }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
+            }
+            [pscustomobject]@{
+                id = '2012'; kind = 'dumb'; gitEligible = $false; alive = $true; jobs = 0
+                cwdRoots = @(); grok_build = [pscustomobject]@{ remaining_pct = $null }
+                grok_bot = [pscustomobject]@{ remaining_pct = $null }
+                fuels = @()
+            }
+        )
+    }
+
+    $def = Select-BobGitWorker -Capacity $fixture
+    if ($def.wait) { throw "default picker waited: $($def.reason)" }
+    if ($def.fuel -ne 'cursor-models') { throw "default fuel=$($def.fuel) expected cursor-models" }
+    if ($def.machine -eq '2012') { throw 'default picker selected DUMB' }
+    if (@('ionos', 'flamingo', 'marchhare') -notcontains $def.machine) { throw "default machine=$($def.machine)" }
+    if ($def.machine -ne 'ionos') { throw "default machine=$($def.machine) expected ionos (highest grok-build remaining tie-break)" }
+
+    $gb = Select-BobGitWorker -Capacity $fixture -Fuel grok-build
+    if ($gb.wait) { throw "grok-build picker waited: $($gb.reason)" }
+    if ($gb.fuel -ne 'grok-build') { throw "grok-build fuel=$($gb.fuel)" }
+    if ($gb.machine -ne 'ionos') { throw "grok-build machine=$($gb.machine) expected ionos over flamingo over marchhare" }
+
+    $dumb = Select-BobGitWorker -Capacity $fixture -Machine '2012' -Fuel grok-build
+    if (-not $dumb.wait) { throw 'pin DUMB must wait' }
+
+    $pin = Select-BobGitWorker -Capacity $fixture -Machine flamingo -Fuel grok-build
+    if ($pin.wait) { throw "pin wait: $($pin.reason)" }
+    if ($pin.machine -ne 'flamingo' -or $pin.fuel -ne 'grok-build') { throw "pin=$($pin.machine)/$($pin.fuel)" }
+
+    $empty = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 0 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 10; enabled = $true }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'ionos'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 0 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build', 'grok-bot', 'on-demand')
+            }
+        )
+    }
+    $wait = Select-BobGitWorker -Capacity $empty
+    if (-not $wait.wait) { throw 'all included empty must wait when AllowOnDemand is false' }
+    $od = Select-BobGitWorker -Capacity $empty -AllowOnDemand
+    if ($od.wait) { throw "on-demand should pick: $($od.reason)" }
+    if ($od.fuel -ne 'on-demand') { throw "on-demand fuel=$($od.fuel)" }
+
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $capFile = Join-Path $bridgeRoot 'capacity.json'
+    $liveFix = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'testhost'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @($bridgeRoot)
+                grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+            }
+        )
+    }
+    [IO.File]::WriteAllText($capFile, ($liveFix | ConvertTo-Json -Depth 8))
+    $env:BOB_CAPACITY_FILE = $capFile
+    $q = Start-BobBuild -Task git -Goal ping -Cwd (Join-Path $bridgeRoot 'cwd')
+    if (-not $q.ok) { throw "git enqueue failed $($q | ConvertTo-Json -Compress)" }
+    if ($q.wait) { throw "git enqueue waited: $($q.reason)" }
+    if (-not $q.machine) { throw 'git job missing machine' }
+    if ($q.fuel -ne 'cursor-models') { throw "git job fuel=$($q.fuel)" }
+    $job = Get-BobBuild -JobId $q.jobId
+    if ($job.task -ne 'git') { throw "job.task=$($job.task)" }
+    if ($job.fuel -ne 'cursor-models') { throw "job.fuel=$($job.fuel)" }
+    if (-not $job.machine) { throw 'job.machine empty' }
+    if ($job.branch -notmatch '^work/') { throw "job.branch=$($job.branch)" }
+
+    $pinJob = Start-BobBuild -Task git -Machine testhost -Fuel grok-build -Goal ping -Cwd (Join-Path $bridgeRoot 'cwd')
+    if ($pinJob.machine -ne 'testhost' -or $pinJob.fuel -ne 'grok-build') {
+        throw "pin job $($pinJob.machine)/$($pinJob.fuel)"
+    }
+
+    $fix = Start-BobBuild -Task git -Fix -Goal ping -Cwd (Join-Path $bridgeRoot 'cwd')
+    if ($fix.fuel -ne 'cursor-models') { throw "FIX picker fuel=$($fix.fuel) (must re-run, not stick on grok-build)" }
+
+    $env:BOB_CAPACITY_FILE = $null
 }
 
 Write-Host ''

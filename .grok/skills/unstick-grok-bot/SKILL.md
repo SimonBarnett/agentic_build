@@ -84,3 +84,5 @@ Start `"C:\Program Files\Grok Bot\Grok Bot.exe"`. Wait until CIM shows `Grok Bot
 - Treat unread counts as agent stalls (those are human-unread).
 - WinRM, Windows service, or SQL passwords.
 - Dump sandbox URLs or tokens.
+- Treat a blank/frozen Electron window as a Temporal hang — that is
+  `setup-remote-grok-bot` (window-state 0x0 / no-GPU shortcut).

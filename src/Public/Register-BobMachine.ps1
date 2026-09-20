@@ -3,7 +3,8 @@ function Register-BobMachine {
     param(
         [Parameter(Mandatory)][string]$Id,
         [string[]]$CwdRoots,
-        [string[]]$Profiles = @('formprep', 'teams', 'mud', 'generic')
+        [string[]]$Profiles = @('formprep', 'teams', 'mud', 'generic'),
+        [string]$Kind = 'windows'
     )
     $mid = ConvertTo-MachineId $Id
     Initialize-BridgeRoot | Out-Null
@@ -21,6 +22,8 @@ function Register-BobMachine {
         $roots += $s
     }
 
+    $kindVal = 'windows'
+    if ($Kind) { $kindVal = $Kind.Trim().ToLowerInvariant() }
     $record = [pscustomobject]@{
         id           = $mid
         hostname     = $env:COMPUTERNAME
@@ -29,6 +32,7 @@ function Register-BobMachine {
         grokBot      = $true
         cwdRoots     = @($roots)
         profiles     = @($Profiles)
+        kind         = $kindVal
         lastSeen     = [DateTime]::UtcNow.ToString('o')
     }
     Write-JsonFile (Join-Path (Get-BridgeRoot) 'machine.json') $record

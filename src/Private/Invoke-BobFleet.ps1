@@ -85,10 +85,24 @@ function New-FleetPrompt {
         foreach ($c in $cons) { [void]$lines.Add("- $c") }
     }
     [void]$lines.Add("Machine: $($Packet.machine)")
+    if ($Packet.fuel) { [void]$lines.Add("Fuel: $($Packet.fuel)") }
+    if ($Packet.task) { [void]$lines.Add("Task: $($Packet.task)") }
     [void]$lines.Add("Cwd: $($Packet.cwd)")
     [void]$lines.Add("Profile: $($Packet.profile)")
+    if ($Packet.repo) { [void]$lines.Add("Repo: $($Packet.repo)") }
+    if ($Packet.branch) { [void]$lines.Add("Branch: $($Packet.branch)") }
+    if ($Packet.docs) { [void]$lines.Add("Docs: $($Packet.docs)") }
+    if ($Packet.plan) { [void]$lines.Add("Plan: $($Packet.plan)") }
+    if ($Packet.mrb) { [void]$lines.Add("Mrb: $($Packet.mrb)") }
     [void]$lines.Add('MSSQL: Windows integrated auth as the logon user. No SQL passwords.')
     [void]$lines.Add('GitHub repo coding: tools/Start-BobCopilot.ps1 (skill start-bob-copilot). Do not use Grok Bot weekly usage for that work.')
+    if ([string]$Packet.task -eq 'git') {
+        [void]$lines.Add('IRC verbs (no vendor names): SPEC WAIT BUILD PUSH MRB FIX UAT.')
+        [void]$lines.Add('Commit and push the work branch. Do not mark ready for human UAT. Bob chairs MRB.')
+        if ([string]$Packet.fuel -eq 'cursor-models') {
+            [void]$lines.Add('Fuel cursor-models: tools/Start-BobCursor.ps1 (skill start-bob-cursor). Do not start grok.exe.')
+        }
+    }
     [void]$lines.Add((Get-BobProjectSkillsHint))
     return ($lines -join "`n")
 }
@@ -175,6 +189,43 @@ function Invoke-BobFleetOnce {
     $packet | Add-Member -NotePropertyName claimedAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
     Write-JsonFile $runningPath $packet
     Send-FleetReply -ReplyChannel $packet.reply_channel -Text "$thisId running $($packet.id)"
+
+    $fuel = [string]$packet.fuel
+    $task = [string]$packet.task
+    $useGrokExe = -not ($task -eq 'git' -and $fuel -and ($fuel -notin @('grok-build', 'on-demand')))
+    if (-not $useGrokExe) {
+        $summary = "handed $fuel"
+        $status = 'ok'
+        if ($fuel -eq 'cursor-models') {
+            $cursorScript = Join-Path (Get-ModuleRoot) 'tools\Start-BobCursor.ps1'
+            if (Test-Path $cursorScript) {
+                try {
+                    $hand = & $cursorScript -Job $packet
+                    if ($hand -and $hand.packetPath) { $summary = "handed cursor-models $($hand.packetPath)" }
+                }
+                catch {
+                    $status = 'failed'
+                    $summary = "cursor-models handoff failed: $($_.Exception.Message)"
+                }
+            }
+        }
+        elseif ($fuel -eq 'copilot') {
+            $copilotScript = Join-Path (Get-ModuleRoot) 'tools\Start-BobCopilot.ps1'
+            $summary = 'handed copilot (start-bob-copilot)'
+            if ((Test-Path $copilotScript) -and -not (Test-BobUsesFakeGrok) -and $packet.mrb) {
+                try {
+                    $hand = & $copilotScript -Prompt $packet.goal
+                    if ($hand -and $hand.issue) { $summary = "handed copilot $($hand.issue)" }
+                }
+                catch {
+                    $status = 'failed'
+                    $summary = "copilot handoff failed: $($_.Exception.Message)"
+                }
+            }
+        }
+        $comp = [pscustomobject]@{ status = $status; summary = $summary; needs_human = ($status -ne 'ok') }
+        return Complete-FleetJob -Packet $packet -FromPath $runningPath -State $(if ($status -eq 'ok') { 'done' } else { 'failed' }) -Completion $comp
+    }
 
     $prompt = New-FleetPrompt -Packet $packet
     $start = Start-BobWorker -Cwd $packet.cwd -Prompt $prompt -Profile $packet.profile -Title "fleet-$($packet.id)" -SessionId $packet.id -Force

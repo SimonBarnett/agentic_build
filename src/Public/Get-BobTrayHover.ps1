@@ -911,6 +911,10 @@ function Get-BobTrayHover {
         $jlName = $mid
         if ($seatInfo -and $seatInfo.label) { $jlName = ('{0}  -  {1}' -f $mid, $seatInfo.label) }
         $jobLines += ('  {0} ({1})' -f $jlName, $pctLabel)
+        $tileFuels = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
+        if ($mid -match '2012') { $tileFuels = @() }
+        $tile | Add-Member -NotePropertyName fuels -NotePropertyValue $tileFuels -Force
+        if ($tileFuels.Count -gt 0) { $jobLines += ('    fuels: {0}' -f ($tileFuels -join ', ')) }
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
             $jobLines += '    not in moot'
         }
@@ -958,7 +962,7 @@ function Get-BobTrayHover {
         if ($cursorWeek -and $cursorWeek.period_end) { $cend = [string]$cursorWeek.period_end }
         Save-BobCursorAccountCache -Label $acctPctLabel -PeriodEnd $cend
     }
-    $acctLine = ('cursor ({0})' -f $acctPctLabel)
+    $acctLine = ('Cursor Models ({0})' -f $acctPctLabel)
     $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
 
     $lines = New-Object System.Collections.Generic.List[string]
@@ -993,7 +997,7 @@ function Get-BobTrayHover {
         machines       = $tiles
         peer_peek      = $peerPeek
         tier           = $tier
-        account_name   = 'cursor'
+        account_name   = 'Cursor Models'
         account_label  = $acctPctLabel
         account_remaining_pct = $cursorRemain
         account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })

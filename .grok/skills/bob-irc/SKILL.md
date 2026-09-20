@@ -26,6 +26,11 @@ One-shot: `tools\Install-BobIrc.ps1 -MachineId <id>`. Ircd on ionos: `tools\Inst
 
 `Watch-Bobiverse` skips `irc_agent` when `host` is empty or `irc.libera.chat`. Pass `--host` / `--port` from `bobiverse.json`.
 
+Git-task verbs (no vendor names): `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`.
+`BUILD <job> <nick>` is the machine nick; fuel lives in the job file. `WAIT`
+means the picker found no eligible `(machine, fuel)` pair. Do not invent a
+new IRC protocol.
+
 ## Do not
 
 - Point `bob-ionos` at Libera (IP banned 2026-09-20).

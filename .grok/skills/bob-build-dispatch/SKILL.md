@@ -21,11 +21,18 @@ Write `docs/build-and-test-plan.md` in the target repo (commit + push) that a bu
 - Definition of done for the first ticket
 - Kickoff prompt block for `Start-BobBuild -Goal`
 
-## 2. Choose machine
+## 2. Choose machine (or let the picker)
 
-Prefer spare Premium+ capacity. Prefer `ionos` when MarchHare personal X is maxed. Ids: `ionos`, `marchhare`, `dev1` â€” not hostnames.
+Git tasks: `Start-BobBuild -Task git` with **optional** `-Machine` / `-Fuel`.
+Default is `Select-BobGitWorker` (capacity pair, not a nick called cursor).
+Fuel order: `cursor-models` -> `grok-build` -> `copilot` -> `grok-bot` ->
+`on-demand`. Override remains: `-Machine flamingo -Fuel grok-build` for
+formprep / MSSQL. `-Fix` re-runs the picker.
 
-Load BobBridge from the local agentic_build clone (`C:\ai\agentic_build`, `D:\ai\agentic_build`, or `C:\src\agentic_build`). Run `Get-BobHealth` / `Get-BobMachines`. Heal a dead watcher via `grok-build-fleet`.
+Ids: `ionos`, `marchhare`, `dev1`, `flamingo` — not hostnames. DUMB / 2012
+is not a git worker.
+
+Load BobBridge from the local agentic_build clone (`C:\ai\agentic_build`, `D:\ai\agentic_build`, or `C:\src\agentic_build`). Run `Get-BobHealth` / `Get-BobMachines` / `Get-BobCapacity`. Heal a dead watcher via `grok-build-fleet`.
 
 ## 3. Start-BobBuild
 

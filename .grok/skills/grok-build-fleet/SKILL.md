@@ -30,12 +30,22 @@ Import-Module "$repo\src\BobBridge.psd1"
 ```powershell
 Get-BobMachines
 Get-BobHealth
-Start-BobBuild -Machine ionos -Cwd $repo -Goal '...' -Profile generic -ReplyChannel $env:USERNAME
+Get-BobCapacity
+Select-BobGitWorker                  # optional -Machine / -Fuel
+Start-BobBuild -Task git -Goal '...' -Profile generic -ReplyChannel $env:USERNAME
+Start-BobBuild -Machine ionos -Fuel grok-build -Cwd $repo -Goal '...' -Profile formprep
 Get-BobBuild -JobId <id>
 Get-BobBuilds -Machine ionos
 Send-BobBuildSpec -JobId <id> -Prompt 'follow-up'
 Stop-BobBuild -JobId <id>
 ```
+
+`-Task git` makes `-Machine` optional: `Select-BobGitWorker` picks a
+`(machine, fuel)` pair (`cursor-models` first, then `grok-build`,
+`copilot`, `grok-bot`, `on-demand` if `-AllowOnDemand`). Pin with both
+`-Machine` and `-Fuel`. `-Fix` re-runs the picker. Mode 3 DUMB / 2012 is
+not a git worker. Cursor Models is a shared account pool, not a machine
+named cursor.
 
 Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it is the stall monitor: `bob-fleet-monitor` (do not dispatch or kill Bob's jobs).
 
@@ -43,11 +53,15 @@ Human watcher UI: `bob-fleet-tray`. This grok.exe session on a build box, if it 
 
 ## Spec
 
-GitHub repo work: `start-bob-copilot` / `tools\Start-BobCopilot.ps1`. Fleet `grok.exe` jobs receive that constraint in `New-FleetPrompt`. Do not implement GitHub-only work on Grok Bot (Cursor weekly usage).
+GitHub repo work: picker may choose `copilot` (`start-bob-copilot` /
+`tools\Start-BobCopilot.ps1`) or `cursor-models` (`start-bob-cursor` /
+`tools\Start-BobCursor.ps1`). Fleet `grok.exe` jobs still get the copilot
+constraint in `New-FleetPrompt`. Do not implement GitHub-only work on Grok
+Bot weekly usage. Formprep / MSSQL stays `-Fuel grok-build`.
 
 `Start-BobWorker` copies `https://github.com/SimonBarnett/agentic_build` `.grok/skills` into `~/.grok/skills` and puts that path on `--rules`, so the build agent has those skills even when `--cwd` is another repo.
 
-`Start-BobBuild` packet: `goal`, `constraints`, `success`, `cwd`, `profile`, `reply_channel`.
+`Start-BobBuild` packet: `goal`, `constraints`, `success`, `cwd`, `profile`, `reply_channel`, and for git tasks `task`, `machine`, `fuel`, `repo`, `branch`, `docs`, `plan`, `mrb`.
 
 Profiles: `formprep` (`--rules`, no yolo, no SQL-flip UPD, no AllUnprepared, Windows MSSQL only), `teams`, `mud`, `generic`.
 

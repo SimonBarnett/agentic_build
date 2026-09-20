@@ -13,6 +13,13 @@
     "reply_channel": { "type": "string" },
     "machine": { "type": "string" },
     "cwd": { "type": "string" },
-    "profile": { "type": "string" }
+    "profile": { "type": "string" },
+    "task": { "type": "string", "enum": ["git", "fleet"] },
+    "fuel": { "type": "string", "enum": ["cursor-models", "grok-build", "copilot", "grok-bot", "on-demand"] },
+    "repo": { "type": "string" },
+    "branch": { "type": "string" },
+    "docs": { "type": "string" },
+    "plan": { "type": "string" },
+    "mrb": { "type": "string" }
   }
 }

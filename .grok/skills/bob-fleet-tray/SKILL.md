@@ -21,6 +21,9 @@ ids** plus this host if it is one of them. Never a ghost IRC-derived name
 (`marchhare-bugets`). Without nicks (hermetic tests), fall back to
 `config/fleet-registry.json` + `{BOB_BRIDGE_HOME}\fleet\registry.json`.
 Transport is read-only filesystem peek plus IRC moot roster. No WinRM.
+See `docs/bob-fleet-peer-peek.md`. Tiles may show `not in moot` or
+`lastSeen stale`; do not invent `unreachable` for a seat that is merely
+not in the moot.
 
 ## Seat deals (next to the name)
 
@@ -42,7 +45,11 @@ Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 
 ## Cursor overage row
 
-Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
+Top account row is **Cursor Models** (shared account pool, not a machine
+named cursor). Machine rows are Grok Build weekly + which fuels that box
+can strike (`cursor-models`, `grok-build`, `copilot`, `grok-bot`). A tile
+labelled cursor with a Bot reset date is **Grok Bot weekly on that glass**,
+not the top bar.
 
 - Known remaining: `cursor (N%)` in normal foreground.
 - Empty / overspent (Sand weekly exhausted): `cursor (-Â£x.xx)` in **red**.
@@ -52,7 +59,8 @@ Top account row is **Grok Bot / Cursor Sand**, not the xAI Build seat.
   and not "12% => Â£12".
 - When remaining is null but overage exists, still emit the overage label
   (do not early-return null from `ConvertTo-BobCursorUsageDoc`).
-- Machine tile bars still use xAI `unified.jsonl` weekly remaining.
+- Machine tile bars still use xAI `unified.jsonl` weekly remaining
+  (`creditUsagePercent` on `billing: fetched credits config`).
 
 
 ## Reset dates
@@ -77,14 +85,15 @@ Example headings:
 ## UI hard rules (diagnostics 2026-09-20)
 
 - **Click-only card.** Left-click (or Status menu) opens/parks the dark
-  TipForm. **No hover** to show the card (hover caused double TipForm /
-  ghost chips). Close only via **X**.
+  TipForm via `ShowParkedAt`. **No hover** to show the card (hover caused
+  double TipForm / ghost chips). Close only via **X**. No `hideTip` auto-hide.
 - **One TipForm only.** `NotifyIcon.Text` stays blank always
   (`Clear-BobNativeTip`). Never park `P+ idle` text â€” that white chip is the
   bad second dialog.
 - **Single instance.** Mutex `Local\BobFleetTray-<machineId>`. Restart
-  watcher kills every `Watch-BobTray` process (ghosts), rejoins `#bobiverse`,
-  then starts exactly one tray.
+  watcher kills every `Watch-BobTray` process (ghosts), rejoins `#bobiverse`
+  via `_Watch-Bobiverse-<id>` (ionos: `_Watch-Bobiverse-ionos.ps1` or that
+  scheduled task), then starts exactly one tray.
 - **No blank card on refresh.** In `Rebuild-BobTrayTiles`:
   1. Resolve/format every label and color **before** `Controls.Clear()`.
   2. Wrap Clear+Add under `SuspendLayout` / `ResumeLayout` only.
@@ -117,6 +126,8 @@ and bobiverse IRC home, then runs `Watch-BobTray.ps1`.
 Hover/flash/card code changes: recycle **Watch-BobTray only** (kill that
 process, start one hidden STA instance). Do not `Stop-ScheduledTask
 BobFleet-*` while build jobs run.
+
+Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visible, else cursor). TipForm uses `ShowWithoutActivation` / WS_EX_NOACTIVATE.
 
 ## Diagnose (when the card/icon misbehaves)
 
