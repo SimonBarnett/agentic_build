@@ -132,7 +132,7 @@ Do not put password= or XAI_API_KEY= assignments in git.
 Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
 `$out = '$($logPath.Replace("'","''"))'
 `$err = '$($logPath.Replace("'","''")).err'
-& '$($ps1.Replace("'","''"))' -p --force --trust --output-format text --model '$($Model.Replace("'","''"))' `$prompt 1>`$out 2>`$err
+& '$($ps1.Replace("'","''"))' -p --force --trust --output-format text --model '$($Model.Replace("'","''"))' -- `$prompt 1>`$out 2>`$err
 "@
         [IO.File]::WriteAllText($launch, $launchBody, $utf8)
         $exe = (Get-Command powershell.exe).Source

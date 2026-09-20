@@ -8,6 +8,12 @@
 
 Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
 
+## 2026-09-20 — cursor-agent prompt must not look like CLI flags
+
+Node `cursor-agent` treats unquoted prompt tokens as options
+(`unknown option '-join'`). Launch with `--` before the prompt, and do
+not put PowerShell `-join` or raw double-quotes in the goal string.
+
 ## 2026-09-20 — Start-BobCursor must leave the grok Job Object
 
 `Start-Process` children are killed when the grok.exe shell that called
