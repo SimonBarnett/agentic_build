@@ -71,6 +71,8 @@ function Invoke-Case {
         $env:BOB_IRC_HOME = $null
         $env:BOB_IRC_CONFIG = $null
         $env:BOB_CURSOR_USAGE_FILE = $null
+        $env:BOB_CURSOR_AGENT_FIXTURE = $null
+        $env:BOB_CURSOR_USD_GBP_RATE = $null
         $env:BOB_SKIP_LIVE_GROK = $null
         $env:BOB_CAPACITY_FILE = $null
         $env:BOB_GH_EXE = $null
@@ -1023,6 +1025,87 @@ Invoke-Case 'BT0o bobiverse irc' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
+}
+
+# --- BT0o2 Cursor Models spending meter vs Sand (issue #21 / #25) ---
+Invoke-Case 'BT0o2 cursor models spending meter' {
+    param($bridgeRoot)
+    $apiFixture = Join-Path $bridgeRoot 'cursor-spending-api-fixture.json'
+    @'
+{
+  "period": {
+    "planUsage": { "autoPercentUsed": 1 },
+    "billingCycleEnd": "2026-10-16T00:00:00Z",
+    "spendLimitUsage": { "individualUsed": 6850 }
+  },
+  "sand": {
+    "usagePercent": 100,
+    "nextResetTimestampUtc": "2026-09-23T00:00:00Z"
+  }
+}
+'@ | Set-Content -Path $apiFixture -Encoding utf8
+    $py = $null
+    foreach ($c in @(
+            'python',
+            'py',
+            'C:\Python\Python312\python.exe',
+            'C:\Python\Python313\python.exe',
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe')
+        )) {
+        if (-not $c) { continue }
+        if ($c -eq 'python' -or $c -eq 'py') {
+            try {
+                $probe = & $c -c "import sys; print(sys.executable)" 2>$null
+                if ($probe) { $py = $c; break }
+            }
+            catch { }
+            continue
+        }
+        if (Test-Path $c) { $py = $c; break }
+    }
+    if (-not $py) { throw 'python required for Get-CursorAgentUsage parser test' }
+    $script = Join-Path $RepoRoot 'tools\Get-CursorAgentUsage.py'
+    $env:BOB_CURSOR_AGENT_FIXTURE = $apiFixture
+    $env:BOB_CURSOR_USD_GBP_RATE = '0.7918'
+    $parsedRaw = & $py $script 2>$null
+    if (-not $parsedRaw) { throw 'Get-CursorAgentUsage fixture run returned empty' }
+    $parsed = $parsedRaw | ConvertFrom-Json
+    if ([int]$parsed.used_pct -ne 1) { throw "parser used_pct=$($parsed.used_pct) expected 1 from autoPercentUsed=1" }
+    if ([int]$parsed.remaining_pct -ne 99) { throw "parser remaining_pct=$($parsed.remaining_pct) expected 99" }
+    if ([string]$parsed.period_end -notmatch '2026-10-16') { throw "parser period_end=$($parsed.period_end) expected Cursor Models Oct 16" }
+    if ([string]$parsed.period_end -match '2026-09-23') { throw 'parser must not use Sand reset as Cursor Models period_end' }
+    if ([int]$parsed.sand_used_pct -ne 100) { throw "parser sand_used_pct=$($parsed.sand_used_pct)" }
+    $cursorFile = Join-Path $bridgeRoot 'cursor-spending-meter-doc.json'
+    $parsedRaw | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+    $env:BOB_CURSOR_AGENT_FIXTURE = $null
+    $cu = Get-BobCursorAgentWeeklyRemaining
+    if ([int]$cu.used_pct -ne 1) { throw "cursor models used=$($cu.used_pct) expected 1" }
+    if ([int]$cu.remaining_pct -ne 99) { throw "cursor models remaining=$($cu.remaining_pct) expected 99 (not Sand/overage)" }
+    if ($null -eq $cu.sand_remaining_pct -or [int]$cu.sand_remaining_pct -ne 0) { throw "sand_remaining_pct=$($cu.sand_remaining_pct)" }
+    if (-not $cu.sand_exhausted) { throw 'sand_exhausted must be true' }
+    if ($null -eq $cu.overage_gbp) { throw 'overage_gbp must remain a separate field' }
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $cap = Get-BobCapacity
+    if ([int]$cap.cursor_models.remaining_pct -ne 99) { throw "capacity cursor_models=$($cap.cursor_models.remaining_pct)" }
+    if ([string]$cap.cursor_models.period_end -notmatch '2026-10-16') { throw "capacity period_end=$($cap.cursor_models.period_end)" }
+    if ([string]$cap.cursor_models.period_end -match '2026-09-23') { throw 'capacity must not use Sand reset for cursor_models.period_end' }
+    $hostRow = @($cap.machines | Where-Object { [string]$_.id -eq 'testhost' })[0]
+    if ($null -eq $hostRow.grok_bot.remaining_pct -or [int]$hostRow.grok_bot.remaining_pct -ne 0) {
+        throw "grok_bot.remaining_pct=$($hostRow.grok_bot.remaining_pct) expected Sand slot 0"
+    }
+    if ([int]$cap.cursor_models.remaining_pct -le 0) {
+        throw 'Sand 100% + overage must not block cursor-models fuel'
+    }
+    $pick = Select-BobGitWorker -Capacity $cap
+    if ($pick.wait -or [string]$pick.fuel -ne 'cursor-models') {
+        throw "Select-BobGitWorker expected cursor-models got fuel=$($pick.fuel) wait=$($pick.wait)"
+    }
+    $hCur = Get-BobTrayHover
+    if ([int]$hCur.account_remaining_pct -ne 99) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(99%\)') { throw "jobs_text must show Cursor Models (99%): $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -match [char]0x00A3) { throw 'jobs_text must not show Sand overage GBP as Cursor Models remaining' }
 }
 
 # --- BT0p git-task capacity picker (issue #8) ---
