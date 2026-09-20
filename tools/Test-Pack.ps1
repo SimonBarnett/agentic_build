@@ -697,9 +697,9 @@ Invoke-Case 'BT0m tray tip placement' {
 Invoke-Case 'BT0n tray tip show' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Show-BobTrayCard') { throw 'Watch-BobTray missing Show-BobTrayCard' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must show the dark card on hover' }
-    if ($traySrc -notmatch "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must show the dark card when the cursor is over the icon' }
-    if ($traySrc -notmatch 'Source -ne ''icon''') { throw 'MouseMove must ignore spurious events unless pointer is on the tray icon' }
+    if ($traySrc -match "Show-BobTrayCard -Reason 'hover'") { throw 'MouseMove must not Show-BobTrayCard (hover stacked a second TipForm)' }
+    if ($traySrc -match "Show-BobTrayCard -Reason 'probe'") { throw 'icon-rect probe must not Show-BobTrayCard' }
+    if ($traySrc -notmatch '(?s)Reason -ne ''click''.{0,120}return') { throw 'Show-BobTrayCard must refuse non-click reasons' }
     if ($traySrc -match '(?s)overTip.{0,240}cardClosed = \$false') { throw 'must not rearm hover by clearing cardClosed when leaving the tip' }
     if ($traySrc -match 'function Restore-BobNativeTip') { throw 'must not restore NotifyIcon.Text (white P+ idle chip is the double dialog)' }
     if ($traySrc -match '\$notify\.Text = \$') { throw 'must not assign NotifyIcon.Text from a short P+ string' }

@@ -3,8 +3,9 @@
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
 # No WinRM. See docs/bob-fleet-peer-peek.md.
-# GOOD UI: dark TipForm (hover and click). BAD: native NotifyIcon.Text
-# white chip (P+ idle …) — keep Text empty via Clear-BobNativeTip always.
+# GOOD UI: dark TipForm on left-click / Status only. Hover must not
+# Show-BobTrayCard (that stacked a second card). BAD: native
+# NotifyIcon.Text white chip (P+ idle …) — Clear-BobNativeTip always.
 # Exactly one TipForm; never Form.Show after ShowParkedAt.
 # Replaces the blank Interactive PowerShell window.
 # Not a Windows service. Requires powershell.exe -STA.
@@ -759,10 +760,11 @@ $hideTip.Add_Tick({
     })
 
 function Show-BobTrayCard {
-    param([string]$Reason = 'hover')
+    param([string]$Reason = 'click')
     try {
-        if ($script:cardClosed -and $Reason -ne 'click') { return }
-        if ($Reason -eq 'click') { $script:cardClosed = $false }
+        # Click / Status only. MouseMove and iconProbe must not stack a second TipForm.
+        if ($Reason -ne 'click') { return }
+        $script:cardClosed = $false
         if (-not (Test-BobTrayTipAlive)) {
             Initialize-BobTrayTipForm
             Write-TrayLog 'tip recreated after dispose'
@@ -795,7 +797,7 @@ function Show-BobTrayCard {
                     $script:tip = $null
                     if (-not $script:tipRecreating) {
                         $script:tipRecreating = $true
-                        try { Show-BobTrayCard -Reason $Reason }
+                        try { Show-BobTrayCard -Reason 'click' }
                         finally { $script:tipRecreating = $false }
                     }
                     return
@@ -855,12 +857,8 @@ $notify.Add_MouseClick({
         }
     })
 $notify.Add_MouseMove({
-        $rect = $script:iconRectCache
-        if (-not $rect -or [string]$rect.Source -ne 'icon') { return }
-        $pt = [System.Windows.Forms.Cursor]::Position
-        if (-not (Test-BobTrayPointInRect $pt $rect -Pad 6)) { return }
+        # Hover only pops the native chip. Never Show-BobTrayCard here.
         Clear-BobNativeTip
-        Show-BobTrayCard -Reason 'hover'
     })
 
 $flash = New-Object System.Windows.Forms.Timer
@@ -908,18 +906,6 @@ $iconProbe.Add_Tick({
             $script:iconRectCache = Get-BobNotifyIconRect $notify
             $pt = [System.Windows.Forms.Cursor]::Position
             Clear-BobNativeTip
-            $overIcon = $false
-            if ($script:iconRectCache -and [string]$script:iconRectCache.Source -eq 'icon') {
-                $overIcon = Test-BobTrayPointInRect $pt $script:iconRectCache -Pad 2
-            }
-            if ($overIcon) {
-                Show-BobTrayCard -Reason 'probe'
-            }
-            elseif ($script:cardClosed) {
-                # Rearm hover only after the pointer leaves the icon, not the tip
-                # (leaving the tip while still over the icon would pop the card back).
-                $script:cardClosed = $false
-            }
             if (Test-BobTrayTipVisible) {
                 $tipRect = @{ X = $script:tip.Left; Y = $script:tip.Top; Width = $script:tip.Width; Height = $script:tip.Height }
                 if (Test-BobTrayPointInRect $pt $tipRect -Pad 4) {
