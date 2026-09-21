@@ -1,5 +1,15 @@
 # Skill harvest log
 
+## 2026-09-21 — running Bob jobs (dispatcher playbook)
+
+Fleet runs of `bob-job-loop` across agentic_build / agentic_irc / open-tts.
+Promote: `tools/run-bob-build-loop.ps1` (credential-manager GH_TOKEN first),
+unique LogPath, isolated worktree per FR, pin existing PRs with `-Sha`/`-Pr`,
+FIX PR titles match `priorMrbIssue`, gh JSON unzip, `$PID` not overwritten,
+cursor-agent status stderr non-fatal, Add-Content log lock fallback.
+`bob-job-loop` skill owns the dispatcher hard rules. Driver files:
+`Start-BobBuildLoop.ps1`, `Bob-BuildLoop.ps1`, `Start-BobCursor.ps1`.
+
 ## 2026-09-20 — build/MRB loop driver (notify on PASS-nits)
 
 `bob-job-loop` / `tools/Start-BobBuildLoop.ps1`: dispatcher launches one

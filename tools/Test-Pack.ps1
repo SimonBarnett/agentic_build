@@ -2267,6 +2267,74 @@ Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
     if ($mrbCalls.Count -lt 1) { throw 'TestStartMrb not invoked on retry_job' }
 }
 
+Invoke-Case 'BT0loop10 ConvertFrom-BobGhJsonList keeps issue body' {
+    param($bridgeRoot)
+    $bodyA = @"
+## Required fixes
+- Gate unzip A
+"@
+    $bodyB = @"
+## Required fixes
+- Gate unzip B
+"@
+    $unzipped = [pscustomobject]@{
+        number    = @(8, 9)
+        url       = @(
+            'https://github.com/fixture/repo/issues/8'
+            'https://github.com/fixture/repo/issues/9'
+        )
+        title     = @('MRB FAIL: a', 'MRB FAIL: b')
+        body      = @($bodyA, $bodyB)
+        createdAt = @('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')
+    }
+    $raw = (@($unzipped) | ConvertTo-Json -Depth 6)
+    $items = @(ConvertFrom-BobGhJsonList $raw)
+    if ($items.Count -ne 2) { throw "expected 2 issues, got $($items.Count)" }
+    if (-not [string]$items[0].body) { throw 'first issue body empty after unzip' }
+    if (-not [string]$items[1].body) { throw 'second issue body empty after unzip' }
+    $fixes = Get-BobMrbRequiredFixes ([string]$items[0].body)
+    if ($fixes -notmatch 'Gate unzip A') { throw "fixes from unzipped body: $fixes" }
+}
+
+Invoke-Case 'BT0loop11 Select-BobBuildLoopPr title hash contract' {
+    param($bridgeRoot)
+    $mkPr = {
+        param($title, $created)
+        [pscustomobject]@{
+            number    = 1
+            url       = 'https://github.com/fixture/repo/pull/1'
+            title     = $title
+            branch    = 'work/fix'
+            sha       = 'deadbeefcafebabe'
+            createdAt = $created
+        }
+    }
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.watchAfter = $null
+    $harvestTitle = 'harvest: bob-job dispatcher playbook and loop hardening'
+    $prs = @(
+        & $mkPr $harvestTitle '2026-09-21T12:00:00Z'
+    )
+    if (Select-BobBuildLoopPr -State $state -Prs $prs) { throw 'title without issue hash must not match' }
+    $prs = @(& $mkPr 'issue #107' '2026-09-21T12:00:00Z')
+    $picked = Select-BobBuildLoopPr -State $state -Prs $prs
+    if (-not $picked -or [string]$picked.title -notmatch '#107') { throw 'issue #107 title must match' }
+    $state.priorMrbIssue = 21
+    $prs = @(& $mkPr 'Fix issue #21' '2026-09-21T12:01:00Z')
+    $picked = Select-BobBuildLoopPr -State $state -Prs $prs
+    if (-not $picked -or [string]$picked.title -notmatch '#21') { throw 'Fix issue #priorMrbIssue must match' }
+}
+
+Invoke-Case 'BT0loop12 build and fix goals require title hash' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $buildGoal = New-BobBuildGoal -State $state
+    if ($buildGoal -notmatch '#107') { throw "build goal missing #107: $buildGoal" }
+    $fixGoal = New-BobFixGoal -MrbUrl 'https://github.com/fixture/repo/issues/110' -Fixes '- Fix A' -FrIssue 107
+    if ($fixGoal -notmatch '#107') { throw 'fix goal missing FR hash' }
+    if ($fixGoal -notmatch '#110') { throw 'fix goal missing MRB hash' }
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
