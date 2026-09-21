@@ -1,4 +1,4 @@
-# agentic_build
+﻿# agentic_build
 
 Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build-fleet`. Grok Bot desktop runs on every build box; `grok.exe` is the Windows logon user (MSSQL integrated auth).
 
@@ -16,7 +16,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | bob-spec-intake | Park FR issue + `/docs` md |
 | bob-build-dispatch | Write plan + `Start-BobBuild -Task git` |
 | bob-job-loop | `Start-BobBuildLoop.ps1` retry + PASS-nits notify |
-| bob-hostile-mrb / cursor-mrb-dev | Hand off MRB; FAIL → FIX; PASS-nits merges |
+| bob-hostile-mrb / cursor-mrb-dev | Hand off MRB; FAIL â†’ FIX; PASS-nits merges |
 | grok-build-fleet | Start/monitor/stop; picker; heal `Watch-BobJobs` |
 | bob-build-loop | Pointer to the five rows above (no separate ritual) |
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
@@ -59,7 +59,7 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
 4. `Start-BobBuildLoop.ps1` (or `Start-BobBuild -Task git`) to implement and **open a PR**.
-5. Same PR/MRB transaction as above (new issue per PR head; FAIL → FIX worker → new PR → re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
+5. Same PR/MRB transaction as above (new issue per PR head; FAIL â†’ FIX worker â†’ new PR â†’ re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
 
@@ -110,8 +110,8 @@ Use **BobBridge** for job lifecycle (`Start-BobBuild -Task git`, `Send-BobBuildS
 
 Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** on private Ergo `irc.ntsa.uk:6697` (`#bobiverse`, skill `bob-irc`).
 
-- `scripts/irc_agent.py` — TLS join, PASS from env / connect file, announce AGPK.
-- `scripts/seal.py` — SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump `inbox/*.bin` into chat.
+- `scripts/irc_agent.py` â€” TLS join, PASS from env / connect file, announce AGPK.
+- `scripts/seal.py` â€” SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump `inbox/*.bin` into chat.
 - IRC verbs (no vendor names): `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`. Pass the MRB issue URL on `FIX`.
 - Two agents on one box need different `--home` / `AGENTIC_IRC_HOME` directories.
 
@@ -165,6 +165,7 @@ docs/            feature requests, plans, harvest log
 schemas/         health overlay status completion prompt-packet
 src/             BobBridge module (Public/Private)
 config/          default.json, bobiverse.json, bob-seats.json
-tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, Start-BobMrbHandoff, Test-Pack
+tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, run-bob-build-loop, Start-BobMrbHandoff, Test-Pack
 tests/           last-dev-run.md template
 ```
+

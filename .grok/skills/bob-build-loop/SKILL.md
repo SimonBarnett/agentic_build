@@ -18,4 +18,9 @@ This skill does **not** define its own workflow. Use the map in `README.md`:
 | Hand off hostile MRB / FIX | `bob-hostile-mrb` or `cursor-mrb-dev` |
 | Start/monitor fleet jobs, heal watcher | `grok-build-fleet` |
 
-Hard rules (unchanged): workers open PRs; never push `main`; never merge your own PR; PASS-nits merge is the MRB agent; only Bob stamps ready for human UAT.
+Hard rules (unchanged): workers open PRs; never push `main`; never merge your
+own PR; PASS-nits merge is the MRB agent; only Bob stamps ready for human UAT.
+
+**New worker rule (MRB):** pass to a **new** worker when MRB **FAIL** (FIX),
+**or** when any open `feature-request` issues remain after PASS-nits /
+Missing features park. Home: `bob-job-loop` / `bob-hostile-mrb`.
