@@ -2304,17 +2304,53 @@ Invoke-Case 'BT0loop10 ConvertFrom-BobGhJsonList keeps issue body' {
     if ($uFixes -notmatch 'Unzip body kept') { throw "body dropped on unzip reconstruct: '$uFixes' body='$($rows[0].body)'" }
 }
 
-Invoke-Case 'BT0loop11 MrbHandoff accepts -Pr' {
+Invoke-Case 'BT0loop11 Select-BobBuildLoopPr title hash contract' {
     param($bridgeRoot)
-    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
-    $cmd = Get-Command $handoff -ErrorAction Stop
-    # Script params: ensure Pr is declared
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile($handoff, [ref]$null, [ref]$null)
-    $params = $ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }
-    if ($params -notcontains 'Pr') { throw "Start-BobMrbHandoff missing -Pr (have: $($params -join ','))" }
-    $loopSrc = Get-Content (Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1') -Raw
-    if ($loopSrc -notmatch "hArgs\['Pr'\]") { throw 'Start-BobBuildLoop must pass -Pr to handoff when currentPr set' }
-    if ($loopSrc -match 'has no -Pr') { throw 'false no -Pr comment must not remain' }
+    $mkPr = {
+        param($title, $created, $num)
+        if (-not $num) { $num = 1 }
+        [pscustomobject]@{
+            number    = $num
+            url       = "https://github.com/fixture/repo/pull/$num"
+            title     = $title
+            branch    = 'work/fix'
+            sha       = 'deadbeefcafebabe'
+            createdAt = $created
+        }
+    }
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.watchAfter = $null
+    $harvestTitle = 'harvest: bob-job dispatcher playbook and loop hardening'
+    $prs = @(
+        & $mkPr $harvestTitle '2026-09-21T12:00:00Z'
+    )
+    if (Select-BobBuildLoopPr -State $state -Prs $prs) { throw 'title without issue hash must not match' }
+    $prs = @(& $mkPr 'issue #107' '2026-09-21T12:00:00Z')
+    $picked = Select-BobBuildLoopPr -State $state -Prs $prs
+    if (-not $picked -or [string]$picked.title -notmatch '#107') { throw 'issue #107 title must match' }
+    $state.priorMrbIssue = 21
+    $prs = @(& $mkPr 'Fix issue #21' '2026-09-21T12:01:00Z')
+    $picked = Select-BobBuildLoopPr -State $state -Prs $prs
+    if (-not $picked -or [string]$picked.title -notmatch '#21') { throw 'Fix issue #priorMrbIssue must match' }
+    # Hostile probe (#115): unrelated #91 must not win when Fix issue #priorMrbIssue exists
+    $state.priorMrbIssue = 119
+    $prs = @(
+        & $mkPr $harvestTitle '2026-09-21T12:00:00Z' 1
+        & $mkPr 'Fix issue #119' '2026-09-21T12:02:00Z' 2
+        & $mkPr 'Tray: Cursor pool bars (#91)' '2026-09-21T12:03:00Z' 3
+    )
+    $picked = Select-BobBuildLoopPr -State $state -Prs $prs
+    if (-not $picked -or [int]$picked.number -ne 2) { throw "expected PR #2 Fix #119, got #$($picked.number) $($picked.title)" }
+}
+
+Invoke-Case 'BT0loop12 build and fix goals require title hash' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $buildGoal = New-BobBuildGoal -State $state
+    if ($buildGoal -notmatch 'PR title must include #107') { throw "build goal missing title hash: $buildGoal" }
+    $fixGoal = New-BobFixGoal -MrbUrl 'https://github.com/fixture/repo/issues/110' -Fixes '- Fix A' -FrIssue 107
+    if ($fixGoal -notmatch '#107') { throw 'fix goal missing FR hash' }
+    if ($fixGoal -notmatch '#110') { throw 'fix goal missing MRB hash' }
 }
 
 # --- BT0house fleet docs / skills surface ---
