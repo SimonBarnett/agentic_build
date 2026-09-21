@@ -60,7 +60,9 @@ Prefer instructional wording for secrets ("do not set an API key environment var
 
 - Tell the human `jobId` + machine.
 - Poll `Get-BobBuild` / reply_channel pings (see `grok-build-fleet`).
-- On the worker PR, run `bob-hostile-mrb` / `cursor-mrb-dev` (GitHub issue, not a PDF). FAIL spawns a FIX worker. PASS-nits merges.
+- On the worker PR, run `bob-job-loop` (`Start-BobBuildLoop.ps1`) so MRB/FIX
+  retries until PASS-nits (GitHub issue, not a PDF). Single-SHA handoff:
+  `bob-hostile-mrb` / `cursor-mrb-dev`.
 
 ## Long jobs
 

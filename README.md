@@ -17,6 +17,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
 | cursor-mrb-dev | Hand off MRB then FIX until PASS-nits; PASS-nits merges; FAIL spawns a worker |
+| bob-job-loop | Run `Start-BobBuildLoop.ps1`; retry failed cursor/grok jobs; notify on PASS-nits |
 | bob-build-loop | Orchestrator: park, PR worker, MRB, merge or FIX, UAT stamp |
 | bob-spec-intake | Park FR as GitHub issue + `/docs` markdown |
 | bob-build-dispatch | Write build-and-test plan + `Start-BobBuild -Task git` |
@@ -35,9 +36,9 @@ When another agent cannot complete a task, they write a **functional specificati
 1. Create a **new public** GitHub repository under `SimonBarnett`.
 2. Commit the functional specification under `/docs`.
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
-4. `Start-BobBuild -Task git` (picker: Cursor Models remaining > 0, else grok-build).
+4. `Start-BobBuildLoop.ps1` (skill `bob-job-loop`) starts the git worker, hands off MRB, retries failed cursor/grok jobs, and prints `DONE` on PASS-nits. Or `Start-BobBuild -Task git` (picker: Cursor Models remaining > 0, else grok-build) and hand each row yourself.
 5. Worker implements on `work/<job>` and **opens a PR**. Never push `main`. Never merge.
-6. Bob **hands off** hostile MRB on that PR (`tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
+6. Bob **hands off** hostile MRB on that PR (`Start-BobBuildLoop.ps1` or `tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
 7. **FAIL:** do not merge; immediately dispatch a FIX worker; that worker opens a **new** PR; re-MRB. **PASS-nits:** the MRB agent merges the PR (nits do not block). Repeat until PASS-nits. Only **Bob** stamps **ready for human UAT**.
 
 ### Feature request (extends existing repo)
@@ -45,7 +46,7 @@ When another agent cannot complete a task, they write a **functional specificati
 1. Must **not break** previous versions.
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
-4. `Start-BobBuild -Task git` to implement and **open a PR**.
+4. `Start-BobBuildLoop.ps1` (or `Start-BobBuild -Task git`) to implement and **open a PR**.
 5. Same PR/MRB transaction as above (new issue per PR head; FAIL → FIX worker → new PR → re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
@@ -152,6 +153,6 @@ docs/            feature requests, plans, harvest log
 schemas/         health overlay status completion prompt-packet
 src/             BobBridge module (Public/Private)
 config/          default.json, bobiverse.json, bob-seats.json
-tools/           Watch-BobJobs, Watch-BobTray, Start-BobMrbHandoff, Test-Pack
+tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, Start-BobMrbHandoff, Test-Pack
 tests/           last-dev-run.md template
 ```

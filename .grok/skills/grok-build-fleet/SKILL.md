@@ -105,8 +105,8 @@ When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-
 
 For functional-spec intake, PR dispatch, and hostile MRB (Bob **hands off**;
 PASS-nits merges; FAIL spawns a worker; no PDFs) see `bob-build-loop`,
-`bob-spec-intake`, `bob-build-dispatch`, `bob-hostile-mrb`, and
-`cursor-mrb-dev`.
+`bob-spec-intake`, `bob-build-dispatch`, `bob-hostile-mrb`,
+`cursor-mrb-dev`, and `bob-job-loop` (`Start-BobBuildLoop.ps1`).
 
 ## Long builds (do not kill early)
 
