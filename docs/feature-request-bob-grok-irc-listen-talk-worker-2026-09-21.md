@@ -1,5 +1,6 @@
 # Feature request: Grok-talk worker (consume IRC inbox, write completions)
 
+**Plan:** `docs/build-and-test-plan-bob-grok-irc-listen-talk-worker-2026-09-21.md`
 **Date:** 2026-09-21
 **Repo:** https://github.com/SimonBarnett/agentic_build
 **Sister (hook + wire, landed on agentic_irc #56):**
