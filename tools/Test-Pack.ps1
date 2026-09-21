@@ -1193,71 +1193,83 @@ Invoke-Case 'BT0o2 cursor models spending meter' {
     $env:BOB_MACHINE_ID = $null
 }
 
-# --- BT0l3 tray cursor pools + !report task lines (issue #91) ---
+# --- BT0l3 tray cursor pools + !report #36 digest (issues #91 / #100) ---
 Invoke-Case 'BT0l3 tray cursor pools report' {
     param($bridgeRoot)
     $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
     $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
     $poolsFile = Join-Path $bridgeRoot 'cursor-pools-fixture.json'
     @'
 {
   "by_seat": {
-    "smart-catalogue": { "remaining_pct": 9, "period_end": "2026-09-23T00:00:00Z" },
-    "club-madeira": { "remaining_pct": 8, "period_end": "2026-09-26T00:00:00Z" }
+    "smart-catalogue": { "remaining_pct": 99, "period_end": "2026-09-23T00:00:00Z" },
+    "club-madeira": { "remaining_pct": 8, "period_end": "2026-09-26T00:00:00Z" },
+    "ntsa": { "remaining_pct": 5, "period_end": "2026-09-22T00:00:00Z" }
   }
 }
 '@ | Set-Content -Path $poolsFile -Encoding utf8
     Copy-Item -LiteralPath $poolsFile -Destination (Join-Path $bridgeRoot 'cursor-pools.json') -Force
 
-    $runDir = Join-Path $bridgeRoot 'fleet\running\ionos'
-    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-    $jobId = '11111111-2222-3333-4444-555566667777'
-    $job = [pscustomobject]@{
-        id          = $jobId
-        machine     = 'ionos'
-        repo        = 'SimonBarnett/agentic_irc'
-        sha         = '395c499'
-        model       = 'composer-2.5'
-        description = 'report digest'
-        claimedAt   = [DateTime]::UtcNow.AddMinutes(-2).ToString('o')
-        state       = 'running'
-    }
-    [IO.File]::WriteAllText((Join-Path $runDir ($jobId + '.json')), ($job | ConvertTo-Json -Depth 6))
-
-    $h = Get-BobTrayHover
-    if (@($h.cursor_pools).Count -lt 3) { throw "cursor_pools=$(@($h.cursor_pools).Count)" }
-    if ([string]$h.jobs_text -notmatch '(?m)Smart Catalogue  Models  9%') { throw "missing seat-A bar: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)Club Madeira  Models  8%') { throw "missing seat-B bar: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '395c499') { throw "missing sha in job line: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch 'report digest') { throw "missing description: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -match 'grok\.exe \?') { throw "must not show grok.exe ?: $($h.jobs_text)" }
-
-    Remove-Item -LiteralPath (Join-Path $runDir ($jobId + '.json')) -Force -ErrorAction SilentlyContinue
-    $hIdle = Get-BobTrayHover
-    if ([string]$hIdle.jobs_text -notmatch '(?m)ionos[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*?[ ]+no jobs') { throw "idle ionos must say no jobs: $($hIdle.jobs_text)" }
-
     $ircHome = Join-Path $bridgeRoot 'irc-digest'
     New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
-    $digest = @{
-        tasks = @(
-            @{
-                machine     = 'ionos'
-                state       = 'START'
-                repo        = 'SimonBarnett/agentic_irc'
-                sha         = 'abcd123'
-                model       = 'grok-4.6'
-                description = 'house-clean'
-                run_time    = '1m52s'
-            }
-        )
+    @'
+{
+  "machines": {
+    "ionos": {
+      "task": {
+        "repo": "SimonBarnett/agentic_build",
+        "sha": "deadbee",
+        "model": "composer-2.5",
+        "description": "digest fixture line",
+        "run_time": "3m11s",
+        "state": "START"
+      },
+      "pcent": {
+        "cursor-models": 9,
+        "grok-build": 12
+      },
+      "uptime_since": "2026-09-21T08:00:00Z"
+    },
+    "flamingo": {
+      "task": {
+        "repo": "SimonBarnett/agentic_irc",
+        "sha": "cafebad",
+        "model": "grok-4.6",
+        "description": "peer digest task",
+        "run_time": "1m52s",
+        "state": "START"
+      },
+      "pcent": {
+        "cursor-models": 37
+      }
+    },
+    "marchhare": {},
+    "ce-priority-dev1": {
+      "pcent": {
+        "cursor-models": 0
+      }
     }
-    [IO.File]::WriteAllText((Join-Path $ircHome 'bob-peers\_report-digest.json'), ($digest | ConvertTo-Json -Depth 6))
+  }
+}
+'@ | Set-Content -Path (Join-Path $ircHome 'bob-peers\_report-digest.json') -Encoding utf8
     $env:BOB_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_HOME = $ircHome
-    $hDig = Get-BobTrayHover
-    if ([string]$hDig.jobs_text -notmatch 'abcd123') { throw "digest sha missing: $($hDig.jobs_text)" }
-    if ([string]$hDig.jobs_text -notmatch 'house-clean') { throw "digest description missing: $($hDig.jobs_text)" }
-    if ([string]$hDig.jobs_text -notmatch '1m52s') { throw "digest run_time missing: $($hDig.jobs_text)" }
+
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if (@($h.cursor_pools).Count -lt 3) { throw "cursor_pools=$(@($h.cursor_pools).Count)" }
+    if ($txt -notmatch '(?m)Smart Catalogue  Models  9%') { throw "Smart Catalogue bar must use ionos digest pcent: $txt" }
+    if ($txt -notmatch '(?m)Club Madeira  Models  37%') { throw "Club Madeira bar must use flamingo cursor-models pcent: $txt" }
+    if ($txt -notmatch '(?m)ntsa  Models  0%') { throw "ntsa seat must show 0% not n/a: $txt" }
+    if ($txt -notmatch 'deadbee') { throw "ionos digest sha missing: $txt" }
+    if ($txt -notmatch 'digest fixture line') { throw "ionos description missing: $txt" }
+    if ($txt -notmatch '3m11s') { throw "ionos run_time missing: $txt" }
+    if ($txt -notmatch 'cafebad') { throw "flamingo digest sha missing: $txt" }
+    if ($txt -notmatch 'up since 2026-09-21T08:00:00Z') { throw "ionos uptime_since missing: $txt" }
+    if ($txt -notmatch '(?m)marchhare[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*?[ ]+no jobs') { throw "idle marchhare must say no jobs: $txt" }
+    if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
+    if ($txt -match '395c499|abcd123') { throw "must not rely on invented tasks[] fixture shas: $txt" }
 
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'CursorPools') { throw 'Watch-BobTray must paint cursor pool bars' }

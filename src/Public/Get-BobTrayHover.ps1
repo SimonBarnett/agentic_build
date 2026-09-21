@@ -612,6 +612,111 @@ function Format-BobTrayJobLine {
     return ($parts -join '  ')
 }
 
+function ConvertTo-BobTrayIntOrNull {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if (($Value -is [string]) -and [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    try { return [int]$Value } catch { return $null }
+}
+
+function Expand-BobReportDigestView {
+    param($Digest)
+    $tasksByMachine = @{}
+    $uptimeByMachine = @{}
+    $pcentRows = @()
+    if (-not $Digest) {
+        return [pscustomobject]@{ tasksByMachine = $tasksByMachine; uptimeByMachine = $uptimeByMachine; pcentRows = $pcentRows }
+    }
+
+    $machineNodes = @()
+    if ($Digest.machines) {
+        foreach ($prop in @($Digest.machines.PSObject.Properties)) {
+            $machineNodes += ,@{
+                id   = [string]$prop.Name
+                node = $prop.Value
+            }
+        }
+    }
+
+    if ($machineNodes.Count -gt 0) {
+        foreach ($mn in $machineNodes) {
+            $mid = Resolve-BobiverseMachineId ([string]$mn.id)
+            if (-not $mid) { continue }
+            $node = $mn.node
+            if (-not $node) { continue }
+            if ($node.task) {
+                $task = $node.task
+                if (-not $task.machine) {
+                    $task = [pscustomobject]@{
+                        machine     = $mid
+                        repo        = $(if ($task.repo) { [string]$task.repo } else { $null })
+                        sha         = $(if ($task.sha) { [string]$task.sha } else { $null })
+                        model       = $(if ($task.model) { [string]$task.model } else { $null })
+                        description = $(if ($task.description) { [string]$task.description } else { $null })
+                        run_time    = $(if ($task.run_time) { [string]$task.run_time } else { $null })
+                        state       = $(if ($task.state) { [string]$task.state } else { 'START' })
+                    }
+                }
+                if (-not $tasksByMachine.ContainsKey($mid)) { $tasksByMachine[$mid] = @() }
+                $tasksByMachine[$mid] += ,(ConvertFrom-BobReportDigestTask -Task $task -DefaultMachine $mid)
+            }
+            if ($node.uptime_since) {
+                $uptimeByMachine[$mid] = [string]$node.uptime_since
+            }
+            if ($node.pcent) {
+                foreach ($pcProp in @($node.pcent.PSObject.Properties)) {
+                    $src = [string]$pcProp.Name
+                    if (-not $src) { continue }
+                    $pct = ConvertTo-BobTrayIntOrNull $pcProp.Value
+                    if ($null -eq $pct) { continue }
+                    $pcentRows += ,[pscustomobject]@{
+                        machine = $mid
+                        source  = $src
+                        pct     = $pct
+                    }
+                }
+            }
+        }
+    }
+    else {
+        foreach ($t in @($Digest.tasks)) {
+            if (-not $t) { continue }
+            $tm = [string]$t.machine
+            if (-not $tm) { continue }
+            $tm = Resolve-BobiverseMachineId $tm
+            if (-not $tm) { continue }
+            if (-not $tasksByMachine.ContainsKey($tm)) { $tasksByMachine[$tm] = @() }
+            $tasksByMachine[$tm] += ,(ConvertFrom-BobReportDigestTask -Task $t -DefaultMachine $tm)
+        }
+        foreach ($u in @($Digest.uptime)) {
+            if (-not $u) { continue }
+            $um = [string]$u.machine
+            if (-not $um) { continue }
+            $um = Resolve-BobiverseMachineId $um
+            if (-not $um) { continue }
+            if ($u.since) { $uptimeByMachine[$um] = [string]$u.since }
+        }
+        foreach ($pc in @($Digest.pcent)) {
+            if (-not $pc) { continue }
+            $src = [string]$pc.source
+            if (-not $src) { continue }
+            $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+            if ($null -eq $pct) { continue }
+            $pcentRows += ,[pscustomobject]@{
+                machine = $(if ($pc.machine) { [string]$pc.machine } else { $null })
+                source  = $src
+                pct     = $pct
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        tasksByMachine  = $tasksByMachine
+        uptimeByMachine = $uptimeByMachine
+        pcentRows       = $pcentRows
+    }
+}
+
 function ConvertFrom-BobReportDigestTask {
     param($Task, [string]$DefaultMachine)
     if (-not $Task) { return $null }
@@ -640,7 +745,7 @@ function Get-BobCursorPoolsForTray {
     param(
         [string]$MachineId,
         $LocalCursorDoc,
-        $Digest
+        $PcentRows
     )
     $cache = Read-BobCursorPoolsCache
     $pools = @()
@@ -667,7 +772,7 @@ function Get-BobCursorPoolsForTray {
         }
         if ($cache.by_seat.ContainsKey($sid)) {
             $ce = $cache.by_seat[$sid]
-            if ($ce.remaining_pct -and $null -eq $remain) {
+            if ($null -ne $ce.remaining_pct -and [string]$ce.remaining_pct -ne '' -and $null -eq $remain) {
                 try { $remain = [int]$ce.remaining_pct } catch { }
             }
             if ($ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
@@ -680,7 +785,7 @@ function Get-BobCursorPoolsForTray {
         }
         if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
         elseif ($onSeat -and $LocalCursorDoc) {
-            $acct = Format-BobCursorAccountLabel -RemainingPct $null -UsedPct $(if ($used) { $used } else { $null })
+            $acct = Format-BobCursorAccountLabel -RemainingPct $null -UsedPct $(if ($null -ne $used) { $used } else { $null })
             if ($acct -and $acct -ne 'empty') {
                 $pctLabel = $acct
                 if (Test-BobCursorOverageLabel $acct) { $overageLabel = $acct }
@@ -705,32 +810,35 @@ function Get-BobCursorPoolsForTray {
             account_name    = 'Cursor Models'
         }
     }
-    if ($Digest -and $Digest.pcent) {
-        foreach ($pc in @($Digest.pcent)) {
-            if (-not $pc) { continue }
-            $src = [string]$pc.source
-            $pct = $null
-            if ($null -ne $pc.pct -and [string]$pc.pct -ne '') {
-                try { $pct = [int]$pc.pct } catch { }
-            }
-            if ($null -eq $pct) { continue }
+    foreach ($pc in @($PcentRows)) {
+        if (-not $pc) { continue }
+        $src = [string]$pc.source
+        if (-not $src) { continue }
+        $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+        if ($null -eq $pct) { continue }
+        $reportMac = [string]$pc.machine
+        if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
+        $seatId = $src
+        if ($src -eq 'cursor-models') {
+            $macForSeat = $MachineId
+            if ($reportMac) { $macForSeat = $reportMac }
+            $seat = Get-BobSeatForMachine -MachineId $macForSeat
+            if ($seat) { $seatId = [string]$seat.id }
+        }
+        elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
             $seatId = $src
-            if ($src -eq 'cursor-models') {
-                $seat = Get-BobSeatForMachine -MachineId $MachineId
-                if ($seat) { $seatId = [string]$seat.id }
+        }
+        foreach ($pool in $pools) {
+            if ([string]$pool.seat_id -eq $seatId) {
+                $pool.remaining_pct = $pct
+                $pool.pct_label = ('{0}%' -f $pct)
+                $pool.heading = ('{0}  Models  {1}' -f $pool.seat_label, $pool.pct_label)
+                if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
+                break
             }
-            foreach ($pool in $pools) {
-                if ([string]$pool.seat_id -eq $seatId) {
-                    $pool.remaining_pct = $pct
-                    $pool.pct_label = ('{0}%' -f $pct)
-                    $pool.heading = ('{0}  Models  {1}' -f $pool.seat_label, $pool.pct_label)
-                    if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
-                    break
-                }
-            }
-            if ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
-                Save-BobCursorPoolForSeat -SeatId $src -RemainingPct $pct
-            }
+        }
+        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
         }
     }
     return $pools
@@ -798,27 +906,10 @@ function Get-BobTrayHover {
 
     $reportDigest = $null
     try { $reportDigest = Read-BobReportDigest } catch { $reportDigest = $null }
-    $digestTasksByMachine = @{}
-    $uptimeByMachine = @{}
-    if ($reportDigest) {
-        foreach ($t in @($reportDigest.tasks)) {
-            if (-not $t) { continue }
-            $tm = [string]$t.machine
-            if (-not $tm) { $tm = $machineId }
-            $tm = Resolve-BobiverseMachineId $tm
-            if (-not $tm) { continue }
-            if (-not $digestTasksByMachine.ContainsKey($tm)) { $digestTasksByMachine[$tm] = @() }
-            $digestTasksByMachine[$tm] += ,(ConvertFrom-BobReportDigestTask -Task $t -DefaultMachine $tm)
-        }
-        foreach ($u in @($reportDigest.uptime)) {
-            if (-not $u) { continue }
-            $um = [string]$u.machine
-            if (-not $um) { continue }
-            $um = Resolve-BobiverseMachineId $um
-            if (-not $um) { continue }
-            if ($u.since) { $uptimeByMachine[$um] = [string]$u.since }
-        }
-    }
+    $digestView = Expand-BobReportDigestView -Digest $reportDigest
+    $digestTasksByMachine = $digestView.tasksByMachine
+    $uptimeByMachine = $digestView.uptimeByMachine
+    $digestPcentRows = @($digestView.pcentRows)
 
     $running = @()
     $queuedJobs = @()
@@ -905,20 +996,15 @@ function Get-BobTrayHover {
     if ($week) {
         Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd $(if ($week.period_end) { [string]$week.period_end } else { $null }) -Weekly $(if ($null -ne $week.remaining_pct) { [int]$week.remaining_pct } else { $null })
     }
-    if ($reportDigest -and $reportDigest.pcent) {
-        foreach ($pc in @($reportDigest.pcent)) {
-            if (-not $pc) { continue }
-            $src = [string]$pc.source
-            $mac = [string]$pc.machine
-            if ($mac) { $mac = Resolve-BobiverseMachineId $mac }
-            $pct = $null
-            if ($null -ne $pc.pct -and [string]$pc.pct -ne '') {
-                try { $pct = [int]$pc.pct } catch { }
-            }
-            if ($null -eq $pct) { continue }
-            if ($src -eq 'grok-build' -and $mac) {
-                $weeklyBy[$mac] = $pct
-            }
+    foreach ($pc in @($digestPcentRows)) {
+        if (-not $pc) { continue }
+        $src = [string]$pc.source
+        $mac = [string]$pc.machine
+        if ($mac) { $mac = Resolve-BobiverseMachineId $mac }
+        $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+        if ($null -eq $pct) { continue }
+        if ($src -eq 'grok-build' -and $mac) {
+            $weeklyBy[$mac] = $pct
         }
     }
     $cursorWeek = $null
@@ -1239,7 +1325,7 @@ function Get-BobTrayHover {
         }
     }
     catch { }
-    $cursorPools = @(Get-BobCursorPoolsForTray -MachineId $machineId -LocalCursorDoc $cursorWeek -Digest $reportDigest)
+    $cursorPools = @(Get-BobCursorPoolsForTray -MachineId $machineId -LocalCursorDoc $cursorWeek -PcentRows $digestPcentRows)
     $poolLines = @()
     foreach ($pool in $cursorPools) {
         if ($pool.heading) { $poolLines += ('  {0}' -f $pool.heading) }
