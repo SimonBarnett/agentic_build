@@ -90,7 +90,10 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    retry the MRB job.
 5. FAIL: do not merge. Read Required fixes. Start a FIX worker. Comment
    the new PR / next board on the prior FAIL issue.
-6. PASS-nits: the MRB worker already merged. Print `DONE` and exit 0.
+6. PASS-nits: the MRB worker already merged and closed the finished FR,
+   prior FAIL boards, and PASS board (see `Close-BobBuildLoopFinished` in
+   `tools/Bob-BuildLoop.ps1` if the worker skipped a close). Print `DONE`
+   and exit 0.
 
 Never Other Models. Copilot only with `-AllowCopilot`. No MRB PDF. No
 `password=` / `XAI_API_KEY=` assignments. Test-Pack seams: `-Once`

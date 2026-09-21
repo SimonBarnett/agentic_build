@@ -3,6 +3,10 @@
 
 $ErrorActionPreference = 'Stop'
 
+$_bobLoopTools = $PSScriptRoot
+if (-not $_bobLoopTools) { $_bobLoopTools = Split-Path $MyInvocation.MyCommand.Path }
+. (Join-Path $_bobLoopTools 'Bob-Gh.ps1')
+
 function Get-BobBuildLoopRoot {
     if ($env:BOB_BRIDGE_HOME -and $env:BOB_BRIDGE_HOME.Trim()) {
         return [IO.Path]::GetFullPath($env:BOB_BRIDGE_HOME)
@@ -416,6 +420,191 @@ function Get-BobBuildLoopPassStdout {
     $n = $(if ($Mrb -and $Mrb.number) { $Mrb.number } else { '' })
     $url = $(if ($Mrb -and $Mrb.url) { [string]$Mrb.url } else { [string]$State.lastMrb })
     return "DONE: MRB PASS-nits issue #$n SHA $sha PR $pr $url"
+}
+
+function Get-BobGhPrNumberFromUrl {
+    param([string]$Url)
+    if (-not $Url) { return 0 }
+    if ($Url -match '/pull/(\d+)') { return [int]$Matches[1] }
+    return 0
+}
+
+function New-BobPassNitsMergedCloseComment {
+    param(
+        [Parameter(Mandatory)][string]$PrUrl
+    )
+    return "PASS-nits finished. Merged PR: $PrUrl"
+}
+
+function Get-BobPassNitsClosePayload {
+    param(
+        [Parameter(Mandatory)]$State,
+        [int]$PassIssue = 0
+    )
+    $repo = [string]$State.repo
+    $prUrl = [string]$State.currentPr
+    $fr = 0
+    if ($State.issue) { $fr = [int]$State.issue }
+    $ordered = New-Object System.Collections.Generic.List[int]
+    if ($fr -gt 0) { [void]$ordered.Add($fr) }
+    foreach ($p in @($State.passes)) {
+        if ([string]$p.verdict -ne 'FAIL') { continue }
+        if (-not $p.issue) { continue }
+        try { $n = [int]$p.issue } catch { continue }
+        if ($n -le 0) { continue }
+        if ($ordered -notcontains $n) { [void]$ordered.Add($n) }
+    }
+    if ($PassIssue -le 0 -and $State.passes) {
+        $lastPass = @($State.passes) | Where-Object { [string]$_.verdict -eq 'PASS-nits' } | Select-Object -Last 1
+        if ($lastPass -and $lastPass.issue) {
+            try { $PassIssue = [int]$lastPass.issue } catch { }
+        }
+    }
+    if ($PassIssue -gt 0 -and ($ordered -notcontains $PassIssue)) {
+        [void]$ordered.Add($PassIssue)
+    }
+    $comment = New-BobPassNitsMergedCloseComment -PrUrl $prUrl
+    $issues = @()
+    foreach ($n in $ordered) {
+        $issues += [pscustomobject]@{ number = $n; comment = $comment }
+    }
+    return [pscustomobject]@{
+        repo    = $repo
+        prUrl   = $prUrl
+        prNumber = (Get-BobGhPrNumberFromUrl $prUrl)
+        issues  = $issues
+    }
+}
+
+function Test-BobGhPrIsMerged {
+    param(
+        [Parameter(Mandatory)][string]$Gh,
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][int]$PrNumber
+    )
+    if ($PrNumber -le 0) { return $false }
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $json = & $Gh pr view $PrNumber --repo $Repo --json state,merged 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { return $false }
+        if (-not $json.Trim()) { return $false }
+        $o = $json | ConvertFrom-Json
+        if ($o.PSObject.Properties['merged'] -and $o.merged -eq $true) { return $true }
+        if ([string]$o.state -eq 'MERGED') { return $true }
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
+}
+
+function Invoke-BobGhMergePrIfOpen {
+    param(
+        [Parameter(Mandatory)][string]$Gh,
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][int]$PrNumber
+    )
+    if ($PrNumber -le 0) {
+        return [pscustomobject]@{ ok = $false; message = 'no PR number on loop state' }
+    }
+    if (Test-BobGhPrIsMerged -Gh $Gh -Repo $Repo -PrNumber $PrNumber) {
+        return [pscustomobject]@{ ok = $true; merged = $true; alreadyMerged = $true }
+    }
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Gh pr merge $PrNumber --repo $Repo 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{ ok = $false; message = ("gh pr merge failed: {0}" -f $out.Trim()) }
+        }
+        if (-not (Test-BobGhPrIsMerged -Gh $Gh -Repo $Repo -PrNumber $PrNumber)) {
+            return [pscustomobject]@{ ok = $false; message = 'PR still open after gh pr merge' }
+        }
+        return [pscustomobject]@{ ok = $true; merged = $true; alreadyMerged = $false }
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
+}
+
+function Invoke-BobGhCloseIssueWithComment {
+    param(
+        [Parameter(Mandatory)][string]$Gh,
+        [Parameter(Mandatory)][string]$Repo,
+        [Parameter(Mandatory)][int]$IssueNumber,
+        [Parameter(Mandatory)][string]$Comment
+    )
+    if ($IssueNumber -le 0) { return [pscustomobject]@{ ok = $true } }
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Gh issue close $IssueNumber --repo $Repo --comment $Comment 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{ ok = $false; message = ("gh issue close #$IssueNumber failed: {0}" -f $out.Trim()) }
+        }
+        return [pscustomobject]@{ ok = $true }
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
+}
+
+function Invoke-BobPassNitsFinish {
+    param(
+        [Parameter(Mandatory)]$State,
+        [int]$PassIssue = 0,
+        [string]$Gh = $null
+    )
+    $payload = Get-BobPassNitsClosePayload -State $State -PassIssue $PassIssue
+    if (-not $payload.prUrl -or [int]$payload.prNumber -le 0) {
+        return [pscustomobject]@{
+            ok      = $false
+            message = 'FAILED: PASS-nits finish: loop state missing PR URL'
+            payload = $payload
+        }
+    }
+    if (-not $Gh) { $Gh = Get-BobGhExe }
+    if (-not $Gh) {
+        return [pscustomobject]@{
+            ok      = $false
+            message = 'FAILED: PASS-nits finish: gh.exe not found'
+            payload = $payload
+        }
+    }
+    $merge = Invoke-BobGhMergePrIfOpen -Gh $Gh -Repo ([string]$payload.repo) -PrNumber ([int]$payload.prNumber)
+    if (-not $merge.ok) {
+        return [pscustomobject]@{
+            ok      = $false
+            message = ("FAILED: PASS-nits finish: {0}" -f $merge.message)
+            payload = $payload
+        }
+    }
+    foreach ($item in @($payload.issues)) {
+        $close = Invoke-BobGhCloseIssueWithComment -Gh $Gh -Repo ([string]$payload.repo) -IssueNumber ([int]$item.number) -Comment ([string]$item.comment)
+        if (-not $close.ok) {
+            return [pscustomobject]@{
+                ok      = $false
+                message = ("FAILED: PASS-nits finish: {0}" -f $close.message)
+                payload = $payload
+            }
+        }
+    }
+    return [pscustomobject]@{
+        ok      = $true
+        message = $null
+        payload = $payload
+        merged  = $true
+    }
+}
+
+function Close-BobBuildLoopFinished {
+    param(
+        [Parameter(Mandatory)]$State,
+        [int]$PassIssue = 0,
+        [string]$Gh = $null
+    )
+    return Invoke-BobPassNitsFinish -State $State -PassIssue $PassIssue -Gh $Gh
 }
 
 function Get-BobBuildLoopRetryOrFail {

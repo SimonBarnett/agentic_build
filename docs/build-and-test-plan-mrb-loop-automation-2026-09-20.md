@@ -14,7 +14,8 @@ MRB FAIL. It does not stamp UAT.
 ## Non-goals
 
 - Changing FAIL / PASS-nits bars (`bob-hostile-mrb`).
-- Auto-merging or auto-closing the feature-request issue.
+- Auto-closing finished FR / MRB boards (issue #118 /
+  `docs/feature-request-pass-nits-close-finished-boards-2026-09-21.md`).
 - MRB PDFs.
 - Live GitHub or live `cursor-agent` in Test-Pack.
 

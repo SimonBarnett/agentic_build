@@ -2360,6 +2360,160 @@ Invoke-Case 'BT0loop12 build and fix goals require title hash' {
     if ($fixGoal -notmatch '#110') { throw 'fix goal missing MRB hash' }
 }
 
+# --- BT118 PASS-nits close finished boards (issue #118) ---
+Invoke-Case 'BT118a pass-nits close payload first try' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+    $passRow = [pscustomobject]@{
+        sha     = 'abc1234deadbeef'
+        pr      = 'https://github.com/fixture/repo/pull/2'
+        mrb     = 'https://github.com/fixture/repo/issues/115'
+        verdict = 'PASS-nits'
+        issue   = 115
+    }
+    $state = Add-BobBuildLoopPass -State $state -Pass $passRow
+    $payload = Get-BobPassNitsClosePayload -State $state -PassIssue 115
+    $nums = @($payload.issues | ForEach-Object { [int]$_.number })
+    if ($nums.Count -ne 2) { throw "expected FR+PASS, got $($nums -join ',')" }
+    if ($nums[0] -ne 107 -or $nums[1] -ne 115) { throw "order=$($nums -join ',')" }
+    if ($payload.issues[0].comment -notmatch [regex]::Escape($payload.prUrl)) { throw 'comment must link merged PR' }
+}
+
+Invoke-Case 'BT118b pass-nits close payload all fail boards' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+    foreach ($pair in @(@(110, 'FAIL'), @(113, 'FAIL'), @(115, 'PASS-nits'))) {
+        $state = Add-BobBuildLoopPass -State $state -Pass ([pscustomobject]@{
+            sha = 'abc1234deadbeef'; pr = 'https://github.com/fixture/repo/pull/2'
+            mrb = "https://github.com/fixture/repo/issues/$($pair[0])"
+            verdict = $pair[1]; issue = $pair[0]
+        })
+    }
+    $payload = Get-BobPassNitsClosePayload -State $state -PassIssue 115
+    $nums = @($payload.issues | ForEach-Object { [int]$_.number })
+    if ($nums -notcontains 107) { throw 'missing FR' }
+    if ($nums -notcontains 110 -or $nums -notcontains 113) { throw "missing FAIL boards: $($nums -join ',')" }
+    if ($nums -notcontains 115) { throw 'missing PASS board' }
+    if ($nums.Count -ne 4) { throw "expected 4 closes, got $($nums -join ',')" }
+}
+
+Invoke-Case 'BT118c pass-nits merge fail leaves boards open' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-merge-fail.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'merge-fail'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","merged":false}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $r = Invoke-BobPassNitsFinish -State $state -PassIssue 115 -Gh $fakeGh
+        if ($r.ok) { throw 'merge-fail must not succeed' }
+        if ($r.message -notmatch 'merge') { throw "message=$($r.message)" }
+        if (-not (Test-Path $log)) { throw 'log missing' }
+        $lines = @(Get-Content $log | Where-Object { $_.Trim() })
+        foreach ($line in $lines) {
+            $row = $line | ConvertFrom-Json
+            if ([string]$row.command -eq 'issue close' -or [string]$row.op -eq 'issue close') {
+                throw 'must not close issues when merge fails'
+            }
+        }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT118d pass-nits finish without gh' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+    $saved = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    try {
+        $r2 = Invoke-BobPassNitsFinish -State $state -PassIssue 115
+        if ($r2.ok) { throw 'missing gh must fail' }
+        if ($r2.message -notmatch 'gh\.exe not found') { throw "message=$($r2.message)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $saved
+    }
+}
+
+Invoke-Case 'BT118e loop pass testworld finish hook' {
+    param($bridgeRoot)
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 118
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 118 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd
+    $state.phase = 'wait_mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 200
+                title  = 'MRB PASS-nits: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/200'
+                body   = '## Verdict`nPASS-nits'
+            }
+        )
+    }
+    $finishCalls = New-Object System.Collections.Generic.List[int]
+    $r = & $loop -Issue 118 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestPassNitsFinish {
+        param($st, $passIssue)
+        [void]$finishCalls.Add($passIssue)
+        $payload = Get-BobPassNitsClosePayload -State $st -PassIssue $passIssue
+        if ($payload.issues.Count -lt 2) { throw 'hook expected FR+PASS payload' }
+        [pscustomobject]@{ ok = $true; payload = $payload }
+    }
+    if ($r.action -ne 'pass') { throw "action=$($r.action)" }
+    if (-not $r.ok) { throw "loop not ok stdout=$($r.stdout)" }
+    if ($finishCalls.Count -ne 1 -or $finishCalls[0] -ne 200) { throw 'finish hook not called with PASS issue' }
+    if ($r.stdout -notmatch '^DONE: MRB PASS-nits') { throw "stdout=$($r.stdout)" }
+}
+
+Invoke-Case 'BT118f pass-nits finish closes via fake gh' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-finish-ok.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","merged":false}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state = Add-BobBuildLoopPass -State $state -Pass ([pscustomobject]@{
+            sha = 'abc1234deadbeef'; pr = 'https://github.com/fixture/repo/pull/2'
+            mrb = 'https://github.com/fixture/repo/issues/115'; verdict = 'PASS-nits'; issue = 115
+        })
+        $r = Invoke-BobPassNitsFinish -State $state -PassIssue 115 -Gh $fakeGh
+        if (-not $r.ok) { throw "finish failed: $($r.message)" }
+        $closes = @(Get-Content $log | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.op -eq 'issue close' -or $_.command -eq 'issue close' })
+        if ($closes.Count -lt 2) { throw "expected issue close log lines, got $($closes.Count)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
 # --- BT0gtalk grok-talk inbox worker (#126 / #129) ---
 Invoke-Case 'BT0gtalk inbox outbox fuel' {
     param($bridgeRoot)

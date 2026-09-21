@@ -99,5 +99,41 @@ if ($joined -match '(?i)\bissue\s+list\b') {
     Exit-Mode 0
 }
 
+if ($joined -match '(?i)\bpr\s+view\b') {
+    Write-FakeGhLog 'pr view'
+    $json = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    if (-not $json) { $json = '{"state":"OPEN","merged":false}' }
+    Write-Output $json
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bpr\s+merge\b') {
+    Write-FakeGhLog 'pr merge'
+    if ($mode -eq 'merge-fail') {
+        [Console]::Error.WriteLine('Fake-Gh: pr merge denied')
+        Exit-Mode 1
+    }
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","merged":true}'
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bissue\s+close\b') {
+    Write-FakeGhLog 'issue close'
+    if ($mode -eq 'close-fail') {
+        [Console]::Error.WriteLine('Fake-Gh: issue close denied')
+        Exit-Mode 1
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        $entry = [ordered]@{
+            ts   = [DateTime]::UtcNow.ToString('o')
+            argv = $joined
+            op   = 'issue close'
+        }
+        [IO.File]::AppendAllText($log, (($entry | ConvertTo-Json -Compress) + [Environment]::NewLine))
+    }
+    Exit-Mode 0
+}
+
 Write-Error "Fake-Gh: unhandled: $joined"
 Exit-Mode 1

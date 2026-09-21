@@ -70,6 +70,7 @@ that loop. Today it is a human retyping `Start-BobMrbHandoff.ps1` with a new
 ## Non-goals
 
 - Changing the FAIL / PASS-nits bars (that is `bob-hostile-mrb`).
-- Auto-merging or auto-closing the feature-request issue.
+- Auto-closing finished FR / MRB boards (see issue #118 /
+  `docs/feature-request-pass-nits-close-finished-boards-2026-09-21.md`).
 - Any MRB PDF.
 - Letting the loop driver stamp ready for human UAT.
