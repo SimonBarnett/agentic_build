@@ -96,6 +96,9 @@ function Invoke-Case {
         $env:BOB_FAKE_GH_LOG = $null
         $env:BOB_FAKE_GH_QUIET = $null
         $env:BOB_MACHINE_ID = $null
+        $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
+        $env:BOB_GROK_TALK_TEST_THROW = $null
+        $env:AGENTIC_IRC_HOME = $null
     }
 }
 
@@ -2353,9 +2356,11 @@ Invoke-Case 'BT0loop12 build and fix goals require title hash' {
     if ($fixGoal -notmatch '#110') { throw 'fix goal missing MRB hash' }
 }
 
-# --- BT0gtalk grok-talk inbox worker (#126) ---
+# --- BT0gtalk grok-talk inbox worker (#126 / #129) ---
 Invoke-Case 'BT0gtalk inbox outbox fuel' {
     param($bridgeRoot)
+    $gtTalkSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobGrokTalk.ps1') -Raw
+    if ($gtTalkSrc -match 'Start-BobCursor') { throw 'grok-talk must not call Start-BobCursor (use Invoke-BobCursorModelsOneShot)' }
     $ircHome = Join-Path $bridgeRoot 'grok-talk-home'
     New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
     $env:BOB_IRC_HOME = $ircHome
@@ -2395,6 +2400,7 @@ Invoke-Case 'BT0gtalk inbox outbox fuel' {
     $outRows = @(Get-Content (Join-Path $ircHome 'grok-outbox.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
     if ($outRows.Count -ne 1) { throw "outbox lines=$($outRows.Count)" }
     $out = $outRows[0]
+    if ([int]$out.v -ne 1) { throw "out.v=$($out.v) expected 1" }
     if ([string]$out.job_id -ne 'deadbeefcafebabe') { throw "out job_id=$($out.job_id)" }
     if ([string]$out.reply_target -ne '#bobiverse') { throw "reply_target=$($out.reply_target)" }
     if (@($out.lines).Count -lt 1) { throw 'lines empty' }
@@ -2433,6 +2439,126 @@ Invoke-Case 'BT0gtalk inbox outbox fuel' {
     if ($watchBv -match 'Invoke-BobGrokTalkTick|grok-inbox') { throw 'Watch-Bobiverse must not run grok-talk worker' }
 
     $env:BOB_WEEKLY_LOG = $null
+    $env:BOB_MACHINE_ID = $null
+}
+
+Invoke-Case 'BT0gtalk cursor models outbox' {
+    param($bridgeRoot)
+    $ircHome = Join-Path $bridgeRoot 'grok-talk-cursor-home'
+    New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $env:BOB_MACHINE_ID = 'testhost'
+
+    $weekZero = Join-Path $bridgeRoot 'grok-talk-cursor-weekly-zero.jsonl'
+    [IO.File]::WriteAllText($weekZero, '{"ts":"2026-09-21T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":100.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
+    $env:BOB_WEEKLY_LOG = $weekZero
+    $cursorFile = Join-Path $bridgeRoot 'grok-talk-cursor-ten.json'
+    '{"percentUsed":10}' | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+
+    if ([string](Select-BobGrokTalkFuel) -ne 'cursor-models') { throw 'cursor>0 weekly=0 must pick cursor-models' }
+
+    $fixtureLine = 'Listen-talk completions are written to grok-outbox.jsonl on this machine.'
+    $env:BOB_GROK_TALK_CURSOR_FIXTURE = $fixtureLine
+
+    $inboxJob = @{
+        v            = 1
+        job_id       = 'cafebabedeadbeef'
+        ts           = 1758470600
+        asker        = 'simon'
+        channel      = '#bobiverse'
+        body         = 'what file gets the reply?'
+        nick         = 'bob-testhost'
+        machine_id   = 'testhost'
+        reply_target = '#bobiverse'
+        body_hash    = 'def456'
+    } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText((Join-Path $ircHome 'grok-inbox.jsonl'), $inboxJob + [Environment]::NewLine)
+
+    $tick = Invoke-BobGrokTalkTick -Cwd $RepoRoot
+    if (-not $tick.ok) { throw "cursor tick failed: $($tick | ConvertTo-Json -Compress)" }
+    if ([string]$tick.fuel -ne 'cursor-models') { throw "fuel=$($tick.fuel) expected cursor-models" }
+
+    $outRows = @(Get-Content (Join-Path $ircHome 'grok-outbox.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+    if ($outRows.Count -ne 1) { throw "cursor outbox lines=$($outRows.Count)" }
+    $out = $outRows[0]
+    if ([int]$out.v -ne 1) { throw "cursor out.v=$($out.v)" }
+    if ([string]$out.job_id -ne 'cafebabedeadbeef') { throw "cursor out job_id=$($out.job_id)" }
+    if (@($out.lines).Count -ne 1) { throw "cursor lines count=$(@($out.lines).Count) expected 1" }
+    if ([string]$out.lines[0] -ne $fixtureLine) { throw "cursor line mismatch: $($out.lines[0])" }
+
+    $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
+    $ircHome2 = Join-Path $bridgeRoot 'grok-talk-cursor-no-fixture'
+    New-Item -ItemType Directory -Force -Path $ircHome2 | Out-Null
+    $env:BOB_IRC_HOME = $ircHome2
+    $env:AGENTIC_IRC_HOME = $ircHome2
+    @{
+        v            = 1
+        job_id       = 'nocursorfixture01'
+        ts           = 1758470700
+        asker        = 'simon'
+        channel      = '#bobiverse'
+        body         = 'probe'
+        nick         = 'bob-testhost'
+        machine_id   = 'testhost'
+        reply_target = '#bobiverse'
+        body_hash    = 'zzz'
+    } | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $ircHome2 'grok-inbox.jsonl') -Encoding utf8
+    $emptyTick = Invoke-BobGrokTalkTick -Cwd $RepoRoot
+    if ($emptyTick.ok) { throw 'cursor>0 without fixture must not complete via Fake-Grok worker' }
+    if ($emptyTick.error -ne 'empty') { throw "expected empty got $($emptyTick | ConvertTo-Json -Compress)" }
+    if (Test-Path (Join-Path $ircHome2 'grok-outbox.jsonl')) { throw 'Fake-Grok must not write outbox without cursor fixture' }
+
+    $env:BOB_WEEKLY_LOG = $null
+    $env:BOB_CURSOR_USAGE_FILE = $null
+    $env:BOB_MACHINE_ID = $null
+}
+
+Invoke-Case 'BT0gtalk worker finally unwedge' {
+    param($bridgeRoot)
+    $ircHome = Join-Path $bridgeRoot 'grok-talk-wedge-home'
+    New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $env:BOB_MACHINE_ID = 'testhost'
+
+    $weekLog = Join-Path $bridgeRoot 'grok-talk-wedge-weekly.jsonl'
+    $weekLine = '{"ts":"2026-09-21T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":50.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-26T00:00:00Z"}}}}'
+    [IO.File]::WriteAllText($weekLog, $weekLine + [Environment]::NewLine)
+    $env:BOB_WEEKLY_LOG = $weekLog
+    $cursorFile = Join-Path $bridgeRoot 'grok-talk-wedge-cursor-empty.json'
+    '{"percentUsed":100}' | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+
+    @{
+        v            = 1
+        job_id       = 'wedge00000000001'
+        ts           = 1758470800
+        asker        = 'simon'
+        channel      = '#bobiverse'
+        body         = 'wedge probe'
+        nick         = 'bob-testhost'
+        machine_id   = 'testhost'
+        reply_target = '#bobiverse'
+        body_hash    = 'wedge'
+    } | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $ircHome 'grok-inbox.jsonl') -Encoding utf8
+
+    $env:BOB_GROK_TALK_TEST_THROW = '1'
+    try {
+        Invoke-BobGrokTalkTick -Cwd $RepoRoot | Out-Null
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'BT0gtalk inject worker throw') { throw $_.Exception.Message }
+    }
+    $env:BOB_GROK_TALK_TEST_THROW = $null
+    if (Test-Path (Join-Path $ircHome 'grok-talk-worker.json')) { throw 'grok-talk-worker.json must clear in finally after throw' }
+
+    $tick2 = Invoke-BobGrokTalkTick -Cwd $RepoRoot
+    if ($tick2.skipped -eq 'busy') { throw 'next tick wedged busy after worker throw' }
+
+    $env:BOB_WEEKLY_LOG = $null
+    $env:BOB_CURSOR_USAGE_FILE = $null
     $env:BOB_MACHINE_ID = $null
 }
 

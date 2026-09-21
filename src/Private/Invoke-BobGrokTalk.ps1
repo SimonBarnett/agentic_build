@@ -192,7 +192,8 @@ function Add-BobGrokTalkCompletion {
         lines        = @($safe)
     }
     $line = ($doc | ConvertTo-Json -Compress -Depth 4)
-    Add-Content -LiteralPath $paths.outbox -Value $line -Encoding utf8
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::AppendAllText($paths.outbox, $line + [Environment]::NewLine, $utf8)
     return $doc
 }
 
@@ -217,34 +218,7 @@ function Invoke-BobGrokTalkCursorSync {
         [string]$Model,
         [int]$TimeoutSec = 600
     )
-    if (-not $Model) { $Model = Get-BobJobModel -Kind build -Fuel cursor-models }
-    if (Test-BobUsesFakeGrok) {
-        $r = Start-BobWorker -Cwd $Cwd -Prompt $Prompt -Profile grok-talk -Title ('grok-talk-fake-' + [guid]::NewGuid().ToString('N')) -Force
-        if (-not $r.ok) { return $null }
-        $text = $null
-        if ($r.last_result -and $r.last_result.result) { $text = [string]$r.last_result.result }
-        elseif ($r.completion -and $r.completion.summary) { $text = [string]$r.completion.summary }
-        return $text
-    }
-    $agent = $null
-    try {
-        $cursorScript = Join-Path (Get-ModuleRoot) 'tools\Start-BobCursor.ps1'
-        if (-not (Test-Path $cursorScript)) { return $null }
-        $hand = & $cursorScript -Goal $Prompt -Cwd $Cwd -Repo 'grok-talk' -JobId ([guid]::NewGuid().ToString()) -Model $Model -NoLaunch
-        if (-not $hand -or -not $hand.logPath) { return $null }
-        $logPath = [string]$hand.logPath
-        if (-not (Test-Path $logPath)) { return $null }
-        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSec)
-        while ([datetime]::UtcNow -lt $deadline) {
-            if (Test-Path $logPath) {
-                $raw = Get-Content -LiteralPath $logPath -Raw -ErrorAction SilentlyContinue
-                if ($raw -and $raw.Trim()) { return [string]$raw.Trim() }
-            }
-            Start-Sleep -Seconds 2
-        }
-    }
-    catch { }
-    return $null
+    return Invoke-BobCursorModelsOneShot -Prompt $Prompt -Cwd $Cwd -Model $Model -TimeoutSec $TimeoutSec
 }
 
 function Invoke-BobGrokTalkRunJob {
@@ -264,48 +238,56 @@ function Invoke-BobGrokTalkRunJob {
             started_at = [DateTime]::UtcNow.ToString('o')
         })
 
-    $text = $null
-    switch ($Fuel) {
-        'grok-bot' {
-            $agent = 'Bob'
-            try {
-                $cfg = Read-JsonFile (Join-Path (Get-ModuleRoot) 'config\default.json')
-                if ($cfg -and $cfg.agents) {
-                    foreach ($p in $cfg.agents.PSObject.Properties) {
-                        if ([string]$p.Name -eq 'bob') { $agent = 'Bob'; break }
+    try {
+        if ($env:BOB_GROK_TALK_TEST_THROW -match '^(?i)(1|true|after_state)$') {
+            throw 'BT0gtalk inject worker throw'
+        }
+
+        $text = $null
+        switch ($Fuel) {
+            'grok-bot' {
+                $agent = 'Bob'
+                try {
+                    $cfg = Read-JsonFile (Join-Path (Get-ModuleRoot) 'config\default.json')
+                    if ($cfg -and $cfg.agents) {
+                        foreach ($p in $cfg.agents.PSObject.Properties) {
+                            if ([string]$p.Name -eq 'bob') { $agent = 'Bob'; break }
+                        }
                     }
                 }
+                catch { }
+                $r = Start-BobWorker -Cwd $Cwd -Prompt $prompt -Profile grok-talk -Title $title -Agent $agent -Force
+                if ($r.ok -and $r.last_result -and $r.last_result.result) { $text = [string]$r.last_result.result }
             }
-            catch { }
-            $r = Start-BobWorker -Cwd $Cwd -Prompt $prompt -Profile grok-talk -Title $title -Agent $agent -Force
-            if ($r.ok -and $r.last_result -and $r.last_result.result) { $text = [string]$r.last_result.result }
+            'cursor-models' {
+                $text = Invoke-BobGrokTalkCursorSync -Prompt $prompt -Cwd $Cwd
+            }
+            default {
+                $model = Get-BobJobModel -Kind build -Fuel grok-build
+                $r = Start-BobWorker -Cwd $Cwd -Prompt $prompt -Profile grok-talk -Title $title -Model $model -Force
+                if ($r.ok -and $r.last_result -and $r.last_result.result) { $text = [string]$r.last_result.result }
+            }
         }
-        'cursor-models' {
-            $text = Invoke-BobGrokTalkCursorSync -Prompt $prompt -Cwd $Cwd
-        }
-        default {
-            $model = Get-BobJobModel -Kind build -Fuel grok-build
-            $r = Start-BobWorker -Cwd $Cwd -Prompt $prompt -Profile grok-talk -Title $title -Model $model -Force
-            if ($r.ok -and $r.last_result -and $r.last_result.result) { $text = [string]$r.last_result.result }
-        }
-    }
 
-    Write-BobGrokTalkWorkerState $null
-    if (-not $text) {
-        return [pscustomobject]@{ ok = $false; error = 'empty'; reason = 'no model text' }
+        if (-not $text) {
+            return [pscustomobject]@{ ok = $false; error = 'empty'; reason = 'no model text' }
+        }
+        $lines = @(ConvertTo-BobGrokTalkOutLines -Text $text)
+        if ($lines.Count -eq 0) {
+            return [pscustomobject]@{ ok = $false; error = 'refuse'; reason = 'lines blocked' }
+        }
+        $comp = Add-BobGrokTalkCompletion -Job $Job -Lines $lines
+        if (-not $comp) {
+            return [pscustomobject]@{ ok = $false; error = 'refuse'; reason = 'completion blocked' }
+        }
+        return [pscustomobject]@{
+            ok         = $true
+            job_id     = [string]$Job.job_id
+            fuel       = $Fuel
+            completion = $comp
+        }
     }
-    $lines = @(ConvertTo-BobGrokTalkOutLines -Text $text)
-    if ($lines.Count -eq 0) {
-        return [pscustomobject]@{ ok = $false; error = 'refuse'; reason = 'lines blocked' }
-    }
-    $comp = Add-BobGrokTalkCompletion -Job $Job -Lines $lines
-    if (-not $comp) {
-        return [pscustomobject]@{ ok = $false; error = 'refuse'; reason = 'completion blocked' }
-    }
-    return [pscustomobject]@{
-        ok         = $true
-        job_id     = [string]$Job.job_id
-        fuel       = $Fuel
-        completion = $comp
+    finally {
+        Write-BobGrokTalkWorkerState $null
     }
 }
