@@ -54,5 +54,9 @@ Export-ModuleMember -Function @(
     'Read-BobIrcPeer',
     'Write-BobIrcStatus',
     'Import-BobIrcPeerTranscript',
+    'Import-BobIrcTrayPull',
+    'Request-BobIrcBobiversePull',
+    'ConvertFrom-BobIrcTrayLine',
+    'Get-BobJobRepoStamp',
     'Compact-BobIrcOutbox'
 )

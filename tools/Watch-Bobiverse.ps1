@@ -1,9 +1,10 @@
 # Dumb #bobiverse publisher/poller. Not a Grok session. No reasoning.
-# POINT local BOB v1 status; harvest peer POINT lines into bob-peers JSON;
+# Refresh local bob-peers JSON; channel talk on real change; tray pull via !bobiverse ~120s.
 # keep irc_agent.py joined. Tray only reads those files.
 [CmdletBinding()]
 param(
     [int]$PollSec = 30,
+    [int]$BobiversePullSec = 120,
     [string]$RepoRoot
 )
 
@@ -132,12 +133,14 @@ function Start-BobiverseIrcAgent {
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
 
-Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec"
+Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec pullSec=$BobiversePullSec"
 while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
         Write-BobIrcStatus | Out-Null
+        Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
+        Import-BobIrcTrayPull | Out-Null
         Import-BobIrcPeerTranscript | Out-Null
     }
     catch {

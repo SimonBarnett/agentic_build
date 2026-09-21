@@ -987,8 +987,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -notmatch 'irc\.ntsa\.uk') { throw 'Watch-Bobiverse must require irc.ntsa.uk' }
     if ($watchBv -match 'grok\.exe') { throw 'Watch-Bobiverse must not invoke grok.exe' }
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
-    if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must POINT via Write-BobIrcStatus' }
-    if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse must poll peer POINT lines' }
+    if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must refresh via Write-BobIrcStatus' }
+    if ($watchBv -notmatch 'Request-BobIrcBobiversePull') { throw 'Watch-Bobiverse must poll !bobiverse for tray pull' }
+    if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest BOB TRAY v1 whispers' }
+    if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse may still harvest MOOT POINT transcript' }
     if ($watchBv -notmatch 'BOB_IRC_HOST') { throw 'Watch-Bobiverse must honor BOB_IRC_HOST' }
     if ($watchBv -notmatch '127\.0\.0\.1') { throw 'Watch-Bobiverse must treat 127.0.0.1 as private Ergo' }
     if ($watchBv -notmatch 'Test-BobiverseIrcPrivateErgoHost') { throw 'Watch-Bobiverse must share private-Ergo host match' }
@@ -997,21 +999,39 @@ Invoke-Case 'BT0o bobiverse irc' {
     $installIrc2 = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
     if ($installIrc2 -notmatch 'Compact-BobIrcOutbox') { throw 'Install-BobIrc must compact a fat POINT outbox' }
     $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
-    if ($docsBv -notmatch 'Outbox POINT backlog') { throw 'docs/bobiverse.md must note POINT backlog disconnect loop' }
+    if ($docsBv -notmatch 'Outbox backlog') { throw 'docs/bobiverse.md must note outbox backlog disconnect loop' }
+    if ($docsBv -notmatch 'BOB TRAY v1') { throw 'docs/bobiverse.md must document tray pull dialect' }
 
     $env:BOB_MACHINE_ID = 'testhost'
     $ob = Join-Path $ircHome 'outbox.txt'
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     Write-BobIrcStatus | Out-Null
     Write-BobIrcStatus | Out-Null
-    if (-not (Test-Path $ob)) { throw 'Write-BobIrcStatus did not create outbox' }
-    $obLines = @(Get-Content $ob | Where-Object { $_ })
-    if ($obLines.Count -ne 1) { throw "dedupe failed: outbox lines=$($obLines.Count)" }
-    if ($obLines[0] -notmatch 'MOOT v1 POINT' -or $obLines[0] -notmatch 'BOB v1 ') { throw "outbox line=$($obLines[0])" }
-    Add-Content -Path $ob -Value 'MOOT v1 POINT b0b1be15e0000001 :BOB v1 id=testhost weekly=99 reset=- cur=- crst=- running=0 queued=0 lastSeen=2026-09-20T00:00:00Z jobs=-' -Encoding utf8
-    Write-BobIrcStatus | Out-Null
-    $obLines2 = @(Get-Content $ob | Where-Object { $_ })
-    if ($obLines2.Count -ne 3) { throw "status change must append: outbox lines=$($obLines2.Count)" }
+    if (Test-Path $ob) {
+        $obLines = @(Get-Content $ob | Where-Object { $_ })
+        if ($obLines.Count -gt 0) { throw "lastSeen-only tick must not speak: outbox=$($obLines -join ' | ')" }
+    }
+    $peerSelf = Read-BobIrcPeer -Id testhost
+    if (-not $peerSelf) { throw 'Write-BobIrcStatus must write bob-peers json without POINT outbox' }
+
+    $trayLine = 'BOB TRAY v1 id=ionos weekly=4 running=1 queued=0 repo=SimonBarnett/agentic_build kind=worker model=CursorModels lastSeen=2026-09-21T00:00:00Z jobs=SimonBarnett/agentic_build:running'
+    $parsedTray = ConvertFrom-BobIrcTrayLine $trayLine
+    if ($parsedTray.id -ne 'ionos') { throw "tray id=$($parsedTray.id)" }
+    if ([string]$parsedTray.repo -ne 'SimonBarnett/agentic_build') { throw "tray repo=$($parsedTray.repo)" }
+    $nick = 'bob-testhost'
+    $env:BOB_IRC_NICK = $nick
+    $ircLog = Join-Path $ircHome 'irc.log'
+    ":bob-flamingo!u@h PRIVMSG $nick :$trayLine" | Set-Content -Path $ircLog -Encoding utf8
+    $gotTray = @(Import-BobIrcTrayPull)
+    if ($gotTray -notcontains 'ionos') { throw "tray pull ingest=$($gotTray -join ',')" }
+    $ionosTray = Read-BobIrcPeer -Id ionos
+    if ([string]$ionosTray.repo -ne 'SimonBarnett/agentic_build') { throw "ionos tray repo=$($ionosTray.repo)" }
+
+    $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
+    if ($stamp -eq '?' -or -not $stamp) {
+        $stamp2 = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = $RepoRoot; repo = '?' })
+        if (-not $stamp2 -or $stamp2 -eq '?') { throw "repo stamp still ?: $stamp2" }
+    }
 
     $fatHome = Join-Path $bridgeRoot 'irc-fat'
     New-Item -ItemType Directory -Force -Path $fatHome | Out-Null
