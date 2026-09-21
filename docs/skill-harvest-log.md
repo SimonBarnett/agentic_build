@@ -1,5 +1,12 @@
 ﻿# Skill harvest log
 
+## 2026-09-21 — FIX #119 abandon superseded PR #106
+
+MRB FAIL #119 on PR #106 head `0b621f0`: out-of-scope PASS-nits bar change plus
+stacked #91 / #100 tray commits. Issue #107 harvest already on `main` via #114.
+Close PR #106 and do not land that SHA. Issue #118 owns the closer ritual if
+promoted later; not implemented on this FIX job.
+
 ## 2026-09-21 — bob-job launchers + MRB remaining-FR rule
 
 Harvest from live bob-job loops:
