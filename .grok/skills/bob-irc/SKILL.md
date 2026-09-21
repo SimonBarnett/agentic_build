@@ -3,17 +3,19 @@ name: bob-irc
 description: >
   Private Ergo for #bobiverse on ionos (irc.ntsa.uk:6697 TLS). Use when the user
   says join Ergo, irc.ntsa.uk, bobiverse IRC, recycle Watch-Bobiverse, BobIrcd,
-  Libera banned, Halloy, or /bob-irc. Canonical skill is agentic_irc
-  .grok/skills/bob-irc. Job queue is grok-build-fleet. Named-bot hangs are
-  unstick-grok-bot.
+  Halloy, shop channel, !bobiverse, or /bob-irc. Canonical protocol skill is
+  agentic_irc .grok/skills/bob-irc. Job queue is grok-build-fleet.
 ---
 
 # Bobiverse IRC
 
-Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
-`.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
-else `C:\src\...`). Nicks/host live in this repo's `config/bobiverse.json`
-and `docs/bobiverse.md`. Do not duplicate join/recycle/firewall facts here.
+Protocol playbook: `https://github.com/SimonBarnett/agentic_irc`
+`.grok/skills/bob-irc/SKILL.md` and issue #46.
+Nicks/host/`reportUrl` live in this repo `config/bobiverse.json` and
+`docs/bobiverse.md`.
 
-Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
-See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
+`bob-<id>` JOINs `#bobiverse` + `#<id>`. Workers: skill `bob-shop-worker`.
+Read status: `!bobiverse`. Write: POST `reportUrl`. No `!report`.
+Machines persist offline. Workers delete on disconnect. Bob drop closes shop.
+
+Do not duplicate firewall/recycle steps here — see agentic_irc `bob-irc`.
