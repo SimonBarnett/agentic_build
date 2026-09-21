@@ -1982,6 +1982,29 @@ Invoke-Case 'BT0loop4f retry_job FIX goal keeps required fixes from state' {
     if ($goal -notmatch 'Restore gate A') { throw "goal missing fixes" }
 }
 
+Invoke-Case 'BT0loop4g retry_job FIX resolves required fixes from MRB issue body' {
+    param($bridgeRoot)
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Cwd (Join-Path $bridgeRoot 'cwd')
+    $state.lastMrb = 'https://github.com/fixture/repo/issues/8'
+    $body = @"
+## Required fixes
+- Re-parse gate B
+"@
+    $world = [pscustomobject]@{
+        Issues = @(
+            [pscustomobject]@{
+                number = 8
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = $body
+            }
+        )
+    }
+    $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World $world
+    if ($fixes -notmatch 'Re-parse gate B') { throw "fixes=$fixes" }
+    $goal = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
+    if ($goal -notmatch 'Re-parse gate B') { throw "goal missing fixes from body" }
+}
+
 Invoke-Case 'BT0loop5 fail starts fix with required fixes' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -2090,28 +2113,28 @@ Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
     $cwd = Join-Path $bridgeRoot 'cwd'
     New-Item -ItemType Directory -Force -Path $cwd | Out-Null
     $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 44
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 44 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd -MaxJobRetries 3
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    $state.jobAttempts = 1
+    $state.startError = 'MRB handoff enqueue failed (enqueue refused)'
+    Write-BobBuildLoopState -Path $path -State $state
     $world = [pscustomobject]@{
         Job          = $null
         ProcessAlive = $null
-        Prs          = @(
-            [pscustomobject]@{
-                number    = 2
-                url       = 'https://github.com/fixture/repo/pull/2'
-                title     = 'FR loop'
-                branch    = 'work/fix'
-                sha       = 'abc1234deadbeef'
-                createdAt = [DateTime]::UtcNow.ToString('o')
-            }
-        )
+        Prs          = @()
         Issues       = @()
     }
-    $r = & $loop -Issue 19 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -TestStartMrb {
+    $mrbCalls = New-Object System.Collections.Generic.List[string]
+    $r = & $loop -Issue 44 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestStartMrb {
         param($st)
-        [pscustomobject]@{ ok = $false; started = $false; startError = 'MRB handoff enqueue failed (fixture)'; jobId = $null; pid = $null; fuel = 'cursor-models' }
+        [void]$mrbCalls.Add('mrb')
+        [pscustomobject]@{ ok = $false; started = $false; startError = 'MRB handoff enqueue failed (enqueue refused)'; jobId = $null; pid = $null; fuel = 'cursor-models' }
     }
-    if ($r.action -ne 'start_mrb') { throw "action=$($r.action)" }
-    if ([string]$r.phase -ne 'wait_mrb') { throw "phase=$($r.phase)" }
-    if (-not $r.state.startError) { throw 'expected startError on state after refused MRB start' }
+    if ($r.action -ne 'retry_job') { throw "expected retry_job after refused mrb observe, got $($r.action)" }
+    if (-not [string]$r.state.startError) { throw 'startError must persist on state' }
+    if ($mrbCalls.Count -lt 1) { throw 'TestStartMrb not invoked on retry_job' }
 }
 
 Write-Host ''
