@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = "Continue"
+﻿# DO NOT EDIT — per-machine wrapper from Install-BobFleet / tray install (ionos).
+$ErrorActionPreference = "Continue"
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
   $_.CommandLine -and $_.CommandLine -match "Watch-BobTray" -and [int]$_.ProcessId -ne $PID
 } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch { } }

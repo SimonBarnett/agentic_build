@@ -142,6 +142,12 @@ function Complete-FleetJob {
     $follow = Join-Path (Initialize-FleetRoot) (Join-Path 'followup' (Join-Path $packet.machine ($packet.id + '.json')))
     if (Test-Path $follow) { Remove-Item -Force $follow -ErrorAction SilentlyContinue }
     Send-FleetReply -ReplyChannel $packet.reply_channel -Text "$($packet.machine) $State $($packet.id): $(if ($Completion) { $Completion.summary } else { $State })"
+    try {
+        $auditStatus = $State
+        if ($Completion -and $Completion.status) { $auditStatus = [string]$Completion.status }
+        Write-BobJobAuditFromPacket -Packet $packet -Status $auditStatus
+    }
+    catch { }
     return $packet
 }
 

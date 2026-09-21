@@ -251,6 +251,8 @@ Invoke-Case 'BT0i audit' {
     $mention = Start-BobWorker -Cwd $cwd -Prompt 'Do not set or request XAI_API_KEY' -Profile generic -WhatIfArgv -Force
     if ($mention.error -eq 'refuse') { throw 'instructional XAI_API_KEY mention was refused' }
     if (-not $mention.ok) { throw "mention whatif failed: $($mention | ConvertTo-Json -Compress)" }
+    $export = Start-BobWorker -Cwd $cwd -Prompt 'export XAI_API_KEY deadbeef' -Profile generic -Force
+    if ($export.error -ne 'refuse') { throw "export XAI_API_KEY not refused: $($export.error)" }
 }
 
 # --- BT0j grokbot hermetic ---
@@ -293,6 +295,14 @@ Invoke-Case 'BT0k fleet fake store' {
     if ($done.lane -ne 'outbox') { throw "expected outbox, lane=$($done.lane)" }
     if ($done.state -ne 'done') { throw "state=$($done.state)" }
     if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'completion not ok' }
+    $jobAudit = Join-Path $bridgeRoot 'job-audit.jsonl'
+    if (-not (Test-Path $jobAudit)) { throw 'job-audit.jsonl missing after outbox' }
+    $jaLines = @(Get-Content $jobAudit | Where-Object { $_.Trim() })
+    if ($jaLines.Count -lt 1) { throw 'job-audit.jsonl empty' }
+    $ja = $jaLines[-1] | ConvertFrom-Json
+    if ([string]$ja.jobId -ne [string]$q.jobId) { throw "job-audit jobId=$($ja.jobId)" }
+    if ([string]$ja.machine -ne 'testhost') { throw "job-audit machine=$($ja.machine)" }
+    if (-not $ja.status) { throw 'job-audit status missing' }
 
     $q2 = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic
     $st = Stop-BobBuild -JobId $q2.jobId
@@ -2135,6 +2145,61 @@ Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
     if ($r.action -ne 'retry_job') { throw "expected retry_job after refused mrb observe, got $($r.action)" }
     if (-not [string]$r.state.startError) { throw 'startError must persist on state' }
     if ($mrbCalls.Count -lt 1) { throw 'TestStartMrb not invoked on retry_job' }
+}
+
+# --- BT0house fleet docs / skills surface ---
+Invoke-Case 'BT0house machine tables' {
+    $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
+    $ids = @((Get-Content $regPath -Raw | ConvertFrom-Json).machines | ForEach-Object { [string]$_.id })
+    if ($ids.Count -lt 1) { throw 'fleet-registry has no machines' }
+    $readme = Get-Content (Join-Path $RepoRoot 'README.md') -Raw
+    $agent = Get-Content (Join-Path $RepoRoot 'agent_readme.md') -Raw
+    foreach ($id in $ids) {
+        $pat = '\|\s*``?' + [regex]::Escape($id) + '``?\s*\|'
+        if ($readme -notmatch $pat) { throw "README missing machine table row for $id" }
+        if ($agent -notmatch $pat) { throw "agent_readme missing machine table row for $id" }
+    }
+}
+
+Invoke-Case 'BT0house no libera in agent docs' {
+    foreach ($rel in @('README.md', 'agent_readme.md')) {
+        $raw = Get-Content (Join-Path $RepoRoot $rel) -Raw
+        if ($raw -match 'Libera') { throw "$rel mentions Libera" }
+    }
+    $skill = Get-Content (Join-Path $RepoRoot '.grok\skills\grok-build-fleet\SKILL.md') -Raw
+    if ($skill -match 'Libera') { throw 'grok-build-fleet mentions Libera' }
+    if ($skill -match 'machine named cursor') { throw 'grok-build-fleet has stale cursor-machine prose' }
+}
+
+Invoke-Case 'BT0house grok-fleet no tray cmdlets' {
+    $skill = Get-Content (Join-Path $RepoRoot '.grok\skills\grok-build-fleet\SKILL.md') -Raw
+    foreach ($bad in @('Get-BobTrayBarPaint', 'Get-BobTrayHover', 'Get-BobTrayTipPlacement', 'Get-BobTrayBarFillRgb')) {
+        if ($skill -match $bad) { throw "grok-build-fleet documents tray cmdlet $bad" }
+    }
+}
+
+Invoke-Case 'BT0house watch wrappers marked generated' {
+    $watch = @(Get-ChildItem (Join-Path $RepoRoot 'tools') -Filter '_Watch-*.ps1' -ErrorAction SilentlyContinue)
+    if ($watch.Count -lt 1) { throw 'no _Watch-*.ps1 under tools' }
+    foreach ($f in $watch) {
+        $head = (Get-Content $f.FullName -TotalCount 1) -join ''
+        if ($head -notmatch 'DO NOT EDIT') { throw "$($f.Name) missing DO NOT EDIT header" }
+    }
+    $harvest = Get-Content (Join-Path $RepoRoot '.grok\skills\harvest-agent-skills\SKILL.md') -Raw
+    if ($harvest -notmatch '_Watch-\*') { throw 'harvest-agent-skills must skip _Watch-* wrappers' }
+}
+
+Invoke-Case 'BT0house bob-build-loop pointer' {
+    $loop = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-build-loop\SKILL.md') -Raw
+    if ($loop -notmatch 'Pointer') { throw 'bob-build-loop must be a pointer skill' }
+    if ($loop -match 'flowchart') { throw 'bob-build-loop must not duplicate mermaid flowchart' }
+}
+
+Invoke-Case 'BT0house agent export list' {
+    $agent = Get-Content (Join-Path $RepoRoot 'agent_readme.md') -Raw
+    if ($agent -notmatch 'Select-BobGitWorker') { throw 'agent_readme missing agent export list' }
+    if ($agent -notmatch 'Get-BobTrayHover') { throw 'agent_readme must classify tray exports' }
+    if ($agent -notmatch 'job-audit') { throw 'agent_readme must document job-audit.jsonl' }
 }
 
 Write-Host ''
