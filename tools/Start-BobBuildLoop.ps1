@@ -76,9 +76,10 @@ function Get-LoopWorld {
     if ($gh) {
         $prJson = & $gh pr list --repo $State.repo --state open --limit 30 --json number,url,title,headRefName,headRefOid,createdAt 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -and $prJson.Trim()) {
-            foreach ($p in @($prJson | ConvertFrom-Json)) {
+            foreach ($p in @(ConvertFrom-BobGhJsonList $prJson)) {
+                if ($null -eq $p.number -or ($p.number -is [System.Array])) { continue }
                 $prs += [pscustomobject]@{
-                    number    = $p.number
+                    number    = [int]$p.number
                     url       = [string]$p.url
                     title     = [string]$p.title
                     branch    = [string]$p.headRefName
@@ -89,9 +90,10 @@ function Get-LoopWorld {
         }
         $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
-            foreach ($i in @($isJson | ConvertFrom-Json)) {
+            foreach ($i in @(ConvertFrom-BobGhJsonList $isJson)) {
+                if ($null -eq $i.number -or ($i.number -is [System.Array])) { continue }
                 $issues += [pscustomobject]@{
-                    number    = $i.number
+                    number    = [int]$i.number
                     title     = [string]$i.title
                     url       = [string]$i.url
                     body      = [string]$i.body
@@ -355,7 +357,7 @@ while ($true) {
         }
         'start_fix' {
             $g = $decision.goal
-            if (-not $g) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes '' }
+            if (-not $g) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes '' -FrIssue ([int]$state.issue) }
             $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix
             $state = Apply-StartResult -State $state -Decision $decision -Started $started -WaitPhase 'wait_pr'
         }
@@ -375,7 +377,7 @@ while ($true) {
                 $fix = $false
                 if ($state.lastMrb) {
                     $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World $world
-                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
+                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes -FrIssue ([int]$state.issue)
                     $fix = $true
                 }
                 $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix:$fix
