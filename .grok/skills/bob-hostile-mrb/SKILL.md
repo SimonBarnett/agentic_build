@@ -3,10 +3,11 @@ name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. PASS-nits: that MRB agent merges the PR. FAIL: dispatcher
-  spawns a FIX worker. No MRB PDFs. Use when the user says MRB, hostile
-  review, review the push, ready for UAT, hand off MRB, missing features,
-  or /bob-hostile-mrb. Loop table is bob-build-loop.
+  in-session. PASS-nits: that MRB agent merges the PR. FAIL or remaining
+  open feature-request issues: dispatcher passes each to a new worker. No
+  MRB PDFs. Use when the user says MRB, hostile review, review the push,
+  ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb. Loop
+  table is bob-build-loop.
 ---
 
 # Hostile MRB (GitHub issue)
@@ -79,11 +80,13 @@ Before the verdict, walk:
 
 | Gap | Action |
 |---|---|
-| This FR's acceptance still red | **Required fix** on this MRB issue. Do not open a second FR for the same MUST. |
-| Adjacent / unspecified hole, or an issue with no intake doc | **Request it**: park via `bob-spec-intake`. Link from **Missing features**. |
-| Already parked issue+doc, not in this PR | List under Missing features with the issue URL. Do not duplicate. |
+| This FR's acceptance still red | **Required fix** on this MRB issue. Do not open a second FR for the same MUST. Dispatcher starts a **new** FIX worker. |
+| Adjacent / unspecified hole, or an issue with no intake doc | **Request it**: park via `bob-spec-intake`. Link from **Missing features**. Dispatcher starts a **new** worker for that FR. |
+| Already parked issue+doc, not in this PR | List under Missing features with the issue URL. Do not duplicate. Dispatcher starts a **new** worker if none is running. |
 
-Do not implement the missing feature in the MRB job.
+Do not implement the missing feature in the MRB job. Listing alone is not
+enough — the dispatcher must hand remaining FRs to new workers
+(`bob-job-loop`).
 
 ## Worker steps
 
@@ -95,10 +98,18 @@ Do not implement the missing feature in the MRB job.
    - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
-5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a FIX
-   worker (`cursor-mrb-dev`). Do not reuse this FAIL issue as the next board.
+5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**
+   FIX worker (`cursor-mrb-dev` / `bob-job-loop`). Do not reuse this FAIL
+   issue as the next board.
 6. **PASS-nits:** merge the PR (`gh pr merge`). Nits stay listed; they do
    not block the merge.
+7. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
+   dispatcher must pass work to **new** workers for (a) this FAIL's
+   Required fixes (FIX worker), and (b) any other open issues labeled
+   `feature-request` (or Missing features just parked) that are not
+   already PASS. Listing under Missing features is not enough — hand
+   each to `bob-job-loop`. Remaining FRs do not block this PASS-nits
+   merge.
 
 ## Pass bar
 

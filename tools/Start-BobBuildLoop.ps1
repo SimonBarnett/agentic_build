@@ -1,4 +1,4 @@
-# Dispatcher loop: start a git job, MRB it until PASS-nits, retry failed
+﻿# Dispatcher loop: start a git job, MRB it until PASS-nits, retry failed
 # cursor/grok jobs. Stdout is DONE/FAILED only (monitor-safe). Does not stamp UAT.
 # Test-Pack: -Once -TestWorld (no live GitHub, no live cursor-agent, no live bridge).
 [CmdletBinding()]
@@ -31,6 +31,7 @@ $here = $PSScriptRoot
 if (-not $here) { $here = Split-Path $MyInvocation.MyCommand.Path }
 . (Join-Path $here 'Bob-BuildLoop.ps1')
 . (Join-Path $here 'Bob-Gh.ps1')
+. (Join-Path (Split-Path $here -Parent) 'src\Private\Write-BobJobAudit.ps1')
 
 if ($PSBoundParameters.ContainsKey('TestWorld') -and -not $Once) {
     throw 'TestWorld is Test-Pack only and requires -Once.'
@@ -373,7 +374,7 @@ while ($true) {
         }
         'start_fix' {
             $g = $decision.goal
-            if (-not $g) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes '' -FrIssue ([int]$state.issue) }
+            if (-not $g) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes '' }
             $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix
             $state = Apply-StartResult -State $state -Decision $decision -Started $started -WaitPhase 'wait_pr'
         }
@@ -393,7 +394,7 @@ while ($true) {
                 $fix = $false
                 if ($state.lastMrb) {
                     $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World $world
-                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes -FrIssue ([int]$state.issue)
+                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
                     $fix = $true
                 }
                 $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix:$fix
@@ -414,7 +415,6 @@ while ($true) {
                     $auditErr = $_.Exception.Message
                     if (-not $auditErr) { $auditErr = $_.ToString() }
                     Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
-                    throw
                 }
             }
         }
@@ -457,3 +457,4 @@ while ($true) {
     if ($Once) { return $result }
     Start-Sleep -Seconds $PollSec
 }
+
