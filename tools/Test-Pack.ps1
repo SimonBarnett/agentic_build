@@ -1720,6 +1720,68 @@ Invoke-Case 'BT0x4 fuel model matched tick' {
     if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'matched grok-build tick must complete ok' }
 }
 
+# --- BT0y empty fuel packet gate (issue #80) ---
+function Test-BT0yEmptyFuelModelTickRefuse {
+    param(
+        $bridgeRoot,
+        [string]$ModelId,
+        [string]$CaseLabel
+    )
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $jobId = [guid]::NewGuid().ToString()
+    $packet = [pscustomobject]@{
+        id        = $jobId
+        from      = 'test'
+        goal      = 'PONG'
+        machine   = 'testhost'
+        cwd       = $cwd
+        profile   = 'generic'
+        createdAt = [DateTime]::UtcNow.ToString('o')
+        model     = $ModelId
+        task      = 'fleet'
+        kind      = 'build'
+    }
+    $inDir = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    New-Item -ItemType Directory -Force -Path $inDir | Out-Null
+    $inPath = Join-Path $inDir ($jobId + '.json')
+    [IO.File]::WriteAllText($inPath, ($packet | ConvertTo-Json -Depth 8))
+    $sessDir = Join-Path $bridgeRoot 'fake-grok-home\sessions'
+    $before = 0
+    if (Test-Path $sessDir) { $before = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    Invoke-BobFleetTick | Out-Null
+    $after = 0
+    if (Test-Path $sessDir) { $after = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    if ($after -ne $before) { throw "$CaseLabel Fake-Grok sessions grew $before -> $after (grok.exe must not start)" }
+    $done = Get-BobBuild -JobId $jobId
+    if ($done.lane -ne 'outbox') { throw "$CaseLabel lane=$($done.lane)" }
+    if ($done.state -ne 'failed') { throw "$CaseLabel state=$($done.state)" }
+    if (-not $done.completion -or $done.completion.status -ne 'failed') { throw "$CaseLabel completion not failed" }
+    if ([string]$done.completion.summary -notmatch 'missing_fuel') { throw "$CaseLabel summary=$($done.completion.summary)" }
+    if ([string]$done.completion.summary -notmatch "missing_fuel model=$ModelId") { throw "$CaseLabel summary=$($done.completion.summary)" }
+}
+
+Invoke-Case 'BT0y1 empty fuel model tick refuse' {
+    param($bridgeRoot)
+    Test-BT0yEmptyFuelModelTickRefuse -bridgeRoot $bridgeRoot -ModelId 'composer-2.5' -CaseLabel 'BT0y1'
+}
+
+Invoke-Case 'BT0y2 empty fuel build0.1 tick refuse' {
+    param($bridgeRoot)
+    Test-BT0yEmptyFuelModelTickRefuse -bridgeRoot $bridgeRoot -ModelId 'build0.1' -CaseLabel 'BT0y2'
+}
+
+Invoke-Case 'BT0y3 empty fuel grok-4.6 tick refuse' {
+    param($bridgeRoot)
+    Test-BT0yEmptyFuelModelTickRefuse -bridgeRoot $bridgeRoot -ModelId 'grok-4.6' -CaseLabel 'BT0y3'
+}
+
+Invoke-Case 'BT0y4 empty fuel unknown model tick refuse' {
+    param($bridgeRoot)
+    Test-BT0yEmptyFuelModelTickRefuse -bridgeRoot $bridgeRoot -ModelId 'not-a-known-family-id' -CaseLabel 'BT0y4'
+}
+
 # --- BT0loop Start-BobBuildLoop (issue mrb-loop-automation / #44) ---
 . (Join-Path $RepoRoot 'tools\Bob-BuildLoop.ps1')
 

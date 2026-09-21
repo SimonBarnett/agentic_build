@@ -120,6 +120,9 @@ function Start-BobBuild {
         if ($pickFuel -eq 'copilot') { $Model = $null }
         else { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
     }
+    if (-not $PSBoundParameters.ContainsKey('Fuel') -and -not [string]::IsNullOrWhiteSpace([string]$Model) -and -not $pickFuel) {
+        $pickFuel = 'grok-build'
+    }
     if ($pickFuel) {
         $fuelModel = Test-BobFuelModelCompatible -Fuel $pickFuel -Model $Model
     }

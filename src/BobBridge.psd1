@@ -18,6 +18,7 @@
         'Get-BobCapacity',
         'Get-BobJobModel',
         'Test-BobFuelModelCompatible',
+        'Test-BobPacketMissingFuel',
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Get-ThisMachineId',
