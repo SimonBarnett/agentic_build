@@ -38,6 +38,26 @@ function Test-BobGhIssuePosting {
     return $gh
 }
 
+function Get-BobMrbTitleSlug {
+    param([string]$Title)
+    if (-not $Title) { return $null }
+    if ($Title -notmatch '^(?i)MRB (?:FAIL|PASS-nits):\s+(.+?)\s+[0-9a-f]{7,40}\s*$') { return $null }
+    return $Matches[1].Trim().ToLowerInvariant()
+}
+
+function Get-BobMrbFeatureIssueNumbers {
+    param([string]$Body)
+    $fr = New-Object 'System.Collections.Generic.HashSet[int]'
+    if (-not $Body) { return @() }
+    if ($Body -match '(?i)\*\*Feature request:\*\*\s*https://github\.com/[^/\s]+/[^/\s]+/issues/(\d+)') {
+        [void]$fr.Add([int]$Matches[1])
+    }
+    if ($Body -match '(?i)##\s+Feature request\s+[\r\n]+\s*https://github\.com/[^/\s]+/[^/\s]+/issues/(\d+)') {
+        [void]$fr.Add([int]$Matches[1])
+    }
+    return @($fr)
+}
+
 function Set-BobGhLabelReady {
     param(
         [Parameter(Mandatory)][string]$Gh,
