@@ -13,7 +13,8 @@ param(
     [string]$JobId,
     [string]$Cwd,
     [string]$Model,
-    [ValidateSet('mrb', 'build')][string]$Kind
+    [ValidateSet('mrb', 'build')][string]$Kind,
+    [switch]$NoLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -101,11 +102,21 @@ $json = $packet | ConvertTo-Json -Depth 6
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [IO.File]::WriteAllText($path, $json, $utf8)
 
+$suppressLaunch = $NoLaunch
+if (-not $suppressLaunch -and $env:BOB_NO_AGENT_LAUNCH -match '^(?i)(1|true|yes)$') { $suppressLaunch = $true }
+if (-not $suppressLaunch -and (Get-Command Test-BobUsesFakeGrok -ErrorAction SilentlyContinue)) {
+    if (Test-BobUsesFakeGrok) { $suppressLaunch = $true }
+}
+if (-not $suppressLaunch -and $env:BOB_GROK_EXE -match '(?i)Fake-Grok') { $suppressLaunch = $true }
+
 $agent = Get-BobCursorAgentExe
 $started = $false
 $startError = $null
 $logPath = $null
-if ($agent) {
+if ($suppressLaunch) {
+    $startError = 'no_launch'
+}
+elseif ($agent) {
     $stExe = $agent
     $stArg = @('status')
     if ($agent -match '\.cmd$' -or $agent -match '\.ps1$') {
@@ -120,7 +131,7 @@ if ($agent) {
         $agent = $null
     }
 }
-if ($agent -and $Cwd -and -not ($env:BOB_GROK_EXE -match '(?i)Fake-Grok')) {
+if ($agent -and $Cwd -and -not $suppressLaunch) {
     $readBits = @()
     if ($Docs) { $readBits += $Docs }
     if ($Plan) { $readBits += $Plan }
@@ -167,7 +178,7 @@ Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
         $startError = $_.Exception.Message
     }
 }
-elseif (-not $agent) {
+elseif (-not $agent -and -not $suppressLaunch) {
     $startError = 'cursor-agent.exe not found (do not use ~/.grok/bin/agent.exe; that is grok)'
 }
 

@@ -20,6 +20,22 @@ function New-TestRoot {
     return $d
 }
 
+function Test-BobCursorJobLaunchProcesses {
+    param([string]$JobId)
+    if (-not $JobId) { return @() }
+    $needle = "cursor-agent-$JobId.launch.ps1"
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and $_.CommandLine -like "*$needle*" })
+}
+
+function Assert-BobCursorJobNotSpawned {
+    param([string]$JobId)
+    $hits = Test-BobCursorJobLaunchProcesses -JobId $JobId
+    if ($hits.Count -gt 0) {
+        throw "this job spawned cursor-agent launch (jobId=$JobId pids=$($hits.ProcessId -join ','))"
+    }
+}
+
 function Import-Bridge {
     param([string]$BridgeRoot)
     $env:BOB_BRIDGE_HOME = $BridgeRoot
@@ -1256,7 +1272,10 @@ Invoke-Case 'BT0q kind mrb packet' {
         task   = 'git'
         branch = 'work/mrb-fixture'
     }
-    $r = & $cursor -Job $job
+    $r = & $cursor -Job $job -NoLaunch
+    if ($r.started) { throw 'Start-BobCursor -NoLaunch must not start an agent' }
+    if ([string]$r.startError -ne 'no_launch') { throw "startError=$($r.startError) expected no_launch" }
+    Assert-BobCursorJobNotSpawned -JobId $job.id
     if (-not $r.packetPath -or -not (Test-Path $r.packetPath)) { throw 'missing cursor handoff packet' }
     $packet = Get-Content $r.packetPath -Raw | ConvertFrom-Json
     if ([string]$packet.kind -ne 'mrb') { throw "packet.kind=$($packet.kind)" }
@@ -1272,9 +1291,11 @@ Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     $cwd = Join-Path $bridgeRoot 'cwd'
     if ($env:BOB_GROK_EXE -notmatch '(?i)Fake-Grok') { throw 'BOB_GROK_EXE must be Fake-Grok for suppress seam' }
     $cursor = Join-Path $RepoRoot 'tools\Start-BobCursor.ps1'
-    $direct = & $cursor -Repo 'https://github.com/SimonBarnett/agentic_build' -Cwd $cwd -Goal 'MRB suppress probe' -Kind mrb -Mrb 'https://github.com/SimonBarnett/agentic_build/issues/1'
-    if ($direct.started) { throw 'Start-BobCursor must not launch cursor-agent when BOB_GROK_EXE is Fake-Grok' }
+    $direct = & $cursor -Repo 'https://github.com/SimonBarnett/agentic_build' -Cwd $cwd -Goal 'MRB suppress probe' -Kind mrb -Mrb 'https://github.com/SimonBarnett/agentic_build/issues/1' -NoLaunch
+    if ($direct.started) { throw 'Start-BobCursor -NoLaunch must not launch cursor-agent' }
+    if ([string]$direct.startError -ne 'no_launch') { throw "startError=$($direct.startError) expected no_launch" }
     if ($direct.pid) { throw "unexpected pid=$($direct.pid)" }
+    Assert-BobCursorJobNotSpawned -JobId $direct.jobId
     if (-not $direct.packetPath -or -not (Test-Path $direct.packetPath)) { throw 'missing cursor handoff packet' }
 
     $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
@@ -1308,6 +1329,40 @@ Invoke-Case 'BT0q2 fleet mrb cursor suppress' {
     if ([string]$done.model -ne $expectedMrb) { throw "job.model=$($done.model)" }
     if ([string]$done.fuel -ne 'cursor-models') { throw "job.fuel=$($done.fuel)" }
     if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'fleet cursor-models handoff must complete ok' }
+    Assert-BobCursorJobNotSpawned -JobId $q.jobId
+}
+
+# --- BT0q3 invalid git kind refused at enqueue (issue #12) ---
+Invoke-Case 'BT0q3 invalid git kind enqueue' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $capFile = Join-Path $bridgeRoot 'capacity.json'
+    $liveFix = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'testhost'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @($bridgeRoot)
+                grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+            }
+        )
+    }
+    [IO.File]::WriteAllText($capFile, ($liveFix | ConvertTo-Json -Depth 8))
+    $env:BOB_CAPACITY_FILE = $capFile
+    $bad = Start-BobBuild -Task git -Fuel cursor-models -Kind 'wat' -Goal 'bad kind fixture' -Cwd $cwd -Repo 'https://github.com/SimonBarnett/agentic_build'
+    if ($bad.ok) { throw 'invalid kind must not enqueue' }
+    if ([string]$bad.error -ne 'invalid_kind') { throw "error=$($bad.error) expected invalid_kind" }
+    $inbox = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    if (Test-Path $inbox) {
+        $left = @(Get-ChildItem $inbox -Filter '*.json' -ErrorAction SilentlyContinue)
+        if ($left.Count -gt 0) { throw "inbox must stay empty after invalid_kind ($($left.Count) files)" }
+    }
 }
 
 # --- BT0râ€“BT0u Start-BobMrb / gh preflight (issue #13) ---
