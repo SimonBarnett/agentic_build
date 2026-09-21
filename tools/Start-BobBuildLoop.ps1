@@ -385,6 +385,14 @@ while ($true) {
             $terminal = $true
             $stdout = [string]$decision.stdout
             $exitCode = 0
+            if ($live) {
+                try {
+                    $auditJob = [string]$state.currentJobId
+                    if (-not $auditJob) { $auditJob = "loop-$Issue" }
+                    Write-BobJobAuditLine -JobId $auditJob -Machine '' -Fuel ([string]$state.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$state.currentPr) -MrbIssue ([string]$state.lastMrb) -Sha ([string]$state.currentSha) -Status 'pass-nits'
+                }
+                catch { }
+            }
         }
         'fail' {
             $terminal = $true
