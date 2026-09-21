@@ -43,7 +43,10 @@ function Test-BobPacketMissingFuel {
     }
     $model = [string]$Model
     if ([string]::IsNullOrWhiteSpace($model)) {
-        return [pscustomobject]@{ ok = $true; summary = $null }
+        return [pscustomobject]@{
+            ok      = $false
+            summary = 'missing_fuel_and_model'
+        }
     }
     return [pscustomobject]@{
         ok      = $false
