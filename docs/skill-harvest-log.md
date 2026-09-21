@@ -1,5 +1,19 @@
 # Skill harvest log
 
+## 2026-09-21 — bob-job launchers + MRB remaining-FR rule
+
+Harvest from live bob-job loops:
+
+- `tools/run-bob-build-loop.ps1` and `tools/start-bob-build-loop-issue.ps1`:
+  GCM / credential-manager for `GH_TOKEN` (do not rely on interactive
+  `git credential fill` when `gh` is the helper).
+- `bob-job-loop`: unique LogPath, recover missed PR on FAILED, after DONE
+  hand remaining open `feature-request` issues to new workers.
+- **New MRB rule:** pass to a **new** worker on MRB FAIL **or** when any
+  open feature-request / Missing-features issues remain. Homes:
+  `bob-hostile-mrb`, `bob-job-loop`, pointer `bob-build-loop`,
+  `cursor-mrb-dev`.
+
 ## 2026-09-20 — build/MRB loop driver (notify on PASS-nits)
 
 `bob-job-loop` / `tools/Start-BobBuildLoop.ps1`: dispatcher launches one
