@@ -7,7 +7,7 @@ description: >
   open feature-request issues: dispatcher passes each to a new worker. No
   MRB PDFs. Use when the user says MRB, hostile review, review the push,
   ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb. Loop
-  table is bob-build-loop.
+  table is bob-build-loop. Shop IRC: bob-shop-worker.
 ---
 
 # Hostile MRB (GitHub issue)
@@ -15,6 +15,14 @@ description: >
 Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`.
+
+## Shop IRC (every MRB worker)
+
+Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
+JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
+title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
+Conversation stdout → shop. Thinking/tool traces → open Query only.
+On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
 
 ## Bob hands off (do this first)
 
