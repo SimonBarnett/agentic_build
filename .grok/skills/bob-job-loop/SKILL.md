@@ -98,3 +98,24 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 Never Other Models. Copilot only with `-AllowCopilot`. No MRB PDF. No
 `password=` / `XAI_API_KEY=` assignments. Test-Pack seams: `-Once`
 `-TestWorld` only.
+
+## GitHub hygiene (do not troll old boards)
+
+After messy MRB cycles or before picking the next FR, sweep the repo so
+open lists show **current** work only:
+
+```powershell
+# Issues: PASS boards, superseded FAIL, loop-pass FRs
+tools/Close-BobMrbPassedIssues.ps1 -Repo owner/repo
+
+# PRs: duplicate FIX stacks, stale PRs when the FR is already closed
+tools/Close-BobSupersededGithub.ps1 -Repo owner/repo -ProtectPrNumbers <active-pr>
+
+# Retro merge when PASS boards exist but gh merge was skipped earlier
+tools/Merge-BobMrbPassOpenPrs.ps1 -Repo owner/repo
+```
+
+MRB **PASS-nits** must use `Start-BobMrb.ps1 -PrUrl <url>` (merges with
+`gh pr merge --merge` before posting). Loop `DONE` also runs
+`Close-BobBuildLoopFinished` (merge + close). Protect the PR on an
+**active** loop board (`phase` not `pass`/`failed`) via `-ProtectPrNumbers`.

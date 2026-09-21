@@ -119,7 +119,12 @@ voided issue.
    the loop board, not only the latest), and this PASS-nits issue. Each
    close comment links the merged PR URL. Do not write that the PR merged
    unless `gh pr merge` succeeded.
-7. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
+7. **Hygiene:** if the fleet left duplicate FIX PRs or open MRB noise,
+   run `tools/Close-BobSupersededGithub.ps1 -Repo <repo>` (and
+   `Close-BobMrbPassedIssues.ps1` for issues). Do not review superseded
+   PR stacks by hand.
+
+8. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
    dispatcher must pass work to **new** workers for (a) this FAIL's
    Required fixes (FIX worker), and (b) any other open issues labeled
    `feature-request` (or Missing features just parked) that are not

@@ -25,3 +25,7 @@ finish merges again if the agent skipped it); only Bob stamps ready for human UA
 **New worker rule (MRB):** pass to a **new** worker when MRB **FAIL** (FIX),
 **or** when any open `feature-request` issues remain after PASS-nits /
 Missing features park. Home: `bob-job-loop` / `bob-hostile-mrb`.
+
+**GitHub hygiene:** `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1` — see
+`bob-job-loop` (keep PR/issue lists current; protect active loop PRs).

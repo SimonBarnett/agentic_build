@@ -1,5 +1,12 @@
 ﻿# Skill harvest log
 
+## 2026-09-21 — GitHub hygiene scripts + PASS-nits merge gate
+
+`Start-BobMrb.ps1` requires `-PrUrl`; merges with `gh pr merge --merge`
+before posting PASS-nits. Operator: `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1`. Skills:
+`bob-job-loop`, `bob-hostile-mrb`, `bob-build-loop`.
+
 ## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
 
 `bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
