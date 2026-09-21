@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-21
 **Repo:** https://github.com/SimonBarnett/agentic_build
+**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/118
 **Raised by:** hostile MRB of SHA `0b621f0cf3bc583e50124d85d9608fddac9b53c1` (PR #106 / issue #107)
 **UAT + hostile MRB owner:** Bob
 **Related:** `docs/feature-request-mrb-loop-automation-2026-09-20.md` (issues #9 / #31),
