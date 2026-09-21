@@ -148,6 +148,110 @@ function Read-BobCursorAccountCache {
     try { return Read-JsonFile $p } catch { return $null }
 }
 
+function Get-BobCursorPoolsCachePath {
+    try { return (Join-Path (Get-BridgeRoot) 'cursor-pools.json') } catch { return $null }
+}
+
+function Read-BobCursorPoolsCache {
+    $p = Get-BobCursorPoolsCachePath
+    if (-not $p -or -not (Test-Path $p)) {
+        return [pscustomobject]@{ by_seat = @{} }
+    }
+    try {
+        $j = Read-JsonFile $p
+        $by = @{}
+        if ($j.by_seat) {
+            foreach ($prop in $j.by_seat.PSObject.Properties) {
+                $by[$prop.Name] = $prop.Value
+            }
+        }
+        return [pscustomobject]@{ by_seat = $by }
+    }
+    catch {
+        return [pscustomobject]@{ by_seat = @{} }
+    }
+}
+
+function Parse-BobCursorPoolLabel {
+    param([string]$Label)
+    if (-not $Label -or $Label -eq 'empty') { return $null }
+    $l = [string]$Label.Trim()
+    if ($l -match '^(\d+)%$') {
+        return [pscustomobject]@{
+            remaining_pct = [int]$Matches[1]
+            label         = $l
+            overage       = $null
+        }
+    }
+    if (($l -match '^-') -or ($l.IndexOf([char]0x00A3) -ge 0)) {
+        return [pscustomobject]@{
+            remaining_pct = $null
+            label         = $l
+            overage       = $l
+        }
+    }
+    return [pscustomobject]@{
+        remaining_pct = $null
+        label         = $l
+        overage       = $null
+    }
+}
+
+function Save-BobCursorPoolForSeat {
+    param(
+        [Parameter(Mandatory)][string]$SeatId,
+        $RemainingPct,
+        [string]$PeriodEnd,
+        [string]$Label
+    )
+    $sid = [string]$SeatId
+    if (-not $sid) { return }
+    $p = Get-BobCursorPoolsCachePath
+    if (-not $p) { return }
+    $cache = Read-BobCursorPoolsCache
+    $entry = $null
+    if ($cache.by_seat.ContainsKey($sid)) { $entry = $cache.by_seat[$sid] }
+    if (-not $entry) { $entry = [pscustomobject]@{} }
+    if ($null -ne $RemainingPct -and [string]$RemainingPct -ne '') {
+        $entry | Add-Member -NotePropertyName remaining_pct -NotePropertyValue ([int]$RemainingPct) -Force
+    }
+    if ($Label) {
+        $parsed = Parse-BobCursorPoolLabel $Label
+        if ($parsed) {
+            if ($null -ne $parsed.remaining_pct) {
+                $entry | Add-Member -NotePropertyName remaining_pct -NotePropertyValue ([int]$parsed.remaining_pct) -Force
+            }
+            $entry | Add-Member -NotePropertyName label -NotePropertyValue ([string]$parsed.label) -Force
+            if ($parsed.overage) {
+                $entry | Add-Member -NotePropertyName overage_label -NotePropertyValue ([string]$parsed.overage) -Force
+            }
+        }
+    }
+    if ($PeriodEnd) {
+        $entry | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$PeriodEnd) -Force
+    }
+    $entry | Add-Member -NotePropertyName updated_at -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+    $cache.by_seat[$sid] = $entry
+    $out = [pscustomobject]@{ by_seat = $cache.by_seat }
+    try { Write-JsonFile $p $out } catch { }
+}
+
+function Read-BobReportDigest {
+    $home = $null
+    try { $home = Get-BobIrcHome } catch { }
+    if (-not $home) { return $null }
+    foreach ($name in @('_report-digest.json', 'digest.json')) {
+        $p = Join-Path $home (Join-Path 'bob-peers' $name)
+        if (-not (Test-Path $p)) { continue }
+        try {
+            $j = Read-JsonFile $p
+            if ($j) { return $j }
+        }
+        catch { }
+    }
+    return $null
+}
+
 function Get-BobSeatPeriodEndCachePath {
     try { return (Join-Path (Get-BridgeRoot) 'seat-period-end.json') } catch { return $null }
 }

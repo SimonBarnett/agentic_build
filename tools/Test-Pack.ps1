@@ -331,7 +331,9 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^Cursor Models \(') { throw "idle jobs_text missing Cursor Models account: $($h.jobs_text)" }
+    if (@($h.cursor_pools).Count -lt 2) { throw "idle cursor_pools count=$(@($h.cursor_pools).Count) expected >=2 seats" }
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  Models') { throw "idle jobs_text missing Smart Catalogue pool: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Club Madeira  Models') { throw "idle jobs_text missing Club Madeira pool: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.account_name -ne 'Cursor Models') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
@@ -511,9 +513,9 @@ Invoke-Case 'BT0l tray hover' {
     $idxPeer = ([string]$h4.jobs_text).IndexOf("otherhost")
     if ($idxThis -lt 0 -or $idxPeer -lt 0 -or $idxThis -gt $idxPeer) { throw "this host tile must be first: $($h4.jobs_text)" }
     $testhostBlock = ([string]$h4.jobs_text -split '(?m)^otherhost')[0]
-    $runIdx = $testhostBlock.IndexOf('running')
-    $qIdx = $testhostBlock.IndexOf('queued')
-    if ($runIdx -lt 0 -or $qIdx -lt 0 -or $runIdx -gt $qIdx) { throw "testhost must list running before queued: $testhostBlock" }
+    $runIdx = $testhostBlock.IndexOf('START')
+    $qIdx = $testhostBlock.IndexOf('QUEUED')
+    if ($runIdx -lt 0 -or $qIdx -lt 0 -or $runIdx -gt $qIdx) { throw "testhost must list START before QUEUED: $testhostBlock" }
     if ([string]$h4.jobs_text -match 'other hosts not in this store') { throw 'peer tiles present so must not claim other hosts missing' }
     $macIds = @($h4.machines | ForEach-Object { [string]$_.id })
     if ($macIds[0] -ne 'testhost') { throw "machines[0]=$($macIds[0]) expected testhost" }
@@ -563,14 +565,14 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h5.scope -ne 'fleet-peek') { throw "scope=$($h5.scope) expected fleet-peek" }
     if (-not $h5.peer_peek) { throw 'peer_peek should be true when registry has peers' }
     $txt = [string]$h5.jobs_text
-    if ($txt -notmatch '(?m)^Cursor Models \(') { throw "h5 missing Cursor Models account: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+Smart Catalogue  Models') { throw "h5 missing Smart Catalogue pool: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "h5 missing testhost: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}otherhost \(') { throw "h5 missing otherhost: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}marchhare\b') { throw "h5 missing marchhare: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}ionos\b') { throw "h5 missing ionos: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}ce-priority-dev1\b') { throw "h5 missing ce-priority-dev1: $txt" }
     if ($txt -match 'other hosts not in this store') { throw 'registry peers present so must not claim other hosts missing' }
-    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
+    if ($txt -notmatch '(?m)^[ ]{0,2}marchhare(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+(?:START|QUEUED)[^\r\n]*SimonBarnett/agentic_build') { throw "marchhare peek missing nested owner/repo: $txt" }
     if ($txt -match '(?m)^marchhare\r?\n  unreachable') { throw "marchhare reachable but marked unreachable: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?:  -  [^\r\n(]+)? \(') { throw "ionos missing MACHINENAME (pct) heading: $txt" }
     if ($txt -notmatch '(?m)^[ ]{0,2}ionos(?:  -  [^\r\n(]+)? \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+not in moot') { throw "ionos must be not in moot: $txt" }
@@ -609,7 +611,7 @@ Invoke-Case 'BT0l tray hover' {
     [IO.File]::WriteAllText($regPath, ($regObj | ConvertTo-Json -Depth 6))
     $hSnap = Get-BobTrayHover
     $snapTxt = [string]$hSnap.jobs_text
-    if ($snapTxt -notmatch '(?m)^[ ]{0,2}snapbox \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
+    if ($snapTxt -notmatch '(?m)^[ ]{0,2}snapbox \([^)]+\)\r?\n(?:[ ]+fuels:[^\r\n]+\r?\n)?[ ]+(?:START|QUEUED)[^\r\n]*SimonBarnett/') { throw "snapbox tile missing nested jobs: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/agentic_irc') { throw "snapbox missing irc job: $snapTxt" }
     if ($snapTxt -notmatch 'SimonBarnett/FormPrep') { throw "snapbox missing FormPrep job: $snapTxt" }
     $snapTile = @($hSnap.machines | Where-Object { [string]$_.id -eq 'snapbox' })[0]
@@ -1085,9 +1087,11 @@ Invoke-Case 'BT0o bobiverse irc' {
     $cu = Get-BobCursorAgentWeeklyRemaining
     if ([int]$cu.used_pct -ne 98) { throw "cursor used=$($cu.used_pct)" }
     if ([int]$cu.remaining_pct -ne 2) { throw "cursor remaining=$($cu.remaining_pct) expected 2 from 98% used" }
+    $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(2%\)') { throw "jobs_text cursor=$($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  Models  2%') { throw "jobs_text cursor pool=$($hCur.jobs_text)" }
+    $env:BOB_MACHINE_ID = $null
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
@@ -1168,10 +1172,89 @@ Invoke-Case 'BT0o2 cursor models spending meter' {
     if ($pick.wait -or [string]$pick.fuel -ne 'cursor-models') {
         throw "Select-BobGitWorker expected cursor-models got fuel=$($pick.fuel) wait=$($pick.wait)"
     }
+    $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 99) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^Cursor Models \(99%\)') { throw "jobs_text must show Cursor Models (99%): $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  Models  99%') { throw "jobs_text must show Smart Catalogue Models 99%: $($hCur.jobs_text)" }
     if ([string]$hCur.jobs_text -match [char]0x00A3) { throw 'jobs_text must not show Sand overage GBP as Cursor Models remaining' }
+    $env:BOB_MACHINE_ID = $null
+}
+
+# --- BT0l3 tray cursor pools + !report task lines (issue #91) ---
+Invoke-Case 'BT0l3 tray cursor pools report' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+    $poolsFile = Join-Path $bridgeRoot 'cursor-pools-fixture.json'
+    @'
+{
+  "by_seat": {
+    "smart-catalogue": { "remaining_pct": 9, "period_end": "2026-09-23T00:00:00Z" },
+    "club-madeira": { "remaining_pct": 8, "period_end": "2026-09-26T00:00:00Z" }
+  }
+}
+'@ | Set-Content -Path $poolsFile -Encoding utf8
+    Copy-Item -LiteralPath $poolsFile -Destination (Join-Path $bridgeRoot 'cursor-pools.json') -Force
+
+    $runDir = Join-Path $bridgeRoot 'fleet\running\ionos'
+    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+    $jobId = '11111111-2222-3333-4444-555566667777'
+    $job = [pscustomobject]@{
+        id          = $jobId
+        machine     = 'ionos'
+        repo        = 'SimonBarnett/agentic_irc'
+        sha         = '395c499'
+        model       = 'composer-2.5'
+        description = 'report digest'
+        claimedAt   = [DateTime]::UtcNow.AddMinutes(-2).ToString('o')
+        state       = 'running'
+    }
+    [IO.File]::WriteAllText((Join-Path $runDir ($jobId + '.json')), ($job | ConvertTo-Json -Depth 6))
+
+    $h = Get-BobTrayHover
+    if (@($h.cursor_pools).Count -lt 3) { throw "cursor_pools=$(@($h.cursor_pools).Count)" }
+    if ([string]$h.jobs_text -notmatch '(?m)Smart Catalogue  Models  9%') { throw "missing seat-A bar: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)Club Madeira  Models  8%') { throw "missing seat-B bar: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '395c499') { throw "missing sha in job line: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch 'report digest') { throw "missing description: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -match 'grok\.exe \?') { throw "must not show grok.exe ?: $($h.jobs_text)" }
+
+    Remove-Item -LiteralPath (Join-Path $runDir ($jobId + '.json')) -Force -ErrorAction SilentlyContinue
+    $hIdle = Get-BobTrayHover
+    if ([string]$hIdle.jobs_text -notmatch '(?m)ionos[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*?[ ]+no jobs') { throw "idle ionos must say no jobs: $($hIdle.jobs_text)" }
+
+    $ircHome = Join-Path $bridgeRoot 'irc-digest'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $digest = @{
+        tasks = @(
+            @{
+                machine     = 'ionos'
+                state       = 'START'
+                repo        = 'SimonBarnett/agentic_irc'
+                sha         = 'abcd123'
+                model       = 'grok-4.6'
+                description = 'house-clean'
+                run_time    = '1m52s'
+            }
+        )
+    }
+    [IO.File]::WriteAllText((Join-Path $ircHome 'bob-peers\_report-digest.json'), ($digest | ConvertTo-Json -Depth 6))
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $hDig = Get-BobTrayHover
+    if ([string]$hDig.jobs_text -notmatch 'abcd123') { throw "digest sha missing: $($hDig.jobs_text)" }
+    if ([string]$hDig.jobs_text -notmatch 'house-clean') { throw "digest description missing: $($hDig.jobs_text)" }
+    if ([string]$hDig.jobs_text -notmatch '1m52s') { throw "digest run_time missing: $($hDig.jobs_text)" }
+
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'CursorPools') { throw 'Watch-BobTray must paint cursor pool bars' }
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skillTray -notmatch '(?i)cursor pool') { throw 'bob-fleet-tray skill must document cursor pools' }
+    if ($skillTray -notmatch 'START') { throw 'bob-fleet-tray skill must document START report lines' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
 }
 
 # --- BT0p git-task capacity picker (issue #8) ---

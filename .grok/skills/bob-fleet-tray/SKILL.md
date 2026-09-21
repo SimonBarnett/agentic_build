@@ -43,19 +43,22 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor Models remaining (top bar)
+## Cursor pool bars (one per seat)
 
-Top account row is **Cursor Models remaining %** (shared pool: Cursor Grok
-+ Composer). That number is the MRB/PR fuel gate (`bob-build-loop`). It is
-not a machine named cursor. Machine rows are Grok Build weekly + which
-fuels that box can strike (`cursor-models`, `grok-build`, `copilot`,
-`grok-bot`). A tile labelled cursor with a Bot reset date is **Grok Bot
-weekly on that glass**, not the top bar.
+**One bar per Cursor seat** from `config/bob-seats.json` (Smart Catalogue,
+Club Madeira, ntsa, …). Each heading is `{seat label}  Models  {N%|n/a}`
+plus reset and optional overage GBP. Do **not** collapse seats into a single
+`Cursor Models` strip. Local `Get-BobCursorAgentWeeklyRemaining` fills the
+seat for this machine; fleet peers + `cursor-pools.json` cache fill the rest.
+`!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
+refresh a pool without a redraw storm.
 
-- Known Cursor Models remaining: `Cursor Models (N%)` in normal foreground,
-  where N matches Spending "Cursor Models · Includes Cursor Grok and
-  Composer" remaining (100 - used). 20 Sep 2026 21:25 this was ~99% (1%
-  used), not the Sand overage.
+`account_remaining_pct` on `Get-BobTrayHover` is still this host's seat pool
+(MRB fuel gate). Machine rows are Grok Build weekly + fuels
+(`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
+
+- Known remaining: seat bar shows N% from Spending Cursor Models (100 − used)
+  for that account, not Sand overage.
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage
   GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents
   → GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overage,
@@ -83,9 +86,16 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`Cursor Models (99%) - reset 16 Oct`
+`Smart Catalogue  Models  9%  reset 23 Sep`
 
-`flamingo - Club Madeira (15%) - reset 27 Sep`
+`flamingo  -  Club Madeira (15%) - reset 27 Sep`
+
+Job lines under a machine (local jobs or `!report` digest):
+
+`START  SimonBarnett/agentic_irc  395c499  composer-2.5  report digest  1m52s`
+
+No `grok.exe ? running` when repo/sha exist on the packet. Idle machine:
+`no jobs`.
 
 Do not show `Cursor Models (-GBP x.xx)` as the remaining figure. That was
 Sand overage mislabelled (20 Sep 2026 tray vs Spending).
