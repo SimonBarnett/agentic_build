@@ -22,33 +22,40 @@ card from IRC alone.
 
 ## LOCKED
 
-1. After a bob-* `!bobiverse` pull, `bob-peers\<id>.json` for each registry
-   machine must hold everything `Get-BobTrayHover` needs for that tile +
-   Cursor pool bars (see sister FR field list).
-2. Prefer extending `Import-BobIrcTrayPull` (and/or a DIGEST→peers path) so
-   one poll fills peers; do not revive POINT spam.
-3. Job lines: never publish `?` when digest/tray line has repo/sha.
-4. Test-Pack hermetic: fake whisper → peers → hover bars/jobs; no live Ergo.
-5. Skill `bob-fleet-tray` documents: tray freshness = `!bobiverse` pull,
-   not POINT.
+1. **Do not gut the systray.** Keep **all data already on the card**.
+   Do not redesign TipForm down to today’s thin presence digest.
+2. **Only additive UI:** separated **Cursor quota** bars per seat
+   (issue #91). Everything else that is already there stays.
+3. **Refresh = `!bobiverse` JSON.** Watch / tray poll asks `!bobiverse`,
+   ingests `BOB DIGEST v1` JSON into `bob-peers` (and cursor pool cache).
+   That is the fleet refresh path — not POINT, not “drop fields we
+   cannot map yet.”
+4. After one pull, peers hold everything `Get-BobTrayHover` needs for
+   today’s tiles **plus** `cursor_pools`.
+5. Job lines: never publish `?` when digest has repo/sha.
+6. Test-Pack hermetic: fake DIGEST whisper → peers → hover shows full
+   card surface + separated Cursor bars; no live Ergo.
+7. Skill `bob-fleet-tray`: freshness = `!bobiverse` JSON pull; card
+   content = existing surface + #91 pools.
 
 ## Gap vs tree
 
 | Current | Wanted |
 |---|---|
-| `Import-BobIrcTrayPull` = `BOB TRAY v1` only | Also DIGEST JSON → peers **or** chair emits TRAY lines for every id |
-| Local status rich; pull poor | Pull = tray-complete |
-| #91 pools / #26 pull partially parked | This FR is the **bob can paint from !bobiverse** lock |
+| Rich local paint; thin IRC pull | Pull JSON = **full card dataset** |
+| Risk of shrinking UI to match digest | **UI stays full**; digest grows to match UI |
+| #91 separated Cursor bars | Keep that; wire via same JSON refresh |
+| `Import-BobIrcTrayPull` = `BOB TRAY v1` only | Ingest DIGEST JSON → peers |
 
 ## Acceptance
 
-1. Fake chair whisper in Test-Pack updates all four machine peer files with
-   weekly + cursor + jobs.
-2. `Get-BobTrayHover` on that fixture shows seat bars + non-`?` job line.
-3. Live: recycle Watch only; bob `!bobiverse` refreshes tray without POINT.
-4. PR only; Bob stamps UAT.
+1. Fixture DIGEST → hover paints no less than today’s card + separated
+   Cursor bars; non-`?` job line when sha present.
+2. Live: recycle Watch only; bob `!bobiverse` refreshes tray without POINT.
+3. PR only; Bob stamps UAT.
 
 ## Non-goals
 
+- Gutting tray fields to fit a small digest.
 - `Install-BobFleet` / scheduled-task churn.
 - HTTP GET digest.
