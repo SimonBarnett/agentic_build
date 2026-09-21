@@ -53,6 +53,11 @@ seat for this machine; fleet peers + `cursor-pools.json` cache fill the rest.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 
+Fleet peer freshness: `Watch-Bobiverse` polls `!bobiverse` (~120s). Chair
+whispers **`BOB DIGEST v1`** JSON (`i/n` chunks when large); `Import-BobIrcTrayPull`
+writes tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
+cache — not POINT, not a presence-only digest.
+
 `account_remaining_pct` on `Get-BobTrayHover` is still this host's seat pool
 (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 (`cursor-models`, `grok-build`, `copilot`, `grok-bot`).

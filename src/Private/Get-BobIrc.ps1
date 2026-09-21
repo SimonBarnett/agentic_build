@@ -524,7 +524,7 @@ function Test-BobIrcSkipPeerTranscriptOverwrite {
     try { $selfId = Get-ThisMachineId } catch { }
     if ($selfId -and [string]$ResolvedId -eq [string]$selfId) { return $true }
     if (-not $Existing) { return $false }
-    if ([string]$Existing.source -eq 'irc-tray') { return $true }
+    if ([string]$Existing.source -in @('irc-tray', 'irc-digest')) { return $true }
     $exSeen = $null
     $inSeen = $null
     if ($Existing.lastSeen) {
@@ -776,6 +776,320 @@ function Get-BobIrcBobiverseLastPath {
     Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_bobiverse-last.txt')
 }
 
+function Get-BobIrcDigestPrefix { return 'BOB DIGEST v1 ' }
+
+function Get-BobIrcDigestChunkStatePath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_digest-chunks.json')
+}
+
+function Test-BobIrcDigestBlobSafe {
+    param([string]$Text)
+    $lower = ([string]$Text).ToLowerInvariant()
+    if (-not $lower) { return $true }
+    foreach ($m in @('password=', 'xai_api_key=', 'connect.password', 'bob_report_secret')) {
+        if ($lower.Contains($m)) { return $false }
+    }
+    return $true
+}
+
+function Parse-BobIrcDigestWhisperBody {
+    param([string]$Body)
+    $raw = ([string]$Body).Trim()
+    if (-not $raw) { return $null }
+    if ($raw.StartsWith('{')) {
+        return [pscustomobject]@{ kind = 'json'; text = $raw }
+    }
+    $prefix = Get-BobIrcDigestPrefix
+    if (-not $raw.StartsWith($prefix)) { return $null }
+    $rest = $raw.Substring($prefix.Length).Trim()
+    if ($rest -match '^(\d+)/(\d+)\s+(.*)$') {
+        return [pscustomobject]@{
+            kind  = 'chunk'
+            index = [int]$Matches[1]
+            total = [int]$Matches[2]
+            text  = [string]$Matches[3]
+        }
+    }
+    return $null
+}
+
+function Read-BobIrcDigestChunkState {
+    $p = Get-BobIrcDigestChunkStatePath
+    if (-not (Test-Path $p)) {
+        return [pscustomobject]@{ total = 0; parts = @{} }
+    }
+    try {
+        $j = Read-JsonFile $p
+        $parts = @{}
+        if ($j.parts) {
+            foreach ($prop in @($j.parts.PSObject.Properties)) {
+                $parts[[string]$prop.Name] = [string]$prop.Value
+            }
+        }
+        $total = 0
+        try { $total = [int]$j.total } catch { }
+        return [pscustomobject]@{ total = $total; parts = $parts }
+    }
+    catch {
+        return [pscustomobject]@{ total = 0; parts = @{} }
+    }
+}
+
+function Write-BobIrcDigestChunkState {
+    param($State)
+    $p = Get-BobIrcDigestChunkStatePath
+    $dir = Split-Path $p -Parent
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $partsHt = @{}
+    foreach ($k in @($State.parts.Keys)) {
+        $partsHt[[string]$k] = [string]$State.parts[$k]
+    }
+    Write-JsonFile $p ([pscustomobject]@{ total = [int]$State.total; parts = $partsHt })
+}
+
+function Clear-BobIrcDigestChunkState {
+    $p = Get-BobIrcDigestChunkStatePath
+    if (Test-Path $p) {
+        try { Remove-Item -LiteralPath $p -Force } catch { }
+    }
+}
+
+function Add-BobIrcDigestChunk {
+    param([int]$Index, [int]$Total, [string]$Piece)
+    if ($Index -lt 1 -or $Total -lt 1 -or $Index -gt $Total) { return $null }
+    $state = Read-BobIrcDigestChunkState
+    if ($Index -eq 1 -or $state.total -ne $Total) {
+        $state = [pscustomobject]@{ total = $Total; parts = @{} }
+    }
+    $state.parts[[string]$Index] = [string]$Piece
+    $haveAll = $true
+    for ($i = 1; $i -le $Total; $i++) {
+        if (-not $state.parts.ContainsKey([string]$i)) { $haveAll = $false; break }
+    }
+    if (-not $haveAll) {
+        Write-BobIrcDigestChunkState $state
+        return $null
+    }
+    Clear-BobIrcDigestChunkState
+    $sb = New-Object System.Text.StringBuilder
+    for ($i = 1; $i -le $Total; $i++) {
+        [void]$sb.Append([string]$state.parts[[string]$i])
+    }
+    return $sb.ToString()
+}
+
+function Resolve-BobCursorPoolSeatId {
+    param([string]$PoolId)
+    $rawId = [string]$PoolId
+    if (-not $rawId) { return $null }
+    foreach ($seat in @(Get-BobSeatConfig)) {
+        if ([string]$seat.id -eq $rawId) { return [string]$seat.id }
+        foreach ($sm in @($seat.machines)) {
+            if ([string]$sm -eq $rawId) { return [string]$seat.id }
+        }
+    }
+    return $rawId
+}
+
+function Apply-BobIrcDigestCursorPools {
+    param($Pools)
+    foreach ($pool in @($Pools)) {
+        if (-not $pool) { continue }
+        $poolId = [string]$pool.id
+        if (-not $poolId) { $poolId = [string]$pool.seat }
+        if (-not $poolId) { continue }
+        $seatId = Resolve-BobCursorPoolSeatId $poolId
+        if (-not $seatId) { continue }
+        $rem = $null
+        if ($null -ne $pool.remaining -and [string]$pool.remaining -ne '') {
+            try { $rem = [int]$pool.remaining } catch { }
+        }
+        elseif ($null -ne $pool.remaining_pct -and [string]$pool.remaining_pct -ne '') {
+            try { $rem = [int]$pool.remaining_pct } catch { }
+        }
+        $period = $null
+        if ($pool.period_end) { $period = [string]$pool.period_end }
+        elseif ($pool.reset) { $period = [string]$pool.reset }
+        $label = $null
+        if ($pool.label) { $label = [string]$pool.label }
+        if ($pool.overage) {
+            $ov = [string]$pool.overage
+            if ($label) { $label = ('{0} {1}' -f $label, $ov) }
+            else { $label = $ov }
+        }
+        Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $rem -PeriodEnd $period -Label $label
+    }
+}
+
+function ConvertTo-BobIrcPeerFromDigestMachine {
+    param([string]$MachineId, $Ent)
+    if (-not $Ent) { return $null }
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { return $null }
+    $jobs = @()
+    foreach ($j in @($Ent.jobs)) {
+        if (-not $j) { continue }
+        $repo = $null
+        if ($j.repo -and (Test-BobIrcRepoOk ([string]$j.repo))) { $repo = [string]$j.repo }
+        $st = 'running'
+        if ($j.state) { $st = [string]$j.state }
+        $row = [pscustomobject]@{
+            repo        = $repo
+            state       = $st
+            machine     = $mid
+            sha         = $(if ($j.sha) { [string]$j.sha } else { $null })
+            model       = $(if ($j.model) { [string]$j.model } else { $null })
+            description = $(if ($j.description) { [string]$j.description } else { $null })
+            run_time    = $(if ($j.run_time) { [string]$j.run_time } else { $null })
+        }
+        if ($repo -or $row.sha) { $jobs += ,$row }
+    }
+    $weekly = $null
+    if ($null -ne $Ent.weekly -and [string]$Ent.weekly -ne '') {
+        try { $weekly = [int]$Ent.weekly } catch { }
+    }
+    $periodEnd = $null
+    if ($Ent.period_end) { $periodEnd = [string]$Ent.period_end }
+    elseif ($Ent.reset) { $periodEnd = [string]$Ent.reset }
+    $primaryJob = Get-BobIrcDigestTaskFromJobs @($Ent.jobs)
+    $topRepo = $null
+    if ($Ent.repo -and (Test-BobIrcRepoOk ([string]$Ent.repo))) { $topRepo = [string]$Ent.repo }
+    elseif ($primaryJob -and $primaryJob.repo -and (Test-BobIrcRepoOk ([string]$primaryJob.repo))) {
+        $topRepo = [string]$primaryJob.repo
+    }
+    $topSha = $null
+    if ($Ent.sha) { $topSha = [string]$Ent.sha }
+    elseif ($primaryJob -and $primaryJob.sha) { $topSha = [string]$primaryJob.sha }
+    $topModel = $null
+    if ($Ent.model) { $topModel = [string]$Ent.model }
+    elseif ($primaryJob -and $primaryJob.model) { $topModel = [string]$primaryJob.model }
+    return [pscustomobject]@{
+        ok                = $true
+        id                = $mid
+        weekly            = $weekly
+        period_end        = $periodEnd
+        cursor_label      = $(if ($Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
+        cursor_period_end = $(if ($Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
+        running           = $(try { [int]$Ent.running } catch { 0 })
+        queued            = $(try { [int]$Ent.queued } catch { 0 })
+        lastSeen          = $(if ($Ent.lastSeen) { [string]$Ent.lastSeen } else { $null })
+        jobs              = $jobs
+        model             = $topModel
+        kind              = $(if ($Ent.kind) { [string]$Ent.kind } else { $null })
+        repo              = $topRepo
+        sha               = $topSha
+        fuel              = $(if ($Ent.fuel) { [string]$Ent.fuel } else { $null })
+        source            = 'irc-digest'
+    }
+}
+
+function Get-BobIrcDigestTaskFromJobs {
+    param($Jobs)
+    foreach ($j in @($Jobs)) {
+        if (-not $j) { continue }
+        $st = [string]$j.state
+        if ($st -match '^(?i)(running|start|queued)$') { return $j }
+    }
+    if (@($Jobs).Count -gt 0) { return $Jobs[0] }
+    return $null
+}
+
+function Build-BobIrcReportDigestFromBobiverse {
+    param($DigestObj)
+    $machinesOut = [ordered]@{}
+    $nodes = $DigestObj.machines
+    if (-not $nodes) { return [pscustomobject]@{ machines = $machinesOut } }
+    foreach ($prop in @($nodes.PSObject.Properties)) {
+        $mid = Resolve-BobiverseMachineId ([string]$prop.Name)
+        if (-not $mid) { continue }
+        $ent = $prop.Value
+        if (-not $ent) { continue }
+        $node = [ordered]@{}
+        $primary = Get-BobIrcDigestTaskFromJobs @($ent.jobs)
+        if ($primary) {
+            $node.task = [pscustomobject]@{
+                repo        = $(if ($primary.repo) { [string]$primary.repo } else { $null })
+                sha         = $(if ($primary.sha) { [string]$primary.sha } else { $null })
+                model       = $(if ($primary.model) { [string]$primary.model } else { $null })
+                description = $(if ($primary.description) { [string]$primary.description } else { $null })
+                run_time    = $(if ($primary.run_time) { [string]$primary.run_time } else { $null })
+                state       = $(if ($primary.state) { [string]$primary.state } else { 'START' })
+            }
+        }
+        if ($ent.pcent) { $node.pcent = $ent.pcent }
+        if ($ent.uptime_since) { $node.uptime_since = [string]$ent.uptime_since }
+        if ($node.Count -gt 0) { $machinesOut[$mid] = [pscustomobject]$node }
+    }
+    return [pscustomobject]@{ machines = [pscustomobject]$machinesOut }
+}
+
+function Import-BobIrcDigestJson {
+    param($DigestObj)
+    if (-not $DigestObj) { return @() }
+    $home = Get-BobIrcHome
+    $dir = Join-Path $home 'bob-peers'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $updated = @()
+    if ($DigestObj.cursor_pools) {
+        Apply-BobIrcDigestCursorPools -Pools @($DigestObj.cursor_pools)
+    }
+    $report = Build-BobIrcReportDigestFromBobiverse -DigestObj $DigestObj
+    Write-JsonFile (Join-Path $dir '_report-digest.json') $report
+    $nodes = $DigestObj.machines
+    if (-not $nodes) { return $updated }
+    foreach ($prop in @($nodes.PSObject.Properties)) {
+        $doc = ConvertTo-BobIrcPeerFromDigestMachine -MachineId ([string]$prop.Name) -Ent $prop.Value
+        if (-not $doc) { continue }
+        $resolved = [string]$doc.id
+        $peerPath = Join-Path $dir ($resolved + '.json')
+        if (-not $doc.period_end -and (Test-Path $peerPath)) {
+            try {
+                $prev = Read-JsonFile $peerPath
+                if ($prev -and $prev.period_end) {
+                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
+                }
+                if ($prev -and $prev.cursor_label -and -not $doc.cursor_label) {
+                    $doc | Add-Member -NotePropertyName cursor_label -NotePropertyValue ([string]$prev.cursor_label) -Force
+                }
+                if ($prev -and $prev.cursor_period_end -and -not $doc.cursor_period_end) {
+                    $doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$prev.cursor_period_end) -Force
+                }
+            }
+            catch { }
+        }
+        Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
+        if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
+            $seat = Get-BobSeatForMachine -MachineId $resolved
+            if ($seat) {
+                Save-BobCursorPoolForSeat -SeatId ([string]$seat.id) -Label ([string]$doc.cursor_label) -PeriodEnd $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
+            }
+        }
+        Write-JsonFile $peerPath $doc
+        $updated += $resolved
+    }
+    return $updated
+}
+
+function Import-BobIrcDigestWhisperBody {
+    param([string]$Body)
+    $parsed = Parse-BobIrcDigestWhisperBody $Body
+    if (-not $parsed) { return @() }
+    $jsonText = $null
+    if ($parsed.kind -eq 'json') {
+        $jsonText = [string]$parsed.text
+    }
+    elseif ($parsed.kind -eq 'chunk') {
+        $jsonText = Add-BobIrcDigestChunk -Index $parsed.index -Total $parsed.total -Piece ([string]$parsed.text)
+    }
+    if (-not $jsonText) { return @() }
+    if (-not (Test-BobIrcDigestBlobSafe $jsonText)) { return @() }
+    try {
+        $obj = $jsonText | ConvertFrom-Json
+    }
+    catch { return @() }
+    return @(Import-BobIrcDigestJson -DigestObj $obj)
+}
+
 function Request-BobIrcBobiversePull {
     param([int]$MinIntervalSec = 120)
     $home = Get-BobIrcHome
@@ -829,11 +1143,18 @@ function Import-BobIrcTrayPull {
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $trayPrefix = Get-BobIrcTrayPrefix
+    $digestPrefix = Get-BobIrcDigestPrefix
     foreach ($line in @($text -split "`n")) {
         $t = $line.Trim()
         if (-not $t) { continue }
         if ($t -notmatch "(?i)PRIVMSG\s+$nickEsc\s+:(?<ircbody>.*)$") { continue }
         $body = [string]$Matches['ircbody'].Trim()
+        if ($body.StartsWith($digestPrefix) -or $body.StartsWith('{')) {
+            foreach ($id in @(Import-BobIrcDigestWhisperBody $body)) {
+                if ($id -and $updated -notcontains $id) { $updated += $id }
+            }
+            continue
+        }
         if (-not $body.StartsWith($trayPrefix)) { continue }
         $doc = ConvertFrom-BobIrcTrayLine $body
         if (-not $doc) { continue }

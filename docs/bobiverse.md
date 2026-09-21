@@ -10,7 +10,7 @@ Fleet machines do **not** SMB-peek each other. Flamingo and MarchHare sit on bob
 | Mode | MODE2 moot, `free` |
 | Moot id | `b0b1be15e0000001` |
 | Human talk | Short English PRIVMSG on real field change or one-shot long-running warning |
-| Tray pull | `!bobiverse` ~every 120s from `bob-*` nicks; briefer whispers `BOB TRAY v1 …` lines |
+| Tray pull | `!bobiverse` ~every 120s from `bob-*` nicks; chair whispers `BOB DIGEST v1 i/n` JSON (full card) or legacy `BOB TRAY v1 …` kv lines |
 
 Nicks (one builder agent per machine):
 
@@ -27,7 +27,7 @@ Home on each box: `~\.agentic-irc-bobiverse` (not the Club Madeira `#cm-bob-osca
 
 `Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.
 
-Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests `BOB TRAY v1` whisper lines from `irc.log` into `bob-peers\`. Protocol detail: `agentic_irc` issue #26 / `docs/feature-request-bobiverse-channel-talk-tray-pull-2026-09-21.md`.
+Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests chair **`BOB DIGEST v1`** JSON whispers (chunked when needed) from `irc.log` into `bob-peers\` plus `cursor-pools.json` cache. Legacy **`BOB TRAY v1`** kv lines still work. Protocol: `agentic_irc` `!bobiverse` digest + issue #142 / `docs/feature-request-bobiverse-digest-feeds-systray-2026-09-21.md`.
 
 Example tray line (machine-readable, not for channel spam):
 
