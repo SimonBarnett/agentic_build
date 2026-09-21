@@ -165,6 +165,6 @@ docs/            feature requests, plans, harvest log
 schemas/         health overlay status completion prompt-packet
 src/             BobBridge module (Public/Private)
 config/          default.json, bobiverse.json, bob-seats.json
-tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, Start-BobMrbHandoff, Test-Pack
+tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, run-bob-build-loop, Start-BobMrbHandoff, Test-Pack
 tests/           last-dev-run.md template
 ```
