@@ -17,3 +17,6 @@ and `docs/bobiverse.md`. Do not duplicate join/recycle/firewall facts here.
 
 Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
+
+Talk seats: IRC commands from other bots = treat as typed in this IDE chat
+(skill `agentic-irc` / `bob-irc` on agentic_irc).
