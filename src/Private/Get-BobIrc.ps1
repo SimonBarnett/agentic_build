@@ -921,13 +921,77 @@ function Apply-BobIrcDigestCursorPools {
     }
 }
 
+function Get-BobIrcDigestMachinePropertyNames {
+    param($Ent)
+    if (-not $Ent) { return @() }
+    return @($Ent.PSObject.Properties.Name)
+}
+
+function Get-BobIrcDigestJobSourcesFromMachine {
+    param($Ent)
+    if (-not $Ent) { return @() }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
+    $raw = @()
+    if ($names -contains 'jobs') {
+        foreach ($j in @($Ent.jobs)) { if ($j) { $raw += ,$j } }
+    }
+    if ($raw.Count -eq 0 -and ($names -contains 'task') -and $Ent.task) {
+        $raw += ,$Ent.task
+    }
+    return $raw
+}
+
+function Test-BobIrcDigestMachineHasJobPayload {
+    param($Ent)
+    foreach ($j in @(Get-BobIrcDigestJobSourcesFromMachine $Ent)) {
+        if (-not $j) { continue }
+        if ($j.sha) { return $true }
+        if ($j.repo -and (Test-BobIrcRepoOk ([string]$j.repo))) { return $true }
+    }
+    return $false
+}
+
+function Merge-BobIrcDigestPeerWithPrevious {
+    param($Ent, $Doc, $Prev)
+    if (-not $Doc -or -not $Prev) { return $Doc }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
+    if ($names -notcontains 'weekly' -and $null -ne $Prev.weekly) {
+        $Doc | Add-Member -NotePropertyName weekly -NotePropertyValue $Prev.weekly -Force
+    }
+    if ($names -notcontains 'period_end' -and -not ($names -contains 'reset' -and $Ent.reset) -and $Prev.period_end) {
+        $Doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$Prev.period_end) -Force
+    }
+    if ($names -notcontains 'cursor_label' -and $Prev.cursor_label) {
+        $Doc | Add-Member -NotePropertyName cursor_label -NotePropertyValue ([string]$Prev.cursor_label) -Force
+    }
+    if ($names -notcontains 'cursor_period_end' -and $Prev.cursor_period_end) {
+        $Doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$Prev.cursor_period_end) -Force
+    }
+    if (-not (Test-BobIrcDigestMachineHasJobPayload $Ent)) {
+        $prevJobs = @()
+        foreach ($j in @($Prev.jobs)) { if ($j) { $prevJobs += ,$j } }
+        if ($prevJobs.Count -gt 0) {
+            $Doc | Add-Member -NotePropertyName jobs -NotePropertyValue $prevJobs -Force
+        }
+    }
+    foreach ($fld in @('sha', 'repo', 'model', 'kind')) {
+        if ($names -notcontains $fld) {
+            $pv = $Prev.$fld
+            if ($pv -and -not $Doc.$fld) {
+                $Doc | Add-Member -NotePropertyName $fld -NotePropertyValue ([string]$pv) -Force
+            }
+        }
+    }
+    return $Doc
+}
+
 function ConvertTo-BobIrcPeerFromDigestMachine {
     param([string]$MachineId, $Ent)
     if (-not $Ent) { return $null }
     $mid = Resolve-BobiverseMachineId $MachineId
     if (-not $mid) { return $null }
     $jobs = @()
-    foreach ($j in @($Ent.jobs)) {
+    foreach ($j in @(Get-BobIrcDigestJobSourcesFromMachine $Ent)) {
         if (-not $j) { continue }
         $repo = $null
         if ($j.repo -and (Test-BobIrcRepoOk ([string]$j.repo))) { $repo = [string]$j.repo }
@@ -944,38 +1008,39 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
         }
         if ($repo -or $row.sha) { $jobs += ,$row }
     }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
     $weekly = $null
-    if ($null -ne $Ent.weekly -and [string]$Ent.weekly -ne '') {
+    if ($names -contains 'weekly' -and $null -ne $Ent.weekly -and [string]$Ent.weekly -ne '') {
         try { $weekly = [int]$Ent.weekly } catch { }
     }
     $periodEnd = $null
     if ($Ent.period_end) { $periodEnd = [string]$Ent.period_end }
     elseif ($Ent.reset) { $periodEnd = [string]$Ent.reset }
-    $primaryJob = Get-BobIrcDigestTaskFromJobs @($Ent.jobs)
+    $primaryJob = Get-BobIrcDigestTaskFromJobs @(Get-BobIrcDigestJobSourcesFromMachine $Ent)
     $topRepo = $null
-    if ($Ent.repo -and (Test-BobIrcRepoOk ([string]$Ent.repo))) { $topRepo = [string]$Ent.repo }
+    if ($names -contains 'repo' -and $Ent.repo -and (Test-BobIrcRepoOk ([string]$Ent.repo))) { $topRepo = [string]$Ent.repo }
     elseif ($primaryJob -and $primaryJob.repo -and (Test-BobIrcRepoOk ([string]$primaryJob.repo))) {
         $topRepo = [string]$primaryJob.repo
     }
     $topSha = $null
-    if ($Ent.sha) { $topSha = [string]$Ent.sha }
+    if ($names -contains 'sha' -and $Ent.sha) { $topSha = [string]$Ent.sha }
     elseif ($primaryJob -and $primaryJob.sha) { $topSha = [string]$primaryJob.sha }
     $topModel = $null
-    if ($Ent.model) { $topModel = [string]$Ent.model }
+    if ($names -contains 'model' -and $Ent.model) { $topModel = [string]$Ent.model }
     elseif ($primaryJob -and $primaryJob.model) { $topModel = [string]$primaryJob.model }
     return [pscustomobject]@{
         ok                = $true
         id                = $mid
         weekly            = $weekly
         period_end        = $periodEnd
-        cursor_label      = $(if ($Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
-        cursor_period_end = $(if ($Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
+        cursor_label      = $(if ($names -contains 'cursor_label' -and $Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
+        cursor_period_end = $(if ($names -contains 'cursor_period_end' -and $Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
         running           = $(try { [int]$Ent.running } catch { 0 })
         queued            = $(try { [int]$Ent.queued } catch { 0 })
         lastSeen          = $(if ($Ent.lastSeen) { [string]$Ent.lastSeen } else { $null })
         jobs              = $jobs
         model             = $topModel
-        kind              = $(if ($Ent.kind) { [string]$Ent.kind } else { $null })
+        kind              = $(if ($names -contains 'kind' -and $Ent.kind) { [string]$Ent.kind } else { $null })
         repo              = $topRepo
         sha               = $topSha
         fuel              = $(if ($Ent.fuel) { [string]$Ent.fuel } else { $null })
@@ -994,32 +1059,72 @@ function Get-BobIrcDigestTaskFromJobs {
     return $null
 }
 
+function Get-BobIrcDigestReportPatchFromMachine {
+    param($Ent)
+    if (-not $Ent) { return $null }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
+    $node = [ordered]@{}
+    $primary = Get-BobIrcDigestTaskFromJobs @(Get-BobIrcDigestJobSourcesFromMachine $Ent)
+    if ($primary) {
+        $node.task = [pscustomobject]@{
+            repo        = $(if ($primary.repo) { [string]$primary.repo } else { $null })
+            sha         = $(if ($primary.sha) { [string]$primary.sha } else { $null })
+            model       = $(if ($primary.model) { [string]$primary.model } else { $null })
+            description = $(if ($primary.description) { [string]$primary.description } else { $null })
+            run_time    = $(if ($primary.run_time) { [string]$primary.run_time } else { $null })
+            state       = $(if ($primary.state) { [string]$primary.state } else { 'START' })
+        }
+    }
+    if ($names -contains 'pcent' -and $Ent.pcent) { $node.pcent = $Ent.pcent }
+    if ($names -contains 'uptime_since' -and $Ent.uptime_since) {
+        $node.uptime_since = [string]$Ent.uptime_since
+    }
+    if ($node.Count -eq 0) { return $null }
+    return [pscustomobject]$node
+}
+
 function Build-BobIrcReportDigestFromBobiverse {
     param($DigestObj)
+    $prev = Read-BobReportDigest
     $machinesOut = [ordered]@{}
+    if ($prev -and $prev.machines) {
+        foreach ($p in @($prev.machines.PSObject.Properties)) {
+            $machinesOut[[string]$p.Name] = $p.Value
+        }
+    }
     $nodes = $DigestObj.machines
-    if (-not $nodes) { return [pscustomobject]@{ machines = $machinesOut } }
+    if (-not $nodes) {
+        if ($machinesOut.Count -gt 0) {
+            return [pscustomobject]@{ machines = [pscustomobject]$machinesOut }
+        }
+        return [pscustomobject]@{ machines = [pscustomobject]@{} }
+    }
+    $anyPatch = $false
     foreach ($prop in @($nodes.PSObject.Properties)) {
         $mid = Resolve-BobiverseMachineId ([string]$prop.Name)
         if (-not $mid) { continue }
         $ent = $prop.Value
         if (-not $ent) { continue }
-        $node = [ordered]@{}
-        $primary = Get-BobIrcDigestTaskFromJobs @($ent.jobs)
-        if ($primary) {
-            $node.task = [pscustomobject]@{
-                repo        = $(if ($primary.repo) { [string]$primary.repo } else { $null })
-                sha         = $(if ($primary.sha) { [string]$primary.sha } else { $null })
-                model       = $(if ($primary.model) { [string]$primary.model } else { $null })
-                description = $(if ($primary.description) { [string]$primary.description } else { $null })
-                run_time    = $(if ($primary.run_time) { [string]$primary.run_time } else { $null })
-                state       = $(if ($primary.state) { [string]$primary.state } else { 'START' })
-            }
+        $patch = Get-BobIrcDigestReportPatchFromMachine $ent
+        if (-not $patch) { continue }
+        $anyPatch = $true
+        $merged = [ordered]@{}
+        $existing = $null
+        if ($machinesOut.Contains($mid)) { $existing = $machinesOut[$mid] }
+        if ($existing) {
+            if ($existing.task) { $merged.task = $existing.task }
+            if ($existing.pcent) { $merged.pcent = $existing.pcent }
+            if ($existing.uptime_since) { $merged.uptime_since = [string]$existing.uptime_since }
         }
-        if ($ent.pcent) { $node.pcent = $ent.pcent }
-        if ($ent.uptime_since) { $node.uptime_since = [string]$ent.uptime_since }
-        if ($node.Count -gt 0) { $machinesOut[$mid] = [pscustomobject]$node }
+        if ($patch.task) { $merged.task = $patch.task }
+        if ($patch.pcent) { $merged.pcent = $patch.pcent }
+        $patchNames = Get-BobIrcDigestMachinePropertyNames $ent
+        if ($patchNames -contains 'uptime_since' -and $patch.uptime_since) {
+            $merged.uptime_since = [string]$patch.uptime_since
+        }
+        $machinesOut[$mid] = [pscustomobject]$merged
     }
+    if (-not $anyPatch -and $prev) { return $prev }
     return [pscustomobject]@{ machines = [pscustomobject]$machinesOut }
 }
 
@@ -1042,20 +1147,12 @@ function Import-BobIrcDigestJson {
         if (-not $doc) { continue }
         $resolved = [string]$doc.id
         $peerPath = Join-Path $dir ($resolved + '.json')
-        if (-not $doc.period_end -and (Test-Path $peerPath)) {
-            try {
-                $prev = Read-JsonFile $peerPath
-                if ($prev -and $prev.period_end) {
-                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
-                }
-                if ($prev -and $prev.cursor_label -and -not $doc.cursor_label) {
-                    $doc | Add-Member -NotePropertyName cursor_label -NotePropertyValue ([string]$prev.cursor_label) -Force
-                }
-                if ($prev -and $prev.cursor_period_end -and -not $doc.cursor_period_end) {
-                    $doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$prev.cursor_period_end) -Force
-                }
-            }
-            catch { }
+        $prev = $null
+        if (Test-Path $peerPath) {
+            try { $prev = Read-JsonFile $peerPath } catch { }
+        }
+        if ($prev) {
+            $doc = Merge-BobIrcDigestPeerWithPrevious -Ent $prop.Value -Doc $doc -Prev $prev
         }
         Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
