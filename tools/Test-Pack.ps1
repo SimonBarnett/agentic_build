@@ -2444,6 +2444,13 @@ Invoke-Case 'BT0gtalk inbox outbox fuel' {
 
 Invoke-Case 'BT0gtalk cursor models outbox' {
     param($bridgeRoot)
+    $cursorOneShotSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobCursorModels.ps1') -Raw
+    if ($cursorOneShotSrc -match '\$pid\s*=\s*\[int\]\$created\.ProcessId') {
+        throw 'Invoke-BobCursorModelsOneShot must not assign automatic $PID (use $procId)'
+    }
+    if ($cursorOneShotSrc -match 'if\s*\(\s*\$env:BOB_GROK_TALK_CURSOR_FIXTURE\s*\)\s*\{[^\}]*return') {
+        throw 'BOB_GROK_TALK_CURSOR_FIXTURE must not return before Win32_Process create and child wait'
+    }
     $ircHome = Join-Path $bridgeRoot 'grok-talk-cursor-home'
     New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
     $env:BOB_IRC_HOME = $ircHome
