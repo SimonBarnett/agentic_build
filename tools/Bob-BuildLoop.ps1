@@ -204,10 +204,37 @@ function New-BobBuildGoal {
     return "Implement GitHub issue #$($State.issue) on $($State.repo). Read $docs and $plan. Open a PR from the work branch. Never push main. Never merge. Do not write ready for human UAT."
 }
 
+function ConvertFrom-BobGhJsonList {
+    param([string]$Raw)
+    if (-not $Raw -or -not $Raw.Trim()) { return @() }
+    $parsed = $Raw | ConvertFrom-Json
+    $items = @($parsed)
+    if ($items.Count -eq 1 -and $null -ne $items[0].PSObject.Properties['number'] -and ($items[0].number -is [System.Array])) {
+        $o = $items[0]
+        $nums = @($o.number)
+        $out = @()
+        $i = 0
+        while ($i -lt $nums.Count) {
+            $out += [pscustomobject]@{
+                number      = $nums[$i]
+                url         = @($o.url)[$i]
+                title       = @($o.title)[$i]
+                headRefName = @($o.headRefName)[$i]
+                headRefOid  = @($o.headRefOid)[$i]
+                createdAt   = @($o.createdAt)[$i]
+            }
+            $i++
+        }
+        return $out
+    }
+    return $items
+}
+
 function Get-BobBuildLoopShaNeedle {
     param([string]$Sha)
     if (-not $Sha) { return $null }
     $s = $Sha.Trim().ToLowerInvariant()
+    if ($s -match '([0-9a-f]{7,40})') { $s = $Matches[1] }
     $short = $s
     if ($s.Length -ge 7) { $short = $s.Substring(0, 7) }
     return [pscustomobject]@{ full = $s; short = $short }
@@ -252,13 +279,34 @@ function Select-BobBuildLoopPr {
     $seen = @()
     foreach ($u in @($State.seenPrs)) { $seen += [string]$u }
     $candidates = @()
+    $issue = 0
+    if ($State.issue) { $issue = [int]$State.issue }
     foreach ($p in $list) {
         $url = [string]$p.url
+        if ($url -and ($url -match ' ')) { continue }
         if ($url -and ($seen -contains $url)) { continue }
         $created = [string]$p.createdAt
         $after = [string]$State.watchAfter
         if ($after -and $created -and ($created -lt $after)) { continue }
         $candidates += $p
+    }
+    if ($issue -gt 0) {
+        $want = @($issue)
+        if ($State.priorMrbIssue) {
+            try { $want += [int]$State.priorMrbIssue } catch { }
+        }
+        $named = @()
+        foreach ($p in $candidates) {
+            $t = [string]$p.title
+            foreach ($w in $want) {
+                if ($t -match "(?i)issue\s*#$w\b" -or $t -match "#$w\b") {
+                    $named += $p
+                    break
+                }
+            }
+        }
+        if ($named.Count -gt 0) { $candidates = $named }
+        else { return $null }
     }
     if ($candidates.Count -eq 0) { return $null }
     return $candidates | Sort-Object { [string]$_.createdAt } | Select-Object -Last 1
@@ -531,5 +579,14 @@ function Write-BobBuildLoopLog {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
     $line = '{0:o} {1}' -f [DateTime]::UtcNow, $Message
-    Add-Content -LiteralPath $Path -Value $line -Encoding UTF8
+    try {
+        Add-Content -LiteralPath $Path -Value $line -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        try {
+            $alt = $Path + '.' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.log'
+            Add-Content -LiteralPath $alt -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
 }
