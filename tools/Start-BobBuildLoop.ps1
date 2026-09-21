@@ -74,32 +74,48 @@ function Get-LoopWorld {
     $issues = @()
     $gh = Get-BobGhExe
     if ($gh) {
-        $prJson = & $gh pr list --repo $State.repo --state open --limit 30 --json number,url,title,headRefName,headRefOid,createdAt 2>&1 | Out-String
-        if ($LASTEXITCODE -eq 0 -and $prJson.Trim()) {
-            foreach ($p in @(ConvertFrom-BobGhJsonList $prJson)) {
-                if ($null -eq $p.number -or ($p.number -is [System.Array])) { continue }
-                $prs += [pscustomobject]@{
-                    number    = [int]$p.number
-                    url       = [string]$p.url
-                    title     = [string]$p.title
-                    branch    = [string]$p.headRefName
-                    sha       = [string]$p.headRefOid
-                    createdAt = [string]$p.createdAt
+        $savedEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $prJson = & $gh pr list --repo $State.repo --state open --limit 30 --json number,url,title,headRefName,headRefOid,createdAt 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $prJson.Trim()) {
+                foreach ($p in @(ConvertFrom-BobGhJsonList $prJson)) {
+                    if ($null -eq $p.number -or ($p.number -is [System.Array])) { continue }
+                    $prs += [pscustomobject]@{
+                        number    = [int]$p.number
+                        url       = [string]$p.url
+                        title     = [string]$p.title
+                        branch    = [string]$p.headRefName
+                        sha       = [string]$p.headRefOid
+                        createdAt = [string]$p.createdAt
+                    }
                 }
+            }
+            elseif ($LASTEXITCODE -ne 0) {
+                Write-BobBuildLoopLog -Path $LogPath -Message ("gh pr list exit {0}" -f $LASTEXITCODE)
+            }
+            $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
+                foreach ($i in @(ConvertFrom-BobGhJsonList $isJson)) {
+                    if ($null -eq $i.number -or ($i.number -is [System.Array])) { continue }
+                    $issues += [pscustomobject]@{
+                        number    = [int]$i.number
+                        title     = [string]$i.title
+                        url       = [string]$i.url
+                        body      = [string]$i.body
+                        createdAt = [string]$i.createdAt
+                    }
+                }
+            }
+            elseif ($LASTEXITCODE -ne 0) {
+                Write-BobBuildLoopLog -Path $LogPath -Message ("gh issue list exit {0}" -f $LASTEXITCODE)
             }
         }
-        $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt 2>&1 | Out-String
-        if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
-            foreach ($i in @(ConvertFrom-BobGhJsonList $isJson)) {
-                if ($null -eq $i.number -or ($i.number -is [System.Array])) { continue }
-                $issues += [pscustomobject]@{
-                    number    = [int]$i.number
-                    title     = [string]$i.title
-                    url       = [string]$i.url
-                    body      = [string]$i.body
-                    createdAt = [string]$i.createdAt
-                }
-            }
+        catch {
+            Write-BobBuildLoopLog -Path $LogPath -Message ("gh poll failed: {0}" -f $_.Exception.Message)
+        }
+        finally {
+            $ErrorActionPreference = $savedEap
         }
     }
     $job = $null
@@ -287,8 +303,8 @@ function Invoke-LoopStartMrb {
             startError = $why
         }
     }
-    $pid = $null
-    if ($r.pid) { $pid = $r.pid }
+    $procId = $null
+    if ($r.pid) { $procId = $r.pid }
     $jobId = $null
     if ($r.jobId) { $jobId = [string]$r.jobId }
     $started = $true
@@ -303,7 +319,7 @@ function Invoke-LoopStartMrb {
         ok         = [bool]$started
         started    = $started
         jobId      = $jobId
-        pid        = $pid
+        pid        = $procId
         fuel       = $(if ($r.handed) { [string]$r.handed } else { [string]$State.fuel })
         startError = $err
     }

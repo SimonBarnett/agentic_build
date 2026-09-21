@@ -2,11 +2,11 @@
 name: bob-job-loop
 description: >
   Hand off starting a git job and hostile MRB until PASS-nits: run
-  Start-BobBuildLoop.ps1 and get notified on DONE. Retries failed
-  cursor/grok jobs. FAIL spawns FIX. Does not stamp UAT. Use when the
-  user says hand off the job, start and mrb until pass, retry failed
-  cursor/grok jobs, run the program and notify on PASS-nits, or
-  /bob-job-loop. Table: bob-build-loop. Bars: bob-hostile-mrb.
+  Start-BobBuildLoop.ps1 (or tools/run-bob-build-loop.ps1) and get notified
+  on DONE. Retries failed cursor/grok jobs. FAIL spawns FIX. Does not stamp
+  UAT. Use when the user says hand off the job, bob job, start and mrb until
+  pass, retry failed cursor/grok jobs, run the program and notify on
+  PASS-nits, or /bob-job-loop. Table: bob-build-loop. Bars: bob-hostile-mrb.
 ---
 
 # Build / MRB until PASS-nits (one program)
@@ -18,33 +18,53 @@ The dispatcher does not sit in the MRB/FIX table. Launch the driver, then
 stop. Do not poll `Get-BobBuild`. Do not retype `Start-BobMrbHandoff` or
 `Start-BobBuild -Fix` unless the driver cannot start.
 
-## Launch
+## Launch (Grok session)
 
-FR + plan already parked (`bob-spec-intake`). Then:
+FR + plan already parked (`bob-spec-intake`). Prefer isolated worktree per
+FR. Unique `-LogPath` per loop (two loops must not share one log file).
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobBuildLoop.ps1 `
-  -Repo owner/repo -Issue <fr> -Cwd C:\ai\<repo> `
-  -Docs docs/feature-request-....md -Plan docs/build-and-test-plan-....md
+# Prefer the wrapper (GH_TOKEN via credential-manager; fill often fails):
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\run-bob-build-loop.ps1 `
+  -Repo owner/repo -Issue <fr> -Cwd C:\ai\<repo>-loop<fr> `
+  -Docs docs/feature-request-....md -Plan docs/build-and-test-plan-....md `
+  -LogPath $env:USERPROFILE\.grok\long-running-background-tasks\bob-build-loop-owner_repo-<fr>.log
 ```
 
+Or call `Start-BobBuildLoop.ps1` in-process with `$env:GH_TOKEN` already set.
+
 Skip `-Goal` unless the parked issue is not enough. Existing PR: pass
-`-Sha <pr-head>` (and `-Pr <url>` if you have it) to start at MRB.
+`-Sha <pr-head>` and `-Pr <url>` to start at MRB.
 
-Call in-process (`& Start-BobBuildLoop.ps1 ...`) so `-Goal` is not split.
-From this Grok session, wrap the same command in `monitor` so a single
-stdout line wakes you.
+From this Grok session, wrap the launch in `monitor` so a single stdout
+line wakes you. Stdout is `DONE` / `FAILED` only.
 
-Stdout is `DONE` / `FAILED` only. Diagnostics go to
-`~\.grok\long-running-background-tasks\bob-build-loop-<owner>_<repo>-<issue>.log`.
-Board: `Get-BobMrbBoard` / `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`.
+Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
+(default `~\.grok\bob-bridge\loops\`).
+
+## Dispatcher hard rules
+
+1. One FR, one loop board, one isolated cwd/worktree.
+2. Unique `LogPath` / default log name includes repo + issue.
+3. `GH_TOKEN`: `git credential-manager get` first; do not rely on
+   interactive `git credential fill`.
+4. Existing open PR for that FR (or its `priorMrbIssue` FAIL board): pin
+   `-Sha`/`-Pr` and start at MRB. Do not spawn another build that ignores
+   the open PR.
+5. Title match accepts `#<issue>` and `#<priorMrbIssue>` (FIX PRs often
+   say `Fix issue #21` while the FR is `#2`).
+6. Never the implementer for MRB. New job, `-Kind mrb`.
+7. On `FAILED: PR worker exited without a PR`: list open PRs; if a matching
+   PR exists, re-pin the board to `wait_mrb` and relaunch. Do not burn
+   three more blind builds first.
 
 ## On wakeup
 
 - `DONE: MRB PASS-nits ...` — tell the human the issue, SHA, and PR. Do
   not stamp ready for human UAT. Bob chairs that.
-- `FAILED: ...` — read the loop log. Do not start a second loop on the
-  same FR until the reason is fixed (gh auth, cwd, secrets in the goal).
+- `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
+  secrets in the goal), then relaunch. Do not start a second loop on the
+  same FR while one is still alive.
 
 ## What the driver does
 

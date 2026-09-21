@@ -604,5 +604,14 @@ function Write-BobBuildLoopLog {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
     $line = '{0:o} {1}' -f [DateTime]::UtcNow, $Message
-    Add-Content -LiteralPath $Path -Value $line -Encoding UTF8
+    try {
+        Add-Content -LiteralPath $Path -Value $line -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        try {
+            $alt = $Path + '.' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.log'
+            Add-Content -LiteralPath $alt -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
 }

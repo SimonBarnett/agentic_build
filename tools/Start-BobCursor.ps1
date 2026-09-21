@@ -125,7 +125,17 @@ elseif ($agent) {
         if ($agent -match '\.cmd$') { $ps1 = Join-Path (Split-Path $agent) 'cursor-agent.ps1' }
         $stArg = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ps1, 'status')
     }
-    $st = & $stExe @stArg 2>&1 | Out-String
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $st = & $stExe @stArg 2>$null | Out-String
+    }
+    catch {
+        $st = [string]$_
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
     if ($st -match '(?i)not logged in') {
         $startError = 'cursor-agent not logged in (CURSOR_API_KEY or cursor-agent login)'
         $agent = $null
