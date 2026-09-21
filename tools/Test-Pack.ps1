@@ -2431,6 +2431,55 @@ Invoke-Case 'BT118c pass-nits merge fail leaves boards open' {
     }
 }
 
+Invoke-Case 'BT119a Start-BobMrb PASS-nits requires PrUrl' {
+    param($bridgeRoot)
+    $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+    try {
+        & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' 2>&1 | Out-Null
+        throw 'PASS-nits without PrUrl must throw'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'requires -PrUrl') { throw $_.Exception.Message }
+    }
+}
+
+Invoke-Case 'BT119b Start-BobMrb PASS-nits merges before issue create' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-pass-merge.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","merged":false}'
+    try {
+        $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+        $r = & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' -PrUrl 'https://github.com/fixture/repo/pull/2'
+        if (-not $r.ok) { throw 'Start-BobMrb failed' }
+        $sawMerge = $false
+        $sawCreateAfterMerge = $false
+        foreach ($line in @(Get-Content $log)) {
+            $row = $line | ConvertFrom-Json
+            $a = [string]$row.argv
+            if ($a -match '(?i)\bpr\s+merge\b') { $sawMerge = $true }
+            if ($a -match '(?i)\bissue\s+create\b') {
+                if (-not $sawMerge) { throw 'issue create before pr merge' }
+                $sawCreateAfterMerge = $true
+            }
+        }
+        if (-not $sawCreateAfterMerge) { throw 'expected pr merge then issue create in fake gh log' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
 Invoke-Case 'BT118d pass-nits finish without gh' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')

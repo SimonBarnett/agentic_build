@@ -45,6 +45,18 @@ function Get-BobMrbTitleSlug {
     return $Matches[1].Trim().ToLowerInvariant()
 }
 
+function Get-BobMrbPrUrlFromBody {
+    param([string]$Body)
+    if (-not $Body) { return $null }
+    if ($Body -match '(?is)##\s+PR\s+[\r\n]+\s*(https://github\.com/[^\s]+/pull/\d+)') {
+        return $Matches[1].Trim()
+    }
+    if ($Body -match '(?i)(https://github\.com/[^\s]+/pull/\d+)') {
+        return $Matches[1].Trim()
+    }
+    return $null
+}
+
 function Get-BobMrbFeatureIssueNumbers {
     param([string]$Body)
     $fr = New-Object 'System.Collections.Generic.HashSet[int]'
