@@ -181,11 +181,20 @@ function New-BobFixPrComment {
 function New-BobFixGoal {
     param(
         [Parameter(Mandatory)][string]$MrbUrl,
-        [string]$Fixes
+        [string]$Fixes,
+        [int]$FrIssue = 0
     )
     $block = $Fixes
     if (-not $block) {
         $block = "Read the Required fixes section on $MrbUrl. Implement those only."
+    }
+    $titleRule = ''
+    if ($FrIssue -gt 0) {
+        $mrbNum = 0
+        if ($MrbUrl -match '/issues/(\d+)(?:\?.*)?$') { $mrbNum = [int]$Matches[1] }
+        $markers = @("#$FrIssue")
+        if ($mrbNum -gt 0 -and $mrbNum -ne $FrIssue) { $markers += "#$mrbNum" }
+        $titleRule = "PR title must include $($markers -join ' or ') (e.g. issue #$FrIssue or Fix issue #$mrbNum)."
     }
     return @"
 Required fixes from $MrbUrl only.
@@ -193,6 +202,7 @@ Required fixes from $MrbUrl only.
 $block
 
 Open a new PR from a new work branch. Never push main. Never merge. Do not write ready for human UAT. Do not review your own PR.
+$titleRule
 "@
 }
 
@@ -201,7 +211,11 @@ function New-BobBuildGoal {
     if ($State.goal -and [string]$State.goal) { return [string]$State.goal }
     $docs = $(if ($State.docs) { [string]$State.docs } else { 'docs/feature-request-*.md' })
     $plan = $(if ($State.plan) { [string]$State.plan } else { 'docs/build-and-test-plan*.md' })
-    return "Implement GitHub issue #$($State.issue) on $($State.repo). Read $docs and $plan. Open a PR from the work branch. Never push main. Never merge. Do not write ready for human UAT."
+    $issue = 0
+    if ($State.issue) { $issue = [int]$State.issue }
+    $titleRule = ''
+    if ($issue -gt 0) { $titleRule = " PR title must include #$issue." }
+    return "Implement GitHub issue #$issue on $($State.repo). Read $docs and $plan. Open a PR from the work branch.$titleRule Never push main. Never merge. Do not write ready for human UAT."
 }
 
 # gh --json list: PS 5.1 sometimes unzips an array of objects into one object
@@ -233,6 +247,19 @@ function ConvertFrom-BobGhJsonList {
         return @($out.ToArray())
     }
     return $items
+}
+
+function Test-BobBuildLoopPrTitleIssueMatch {
+    param(
+        [string]$Title,
+        [int[]]$IssueNumbers
+    )
+    if (-not $Title) { return $false }
+    foreach ($w in @($IssueNumbers)) {
+        if ($w -le 0) { continue }
+        if ($Title -match "(?i)issue\s*#$w\b" -or $Title -match "#$w\b") { return $true }
+    }
+    return $false
 }
 
 function Get-BobBuildLoopShaNeedle {
@@ -285,11 +312,28 @@ function Select-BobBuildLoopPr {
     $candidates = @()
     foreach ($p in $list) {
         $url = [string]$p.url
+        if ($url -and ($url -match ' ')) { continue }
         if ($url -and ($seen -contains $url)) { continue }
         $created = [string]$p.createdAt
         $after = [string]$State.watchAfter
         if ($after -and $created -and ($created -lt $after)) { continue }
         $candidates += $p
+    }
+    $issue = 0
+    if ($State.issue) { $issue = [int]$State.issue }
+    if ($issue -gt 0) {
+        $want = @($issue)
+        if ($State.priorMrbIssue) {
+            try { $want += [int]$State.priorMrbIssue } catch { }
+        }
+        $named = @()
+        foreach ($p in $candidates) {
+            if (Test-BobBuildLoopPrTitleIssueMatch -Title ([string]$p.title) -IssueNumbers $want) {
+                $named += $p
+            }
+        }
+        if ($named.Count -gt 0) { $candidates = $named }
+        else { return $null }
     }
     if ($candidates.Count -eq 0) { return $null }
     return $candidates | Sort-Object { [string]$_.createdAt } | Select-Object -Last 1
@@ -491,7 +535,7 @@ function Get-BobBuildLoopDecision {
                         } -Pass $passRow -Backlink $backlink -Stdout $msg
                     }
                     $fixes = Get-BobMrbRequiredFixes ([string]$mrb.body)
-                    $goal = New-BobFixGoal -MrbUrl ([string]$mrb.url) -Fixes $fixes
+                    $goal = New-BobFixGoal -MrbUrl ([string]$mrb.url) -Fixes $fixes -FrIssue ([int]$State.issue)
                     return New-BobBuildLoopDecision -Action start_fix -Patch @{
                         currentKind   = 'build'
                         priorMrbIssue = [int]$mrb.number
@@ -562,5 +606,14 @@ function Write-BobBuildLoopLog {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
     $line = '{0:o} {1}' -f [DateTime]::UtcNow, $Message
-    Add-Content -LiteralPath $Path -Value $line -Encoding UTF8
+    try {
+        Add-Content -LiteralPath $Path -Value $line -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        try {
+            $alt = $Path + '.' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.log'
+            Add-Content -LiteralPath $alt -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
 }
