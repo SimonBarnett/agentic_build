@@ -4,7 +4,10 @@
 **Repo:** https://github.com/SimonBarnett/agentic_build
 **Raised by:** MRB worker (Cursor Models) while reviewing 6a53bd4 for issue #8
 **UAT + hostile MRB owner:** Bob
-**Related:** `.grok/skills/cursor-mrb-dev` (landed 6a53bd4), `.grok/skills/bob-hostile-mrb`
+**Related:** `.grok/skills/cursor-mrb-dev` (landed 6a53bd4), `.grok/skills/bob-hostile-mrb`,
+https://github.com/SimonBarnett/agentic_build/issues/118
+(`docs/feature-request-pass-nits-close-finished-boards-2026-09-21.md`) — PASS-nits
+merge-then-close finished FR / FAIL / PASS boards (driver + worker).
 
 ## Gap vs current tree
 
@@ -69,7 +72,5 @@ that loop. Today it is a human retyping `Start-BobMrbHandoff.ps1` with a new
 
 ## Non-goals
 
-- Changing the FAIL / PASS-nits bars (that is `bob-hostile-mrb`).
-- Auto-merging or auto-closing the feature-request issue.
 - Any MRB PDF.
 - Letting the loop driver stamp ready for human UAT.

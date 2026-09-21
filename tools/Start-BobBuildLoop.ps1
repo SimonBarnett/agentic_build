@@ -22,6 +22,7 @@ param(
     [scriptblock]$TestStartMrb,
     [scriptblock]$TestStartFix,
     [scriptblock]$TestComment,
+    [scriptblock]$TestPassNitsFinish,
     [string]$StatePath,
     [string]$LogPath
 )
@@ -402,19 +403,42 @@ while ($true) {
             }
         }
         'pass' {
-            $terminal = $true
-            $stdout = [string]$decision.stdout
-            $exitCode = 0
-            if ($live) {
-                $auditJob = [string]$state.currentJobId
-                if (-not $auditJob) { $auditJob = "loop-$Issue" }
-                try {
-                    Write-BobJobAuditLine -JobId $auditJob -Machine '' -Fuel ([string]$state.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$state.currentPr) -MrbIssue ([string]$state.lastMrb) -Sha ([string]$state.currentSha) -Status 'pass-nits'
-                }
-                catch {
-                    $auditErr = $_.Exception.Message
-                    if (-not $auditErr) { $auditErr = $_.ToString() }
-                    Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
+            $passIssueNum = 0
+            if ($decision.pass -and $decision.pass.issue) {
+                try { $passIssueNum = [int]$decision.pass.issue } catch { }
+            }
+            $finish = $null
+            if ($TestPassNitsFinish) {
+                $finish = & $TestPassNitsFinish $state $passIssueNum
+            }
+            elseif ($live) {
+                $finish = Close-BobBuildLoopFinished -State $state -PassIssue $passIssueNum
+            }
+            else {
+                $finish = [pscustomobject]@{ ok = $true }
+            }
+            if (-not $finish -or $finish.ok -eq $false) {
+                $terminal = $true
+                $stdout = [string]$finish.message
+                if (-not $stdout) { $stdout = 'FAILED: PASS-nits finish' }
+                $exitCode = 1
+                Write-BobBuildLoopLog -Path $LogPath -Message $stdout
+            }
+            else {
+                $terminal = $true
+                $stdout = [string]$decision.stdout
+                $exitCode = 0
+                if ($live) {
+                    $auditJob = [string]$state.currentJobId
+                    if (-not $auditJob) { $auditJob = "loop-$Issue" }
+                    try {
+                        Write-BobJobAuditLine -JobId $auditJob -Machine '' -Fuel ([string]$state.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$state.currentPr) -MrbIssue ([string]$state.lastMrb) -Sha ([string]$state.currentSha) -Status 'pass-nits'
+                    }
+                    catch {
+                        $auditErr = $_.Exception.Message
+                        if (-not $auditErr) { $auditErr = $_.ToString() }
+                        Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
+                    }
                 }
             }
         }

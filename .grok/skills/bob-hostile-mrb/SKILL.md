@@ -113,7 +113,11 @@ voided issue.
    FIX worker (`cursor-mrb-dev` / `bob-job-loop`). Do not reuse this FAIL
    issue as the next board.
 6. **PASS-nits:** merge the PR (`gh pr merge`). Nits stay listed; they do
-   not block the merge.
+   not block the merge. After merge succeeds, close the feature-request
+   issue, **every** prior FAIL MRB board for this FR (all FAIL cycles on
+   the loop board, not only the latest), and this PASS-nits issue. Each
+   close comment links the merged PR URL. Do not write that the PR merged
+   unless `gh pr merge` succeeded.
 7. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
    dispatcher must pass work to **new** workers for (a) this FAIL's
    Required fixes (FIX worker), and (b) any other open issues labeled

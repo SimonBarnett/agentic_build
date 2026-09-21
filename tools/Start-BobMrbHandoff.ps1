@@ -66,6 +66,7 @@ Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labe
 Verdict FAIL or PASS-nits only. Do not write the words ready for human UAT. Bob chairs that stamp.
 
 PASS-nits: merge the PR (gh pr merge). Nits do not block the merge.
+After merge succeeds, close the feature-request issue, every prior FAIL MRB board for this FR, and this PASS-nits issue (gh issue close --comment). Each close comment must link the merged PR URL. Do not claim merged unless gh pr merge succeeded.
 FAIL: do not merge. Required fixes only. Do not start the FIX worker yourself.
 
 Work with Cursor Models (Cursor Grok / Composer) or grok.exe only. Do not use Other Models. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not assign secrets in the issue (no password or XAI_API_KEY literals in git).
