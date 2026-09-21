@@ -292,6 +292,13 @@ function Write-BobFleetMachineStubs {
 
 function Get-BobJobRepoStamp {
     param($Job)
+    if (Get-Command Get-BobTrayRepoLabel -ErrorAction SilentlyContinue) {
+        try {
+            $label = Get-BobTrayRepoLabel -Job $Job
+            if ($label -and $label -ne '?') { return $label }
+        }
+        catch { }
+    }
     if ($Job -and $Job.repo) {
         $r = [string]$Job.repo
         if ($r -and $r.Trim() -and $r.Trim() -ne '?' -and -not (Test-BobTrayLooksLikeSha $r)) {
@@ -310,11 +317,15 @@ function Get-BobJobRepoStamp {
     if ($cwd) {
         try {
             $leaf = Split-Path $cwd -Leaf
-            if ($leaf -and -not (Test-BobTrayLooksLikeSha $leaf)) { return $leaf }
+            if ($leaf -and -not (Test-BobTrayLooksLikeSha $leaf)) {
+                if ($leaf -match '^agentic_build') { return 'SimonBarnett/agentic_build' }
+                if ($leaf -match '^agentic_irc') { return 'SimonBarnett/agentic_irc' }
+                return $leaf
+            }
         }
         catch { }
     }
-    return '?'
+    return $null
 }
 
 function ConvertTo-BobPeekJob {

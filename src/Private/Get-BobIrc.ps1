@@ -297,7 +297,7 @@ function ConvertFrom-BobIrcPoint {
         foreach ($part in $jr.Split(',')) {
             if ($part -notmatch ':') { continue }
             $repo, $st = $part.Split(':', 2)
-            if ($repo -and $st) {
+            if ((Test-BobIrcRepoOk $repo) -and $st) {
                 $jobs += ,[pscustomobject]@{ repo = $repo; state = $st; machine = $mid; id = ($mid + '-' + $jobs.Count) }
             }
         }
@@ -356,7 +356,11 @@ function Read-BobIrcPeer {
         period_end        = $(if ($doc.period_end) { [string]$doc.period_end } else { $null })
         cursor_label      = $(if ($doc.cursor_label) { [string]$doc.cursor_label } else { $null })
         cursor_period_end = $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
-        source            = 'irc'
+        repo              = $(if ($doc.repo) { [string]$doc.repo } else { $null })
+        kind              = $(if ($doc.kind) { [string]$doc.kind } else { $null })
+        model             = $(if ($doc.model) { [string]$doc.model } else { $null })
+        sha               = $(if ($doc.sha) { [string]$doc.sha } else { $null })
+        source            = $(if ($doc.source) { [string]$doc.source } else { 'irc' })
     }
 }
 
@@ -408,23 +412,380 @@ function Compact-BobIrcOutbox {
     Set-Content -LiteralPath $outbox -Value $keep -Encoding utf8
 }
 
+function Get-BobIrcTrayPrefix { return 'BOB TRAY v1 ' }
+
+function Test-BobIrcSkipPeerTranscriptOverwrite {
+    param($Existing, $Incoming, [Parameter(Mandatory)][string]$ResolvedId)
+    $selfId = $null
+    try { $selfId = Get-ThisMachineId } catch { }
+    if ($selfId -and [string]$ResolvedId -eq [string]$selfId) { return $true }
+    if (-not $Existing) { return $false }
+    if ([string]$Existing.source -eq 'irc-tray') { return $true }
+    $exSeen = $null
+    $inSeen = $null
+    if ($Existing.lastSeen) {
+        try {
+            $exSeen = [datetime]::Parse([string]$Existing.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        catch { }
+    }
+    if ($Incoming.lastSeen) {
+        try {
+            $inSeen = [datetime]::Parse([string]$Incoming.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        catch { }
+    }
+    if ($exSeen -and $inSeen -and $exSeen -gt $inSeen) { return $true }
+    return $false
+}
+
+function Test-BobIrcRepoOk {
+    param([string]$Repo)
+    $s = [string]$Repo
+    if (-not $s -or -not $s.Trim()) { return $false }
+    return ($s.Trim() -notin @('?', '-'))
+}
+
+function Get-BobIrcDisplayMachineId {
+    param([string]$MachineId)
+    $mid = [string]$MachineId
+    if ($mid -eq 'ce-priority-dev1') { return 'dev1' }
+    return $mid
+}
+
+function Get-BobGitShortSha {
+    param([string]$Cwd)
+    if (-not $Cwd -or -not (Get-Command git -ErrorAction SilentlyContinue)) { return $null }
+    try {
+        if (-not (Test-Path (Join-Path $Cwd '.git'))) { return $null }
+        $sha = & git -C $Cwd rev-parse --short HEAD 2>$null
+        if ($sha) { return [string]$sha.Trim() }
+    }
+    catch { }
+    return $null
+}
+
+function Get-BobIrcModelFromJob {
+    param($Job)
+    if (-not $Job) { return $null }
+    $fuel = [string]$Job.fuel
+    switch ($fuel) {
+        'cursor-models' { return 'Cursor Models' }
+        'copilot' { return 'Copilot' }
+        'grok-bot' { return 'Grok Bot' }
+        'grok-build' { return 'grok.exe' }
+        'on-demand' { return 'grok.exe' }
+    }
+    if ($Job.model) { return [string]$Job.model }
+    return $null
+}
+
+function Get-BobIrcKindFromJob {
+    param($Job)
+    if (-not $Job) { return $null }
+    $k = [string]$Job.kind
+    if ($k -eq 'mrb') { return 'mrb' }
+    if ($k -eq 'uat') { return 'uat' }
+    if ($k -eq 'build') { return 'worker' }
+    if ($Job.mrb) { return 'mrb' }
+    return $null
+}
+
+function Get-BobIrcEffectiveRepo {
+    param($Doc, $RunningJob)
+    if ($Doc -and (Test-BobIrcRepoOk $Doc.repo)) { return [string]$Doc.repo.Trim() }
+    if ($RunningJob -and (Test-BobIrcRepoOk $RunningJob.repo)) { return [string]$RunningJob.repo.Trim() }
+    foreach ($j in @($Doc.jobs)) {
+        if ($j -and (Test-BobIrcRepoOk $j.repo)) { return [string]$j.repo.Trim() }
+    }
+    return $null
+}
+
+function Get-BobIrcRunningJobFromDoc {
+    param($Doc)
+    foreach ($j in @($Doc.jobs)) {
+        if ($j -and [string]$j.state -eq 'running') { return $j }
+    }
+    return $null
+}
+
+function Get-BobIrcTalkSignature {
+    param($Doc)
+    if (-not $Doc) { return '' }
+    $job = Get-BobIrcRunningJobFromDoc $Doc
+    $parts = @(
+        [string]$Doc.model
+        [string]$Doc.kind
+        [string]$Doc.repo
+        [string]$Doc.sha
+        [string]$Doc.hung
+        [string]$Doc.responding
+        [string]([int]$Doc.running)
+        [string]([int]$Doc.queued)
+        [string](Get-BobIrcEffectiveRepo $Doc $job)
+    )
+    return ($parts -join '|')
+}
+
+function Format-BobIrcPeerTalkLine {
+    param($Doc)
+    if (-not $Doc) { return $null }
+    $mid = Get-BobIrcDisplayMachineId ([string]$Doc.id)
+    $running = [int]$Doc.running
+    $queued = [int]$Doc.queued
+    $job = Get-BobIrcRunningJobFromDoc $Doc
+    $busy = ($running -gt 0) -or ($queued -gt 0) -or $null -ne $job
+    if (-not $busy) { return "$mid is idle." }
+    if ($Doc.model) { return "$mid is on $([string]$Doc.model) now." }
+    $repo = Get-BobIrcEffectiveRepo $Doc $job
+    $kind = [string]$Doc.kind
+    if ($kind -eq 'mrb' -and $repo) { return "That's an MRB of $repo." }
+    if ($kind -eq 'uat' -and $repo) { return "That's UAT on $repo." }
+    if ($kind -eq 'worker' -and $repo) { return "That's a worker on $repo." }
+    if ($repo) { return "Working on $repo." }
+    return "$mid is busy."
+}
+
+function Get-BobIrcChangeTalkLine {
+    param($Before, $After)
+    if (-not $After) { return $null }
+    if (-not $Before) { return $null }
+    if ((Get-BobIrcTalkSignature $Before) -eq (Get-BobIrcTalkSignature $After)) { return $null }
+    return (Format-BobIrcPeerTalkLine $After)
+}
+
+function Get-BobIrcWarnStatePath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_irc-warn.json')
+}
+
+function Get-BobIrcLongRunningTalkLine {
+    param($Doc, $PrimaryJob)
+    if (-not $Doc -or -not $PrimaryJob) { return $null }
+    $when = $PrimaryJob.claimedAt
+    if (-not $when) { $when = $PrimaryJob.createdAt }
+    if (-not $when) { return $null }
+    try {
+        $t = [datetime]::Parse([string]$when, $null, [Globalization.DateTimeStyles]::RoundtripKind)
+        $secs = [int]([datetime]::UtcNow - $t.ToUniversalTime()).TotalSeconds
+    }
+    catch { return $null }
+    $kind = Get-BobIrcKindFromJob $PrimaryJob
+    $bar = 1800
+    if ($kind -eq 'mrb' -or $kind -eq 'uat') { $bar = 1200 }
+    if ($secs -lt $bar) { return $null }
+    $warnPath = Get-BobIrcWarnStatePath
+    $warn = @{}
+    if (Test-Path $warnPath) {
+        try {
+            $wj = Read-JsonFile $warnPath
+            if ($wj) {
+                foreach ($p in $wj.PSObject.Properties) { $warn[$p.Name] = $p.Value }
+            }
+        }
+        catch { }
+    }
+    $key = [string]$PrimaryJob.id
+    if (-not $key) { $key = 'running' }
+    if ($warn.ContainsKey($key)) { return $null }
+    $mid = Get-BobIrcDisplayMachineId ([string]$Doc.id)
+    $repo = Get-BobIrcEffectiveRepo $Doc $PrimaryJob
+    $mins = $secs / 60
+    $dur = if ($mins -ge 90) { 'over an hour' } elseif ($mins -ge 60) { 'about an hour' } else { "$([int]$mins) minutes" }
+    $warn[$key] = [DateTime]::UtcNow.ToString('o')
+    try { Write-JsonFile $warnPath ([pscustomobject]$warn) } catch { }
+    if ($kind -eq 'mrb' -and $repo) {
+        return "$mid has been on that MRB of $repo for $dur - still responding, but that's a long time."
+    }
+    if ($repo) {
+        return "$mid has been on $repo for $dur - still responding, but that's a long time."
+    }
+    return "$mid has been running for $dur - still responding, but that's a long time."
+}
+
+function Add-BobIrcOutboxChannelLine {
+    param([string]$Line)
+    if (-not $Line) { return }
+    $home = Get-BobIrcHome
+    $outbox = Join-Path $home 'outbox.txt'
+    $last = $null
+    try { $last = Get-Content -LiteralPath $outbox -Tail 1 -ErrorAction SilentlyContinue } catch { }
+    if ($last -and ([string]$last).Trim() -eq [string]$Line.Trim()) { return }
+    Add-Content -Path $outbox -Value ([string]$Line).Trim() -Encoding utf8
+}
+
+function ConvertFrom-BobIrcTrayLine {
+    param([string]$Text)
+    $prefix = Get-BobIrcTrayPrefix
+    $raw = ([string]$Text).Trim()
+    if (-not $raw.StartsWith($prefix)) { return $null }
+    $body = $raw.Substring($prefix.Length).Trim()
+    $kv = @{}
+    foreach ($tok in $body.Split(' ')) {
+        if ($tok -notmatch '=') { return $null }
+        $k, $v = $tok.Split('=', 2)
+        $kv[$k] = $v
+    }
+    $mid = [string]$kv['id']
+    if (-not $mid -or $mid -eq '-') { return $null }
+    if ($mid -notmatch '^[a-z0-9][a-z0-9-]{0,62}$') { return $null }
+    $jobs = @()
+    $jr = [string]$kv['jobs']
+    if ($jr -and $jr -ne '-') {
+        foreach ($part in $jr.Split(',')) {
+            if ($part -notmatch ':') { continue }
+            $repo, $st = $part.Split(':', 2)
+            if ((Test-BobIrcRepoOk $repo) -and $st) {
+                $jobs += ,[pscustomobject]@{ repo = $repo; state = $st; machine = $mid }
+            }
+        }
+    }
+    $weekly = $null
+    if ($kv.ContainsKey('weekly') -and [string]$kv['weekly'] -ne '-') {
+        try { $weekly = [int]$kv['weekly'] } catch { }
+    }
+    $repo = $null
+    if (Test-BobIrcRepoOk $kv['repo']) { $repo = [string]$kv['repo'] }
+    $kind = $null
+    if ($kv.ContainsKey('kind') -and [string]$kv['kind'] -ne '-') { $kind = [string]$kv['kind'] }
+    $model = $null
+    if ($kv.ContainsKey('model') -and [string]$kv['model'] -ne '-') { $model = [string]$kv['model'] }
+    return [pscustomobject]@{
+        ok         = $true
+        id         = $mid
+        weekly     = $weekly
+        running    = $(try { [int]$kv['running'] } catch { 0 })
+        queued     = $(try { [int]$kv['queued'] } catch { 0 })
+        lastSeen   = $(if ($kv['lastSeen'] -and $kv['lastSeen'] -ne '-') { [string]$kv['lastSeen'] } else { $null })
+        jobs       = $jobs
+        repo       = $repo
+        kind       = $kind
+        model      = $model
+        source     = 'irc-tray'
+    }
+}
+
+function Get-BobIrcTrayLogPosPath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_tray-log.pos')
+}
+
+function Get-BobIrcBobiverseLastPath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_bobiverse-last.txt')
+}
+
+function Request-BobIrcBobiversePull {
+    param([int]$MinIntervalSec = 120)
+    $home = Get-BobIrcHome
+    $stampPath = Get-BobIrcBobiverseLastPath
+    $now = [DateTime]::UtcNow
+    if (Test-Path $stampPath) {
+        try {
+            $prev = [datetime]::Parse((Get-Content $stampPath -Raw).Trim(), $null, [Globalization.DateTimeStyles]::RoundtripKind)
+            if (($now - $prev.ToUniversalTime()).TotalSeconds -lt $MinIntervalSec) { return $false }
+        }
+        catch { }
+    }
+    Add-BobIrcOutboxChannelLine '!bobiverse'
+    Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
+    return $true
+}
+
+function Import-BobIrcTrayPull {
+    $home = Get-BobIrcHome
+    $logPath = Join-Path $home 'irc.log'
+    if (-not (Test-Path $logPath)) { return @() }
+    $posPath = Get-BobIrcTrayLogPosPath
+    $pos = 0
+    if (Test-Path $posPath) {
+        try { $pos = [int](Get-Content $posPath -Raw).Trim() } catch { $pos = 0 }
+    }
+    $bytes = [IO.File]::ReadAllBytes($logPath)
+    if ($pos -gt $bytes.Length) { $pos = 0 }
+    $chunk = $bytes[$pos..($bytes.Length - 1)]
+    $text = [Text.Encoding]::UTF8.GetString($chunk)
+    $nick = $null
+    try {
+        $cfg = Get-BobiverseConfig
+        $id = Get-ThisMachineId
+        if ($cfg -and $id) { $nick = Get-BobIrcNick $cfg $id }
+    }
+    catch { }
+    if (-not $nick -and $env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) {
+        $nick = $env:BOB_IRC_NICK.Trim()
+    }
+    if (-not $nick) {
+        try {
+            $id = Get-ThisMachineId
+            if ($id) { $nick = 'bob-' + $id }
+        }
+        catch { }
+    }
+    if (-not $nick) { return @() }
+    $nickEsc = [regex]::Escape($nick)
+    $updated = @()
+    $dir = Join-Path $home 'bob-peers'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $trayPrefix = Get-BobIrcTrayPrefix
+    foreach ($line in @($text -split "`n")) {
+        $t = $line.Trim()
+        if (-not $t) { continue }
+        if ($t -notmatch "(?i)PRIVMSG\s+$nickEsc\s+:(?<ircbody>.*)$") { continue }
+        $body = [string]$Matches['ircbody'].Trim()
+        if (-not $body.StartsWith($trayPrefix)) { continue }
+        $doc = ConvertFrom-BobIrcTrayLine $body
+        if (-not $doc) { continue }
+        $resolved = Resolve-BobiverseMachineId ([string]$doc.id)
+        if (-not $resolved) { continue }
+        $doc | Add-Member -NotePropertyName id -NotePropertyValue $resolved -Force
+        $peerPath = Join-Path $dir ($resolved + '.json')
+        if (-not $doc.period_end -and (Test-Path $peerPath)) {
+            try {
+                $prev = Read-JsonFile $peerPath
+                if ($prev -and $prev.period_end) {
+                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
+                }
+                if ($prev -and $prev.cursor_label -and -not $doc.cursor_label) {
+                    $doc | Add-Member -NotePropertyName cursor_label -NotePropertyValue ([string]$prev.cursor_label) -Force
+                }
+                if ($prev -and $prev.cursor_period_end -and -not $doc.cursor_period_end) {
+                    $doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$prev.cursor_period_end) -Force
+                }
+            }
+            catch { }
+        }
+        Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
+        Write-JsonFile $peerPath $doc
+        $updated += $resolved
+    }
+    Set-Content -Path $posPath -Value $bytes.Length -Encoding utf8 -NoNewline
+    return $updated
+}
+
 function Write-BobIrcStatus {
     $id = Get-ThisMachineId
     if (-not $id) { return }
     $cfg = Get-BobiverseConfig
     if (-not $cfg) { return }
     $home = Get-BobIrcHome
-    $running = @(Get-BobPeerLaneJobs -BridgeRoot (Get-BridgeRoot) -MachineId $id -Lane running -StampRepo)
+    $bridge = Get-BridgeRoot
+    $running = @(Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane running -StampRepo)
     if ($null -eq $running) { $running = @() }
-    $inbox = @(Get-BobPeerLaneJobs -BridgeRoot (Get-BridgeRoot) -MachineId $id -Lane inbox -StampRepo)
+    $inbox = @(Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane inbox -StampRepo)
     if ($null -eq $inbox) { $inbox = @() }
     $jobs = @()
     foreach ($j in @($running)) {
-        $jobs += ,[pscustomobject]@{ repo = (Get-BobJobRepoStamp $j); state = 'running' }
+        $repo = Get-BobJobRepoStamp $j
+        if (Test-BobIrcRepoOk $repo) {
+            $jobs += ,[pscustomobject]@{ repo = $repo; state = 'running' }
+        }
     }
     foreach ($j in @($inbox)) {
-        $jobs += ,[pscustomobject]@{ repo = (Get-BobJobRepoStamp $j); state = 'queued' }
+        $repo = Get-BobJobRepoStamp $j
+        if (Test-BobIrcRepoOk $repo) {
+            $jobs += ,[pscustomobject]@{ repo = $repo; state = 'queued' }
+        }
     }
+    $primary = $null
+    if (@($running).Count -gt 0) { $primary = $running[0] }
     $liveN = 0
     foreach ($g in @(Get-BobLiveGrokAgents)) {
         $liveN++
@@ -433,7 +794,10 @@ function Write-BobIrcStatus {
             $slug = Get-GitHubSlugFromCwd $g.cwd
             if ($slug -and $slug -ne '?' -and $slug -ne $env:USERNAME) { $repo = $slug }
         }
-        $jobs += ,[pscustomobject]@{ repo = $repo; state = 'running' }
+        if (Test-BobIrcRepoOk $repo) {
+            $jobs += ,[pscustomobject]@{ repo = $repo; state = 'running' }
+        }
+        if (-not $primary) { $primary = $g }
     }
     $week = $null
     $periodEnd = $null
@@ -463,6 +827,23 @@ function Write-BobIrcStatus {
             }
         }
     } catch { }
+    $model = Get-BobIrcModelFromJob $primary
+    if (-not $model -and $cursorLabel -and $cursorLabel -ne 'empty') { $model = 'Cursor Models' }
+    $kind = Get-BobIrcKindFromJob $primary
+    $topRepo = $null
+    if ($primary) { $topRepo = Get-BobJobRepoStamp $primary }
+    if (-not (Test-BobIrcRepoOk $topRepo)) { $topRepo = $null }
+    $sha = $null
+    if ($primary -and $primary.cwd) { $sha = Get-BobGitShortSha ([string]$primary.cwd) }
+    $responding = $null
+    if ($primary -and $primary.sessionId) {
+        try { $responding = Test-BobJobProcess -SessionId ([string]$primary.sessionId) } catch { }
+    }
+    $startedAt = $null
+    if ($primary) {
+        if ($primary.claimedAt) { $startedAt = [string]$primary.claimedAt }
+        elseif ($primary.createdAt) { $startedAt = [string]$primary.createdAt }
+    }
     $doc = [pscustomobject]@{
         ok                = $true
         id                = $id
@@ -474,18 +855,26 @@ function Write-BobIrcStatus {
         queued            = @($inbox).Count
         lastSeen          = $seen
         jobs              = $jobs
+        model             = $model
+        kind              = $kind
+        repo              = $topRepo
+        sha               = $sha
+        started_at        = $startedAt
+        responding        = $responding
         source            = 'irc'
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    Write-JsonFile (Join-Path $dir ($id + '.json')) $doc
-    $mid = [string]$cfg.mootId
-    if (-not $mid) { return }
-    $point = ConvertTo-BobIrcPoint $doc
-    $line = "MOOT v1 POINT $mid :$point"
-    $outbox = Join-Path $home 'outbox.txt'
-    if (Test-BobIrcOutboxDuplicatePoint -Path $outbox -Line $line) { return }
-    Add-Content -Path $outbox -Value $line -Encoding utf8
+    $peerPath = Join-Path $dir ($id + '.json')
+    $before = $null
+    if (Test-Path $peerPath) {
+        try { $before = Read-JsonFile $peerPath } catch { }
+    }
+    Write-JsonFile $peerPath $doc
+    $talk = Get-BobIrcChangeTalkLine -Before $before -After $doc
+    if ($talk) { Add-BobIrcOutboxChannelLine $talk }
+    $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
+    if ($warn) { Add-BobIrcOutboxChannelLine $warn }
 }
 
 function Import-BobIrcPeerTranscript {
@@ -515,14 +904,14 @@ function Import-BobIrcPeerTranscript {
     foreach ($resolved in @($latest.Keys)) {
         $doc = $latest[$resolved]
         $peerPath = Join-Path $dir ($resolved + '.json')
+        $prev = $null
+        if (Test-Path $peerPath) {
+            try { $prev = Read-JsonFile $peerPath } catch { }
+        }
+        if (Test-BobIrcSkipPeerTranscriptOverwrite -Existing $prev -Incoming $doc -ResolvedId $resolved) { continue }
         # Keep prior period_end when the latest POINT still lacks reset=.
-        if (-not $doc.period_end -and (Test-Path $peerPath)) {
-            try {
-                $prev = Read-JsonFile $peerPath
-                if ($prev -and $prev.period_end) {
-                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
-                }
-            } catch { }
+        if (-not $doc.period_end -and $prev -and $prev.period_end) {
+            $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
         }
         Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
