@@ -579,7 +579,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
+            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -706,23 +706,12 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
+    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
     if (-not $script:tileHost) { return }
 
     # Format everything first so a throw never leaves a cleared host.
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
-    $acctName = 'cursor'
-    if ($AccountName) { $acctName = [string]$AccountName }
-    if ($AccountLabel) { $acctLabel = [string]$AccountLabel }
-    else {
-        try { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
-        catch { $acctLabel = 'empty' }
-    }
-    $acctColor = $null
-    if ($acctLabel -and ($acctLabel -match '^-' -or $acctLabel.IndexOf([char]0x00A3) -ge 0)) {
-        $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
-    }
 
     # Build into a staging panel, then swap — never Controls.Clear on the live host
     # while the TipForm is visible (that flashed a blank "new" dialog on poll).
@@ -735,11 +724,43 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
-        $acctHeading = ('{0} ({1})' -f $acctName, $acctLabel)
-        if ($AccountReset) { $acctHeading = ('{0} - {1}' -f $acctHeading, [string]$AccountReset) }
-        $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
-            -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
-        $y += 6
+        $pools = @($CursorPools)
+        if ($pools.Count -eq 0) {
+            $acctName = 'cursor'
+            if ($AccountName) { $acctName = [string]$AccountName }
+            $acctLabel = $null
+            if ($AccountLabel) { $acctLabel = [string]$AccountLabel }
+            else {
+                try { $acctLabel = Format-BobCursorAccountLabel -RemainingPct $AccountPct -UsedPct $null }
+                catch { $acctLabel = 'empty' }
+            }
+            $acctColor = $null
+            if ($acctLabel -and ($acctLabel -match '^-' -or $acctLabel.IndexOf([char]0x00A3) -ge 0)) {
+                $acctColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+            }
+            $acctHeading = ('{0} ({1})' -f $acctName, $acctLabel)
+            if ($AccountReset) { $acctHeading = ('{0} - {1}' -f $acctHeading, [string]$AccountReset) }
+            $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $acctHeading `
+                -RemainingPct $AccountPct -BarWidth 392 -Icon $null -HeadingColor $acctColor
+            $y += 6
+        }
+        else {
+            foreach ($pool in $pools) {
+                if (-not $pool) { continue }
+                $heading = [string]$pool.heading
+                if (-not $heading) { continue }
+                $poolColor = $null
+                $pctLbl = [string]$pool.pct_label
+                if ($pctLbl -and ($pctLbl -match '^-' -or $pctLbl.IndexOf([char]0x00A3) -ge 0)) {
+                    $poolColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+                }
+                $poolPct = $pool.remaining_pct
+                $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $heading `
+                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor
+                $y += 4
+            }
+            $y += 2
+        }
         $indent = 18
         foreach ($m in @($Machines)) {
             if (-not $m) { continue }
@@ -761,16 +782,24 @@ function Rebuild-BobTrayTiles {
                 -RemainingPct $pct -BarWidth 354 -Icon $null
             $reach = [string]$m.reach
             $jobTxt = ''
-            if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') { $jobTxt = 'not in moot' }
+            if ($m.up_since) { $jobTxt = ('up since {0}' -f [string]$m.up_since) }
+            if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
+                $jobTxt = $(if ($jobTxt) { $jobTxt + "`nnot in moot" } else { 'not in moot' })
+            }
             elseif (@($m.jobs).Count -eq 0) {
-                if ($reach -eq 'stale') { $jobTxt = 'lastSeen stale' }
-                else { $jobTxt = 'no jobs' }
+                $idle = $(if ($reach -eq 'stale') { 'lastSeen stale' } else { 'no jobs' })
+                $jobTxt = $(if ($jobTxt) { $jobTxt + "`n$idle" } else { $idle })
             }
             else {
                 $bits = @()
+                if ($jobTxt) { $bits += $jobTxt }
                 if ($reach -eq 'stale') { $bits += 'lastSeen stale' }
                 foreach ($j in @($m.jobs)) {
-                    $bits += ('{0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+                    $ln = $j.line
+                    if (-not $ln) {
+                        try { $ln = Format-BobTrayJobLine -Job $j } catch { $ln = $null }
+                    }
+                    if ($ln) { $bits += $ln }
                 }
                 $jobTxt = ($bits -join "`n")
             }

@@ -551,6 +551,299 @@ function Get-BobTrayRepoLabel {
     return '?'
 }
 
+function Get-BobJobTrayFields {
+    param($Job, [switch]$SkipGit)
+    if (-not $Job) { return $null }
+    $repo = Get-BobTrayRepoLabel -Job $Job -SkipGit:$SkipGit
+    if ($repo -eq '?' -or (Test-BobTrayLooksLikeSha $repo)) { $repo = $null }
+    $sha = $null
+    if ($Job.sha) { $sha = [string]$Job.sha.Trim() }
+    elseif (-not $SkipGit -and $Job.cwd) {
+        try { $sha = Get-BobGitShortSha ([string]$Job.cwd) } catch { }
+    }
+    $model = $null
+    if ($Job.model) { $model = [string]$Job.model }
+    else {
+        try { $model = Get-BobIrcModelFromJob $Job } catch { }
+    }
+    $desc = $null
+    if ($Job.description) { $desc = [string]$Job.description }
+    elseif ($Job.task) { $desc = [string]$Job.task }
+    elseif ($Job.goal) {
+        $g = [string]$Job.goal
+        if ($g.Length -gt 48) { $g = $g.Substring(0, 45) + '...' }
+        $desc = $g
+    }
+    $runTime = $null
+    if ($Job.run_time) { $runTime = [string]$Job.run_time }
+    else {
+        $when = $Job.claimedAt
+        if (-not $when) { $when = $Job.createdAt }
+        $age = Get-BobJobAge $when
+        if ($age -and $age -ne '?') { $runTime = $age }
+    }
+    return [pscustomobject]@{
+        repo        = $repo
+        sha         = $sha
+        model       = $model
+        description = $desc
+        run_time    = $runTime
+    }
+}
+
+function Format-BobTrayJobLine {
+    param($Job, [switch]$SkipGit)
+    if (-not $Job) { return $null }
+    $f = Get-BobJobTrayFields -Job $Job -SkipGit:$SkipGit
+    if (-not $f) { return $null }
+    if (-not $f.repo -and -not $f.sha) { return $null }
+    $st = [string]$Job.state
+    if (-not $st) { $st = 'running' }
+    if ($st -eq 'running') { $st = 'START' }
+    elseif ($st -eq 'queued') { $st = 'QUEUED' }
+    elseif ($st -eq 'stopped' -or $st -eq 'done' -or $st -eq 'complete') { $st = 'STOP' }
+    else { $st = $st.ToUpperInvariant() }
+    $parts = @($st)
+    if ($f.repo) { $parts += $f.repo }
+    if ($f.sha) { $parts += $f.sha }
+    if ($f.model) { $parts += $f.model }
+    if ($f.description) { $parts += $f.description }
+    if ($f.run_time) { $parts += $f.run_time }
+    return ($parts -join '  ')
+}
+
+function ConvertTo-BobTrayIntOrNull {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if (($Value -is [string]) -and [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    try { return [int]$Value } catch { return $null }
+}
+
+function Expand-BobReportDigestView {
+    param($Digest)
+    $tasksByMachine = @{}
+    $uptimeByMachine = @{}
+    $pcentRows = @()
+    if (-not $Digest) {
+        return [pscustomobject]@{ tasksByMachine = $tasksByMachine; uptimeByMachine = $uptimeByMachine; pcentRows = $pcentRows }
+    }
+
+    $machineNodes = @()
+    if ($Digest.machines) {
+        foreach ($prop in @($Digest.machines.PSObject.Properties)) {
+            $machineNodes += ,@{
+                id   = [string]$prop.Name
+                node = $prop.Value
+            }
+        }
+    }
+
+    if ($machineNodes.Count -gt 0) {
+        foreach ($mn in $machineNodes) {
+            $mid = Resolve-BobiverseMachineId ([string]$mn.id)
+            if (-not $mid) { continue }
+            $node = $mn.node
+            if (-not $node) { continue }
+            if ($node.task) {
+                $task = $node.task
+                if (-not $task.machine) {
+                    $task = [pscustomobject]@{
+                        machine     = $mid
+                        repo        = $(if ($task.repo) { [string]$task.repo } else { $null })
+                        sha         = $(if ($task.sha) { [string]$task.sha } else { $null })
+                        model       = $(if ($task.model) { [string]$task.model } else { $null })
+                        description = $(if ($task.description) { [string]$task.description } else { $null })
+                        run_time    = $(if ($task.run_time) { [string]$task.run_time } else { $null })
+                        state       = $(if ($task.state) { [string]$task.state } else { 'START' })
+                    }
+                }
+                if (-not $tasksByMachine.ContainsKey($mid)) { $tasksByMachine[$mid] = @() }
+                $tasksByMachine[$mid] += ,(ConvertFrom-BobReportDigestTask -Task $task -DefaultMachine $mid)
+            }
+            if ($node.uptime_since) {
+                $uptimeByMachine[$mid] = [string]$node.uptime_since
+            }
+            if ($node.pcent) {
+                foreach ($pcProp in @($node.pcent.PSObject.Properties)) {
+                    $src = [string]$pcProp.Name
+                    if (-not $src) { continue }
+                    $pct = ConvertTo-BobTrayIntOrNull $pcProp.Value
+                    if ($null -eq $pct) { continue }
+                    $pcentRows += ,[pscustomobject]@{
+                        machine = $mid
+                        source  = $src
+                        pct     = $pct
+                    }
+                }
+            }
+        }
+    }
+    else {
+        foreach ($t in @($Digest.tasks)) {
+            if (-not $t) { continue }
+            $tm = [string]$t.machine
+            if (-not $tm) { continue }
+            $tm = Resolve-BobiverseMachineId $tm
+            if (-not $tm) { continue }
+            if (-not $tasksByMachine.ContainsKey($tm)) { $tasksByMachine[$tm] = @() }
+            $tasksByMachine[$tm] += ,(ConvertFrom-BobReportDigestTask -Task $t -DefaultMachine $tm)
+        }
+        foreach ($u in @($Digest.uptime)) {
+            if (-not $u) { continue }
+            $um = [string]$u.machine
+            if (-not $um) { continue }
+            $um = Resolve-BobiverseMachineId $um
+            if (-not $um) { continue }
+            if ($u.since) { $uptimeByMachine[$um] = [string]$u.since }
+        }
+        foreach ($pc in @($Digest.pcent)) {
+            if (-not $pc) { continue }
+            $src = [string]$pc.source
+            if (-not $src) { continue }
+            $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+            if ($null -eq $pct) { continue }
+            $pcentRows += ,[pscustomobject]@{
+                machine = $(if ($pc.machine) { [string]$pc.machine } else { $null })
+                source  = $src
+                pct     = $pct
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        tasksByMachine  = $tasksByMachine
+        uptimeByMachine = $uptimeByMachine
+        pcentRows       = $pcentRows
+    }
+}
+
+function ConvertFrom-BobReportDigestTask {
+    param($Task, [string]$DefaultMachine)
+    if (-not $Task) { return $null }
+    $mac = [string]$Task.machine
+    if (-not $mac) { $mac = $DefaultMachine }
+    $repo = $null
+    if ($Task.repo) { $repo = [string]$Task.repo }
+    $sha = $null
+    if ($Task.sha) { $sha = [string]$Task.sha }
+    $st = 'running'
+    if ($Task.state) { $st = [string]$Task.state }
+    return [pscustomobject]@{
+        id          = $(if ($Task.id) { [string]$Task.id } else { ('digest-' + [guid]::NewGuid().ToString()) })
+        machine     = $mac
+        repo        = $repo
+        sha         = $sha
+        model       = $(if ($Task.model) { [string]$Task.model } else { $null })
+        description = $(if ($Task.description) { [string]$Task.description } else { $null })
+        run_time    = $(if ($Task.run_time) { [string]$Task.run_time } else { $null })
+        state       = $st
+        source      = 'report-digest'
+    }
+}
+
+function Get-BobCursorPoolsForTray {
+    param(
+        [string]$MachineId,
+        $LocalCursorDoc,
+        $PcentRows
+    )
+    $cache = Read-BobCursorPoolsCache
+    $pools = @()
+    foreach ($seat in @(Get-BobSeatConfig)) {
+        $sid = [string]$seat.id
+        $label = [string]$seat.label
+        if (-not $label) { $label = $sid }
+        $remain = $null
+        $used = $null
+        $periodEnd = $null
+        $overageLabel = $null
+        $pctLabel = 'n/a'
+        $onSeat = $false
+        foreach ($sm in @($seat.machines)) {
+            if ([string]$sm -and [string]$sm.ToLowerInvariant() -eq [string]$MachineId.ToLowerInvariant()) {
+                $onSeat = $true
+                break
+            }
+        }
+        if ($onSeat -and $LocalCursorDoc) {
+            if ($null -ne $LocalCursorDoc.remaining_pct) { $remain = [int]$LocalCursorDoc.remaining_pct }
+            if ($null -ne $LocalCursorDoc.used_pct) { $used = $LocalCursorDoc.used_pct }
+            if ($LocalCursorDoc.period_end) { $periodEnd = [string]$LocalCursorDoc.period_end }
+        }
+        if ($cache.by_seat.ContainsKey($sid)) {
+            $ce = $cache.by_seat[$sid]
+            if ($null -ne $ce.remaining_pct -and [string]$ce.remaining_pct -ne '' -and $null -eq $remain) {
+                try { $remain = [int]$ce.remaining_pct } catch { }
+            }
+            if ($ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
+            if ($ce.overage_label) { $overageLabel = [string]$ce.overage_label }
+            if ($ce.label -and $pctLabel -eq 'n/a') {
+                $parsed = Parse-BobCursorPoolLabel ([string]$ce.label)
+                if ($parsed -and $null -ne $parsed.remaining_pct) { $remain = [int]$parsed.remaining_pct }
+                if ($parsed -and $parsed.overage) { $overageLabel = [string]$parsed.overage }
+            }
+        }
+        if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
+        elseif ($onSeat -and $LocalCursorDoc) {
+            $acct = Format-BobCursorAccountLabel -RemainingPct $null -UsedPct $(if ($null -ne $used) { $used } else { $null })
+            if ($acct -and $acct -ne 'empty') {
+                $pctLabel = $acct
+                if (Test-BobCursorOverageLabel $acct) { $overageLabel = $acct }
+            }
+        }
+        if ($pctLabel -eq 'n/a' -and $overageLabel) { $pctLabel = $overageLabel }
+        $resetLabel = Format-BobResetLabel $periodEnd
+        $heading = ('{0}  Models  {1}' -f $label, $pctLabel)
+        if ($resetLabel) { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
+        if ($overageLabel -and $pctLabel -notmatch [char]0x00A3 -and $overageLabel -ne $pctLabel) {
+            $heading = ('{0}  {1}' -f $heading, $overageLabel)
+        }
+        $pools += ,[pscustomobject]@{
+            seat_id         = $sid
+            seat_label      = $label
+            remaining_pct   = $remain
+            period_end      = $periodEnd
+            reset_label     = $resetLabel
+            pct_label       = $pctLabel
+            overage_label   = $overageLabel
+            heading         = $heading
+            account_name    = 'Cursor Models'
+        }
+    }
+    foreach ($pc in @($PcentRows)) {
+        if (-not $pc) { continue }
+        $src = [string]$pc.source
+        if (-not $src) { continue }
+        $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+        if ($null -eq $pct) { continue }
+        $reportMac = [string]$pc.machine
+        if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
+        $seatId = $src
+        if ($src -eq 'cursor-models') {
+            $macForSeat = $MachineId
+            if ($reportMac) { $macForSeat = $reportMac }
+            $seat = Get-BobSeatForMachine -MachineId $macForSeat
+            if ($seat) { $seatId = [string]$seat.id }
+        }
+        elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            $seatId = $src
+        }
+        foreach ($pool in $pools) {
+            if ([string]$pool.seat_id -eq $seatId) {
+                $pool.remaining_pct = $pct
+                $pool.pct_label = ('{0}%' -f $pct)
+                $pool.heading = ('{0}  Models  {1}' -f $pool.seat_label, $pool.pct_label)
+                if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
+                break
+            }
+        }
+        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
+        }
+    }
+    return $pools
+}
+
 function ConvertTo-BobTrayJobRow {
     param($Job, [string]$DefaultMachine, [string]$State, [switch]$SkipGit)
     $id = [string]$Job.id
@@ -568,15 +861,22 @@ function ConvertTo-BobTrayJobRow {
     if (-not $st) {
         if ($Job.state) { $st = [string]$Job.state } else { $st = 'running' }
     }
-    $repo = Get-BobTrayRepoLabel -Job $Job -SkipGit:$SkipGit
-    if (Test-BobTrayLooksLikeSha $repo) { $repo = '?' }
+    $fields = Get-BobJobTrayFields -Job $Job -SkipGit:$SkipGit
+    $repo = '?'
+    if ($fields -and $fields.repo) { $repo = $fields.repo }
+    $line = Format-BobTrayJobLine -Job $Job -SkipGit:$SkipGit
     return [pscustomobject]@{
         id                     = $id
         id8                    = $(if ($id.Length -ge 8) { $id.Substring(0, 8) } else { $id })
         machine                = $mac
         repo                   = $repo
+        sha                    = $(if ($fields) { $fields.sha } else { $null })
+        model                  = $(if ($fields) { $fields.model } else { $null })
+        description            = $(if ($fields) { $fields.description } else { $null })
+        run_time               = $(if ($fields) { $fields.run_time } else { $null })
         duration               = Get-BobJobAge $when
         state                  = $st
+        line                   = $line
         cwd                    = [string]$Job.cwd
         context_remaining_pct  = $(if ($ctx) { [int]$ctx.remaining_pct } else { $null })
     }
@@ -603,6 +903,13 @@ function Get-BobTrayHover {
     try { $machineId = Get-ThisMachineId } catch { }
     if (-not $machineId) { $machineId = 'this-machine' }
     $title = Get-BobTrayTitle -MachineId $machineId
+
+    $reportDigest = $null
+    try { $reportDigest = Read-BobReportDigest } catch { $reportDigest = $null }
+    $digestView = Expand-BobReportDigestView -Digest $reportDigest
+    $digestTasksByMachine = $digestView.tasksByMachine
+    $uptimeByMachine = $digestView.uptimeByMachine
+    $digestPcentRows = @($digestView.pcentRows)
 
     $running = @()
     $queuedJobs = @()
@@ -631,7 +938,7 @@ function Get-BobTrayHover {
         if ($g.id -and ($localIds.ContainsKey([string]$g.id) -or $fleetSessions.ContainsKey([string]$g.id))) { continue }
         if ($g.sessionId -and $fleetSessions.ContainsKey([string]$g.sessionId)) { continue }
         $row = ConvertTo-BobTrayJobRow -Job $g -DefaultMachine $machineId -State 'running'
-        if ($row.repo -eq '?' -or $row.repo -eq $env:USERNAME) { $row.repo = 'grok.exe' }
+        if (-not $row.line) { continue }
         $jobs += ,$row
         if ($row.id) { $localIds[$row.id] = $true }
     }
@@ -689,6 +996,17 @@ function Get-BobTrayHover {
     if ($week) {
         Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd $(if ($week.period_end) { [string]$week.period_end } else { $null }) -Weekly $(if ($null -ne $week.remaining_pct) { [int]$week.remaining_pct } else { $null })
     }
+    foreach ($pc in @($digestPcentRows)) {
+        if (-not $pc) { continue }
+        $src = [string]$pc.source
+        $mac = [string]$pc.machine
+        if ($mac) { $mac = Resolve-BobiverseMachineId $mac }
+        $pct = ConvertTo-BobTrayIntOrNull $pc.pct
+        if ($null -eq $pct) { continue }
+        if ($src -eq 'grok-build' -and $mac) {
+            $weeklyBy[$mac] = $pct
+        }
+    }
     $cursorWeek = $null
     $cursorRemain = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { $cursorWeek = $null }
@@ -744,6 +1062,13 @@ function Get-BobTrayHover {
         }
         if ($peek.cursor_label -and [string]$peek.cursor_label -ne 'empty') {
             try { Save-BobCursorAccountCache -Label ([string]$peek.cursor_label) -PeriodEnd $(if ($peek.cursor_period_end) { [string]$peek.cursor_period_end } else { $null }) } catch { }
+            try {
+                $peekSeat = Get-BobSeatForMachine -MachineId $mid
+                if ($peekSeat) {
+                    Save-BobCursorPoolForSeat -SeatId ([string]$peekSeat.id) -Label ([string]$peek.cursor_label) -PeriodEnd $(if ($peek.cursor_period_end) { [string]$peek.cursor_period_end } else { $null })
+                }
+            }
+            catch { }
         }
         $peerJobs = @()
         if ($peek.jobs) { foreach ($one in $peek.jobs) { $peerJobs += $one } }
@@ -882,6 +1207,15 @@ function Get-BobTrayHover {
     $jobLines = @()
     foreach ($mid in $order) {
         $rows = @($byMachine[$mid])
+        if ($digestTasksByMachine.ContainsKey($mid)) {
+            $digestRows = @()
+            foreach ($dt in @($digestTasksByMachine[$mid])) {
+                if (-not $dt) { continue }
+                $dr = ConvertTo-BobTrayJobRow -Job $dt -DefaultMachine $mid -State ([string]$dt.state) -SkipGit
+                if ($dr.line) { $digestRows += ,$dr }
+            }
+            if ($digestRows.Count -gt 0) { $rows = $digestRows }
+        }
         if ($rows.Count -gt 1) {
             $rows = @(
                 $rows | Sort-Object -Property @{
@@ -889,6 +1223,7 @@ function Get-BobTrayHover {
                         switch ([string]$_.state) {
                             'running' { 0 }
                             'queued' { 1 }
+                            'START' { 0 }
                             default { 2 }
                         }
                     }
@@ -903,6 +1238,8 @@ function Get-BobTrayHover {
         $tileEnd = $null
         if ($periodEndBy.ContainsKey($mid)) { $tileEnd = [string]$periodEndBy[$mid] }
         $tileReset = Format-BobResetLabel $tileEnd
+        $upSince = $null
+        if ($uptimeByMachine.ContainsKey($mid)) { $upSince = [string]$uptimeByMachine[$mid] }
         $tile = New-Object psobject -Property @{
             id             = $mid
             job_count      = $rows.Count
@@ -912,6 +1249,7 @@ function Get-BobTrayHover {
             remaining_pct  = $wPct
             period_end     = $tileEnd
             reset_label    = $tileReset
+            up_since       = $upSince
             seat_id        = $(if ($seatInfo) { [string]$seatInfo.id } else { $null })
             seat_label     = $(if ($seatInfo) { [string]$seatInfo.label } else { $null })
             seat_email     = $(if ($seatInfo) { [string]$seatInfo.email } else { $null })
@@ -921,7 +1259,10 @@ function Get-BobTrayHover {
         if ($null -ne $wPct) { $pctLabel = ('{0}%' -f [int]$wPct) }
         $jlName = $mid
         if ($seatInfo -and $seatInfo.label) { $jlName = ('{0}  -  {1}' -f $mid, $seatInfo.label) }
-        $jobLines += ('  {0} ({1})' -f $jlName, $pctLabel)
+        $machHeading = ('  {0} ({1})' -f $jlName, $pctLabel)
+        if ($tileReset) { $machHeading = ('{0} - {1}' -f $machHeading, $tileReset) }
+        $jobLines += $machHeading
+        if ($upSince) { $jobLines += ('    up since {0}' -f $upSince) }
         $tileFuels = @('cursor-models', 'grok-build', 'copilot', 'grok-bot')
         if ($mid -match '2012') { $tileFuels = @() }
         $tile | Add-Member -NotePropertyName fuels -NotePropertyValue $tileFuels -Force
@@ -936,7 +1277,11 @@ function Get-BobTrayHover {
         else {
             if ($reach -eq 'stale') { $jobLines += '    lastSeen stale' }
             foreach ($j in $rows) {
-                $jobLines += ('    {0}  {1}  {2}' -f $j.repo, $j.duration, $j.state)
+                $ln = $j.line
+                if (-not $ln) {
+                    $ln = Format-BobTrayJobLine -Job $j -SkipGit
+                }
+                if ($ln) { $jobLines += ('    {0}' -f $ln) }
             }
         }
     }
@@ -973,8 +1318,19 @@ function Get-BobTrayHover {
         if ($cursorWeek -and $cursorWeek.period_end) { $cend = [string]$cursorWeek.period_end }
         Save-BobCursorAccountCache -Label $acctPctLabel -PeriodEnd $cend
     }
-    $acctLine = ('Cursor Models ({0})' -f $acctPctLabel)
-    $jobsText = ($acctLine + "`n" + ($jobLines -join "`n"))
+    try {
+        $localSeat = Get-BobSeatForMachine -MachineId $machineId
+        if ($localSeat) {
+            Save-BobCursorPoolForSeat -SeatId ([string]$localSeat.id) -RemainingPct $cursorRemain -PeriodEnd $(if ($cursorWeek -and $cursorWeek.period_end) { [string]$cursorWeek.period_end } else { $null }) -Label $acctPctLabel
+        }
+    }
+    catch { }
+    $cursorPools = @(Get-BobCursorPoolsForTray -MachineId $machineId -LocalCursorDoc $cursorWeek -PcentRows $digestPcentRows)
+    $poolLines = @()
+    foreach ($pool in $cursorPools) {
+        if ($pool.heading) { $poolLines += ('  {0}' -f $pool.heading) }
+    }
+    $jobsText = (($poolLines + $jobLines) -join "`n")
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
@@ -985,6 +1341,7 @@ function Get-BobTrayHover {
         $lines.Add(('{0}  weekly remaining  {1}%' -f $tier, $remainPct))
         $short = '{0} {1} run  {2}%' -f $tier, @($running).Count, $remainPct
     }
+    foreach ($pl in $poolLines) { $lines.Add($pl) }
     foreach ($jl in $jobLines) { $lines.Add($jl) }
     if (@($running).Count -eq 0) {
         if ($null -eq $remainPct) { $short = '{0} idle' -f $tier }
@@ -1008,6 +1365,7 @@ function Get-BobTrayHover {
         machines       = $tiles
         peer_peek      = $peerPeek
         tier           = $tier
+        cursor_pools   = @($cursorPools)
         account_name   = 'Cursor Models'
         account_label  = $acctPctLabel
         account_remaining_pct = $cursorRemain
