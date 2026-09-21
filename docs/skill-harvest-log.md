@@ -1,5 +1,13 @@
 ﻿# Skill harvest log
 
+## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
+
+`bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
+board is written (main moved). Re-query `mergeable` immediately before
+posting PASS-nits. If `gh pr merge` then fails, void that pass board and
+open a new FAIL issue on the same SHA. Learned on open-tts PR #87 /
+SHA `86cabf9` (issues #134 then #135).
+
 ## 2026-09-21 — MRB worker: isolate review SHA; CONFLICTING is FAIL
 
 `bob-hostile-mrb` worker steps: if the shared checkout HEAD is another

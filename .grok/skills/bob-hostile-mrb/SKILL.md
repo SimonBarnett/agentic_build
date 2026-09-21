@@ -95,6 +95,11 @@ job, add a detached worktree at that SHA. Do not `reset` / `checkout`
 away from another worker's branch. Do not score later commits or dirty
 files. A GitHub `CONFLICTING` PR is FAIL even when this SHA's
 acceptance is green in isolation: PASS-nits includes `gh pr merge`.
+Re-read `mergeable` immediately before posting PASS-nits. A stale
+`CLEAN` can go `DIRTY` while the board is written. If `gh pr merge`
+then fails, that PASS-nits is void: open a **new** FAIL issue on the
+same SHA (do not reuse the pass board). Comment the FAIL URL on the
+voided issue.
 
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
