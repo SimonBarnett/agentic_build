@@ -108,12 +108,45 @@ if ($bvFile) {
     }
 }
 
+$gtWrapId = Join-Path $RepoRoot ("tools\_Watch-GrokTalk-{0}.ps1" -f $rec.id)
+$gtWrap = Join-Path $RepoRoot 'tools\_Watch-GrokTalk.ps1'
+$gtInner = Join-Path $RepoRoot 'tools\Watch-GrokTalk.ps1'
+$gtFile = $null
+if (Test-Path $gtWrapId) { $gtFile = $gtWrapId }
+elseif (Test-Path $gtWrap) { $gtFile = $gtWrap }
+elseif (Test-Path $gtInner) { $gtFile = $gtInner }
+$gtTask = "_Watch-GrokTalk-$($rec.id)"
+$gtStarted = 'skipped (no wrapper script)'
+if ($gtFile) {
+    $gtArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$gtFile`""
+    $gtAction = New-ScheduledTaskAction -Execute $ps -Argument $gtArg -WorkingDirectory $RepoRoot
+    Register-ScheduledTask -TaskName $gtTask -Action $gtAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+    $gtAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            ($_.CommandLine -match 'Watch-GrokTalk\.ps1' -or $_.CommandLine -match '_Watch-GrokTalk')
+        })
+    if ($gtAlready.Count -gt 0) {
+        $gtStarted = 'already running (not started again)'
+    }
+    else {
+        try {
+            Start-ScheduledTask -TaskName $gtTask
+            $gtStarted = 'started now'
+        }
+        catch {
+            $gtStarted = "register-only (start failed: $($_.Exception.Message))"
+        }
+    }
+}
+
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
 Write-Host "Bobiverse:   $bvTask -> $bvFile ($bvStarted)"
+Write-Host "Grok-talk:   $gtTask -> $gtFile ($gtStarted)"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
