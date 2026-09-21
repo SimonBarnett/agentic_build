@@ -22,9 +22,13 @@ Hard rules (unchanged): workers open PRs; never push `main`; never merge your
 own PR; PASS-nits merge is enforced by `Start-BobMrb.ps1 -PrUrl` (and the loop
 finish merges again if the agent skipped it); only Bob stamps ready for human UAT.
 
-**New worker rule (MRB):** pass to a **new** worker when MRB **FAIL** (FIX),
-**or** when any open `feature-request` issues remain after PASS-nits /
-Missing features park. Home: `bob-job-loop` / `bob-hostile-mrb`.
+**FR order:** one FR until MRB **PASS-nits**; then the next in receive order
+(user sequence or lowest open `feature-request` #). No parallel FR loops on the
+same repo. Home: `bob-job-loop`.
+
+**New worker rule (MRB):** pass to a **new** worker on MRB **FAIL** (FIX).
+After PASS-nits, hand off **only the next** queued FR. Home: `bob-job-loop` /
+`bob-hostile-mrb`.
 
 **GitHub hygiene:** `Close-BobMrbPassedIssues.ps1`,
 `Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1` — see

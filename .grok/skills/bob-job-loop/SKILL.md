@@ -4,7 +4,8 @@ description: >
   Hand off starting a git job and hostile MRB until PASS-nits: run
   Start-BobBuildLoop.ps1 (or tools/run-bob-build-loop.ps1) and get notified
   on DONE. Retries failed cursor/grok jobs. FAIL spawns FIX. After PASS-nits,
-  hand remaining open feature-request issues to new workers. Does not stamp
+  start the next queued FR only (receive order; one FR until PASS-nits).
+  Does not stamp
   UAT. Use when the user says hand off the job, bob job, bob job FRs, start
   and mrb until pass, retry failed cursor/grok jobs, run the program and
   notify on PASS-nits, or /bob-job-loop. Table: bob-build-loop. Bars:
@@ -45,6 +46,29 @@ line wakes you. Stdout is `DONE` / `FAILED` only.
 Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 (default `~\.grok\bob-bridge\loops\`).
 
+## FR queue (receive order)
+
+Work **one FR at a time** until MRB **PASS-nits** (`phase=pass` on its loop
+board, driver stdout `DONE`). Do **not** start the next FR while the current
+one is still building, in MRB, or in FIX.
+
+**Queue order**
+
+1. User-stated sequence wins (e.g. “#70 then #73”).
+2. Else: open `feature-request` issues on that repo, **lowest issue number
+   first** (proxy for received order when parked in order).
+3. Skip issues already `phase=pass`, closed, or superseded.
+
+**While the head of the queue is open:** no second loop on a later FR for the
+same repo (no parallel build/MRB on #70 and #73). Chained wrappers must
+wait for the prior loop to exit `DONE` before launching the next. An older FR
+still in `wait_mrb` / `wait_pr` (e.g. #56) blocks starting a newer FR (#70)
+unless the human explicitly reprioritizes and pauses the older board.
+
+After PASS-nits on the current FR, launch **only** the next queued FR (one
+`run-bob-build-loop.ps1`, new worktree + log). Missing-features issues parked
+by MRB join the **tail** of the queue in issue-number order.
+
 ## Dispatcher hard rules
 
 1. One FR, one loop board, one isolated cwd/worktree.
@@ -61,19 +85,19 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    PR exists (or a local branch with the work), push if needed, re-pin the
    board to `idle`/`wait_mrb` with `-Sha`/`-Pr`, and relaunch. Do not burn
    three more blind builds first.
-8. **Pass to a new worker when MRB FAIL** (FIX with Required fixes) **or
-   when any open `feature-request` issues remain** after this FR's
-   PASS-nits / Missing features park. Do not stop at one FR DONE while
-   open FRs sit idle. Skip boards already `phase=pass` and superseded
-   issues.
+8. **MRB FAIL:** pass Required fixes to a **new** FIX worker (same FR loop
+   driver handles this). Do not start the **next** FR in the queue until this
+   FR reaches PASS-nits.
+9. **After PASS-nits:** start the **next** FR in the queue only (see FR
+   queue). Never fan out multiple `bob-job-loop` drivers for different FRs on
+   the same repo at once.
 
 ## On wakeup
 
 - `DONE: MRB PASS-nits ...` — tell the human the issue, SHA, and PR. Do
-  not stamp ready for human UAT. Bob chairs that. Then list open
-  `feature-request` issues on that repo; for each not already PASS and
-  not superseded, launch a new `bob-job-loop` (isolated worktree + unique
-  log). Also launch any issues the MRB just parked under Missing features.
+  not stamp ready for human UAT. Bob chairs that. Then start **one**
+  `bob-job-loop` for the **next** queued `feature-request` (not every open FR
+  at once). Include Missing-features issues at the tail of the queue.
 - `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
   secrets in the goal), then relaunch. Do not start a second loop on the
   same FR while one is still alive.

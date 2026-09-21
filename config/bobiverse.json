@@ -1,4 +1,4 @@
-{
+﻿{
   "channel": "#bobiverse",
   "mode": "free",
   "mootId": "b0b1be15e0000001",
@@ -11,5 +11,6 @@
     "marchhare": "bob-marchhare",
     "ionos": "bob-ionos",
     "ce-priority-dev1": "bob-dev1"
-  }
+  },
+  "reportUrl": "http://bob.ntsa.uk/bob/v1/report"
 }

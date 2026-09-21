@@ -124,13 +124,12 @@ voided issue.
    `Close-BobMrbPassedIssues.ps1` for issues). Do not review superseded
    PR stacks by hand.
 
-8. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
-   dispatcher must pass work to **new** workers for (a) this FAIL's
-   Required fixes (FIX worker), and (b) any other open issues labeled
-   `feature-request` (or Missing features just parked) that are not
-   already PASS. Listing under Missing features is not enough — hand
-   each to `bob-job-loop`. Remaining FRs do not block this PASS-nits
-   merge.
+8. **Remaining issues / feature requests:** after FAIL, FIX stays on **this**
+   FR until PASS-nits. After PASS-nits, the dispatcher starts `bob-job-loop`
+   for **only the next** open `feature-request` in receive order (see
+   `bob-job-loop` FR queue). Missing features parked on the board join the
+   tail of that queue. Do not launch parallel FR loops on the same repo.
+   Other open FRs do not block **this** PASS-nits merge.
 
 ## Pass bar
 
