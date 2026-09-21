@@ -55,6 +55,29 @@ function Import-Bridge {
     Import-Module $src -Force
 }
 
+function Add-TestBobIrcDigestWhisper {
+    param(
+        [Parameter(Mandatory)][string]$IrcHome,
+        [Parameter(Mandatory)][string]$Nick,
+        $DigestObj,
+        [switch]$ResetTrayPos
+    )
+    $rawJson = ($DigestObj | ConvertTo-Json -Depth 8 -Compress)
+    $line = ":Jeeves!u@h PRIVMSG $Nick :$rawJson"
+    $ircLog = Join-Path $IrcHome 'irc.log'
+    if (Test-Path $ircLog) {
+        Add-Content -LiteralPath $ircLog -Value $line -Encoding utf8
+    }
+    else {
+        Set-Content -LiteralPath $ircLog -Value $line -Encoding utf8
+    }
+    $posPath = Join-Path $IrcHome 'bob-peers\_tray-log.pos'
+    if ($ResetTrayPos -and (Test-Path $posPath)) {
+        Remove-Item -LiteralPath $posPath -Force
+    }
+    return @(Import-BobIrcTrayPull)
+}
+
 $script:Pass = 0
 $script:Fail = 0
 $script:Results = @()
@@ -1383,9 +1406,116 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     if ($txt -notmatch 'face142') { throw "hover missing flamingo sha: $txt" }
     if ($txt -notmatch '(?m)Smart Catalogue  Models  11%') { throw "Smart Catalogue bar from digest pools: $txt" }
     if ($txt -notmatch '(?m)Club Madeira  Models  22%') { throw "Club Madeira bar from digest pools: $txt" }
+    if ($txt -notmatch '(?m)ionos[^\r\n]*\(12%\)') { throw "ionos weekly bar missing: $txt" }
+    if ($txt -notmatch '(?m)flamingo[^\r\n]*\(8%\)') { throw "flamingo weekly bar missing: $txt" }
+    if ($txt -notmatch 'reset 28 Sep') { throw "ionos reset label missing: $txt" }
+    if ($txt -notmatch 'composer-2\.5') { throw "hover missing digest model: $txt" }
     if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch 'BOB DIGEST v1') { throw 'bob-fleet-tray skill must document BOB DIGEST v1 pull' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
+}
+
+# --- BT0l4b thin digest merge-preserve (issue #144) ---
+Invoke-Case 'BT0l4b thin digest preserves rich peers' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-bobiverse-digest-thin'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $full = @{
+        v        = 1
+        machines = @{
+            ionos    = @{
+                weekly     = 12
+                period_end = '2026-09-28T00:00:00Z'
+                running    = 1
+                jobs       = @(@{ repo = 'SimonBarnett/agentic_build'; sha = 'beef144'; model = 'composer-2.5'; description = 'rich peer line'; state = 'running' })
+            }
+            flamingo = @{
+                weekly = 8
+                jobs   = @(@{ repo = 'SimonBarnett/agentic_irc'; sha = 'face144'; model = 'grok-4.6'; description = 'flamingo rich'; state = 'START' })
+            }
+        }
+    }
+    $env:BOB_IRC_NICK = 'bob-thin-test'
+    $null = Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-thin-test' -DigestObj $full -ResetTrayPos
+    $thin = @{
+        v        = 1
+        ts       = '2026-09-21T13:00:00Z'
+        machines = @{
+            ionos            = @{ online = $true; status = 'ok'; workers = 1; working_on = 'presence only'; lastSeen = '2026-09-21T13:00:00Z'; running = 1 }
+            flamingo         = @{ online = $true; status = 'ok'; workers = 0; lastSeen = '2026-09-21T13:00:00Z' }
+            marchhare        = @{ online = $false }
+            'ce-priority-dev1' = @{ online = $false }
+        }
+    }
+    $null = Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-thin-test' -DigestObj $thin
+    $ionosPeer = Read-BobIrcPeer -Id ionos
+    if ([int]$ionosPeer.weekly -ne 12) { throw "ionos weekly wiped=$($ionosPeer.weekly)" }
+    if ([string]$ionosPeer.sha -ne 'beef144') { throw "ionos sha wiped=$($ionosPeer.sha)" }
+    if (@($ionosPeer.jobs).Count -lt 1) { throw 'ionos jobs wiped by thin digest' }
+    $flPeer = Read-BobIrcPeer -Id flamingo
+    if ([int]$flPeer.weekly -ne 8) { throw "flamingo weekly wiped=$($flPeer.weekly)" }
+    if ([string]$flPeer.sha -ne 'face144') { throw "flamingo sha wiped=$($flPeer.sha)" }
+    $report = Get-Content -LiteralPath (Join-Path $ircHome 'bob-peers\_report-digest.json') -Raw | ConvertFrom-Json
+    if (-not $report.machines.flamingo.task.sha) { throw 'report digest task wiped by thin whisper' }
+    if ([string]$report.machines.flamingo.task.sha -ne 'face144') { throw "report sha=$($report.machines.flamingo.task.sha)" }
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if ($txt -notmatch 'beef144') { throw "hover lost sha after thin digest: $txt" }
+    if ($txt -notmatch 'rich peer line') { throw "hover lost description after thin digest: $txt" }
+    if ($txt -notmatch 'face144') { throw "hover lost flamingo sha after thin digest: $txt" }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
+}
+
+# --- BT0l4c digest machines[].task mapping (issue #144) ---
+Invoke-Case 'BT0l4c digest task field paints hover' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-bobiverse-digest-task'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $digest = @{
+        v        = 1
+        machines = @{
+            flamingo = @{
+                task = @{
+                    repo        = 'SimonBarnett/agentic_irc'
+                    sha         = 'cafebad'
+                    model       = 'grok-4.6'
+                    description = 'task only digest line'
+                    run_time    = '2m44s'
+                    state       = 'START'
+                }
+            }
+        }
+    }
+    $env:BOB_IRC_NICK = 'bob-task-test'
+    $null = Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-task-test' -DigestObj $digest -ResetTrayPos
+    $flPeer = Read-BobIrcPeer -Id flamingo
+    if (@($flPeer.jobs).Count -lt 1) { throw 'task-only digest must populate peer jobs' }
+    if ([string]$flPeer.sha -ne 'cafebad') { throw "flamingo peer sha=$($flPeer.sha)" }
+    $report = Get-Content -LiteralPath (Join-Path $ircHome 'bob-peers\_report-digest.json') -Raw | ConvertFrom-Json
+    if ([string]$report.machines.flamingo.task.sha -ne 'cafebad') { throw 'task missing from _report-digest.json' }
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if ($txt -notmatch 'cafebad') { throw "hover missing task sha: $txt" }
+    if ($txt -notmatch 'task only digest line') { throw "hover missing task description: $txt" }
 
     $env:BOB_MACHINE_ID = $null
     $env:BOB_IRC_NICK = $null
