@@ -303,6 +303,9 @@ Invoke-Case 'BT0k fleet fake store' {
     if ([string]$ja.jobId -ne [string]$q.jobId) { throw "job-audit jobId=$($ja.jobId)" }
     if ([string]$ja.machine -ne 'testhost') { throw "job-audit machine=$($ja.machine)" }
     if (-not $ja.status) { throw 'job-audit status missing' }
+    foreach ($f in @('jobId', 'machine', 'fuel', 'model', 'kind', 'prUrl', 'mrbIssue', 'sha', 'status')) {
+        if (-not ($ja.PSObject.Properties.Name -contains $f)) { throw "job-audit missing field $f" }
+    }
 
     $q2 = Start-BobBuild -Machine testhost -Cwd $cwd -Goal 'PONG' -Profile generic
     $st = Stop-BobBuild -JobId $q2.jobId
@@ -2069,6 +2072,28 @@ Invoke-Case 'BT0loop6 pass-nits terminal' {
     if ($d.stdout -notmatch '^DONE: MRB PASS-nits') { throw "stdout=$($d.stdout)" }
     if ($d.stdout -match 'PASS-UAT') { throw 'driver must not stamp UAT' }
     if ($d.patch.phase -ne 'pass') { throw "phase=$($d.patch.phase)" }
+}
+
+Invoke-Case 'BT0loop6b pass-nits audit export' {
+    param($bridgeRoot)
+    Remove-Module BobBridge -ErrorAction SilentlyContinue
+    $env:BOB_BRIDGE_HOME = $bridgeRoot
+    $loopPsd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
+    Import-Module $loopPsd1 -Force
+    if (-not (Get-Command Write-BobJobAuditLine -ErrorAction SilentlyContinue)) {
+        throw 'Write-BobJobAuditLine not exported after Import-Module BobBridge.psd1'
+    }
+    Write-BobJobAuditLine -JobId 'loop-pass-fixture' -Machine '' -Fuel 'cursor-models' -Model '' -Kind 'mrb-pass' -PrUrl 'https://github.com/fixture/repo/pull/2' -MrbIssue 'https://github.com/fixture/repo/issues/9' -Sha 'abc1234deadbeef' -Status 'pass-nits'
+    $jobAudit = Join-Path $bridgeRoot 'job-audit.jsonl'
+    if (-not (Test-Path $jobAudit)) { throw 'job-audit.jsonl missing after pass-nits writer' }
+    $ja = (Get-Content $jobAudit | Where-Object { $_.Trim() } | Select-Object -Last 1) | ConvertFrom-Json
+    if ([string]$ja.jobId -ne 'loop-pass-fixture') { throw "job-audit jobId=$($ja.jobId)" }
+    if ([string]$ja.status -ne 'pass-nits') { throw "job-audit status=$($ja.status)" }
+    if ([string]$ja.prUrl -ne 'https://github.com/fixture/repo/pull/2') { throw "job-audit prUrl=$($ja.prUrl)" }
+    if ([string]$ja.mrbIssue -ne 'https://github.com/fixture/repo/issues/9') { throw "job-audit mrbIssue=$($ja.mrbIssue)" }
+    foreach ($f in @('jobId', 'machine', 'fuel', 'model', 'kind', 'prUrl', 'mrbIssue', 'sha', 'status')) {
+        if (-not ($ja.PSObject.Properties.Name -contains $f)) { throw "job-audit missing field $f" }
+    }
 }
 
 Invoke-Case 'BT0loop7 retries exhausted' {

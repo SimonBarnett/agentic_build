@@ -120,6 +120,25 @@ function Test-FleetCancel {
     Test-Path (Get-FleetJobPath -Lane cancel -Machine $Machine -JobId $JobId)
 }
 
+function Set-BobFleetPacketPrUrlIfKnown {
+    param(
+        $Packet,
+        $Completion
+    )
+    if (-not $Packet) { return }
+    if ($Packet.prUrl) { return }
+    $pr = $null
+    if ($Completion -and $Completion.evidence -and $Completion.evidence.prUrl) {
+        $pr = [string]$Completion.evidence.prUrl
+    }
+    elseif ($Completion -and $Completion.summary -match '(https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)') {
+        $pr = $Matches[1]
+    }
+    if ($pr) {
+        $Packet | Add-Member -NotePropertyName prUrl -NotePropertyValue $pr -Force
+    }
+}
+
 function Complete-FleetJob {
     param(
         $Packet,
@@ -142,12 +161,10 @@ function Complete-FleetJob {
     $follow = Join-Path (Initialize-FleetRoot) (Join-Path 'followup' (Join-Path $packet.machine ($packet.id + '.json')))
     if (Test-Path $follow) { Remove-Item -Force $follow -ErrorAction SilentlyContinue }
     Send-FleetReply -ReplyChannel $packet.reply_channel -Text "$($packet.machine) $State $($packet.id): $(if ($Completion) { $Completion.summary } else { $State })"
-    try {
-        $auditStatus = $State
-        if ($Completion -and $Completion.status) { $auditStatus = [string]$Completion.status }
-        Write-BobJobAuditFromPacket -Packet $packet -Status $auditStatus
-    }
-    catch { }
+    Set-BobFleetPacketPrUrlIfKnown -Packet $packet -Completion $Completion
+    $auditStatus = $State
+    if ($Completion -and $Completion.status) { $auditStatus = [string]$Completion.status }
+    Write-BobJobAuditFromPacket -Packet $packet -Status $auditStatus
     return $packet
 }
 

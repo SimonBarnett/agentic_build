@@ -40,8 +40,11 @@ function Write-BobJobAuditFromPacket {
     if (-not $Packet) { return }
     $pr = ''
     if ($Packet.prUrl) { $pr = [string]$Packet.prUrl }
+    $mrb = ''
+    if ($Packet.mrbIssue) { $mrb = [string]$Packet.mrbIssue }
+    elseif ($Packet.mrb) { $mrb = [string]$Packet.mrb }
     $sha = ''
     if ($Packet.mergeSha) { $sha = [string]$Packet.mergeSha }
     elseif ($Packet.sha) { $sha = [string]$Packet.sha }
-    Write-BobJobAuditLine -JobId ([string]$Packet.id) -Machine ([string]$Packet.machine) -Fuel ([string]$Packet.fuel) -Model ([string]$Packet.model) -Kind ([string]$Packet.kind) -PrUrl $pr -MrbIssue ([string]$Packet.mrb) -Sha $sha -Status $Status
+    Write-BobJobAuditLine -JobId ([string]$Packet.id) -Machine ([string]$Packet.machine) -Fuel ([string]$Packet.fuel) -Model ([string]$Packet.model) -Kind ([string]$Packet.kind) -PrUrl $pr -MrbIssue $mrb -Sha $sha -Status $Status
 }

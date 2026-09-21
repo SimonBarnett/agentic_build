@@ -59,5 +59,7 @@ Export-ModuleMember -Function @(
     'Request-BobIrcBobiversePull',
     'ConvertFrom-BobIrcTrayLine',
     'Get-BobJobRepoStamp',
-    'Compact-BobIrcOutbox'
+    'Compact-BobIrcOutbox',
+    'Write-BobJobAuditLine',
+    'Write-BobJobAuditFromPacket'
 )
