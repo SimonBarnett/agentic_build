@@ -212,6 +212,7 @@ function Invoke-BobFleetOnce {
                 try {
                     $cursorArgs = @{ Job = $packet }
                     if ($packet.kind) { $cursorArgs['Kind'] = [string]$packet.kind }
+                    if (Test-BobUsesFakeGrok) { $cursorArgs['NoLaunch'] = $true }
                     $hand = & $cursorScript @cursorArgs
                     if ($hand -and $hand.packetPath) { $summary = "handed cursor-models $($hand.packetPath)" }
                 }
