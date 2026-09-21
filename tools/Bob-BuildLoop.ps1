@@ -590,3 +590,53 @@ function Write-BobBuildLoopLog {
         catch { }
     }
 }
+
+function Close-BobBuildLoopFinished {
+    param(
+        $State,
+        $Pass,
+        [string]$LogPath
+    )
+    # PASS-nits MUST close finished work: merge PR if needed, close FR, prior FAIL, PASS board.
+    $gh = Get-BobGhExe
+    if (-not $gh) {
+        Write-BobBuildLoopLog -Path $LogPath -Message 'close skipped: no gh.exe'
+        return
+    }
+    $repo = [string]$State.repo
+    $prUrl = [string]$State.currentPr
+    if (-not $prUrl -and $Pass -and $Pass.pr) { $prUrl = [string]$Pass.pr }
+    $prNum = $null
+    if ($prUrl -match '/pull/(\d+)') { $prNum = [int]$Matches[1] }
+    $comment = 'PASS-nits. PR merged. Closed by bob-job-loop.'
+    if ($prUrl) { $comment = "PASS-nits. Merged $prUrl. Closed by bob-job-loop." }
+
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if ($prNum) {
+            $view = & $gh pr view $prNum --repo $repo --json state,closed 2>$null | Out-String
+            if ($view -match '"state"\s*:\s*"OPEN"' -or $view -match '"closed"\s*:\s*false') {
+                & $gh pr merge $prNum --repo $repo --merge --delete-branch=false 2>$null | Out-Null
+                Write-BobBuildLoopLog -Path $LogPath -Message ("pr merge attempt #{0} exit={1}" -f $prNum, $LASTEXITCODE)
+            }
+        }
+        $toClose = @()
+        if ($State.issue) { $toClose += [int]$State.issue }
+        if ($State.priorMrbIssue) { $toClose += [int]$State.priorMrbIssue }
+        if ($Pass -and $Pass.issue) { $toClose += [int]$Pass.issue }
+        $seen = @{}
+        foreach ($n in $toClose) {
+            if (-not $n -or $seen.ContainsKey($n)) { continue }
+            $seen[$n] = $true
+            & $gh issue close $n --repo $repo --comment $comment 2>$null | Out-Null
+            Write-BobBuildLoopLog -Path $LogPath -Message ("issue close #{0} exit={1}" -f $n, $LASTEXITCODE)
+        }
+    }
+    catch {
+        Write-BobBuildLoopLog -Path $LogPath -Message ("close finished failed: {0}" -f $_.Exception.Message)
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
+}

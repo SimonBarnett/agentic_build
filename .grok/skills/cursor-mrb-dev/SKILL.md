@@ -2,7 +2,8 @@
 name: cursor-mrb-dev
 description: >
   Hand off hostile MRB then FIX until PASS-nits: Cursor Models while remaining
-  > 0, else grok.exe. Workers open PRs. PASS-nits merges. Every FAIL spawns a
+  > 0, else grok.exe. Workers open PRs. PASS-nits merges and MUST close finished
+  FR / prior FAIL / PASS boards. Every FAIL spawns a
   FIX worker. Use when the user says cursor mrb, mrb until pass, cursor
   builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev. Launch: start-bob-cursor.
   Verdicts: bob-hostile-mrb. Table: bob-build-loop. Bob stamps UAT.

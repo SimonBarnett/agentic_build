@@ -405,6 +405,7 @@ while ($true) {
             $stdout = [string]$decision.stdout
             $exitCode = 0
             if ($live) {
+                Close-BobBuildLoopFinished -State $state -Pass $decision.pass -LogPath $LogPath
                 $auditJob = [string]$state.currentJobId
                 if (-not $auditJob) { $auditJob = "loop-$Issue" }
                 try {

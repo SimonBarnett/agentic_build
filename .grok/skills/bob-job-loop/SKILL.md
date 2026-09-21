@@ -77,8 +77,12 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 4. Wait for `MRB FAIL|PASS-nits: ... <sha>`. Job crash without that issue:
    retry the MRB job.
 5. FAIL: do not merge. Read Required fixes. Start a FIX worker. Comment
-   the new PR / next board on the prior FAIL issue.
-6. PASS-nits: the MRB worker already merged. Print `DONE` and exit 0.
+   the new PR / next board on the prior FAIL issue. Leave the FAIL board
+   open until a later PASS closes it.
+6. PASS-nits: ensure the PR is merged, then **MUST close** the FR issue,
+   any prior FAIL board, and the PASS-nits board (comment with PR URL).
+   If the MRB worker forgot, the driver closes them. Print `DONE` and
+   exit 0.
 
 Never Other Models. Copilot only with `-AllowCopilot`. No MRB PDF. No
 `password=` / `XAI_API_KEY=` assignments. Test-Pack seams: `-Once`

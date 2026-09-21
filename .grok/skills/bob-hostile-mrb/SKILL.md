@@ -3,7 +3,8 @@ name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. PASS-nits: that MRB agent merges the PR. FAIL: dispatcher
+  in-session. PASS-nits: that MRB agent merges the PR and MUST close the
+  finished FR, prior FAIL board, and this PASS board. FAIL: dispatcher
   spawns a FIX worker. No MRB PDFs. Use when the user says MRB, hostile
   review, review the push, ready for UAT, hand off MRB, missing features,
   or /bob-hostile-mrb. Loop table is bob-build-loop.
@@ -97,8 +98,13 @@ Do not implement the missing feature in the MRB job.
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
 5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a FIX
    worker (`cursor-mrb-dev`). Do not reuse this FAIL issue as the next board.
-6. **PASS-nits:** merge the PR (`gh pr merge`). Nits stay listed; they do
-   not block the merge.
+6. **PASS-nits (MUST finish the board):**
+   - Merge the PR (`gh pr merge`). Nits stay listed; they do not block.
+   - Close the **feature-request** issue with a comment linking this PASS
+     board and the merged PR.
+   - Close any **prior FAIL** MRB board for this SHA/FR with the same link.
+   - Close **this** PASS-nits issue after the comment (finished).
+   - Do not leave finished FRs or superseded FAIL boards open.
 
 ## Pass bar
 
@@ -109,6 +115,7 @@ Do not implement the missing feature in the MRB job.
 - No secrets in repo or prompts
 - `/docs` markdown matches reality
 - PR is merged by this MRB worker
+- Finished FR + prior FAIL + this PASS board are **closed**
 
 ## Fail bar (examples)
 

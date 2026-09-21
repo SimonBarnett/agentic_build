@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-21 — PASS-nits MUST close finished issues/PRs
+
+MRB PASS-nits merges the PR and closes the FR, prior FAIL board, and the
+PASS board (worker + driver fallback `Close-BobBuildLoopFinished`). Home:
+`bob-hostile-mrb`. Pointers: `bob-job-loop`, `bob-build-loop`.
+
 ## 2026-09-21 — running Bob jobs (dispatcher playbook)
 
 Fleet runs of `bob-job-loop` across agentic_build / agentic_irc / open-tts.
