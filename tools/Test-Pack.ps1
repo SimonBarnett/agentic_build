@@ -1011,7 +1011,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must refresh via Write-BobIrcStatus' }
     if ($watchBv -notmatch 'Request-BobIrcBobiversePull') { throw 'Watch-Bobiverse must poll !bobiverse for tray pull' }
-    if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest BOB TRAY v1 whispers' }
+    if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest !bobiverse tray/digest whispers' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse may still harvest MOOT POINT transcript' }
     if ($watchBv -notmatch 'BOB_IRC_HOST') { throw 'Watch-Bobiverse must honor BOB_IRC_HOST' }
     if ($watchBv -notmatch '127\.0\.0\.1') { throw 'Watch-Bobiverse must treat 127.0.0.1 as private Ergo' }
@@ -1023,6 +1023,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
     if ($docsBv -notmatch 'Outbox backlog') { throw 'docs/bobiverse.md must note outbox backlog disconnect loop' }
     if ($docsBv -notmatch 'BOB TRAY v1') { throw 'docs/bobiverse.md must document tray pull dialect' }
+    if ($docsBv -notmatch 'BOB DIGEST v1') { throw 'docs/bobiverse.md must document BOB DIGEST v1 JSON pull' }
 
     $trayLine = 'BOB TRAY v1 id=ionos weekly=4 running=1 queued=0 repo=SimonBarnett/agentic_build kind=worker model=CursorModels lastSeen=2026-09-21T00:00:00Z jobs=SimonBarnett/agentic_build:running'
     $parsedTray = ConvertFrom-BobIrcTrayLine $trayLine
@@ -1285,6 +1286,109 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     if ($skillTray -notmatch 'START') { throw 'bob-fleet-tray skill must document START report lines' }
 
     $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
+}
+
+# --- BT0l4 !bobiverse BOB DIGEST v1 ingest (issue #142) ---
+Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-bobiverse-digest'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $nick = 'bob-testhost'
+    $env:BOB_IRC_NICK = $nick
+    $digestObj = @{
+        v            = 1
+        ts           = '2026-09-21T12:00:00Z'
+        chairNick    = 'Jeeves'
+        cursor_pools = @(
+            @{ id = 'smart-catalogue'; label = 'Cursor Models'; remaining = 11; period_end = '2026-09-23T00:00:00Z' }
+            @{ id = 'club-madeira'; label = 'Cursor Models'; remaining = 22; period_end = '2026-09-26T00:00:00Z' }
+            @{ id = 'ntsa'; label = 'Cursor Models'; remaining = 3; period_end = '2026-09-22T00:00:00Z' }
+        )
+        machines     = @{
+            ionos            = @{
+                weekly       = 12
+                period_end   = '2026-09-28T00:00:00Z'
+                running      = 1
+                queued       = 0
+                lastSeen     = '2026-09-21T12:00:00Z'
+                uptime_since = '2026-09-21T08:00:00Z'
+                jobs         = @(
+                    @{
+                        repo        = 'SimonBarnett/agentic_build'
+                        sha         = 'beef142'
+                        model       = 'composer-2.5'
+                        description = 'digest ingest fixture'
+                        run_time    = '4m02s'
+                        state       = 'running'
+                    }
+                )
+                pcent        = @{ 'cursor-models' = 11 }
+            }
+            flamingo         = @{
+                weekly   = 8
+                running  = 1
+                lastSeen = '2026-09-21T11:00:00Z'
+                jobs     = @(
+                    @{
+                        repo        = 'SimonBarnett/agentic_irc'
+                        sha         = 'face142'
+                        model       = 'grok-4.6'
+                        description = 'peer digest line'
+                        run_time    = '2m01s'
+                        state       = 'START'
+                    }
+                )
+            }
+            marchhare          = @{ weekly = 4; running = 0; queued = 0; jobs = @() }
+            'ce-priority-dev1' = @{ weekly = 4; running = 0; queued = 0; jobs = @() }
+        }
+    }
+    $rawJson = ($digestObj | ConvertTo-Json -Depth 8 -Compress)
+    $chunkA = $rawJson.Substring(0, [Math]::Min(120, $rawJson.Length))
+    $chunkB = $rawJson.Substring($chunkA.Length)
+    $logLines = @(
+        ":Jeeves!u@h PRIVMSG $nick :BOB DIGEST v1 1/2 $chunkA"
+        ":Jeeves!u@h PRIVMSG $nick :BOB DIGEST v1 2/2 $chunkB"
+    )
+    $ircLog = Join-Path $ircHome 'irc.log'
+    $logLines | Set-Content -Path $ircLog -Encoding utf8
+    $posPath = Join-Path $ircHome 'bob-peers\_tray-log.pos'
+    if (Test-Path $posPath) { Remove-Item -LiteralPath $posPath -Force }
+    $got = @(Import-BobIrcTrayPull)
+    foreach ($need in @('ionos', 'flamingo', 'marchhare', 'ce-priority-dev1')) {
+        if ($got -notcontains $need) { throw "digest ingest missing peer $need : $($got -join ',')" }
+        if (-not (Test-Path (Join-Path $ircHome "bob-peers\$need.json"))) { throw "missing bob-peers/$need.json" }
+    }
+    $ionosPeer = Read-BobIrcPeer -Id ionos
+    if ([string]$ionosPeer.source -ne 'irc-digest') { throw "ionos source=$($ionosPeer.source)" }
+    if ([string]$ionosPeer.sha -ne 'beef142') { throw "ionos sha=$($ionosPeer.sha)" }
+    $poolsPath = Join-Path $bridgeRoot 'cursor-pools.json'
+    if (-not (Test-Path $poolsPath)) { throw 'cursor-pools.json missing after digest ingest' }
+    $poolsDoc = Get-Content -LiteralPath $poolsPath -Raw | ConvertFrom-Json
+    if (-not $poolsDoc.by_seat.'smart-catalogue') { throw 'smart-catalogue pool not cached' }
+    if ([int]$poolsDoc.by_seat.'smart-catalogue'.remaining_pct -ne 11) {
+        throw "smart-catalogue remaining=$($poolsDoc.by_seat.'smart-catalogue'.remaining_pct)"
+    }
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if ($txt -notmatch 'beef142') { throw "hover missing digest sha: $txt" }
+    if ($txt -notmatch 'digest ingest fixture') { throw "hover missing description: $txt" }
+    if ($txt -notmatch 'face142') { throw "hover missing flamingo sha: $txt" }
+    if ($txt -notmatch '(?m)Smart Catalogue  Models  11%') { throw "Smart Catalogue bar from digest pools: $txt" }
+    if ($txt -notmatch '(?m)Club Madeira  Models  22%') { throw "Club Madeira bar from digest pools: $txt" }
+    if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skillTray -notmatch 'BOB DIGEST v1') { throw 'bob-fleet-tray skill must document BOB DIGEST v1 pull' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
     $env:BOB_IRC_HOME = $null
     $env:AGENTIC_IRC_HOME = $null
 }

@@ -1080,7 +1080,7 @@ function Get-BobTrayHover {
         }
         $age = Get-BobLastSeenAgeSec -Record ([pscustomobject]@{ lastSeen = $peek.lastSeen })
         $empty = (@($byMachine[$mid]).Count -eq 0)
-        $fromIrc = ([string]$peek.source -eq 'irc')
+        $fromIrc = @('irc', 'irc-tray', 'irc-digest') -contains ([string]$peek.source)
         # In-moot / IRC peer beats lastSeen-age 'stale' (good card = everyone in the moot).
         if ($inMoot -or $fromIrc) {
             $reachBy[$mid] = 'irc-fallback'
