@@ -2267,6 +2267,56 @@ Invoke-Case 'BT0loop9 mrb handoff refuse does not abort driver' {
     if ($mrbCalls.Count -lt 1) { throw 'TestStartMrb not invoked on retry_job' }
 }
 
+Invoke-Case 'BT0loop10 ConvertFrom-BobGhJsonList keeps issue body' {
+    param($bridgeRoot)
+    if (-not (Get-Command ConvertFrom-BobGhJsonList -ErrorAction SilentlyContinue)) {
+        throw 'ConvertFrom-BobGhJsonList missing after Bob-BuildLoop.ps1'
+    }
+    $raw = @'
+[
+  {"number":8,"title":"MRB FAIL: slug abc1234deadbeef","url":"https://github.com/fixture/repo/issues/8","body":"## Required fixes\n- Gate A still red\n","labels":[{"name":"mrb"}],"createdAt":"2026-01-01T00:00:00Z"},
+  {"number":9,"title":"MRB PASS-nits: slug def","url":"https://github.com/fixture/repo/issues/9","body":"## Verdict\nPASS-nits","labels":[{"name":"mrb"}],"createdAt":"2026-01-02T00:00:00Z"}
+]
+'@
+    $items = @(ConvertFrom-BobGhJsonList $raw)
+    if ($items.Count -ne 2) { throw "expected 2 items, got $($items.Count)" }
+    $fixes = Get-BobMrbRequiredFixes ([string]$items[0].body)
+    if ($fixes -notmatch 'Gate A still red') { throw "body lost on normal parse: $fixes" }
+
+    # PS 5.1 unzip reconstruct: one object with Object[] columns
+    $unzip = [pscustomobject]@{
+        number    = @(8, 9)
+        title     = @('MRB FAIL: slug abc1234deadbeef', 'MRB PASS-nits: slug def')
+        url       = @('https://github.com/fixture/repo/issues/8', 'https://github.com/fixture/repo/issues/9')
+        body      = @("## Required fixes`n- Unzip body kept`n", '## Verdict')
+        createdAt = @('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')
+    }
+    $unzipRaw = ($unzip | ConvertTo-Json -Depth 6)
+    # Force the unzip shape by converting that single object JSON back
+    $forced = ConvertFrom-BobGhJsonList ($unzip | ConvertTo-Json -Compress -Depth 6)
+    # When input is already a single object with array number, Raw path needs the array JSON.
+    # Simulate gh-unzip by calling the reconstruct branch via a crafted object pipe:
+    # JSON \n (not PowerShell `n) so ConvertFrom-Json yields real newlines in body.
+    $rawUnzip = '{"number":[8,9],"title":["MRB FAIL: slug abc","MRB PASS-nits: slug def"],"url":["https://github.com/fixture/repo/issues/8","https://github.com/fixture/repo/issues/9"],"body":["## Required fixes\n- Unzip body kept\n","## Verdict"],"createdAt":["2026-01-01T00:00:00Z","2026-01-02T00:00:00Z"]}'
+    $rows = @(ConvertFrom-BobGhJsonList $rawUnzip)
+    if ($rows.Count -ne 2) { throw "unzip expected 2 rows, got $($rows.Count)" }
+    $uFixes = Get-BobMrbRequiredFixes ([string]$rows[0].body)
+    if ($uFixes -notmatch 'Unzip body kept') { throw "body dropped on unzip reconstruct: '$uFixes' body='$($rows[0].body)'" }
+}
+
+Invoke-Case 'BT0loop11 MrbHandoff accepts -Pr' {
+    param($bridgeRoot)
+    $handoff = Join-Path $RepoRoot 'tools\Start-BobMrbHandoff.ps1'
+    $cmd = Get-Command $handoff -ErrorAction Stop
+    # Script params: ensure Pr is declared
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($handoff, [ref]$null, [ref]$null)
+    $params = $ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }
+    if ($params -notcontains 'Pr') { throw "Start-BobMrbHandoff missing -Pr (have: $($params -join ','))" }
+    $loopSrc = Get-Content (Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1') -Raw
+    if ($loopSrc -notmatch "hArgs\['Pr'\]") { throw 'Start-BobBuildLoop must pass -Pr to handoff when currentPr set' }
+    if ($loopSrc -match 'has no -Pr') { throw 'false no -Pr comment must not remain' }
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'

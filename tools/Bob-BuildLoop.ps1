@@ -204,6 +204,37 @@ function New-BobBuildGoal {
     return "Implement GitHub issue #$($State.issue) on $($State.repo). Read $docs and $plan. Open a PR from the work branch. Never push main. Never merge. Do not write ready for human UAT."
 }
 
+# gh --json list: PS 5.1 sometimes unzips an array of objects into one object
+# whose properties are Object[]. Reconstruct row objects and keep every field
+# (especially issue body for Required-fixes parse).
+function ConvertFrom-BobGhJsonList {
+    param([string]$Raw)
+    if (-not $Raw -or -not $Raw.Trim()) { return @() }
+    $parsed = $Raw | ConvertFrom-Json
+    $items = @($parsed)
+    if ($items.Count -eq 1 -and $null -ne $items[0] -and
+        $items[0].PSObject.Properties['number'] -and
+        ($items[0].number -is [System.Array])) {
+        $o = $items[0]
+        $nums = @($o.number)
+        $names = @($o.PSObject.Properties | ForEach-Object { $_.Name })
+        $out = New-Object System.Collections.Generic.List[object]
+        $i = 0
+        while ($i -lt $nums.Count) {
+            $h = [ordered]@{}
+            foreach ($n in $names) {
+                $col = @($o.$n)
+                if ($i -lt $col.Count) { $h[$n] = $col[$i] }
+                else { $h[$n] = $null }
+            }
+            $out.Add([pscustomobject]$h)
+            $i++
+        }
+        return @($out.ToArray())
+    }
+    return $items
+}
+
 function Get-BobBuildLoopShaNeedle {
     param([string]$Sha)
     if (-not $Sha) { return $null }

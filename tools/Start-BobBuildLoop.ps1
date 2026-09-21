@@ -284,7 +284,7 @@ function Invoke-LoopStartMrb {
         Fuel  = $(if ($State.fuel) { [string]$State.fuel } else { 'cursor-models' })
     }
     if ($State.currentSha) { $hArgs['Sha'] = [string]$State.currentSha }
-    # Start-BobMrbHandoff has no -Pr; tip is -Sha only.
+    if ($State.currentPr) { $hArgs['Pr'] = [string]$State.currentPr }
     if ($State.docs) { $hArgs['Docs'] = [string]$State.docs }
     if ($State.plan) { $hArgs['Plan'] = [string]$State.plan }
     if ($AllowCopilot) { $hArgs['AllowCopilot'] = $true }
