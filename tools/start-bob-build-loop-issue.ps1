@@ -28,7 +28,16 @@ foreach ($line in @($cred)) {
 }
 if (-not $env:GH_TOKEN) { throw 'no GitHub token from GCM / git credential' }
 $loop = Join-Path $PSScriptRoot 'Start-BobBuildLoop.ps1'
-if (-not (Test-Path $loop)) { throw "missing $loop" }
+if (-not (Test-Path $loop)) {
+    foreach ($c in @(
+            'C:\ai\agentic_build\tools\Start-BobBuildLoop.ps1',
+            'D:\ai\agentic_build\tools\Start-BobBuildLoop.ps1',
+            'C:\src\agentic_build\tools\Start-BobBuildLoop.ps1'
+        )) {
+        if (Test-Path $c) { $loop = $c; break }
+    }
+}
+if (-not (Test-Path $loop)) { throw "missing Start-BobBuildLoop.ps1 (not beside launcher and not under C:\\ai\\agentic_build\\tools)" }
 $loopArgs = @{
     Repo  = $Repo
     Issue = $Issue

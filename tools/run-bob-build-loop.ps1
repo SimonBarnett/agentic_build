@@ -50,6 +50,15 @@ $env:GH_TOKEN = $pass
 $env:GITHUB_TOKEN = $pass
 if (-not $env:BOB_MACHINE_ID) { $env:BOB_MACHINE_ID = 'ionos' }
 $loop = Join-Path $PSScriptRoot 'Start-BobBuildLoop.ps1'
+if (-not (Test-Path $loop)) {
+    foreach ($c in @(
+            'C:\ai\agentic_build\tools\Start-BobBuildLoop.ps1',
+            'D:\ai\agentic_build\tools\Start-BobBuildLoop.ps1',
+            'C:\src\agentic_build\tools\Start-BobBuildLoop.ps1'
+        )) {
+        if (Test-Path $c) { $loop = $c; break }
+    }
+}
 if (-not (Test-Path $loop)) { Write-Output 'FAILED: Start-BobBuildLoop.ps1 missing'; exit 1 }
 $a = @{
     Issue = $Issue
