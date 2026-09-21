@@ -2353,6 +2353,89 @@ Invoke-Case 'BT0loop12 build and fix goals require title hash' {
     if ($fixGoal -notmatch '#110') { throw 'fix goal missing MRB hash' }
 }
 
+# --- BT0gtalk grok-talk inbox worker (#126) ---
+Invoke-Case 'BT0gtalk inbox outbox fuel' {
+    param($bridgeRoot)
+    $ircHome = Join-Path $bridgeRoot 'grok-talk-home'
+    New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    $env:BOB_MACHINE_ID = 'testhost'
+
+    $weekLog = Join-Path $bridgeRoot 'grok-talk-weekly.jsonl'
+    $weekLine = '{"ts":"2026-09-21T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":50.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-26T00:00:00Z"}}}}'
+    [IO.File]::WriteAllText($weekLog, $weekLine + [Environment]::NewLine)
+    $env:BOB_WEEKLY_LOG = $weekLog
+    $cursorFile = Join-Path $bridgeRoot 'grok-talk-cursor-empty.json'
+    '{"percentUsed":100}' | Set-Content -Path $cursorFile -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+
+    $inboxJob = @{
+        v            = 1
+        job_id       = 'deadbeefcafebabe'
+        ts           = 1758470400
+        asker        = 'simon'
+        channel      = '#bobiverse'
+        body         = 'status on this box?'
+        nick         = 'bob-testhost'
+        machine_id   = 'testhost'
+        reply_target = '#bobiverse'
+        body_hash    = 'abc123'
+    } | ConvertTo-Json -Compress
+    $inboxPath = Join-Path $ircHome 'grok-inbox.jsonl'
+    [IO.File]::WriteAllText($inboxPath, $inboxJob + [Environment]::NewLine)
+
+    if (-not (Test-BobGrokTalkFuelAllowed)) { throw 'expected fuel ok with weekly 50%' }
+    if ([string](Select-BobGrokTalkFuel) -ne 'grok-build') { throw 'weekly>0 cursor=0 must pick grok-build' }
+
+    $tick = Invoke-BobGrokTalkTick -Cwd $RepoRoot
+    if (-not $tick.ok) { throw "tick failed: $($tick | ConvertTo-Json -Compress)" }
+    if ([string]$tick.job_id -ne 'deadbeefcafebabe') { throw "job_id=$($tick.job_id)" }
+
+    $outRows = @(Get-Content (Join-Path $ircHome 'grok-outbox.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+    if ($outRows.Count -ne 1) { throw "outbox lines=$($outRows.Count)" }
+    $out = $outRows[0]
+    if ([string]$out.job_id -ne 'deadbeefcafebabe') { throw "out job_id=$($out.job_id)" }
+    if ([string]$out.reply_target -ne '#bobiverse') { throw "reply_target=$($out.reply_target)" }
+    if (@($out.lines).Count -lt 1) { throw 'lines empty' }
+    if ([string]$out.lines[0] -match '(?i)password\s*=') { throw 'lines must not contain secrets' }
+
+    $lines = @(ConvertTo-BobGrokTalkOutLines -Text "Fact one.`npassword=secret`nFact two.")
+    if ($lines.Count -ne 2) { throw "secret filter lines=$($lines.Count)" }
+
+    $weekZero = Join-Path $bridgeRoot 'grok-talk-weekly-zero.jsonl'
+    [IO.File]::WriteAllText($weekZero, '{"ts":"2026-09-21T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":100.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
+    $env:BOB_WEEKLY_LOG = $weekZero
+    if (Test-BobGrokTalkFuelAllowed) { throw 'weekly=0 cursor=0 must refuse fuel' }
+    $inbox2 = Join-Path $bridgeRoot 'grok-talk-inbox-2'
+    New-Item -ItemType Directory -Force -Path $inbox2 | Out-Null
+    $env:BOB_IRC_HOME = $inbox2
+    $env:AGENTIC_IRC_HOME = $inbox2
+    @{
+        v            = 1
+        job_id       = 'blocked00000001'
+        ts           = 1758470500
+        asker        = 'simon'
+        channel      = '#bobiverse'
+        body         = 'hello'
+        nick         = 'bob-testhost'
+        machine_id   = 'testhost'
+        reply_target = '#bobiverse'
+        body_hash    = 'zzz'
+    } | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $inbox2 'grok-inbox.jsonl') -Encoding utf8
+    $refuse = Invoke-BobGrokTalkTick -Cwd $RepoRoot
+    if ($refuse.error -ne 'no_fuel') { throw "expected no_fuel got $($refuse | ConvertTo-Json -Compress)" }
+    if (Test-Path (Join-Path $inbox2 'grok-outbox.jsonl')) { throw 'no_fuel must not write outbox' }
+
+    $watchGt = Get-Content (Join-Path $RepoRoot 'tools\Watch-GrokTalk.ps1') -Raw
+    if ($watchGt -notmatch 'Invoke-BobGrokTalkTick') { throw 'Watch-GrokTalk must call Invoke-BobGrokTalkTick' }
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -match 'Invoke-BobGrokTalkTick|grok-inbox') { throw 'Watch-Bobiverse must not run grok-talk worker' }
+
+    $env:BOB_WEEKLY_LOG = $null
+    $env:BOB_MACHINE_ID = $null
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
