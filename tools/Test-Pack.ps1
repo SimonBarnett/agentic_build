@@ -791,6 +791,10 @@ Invoke-Case 'BT0n tray tip show' {
     if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-Bobiverse-ionos.ps1'))) { throw 'missing tools/_Watch-Bobiverse-ionos.ps1' }
     $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
     if ($installSrc -notmatch '_Watch-Bobiverse-') { throw 'Install-BobFleet must register _Watch-Bobiverse-<id>' }
+    if ($installSrc -notmatch '_Watch-GrokTalk-') { throw 'Install-BobFleet must register _Watch-GrokTalk-<id>' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-GrokTalk.ps1'))) { throw 'missing tools/_Watch-GrokTalk.ps1' }
+    $gtWrapSrc = Get-Content (Join-Path $RepoRoot 'tools\_Watch-GrokTalk.ps1') -Raw
+    if ($gtWrapSrc -notmatch 'Watch-GrokTalk\.ps1') { throw '_Watch-GrokTalk must delegate to Watch-GrokTalk.ps1' }
 
     $onWindows = [System.Environment]::OSVersion.Platform -eq 'Win32NT'
     if (-not $onWindows) {
@@ -2437,6 +2441,9 @@ Invoke-Case 'BT0gtalk inbox outbox fuel' {
     if ($watchGt -notmatch 'Invoke-BobGrokTalkTick') { throw 'Watch-GrokTalk must call Invoke-BobGrokTalkTick' }
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'Invoke-BobGrokTalkTick|grok-inbox') { throw 'Watch-Bobiverse must not run grok-talk worker' }
+    $installGt = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installGt -notmatch 'Register-ScheduledTask -TaskName \$gtTask') { throw 'Install-BobFleet must register scheduled task for grok-talk poller' }
+    if ($installGt -notmatch 'Watch-GrokTalk') { throw 'Install-BobFleet grok-talk task must target Watch-GrokTalk' }
 
     $env:BOB_WEEKLY_LOG = $null
     $env:BOB_MACHINE_ID = $null
