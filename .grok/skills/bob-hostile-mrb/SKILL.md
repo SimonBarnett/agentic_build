@@ -90,6 +90,12 @@ enough — the dispatcher must hand remaining FRs to new workers
 
 ## Worker steps
 
+Score the review SHA only. If the shared checkout HEAD is a different
+job, add a detached worktree at that SHA. Do not `reset` / `checkout`
+away from another worker's branch. Do not score later commits or dirty
+files. A GitHub `CONFLICTING` PR is FAIL even when this SHA's
+acceptance is green in isolation: PASS-nits includes `gh pr merge`.
+
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.

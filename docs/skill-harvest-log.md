@@ -1,5 +1,12 @@
 ﻿# Skill harvest log
 
+## 2026-09-21 — MRB worker: isolate review SHA; CONFLICTING is FAIL
+
+`bob-hostile-mrb` worker steps: if the shared checkout HEAD is another
+job, use a detached worktree at the review SHA (do not reset that
+branch). A GitHub `CONFLICTING` PR is FAIL even when acceptance is
+green in isolation — PASS-nits includes merge.
+
 ## 2026-09-21 — bob-job launchers + MRB remaining-FR rule
 
 Harvest from live bob-job loops:
