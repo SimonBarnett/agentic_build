@@ -1002,18 +1002,6 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($docsBv -notmatch 'Outbox backlog') { throw 'docs/bobiverse.md must note outbox backlog disconnect loop' }
     if ($docsBv -notmatch 'BOB TRAY v1') { throw 'docs/bobiverse.md must document tray pull dialect' }
 
-    $env:BOB_MACHINE_ID = 'testhost'
-    $ob = Join-Path $ircHome 'outbox.txt'
-    if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
-    Write-BobIrcStatus | Out-Null
-    Write-BobIrcStatus | Out-Null
-    if (Test-Path $ob) {
-        $obLines = @(Get-Content $ob | Where-Object { $_ })
-        if ($obLines.Count -gt 0) { throw "lastSeen-only tick must not speak: outbox=$($obLines -join ' | ')" }
-    }
-    $peerSelf = Read-BobIrcPeer -Id testhost
-    if (-not $peerSelf) { throw 'Write-BobIrcStatus must write bob-peers json without POINT outbox' }
-
     $trayLine = 'BOB TRAY v1 id=ionos weekly=4 running=1 queued=0 repo=SimonBarnett/agentic_build kind=worker model=CursorModels lastSeen=2026-09-21T00:00:00Z jobs=SimonBarnett/agentic_build:running'
     $parsedTray = ConvertFrom-BobIrcTrayLine $trayLine
     if ($parsedTray.id -ne 'ionos') { throw "tray id=$($parsedTray.id)" }
@@ -1026,6 +1014,48 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($gotTray -notcontains 'ionos') { throw "tray pull ingest=$($gotTray -join ',')" }
     $ionosTray = Read-BobIrcPeer -Id ionos
     if ([string]$ionosTray.repo -ne 'SimonBarnett/agentic_build') { throw "ionos tray repo=$($ionosTray.repo)" }
+    if ([string]$ionosTray.source -ne 'irc-tray') { throw "ionos tray source=$($ionosTray.source)" }
+
+    $badPointBody = 'BOB v1 id=ionos weekly=1 running=1 queued=0 lastSeen=2026-09-21T02:00:00Z jobs=?:running'
+    $badParsed = ConvertFrom-BobIrcPoint $badPointBody
+    if (@($badParsed.jobs).Count -gt 0) { throw 'ConvertFrom-BobIrcPoint must skip ? repo jobs' }
+    $badTx = '1700000010 bob-ionos POINT ' + $badPointBody
+    $mootFile = Join-Path $mootDir ($cfg.mootId + '.txt')
+    $existingMoot = Get-Content $mootFile -Raw
+    [IO.File]::WriteAllText($mootFile, $existingMoot.TrimEnd() + "`n" + $badTx)
+    Import-BobIrcPeerTranscript | Out-Null
+    $ionosAfter = Read-BobIrcPeer -Id ionos
+    if ([string]$ionosAfter.repo -ne 'SimonBarnett/agentic_build') { throw "transcript clobbered repo=$($ionosAfter.repo)" }
+    if ([string]$ionosAfter.kind -ne 'worker') { throw "transcript clobbered kind=$($ionosAfter.kind)" }
+    if ([string]$ionosAfter.model -ne 'CursorModels') { throw "transcript clobbered model=$($ionosAfter.model)" }
+    if ([string]$ionosAfter.source -ne 'irc-tray') { throw "transcript clobbered source=$($ionosAfter.source)" }
+    foreach ($j in @($ionosAfter.jobs)) {
+        if ([string]$j.repo -eq '?') { throw 'transcript left ? job repo on ionos peer' }
+    }
+
+    $ob = Join-Path $ircHome 'outbox.txt'
+    if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
+    $stampBob = Join-Path $peerDir '_bobiverse-last.txt'
+    if (Test-Path $stampBob) { Remove-Item -LiteralPath $stampBob -Force }
+    $p1 = Request-BobIrcBobiversePull -MinIntervalSec 120
+    if (-not $p1) { throw 'first Request-BobIrcBobiversePull must enqueue !bobiverse' }
+    $obLines1 = @(Get-Content $ob | Where-Object { $_ })
+    if ($obLines1.Count -ne 1 -or [string]$obLines1[0] -notmatch '!bobiverse') { throw "bobiverse pull outbox=$($obLines1 -join ' | ')" }
+    $p2 = Request-BobIrcBobiversePull -MinIntervalSec 120
+    if ($p2) { throw 'second Request-BobIrcBobiversePull within 120s must be suppressed' }
+    $obLines2 = @(Get-Content $ob | Where-Object { $_ })
+    if ($obLines2.Count -ne 1) { throw "bobiverse pull duplicated outbox=$($obLines2 -join ' | ')" }
+
+    $env:BOB_MACHINE_ID = 'testhost'
+    if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
+    Write-BobIrcStatus | Out-Null
+    Write-BobIrcStatus | Out-Null
+    if (Test-Path $ob) {
+        $obLines = @(Get-Content $ob | Where-Object { $_ })
+        if ($obLines.Count -gt 0) { throw "lastSeen-only tick must not speak: outbox=$($obLines -join ' | ')" }
+    }
+    $peerSelf = Read-BobIrcPeer -Id testhost
+    if (-not $peerSelf) { throw 'Write-BobIrcStatus must write bob-peers json without POINT outbox' }
 
     $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
     if ($stamp -eq '?' -or -not $stamp) {

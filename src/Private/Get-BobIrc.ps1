@@ -297,7 +297,7 @@ function ConvertFrom-BobIrcPoint {
         foreach ($part in $jr.Split(',')) {
             if ($part -notmatch ':') { continue }
             $repo, $st = $part.Split(':', 2)
-            if ($repo -and $st) {
+            if ((Test-BobIrcRepoOk $repo) -and $st) {
                 $jobs += ,[pscustomobject]@{ repo = $repo; state = $st; machine = $mid; id = ($mid + '-' + $jobs.Count) }
             }
         }
@@ -413,6 +413,31 @@ function Compact-BobIrcOutbox {
 }
 
 function Get-BobIrcTrayPrefix { return 'BOB TRAY v1 ' }
+
+function Test-BobIrcSkipPeerTranscriptOverwrite {
+    param($Existing, $Incoming, [Parameter(Mandatory)][string]$ResolvedId)
+    $selfId = $null
+    try { $selfId = Get-ThisMachineId } catch { }
+    if ($selfId -and [string]$ResolvedId -eq [string]$selfId) { return $true }
+    if (-not $Existing) { return $false }
+    if ([string]$Existing.source -eq 'irc-tray') { return $true }
+    $exSeen = $null
+    $inSeen = $null
+    if ($Existing.lastSeen) {
+        try {
+            $exSeen = [datetime]::Parse([string]$Existing.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        catch { }
+    }
+    if ($Incoming.lastSeen) {
+        try {
+            $inSeen = [datetime]::Parse([string]$Incoming.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        catch { }
+    }
+    if ($exSeen -and $inSeen -and $exSeen -gt $inSeen) { return $true }
+    return $false
+}
 
 function Test-BobIrcRepoOk {
     param([string]$Repo)
@@ -879,14 +904,14 @@ function Import-BobIrcPeerTranscript {
     foreach ($resolved in @($latest.Keys)) {
         $doc = $latest[$resolved]
         $peerPath = Join-Path $dir ($resolved + '.json')
+        $prev = $null
+        if (Test-Path $peerPath) {
+            try { $prev = Read-JsonFile $peerPath } catch { }
+        }
+        if (Test-BobIrcSkipPeerTranscriptOverwrite -Existing $prev -Incoming $doc -ResolvedId $resolved) { continue }
         # Keep prior period_end when the latest POINT still lacks reset=.
-        if (-not $doc.period_end -and (Test-Path $peerPath)) {
-            try {
-                $prev = Read-JsonFile $peerPath
-                if ($prev -and $prev.period_end) {
-                    $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
-                }
-            } catch { }
+        if (-not $doc.period_end -and $prev -and $prev.period_end) {
+            $doc | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$prev.period_end) -Force
         }
         Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
