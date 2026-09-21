@@ -178,6 +178,12 @@ function Invoke-BobFleetOnce {
         return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
     }
 
+    $missingFuel = Test-BobPacketMissingFuel -Fuel $packet.fuel -Model $packet.model
+    if (-not $missingFuel.ok) {
+        $comp = [pscustomobject]@{ status = 'failed'; summary = $missingFuel.summary; needs_human = $true }
+        return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
+    }
+
     $fuelModel = [pscustomobject]@{ ok = $true; summary = $null }
     if ($packet.fuel) {
         $fuelModel = Test-BobFuelModelCompatible -Fuel $packet.fuel -Model $packet.model

@@ -1615,6 +1615,45 @@ Invoke-Case 'BT0x4 fuel model matched tick' {
     if (-not $done.completion -or $done.completion.status -ne 'ok') { throw 'matched grok-build tick must complete ok' }
 }
 
+# --- BT0y empty fuel packet gate (issue #54) ---
+Invoke-Case 'BT0y1 empty fuel model tick refuse' {
+    param($bridgeRoot)
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    $env:BOB_MACHINE_ID = 'testhost'
+    $jobId = [guid]::NewGuid().ToString()
+    $packet = [pscustomobject]@{
+        id        = $jobId
+        from      = 'test'
+        goal      = 'PONG'
+        machine   = 'testhost'
+        cwd       = $cwd
+        profile   = 'generic'
+        createdAt = [DateTime]::UtcNow.ToString('o')
+        model     = 'composer-2.5'
+        task      = 'fleet'
+        kind      = 'build'
+    }
+    $inDir = Join-Path $bridgeRoot 'fleet\inbox\testhost'
+    New-Item -ItemType Directory -Force -Path $inDir | Out-Null
+    $inPath = Join-Path $inDir ($jobId + '.json')
+    [IO.File]::WriteAllText($inPath, ($packet | ConvertTo-Json -Depth 8))
+    $sessDir = Join-Path $bridgeRoot 'fake-grok-home\sessions'
+    $before = 0
+    if (Test-Path $sessDir) { $before = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    Invoke-BobFleetTick | Out-Null
+    $after = 0
+    if (Test-Path $sessDir) { $after = @(Get-ChildItem $sessDir -Filter '*.json' -ErrorAction SilentlyContinue).Count }
+    if ($after -ne $before) { throw "Fake-Grok sessions grew $before -> $after (grok.exe must not start)" }
+    $done = Get-BobBuild -JobId $jobId
+    if ($done.lane -ne 'outbox') { throw "lane=$($done.lane)" }
+    if ($done.state -ne 'failed') { throw "state=$($done.state)" }
+    if (-not $done.completion -or $done.completion.status -ne 'failed') { throw 'completion not failed' }
+    if ([string]$done.completion.summary -notmatch 'missing_fuel') { throw "summary=$($done.completion.summary)" }
+    $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
+    if ($tickSrc -notmatch 'Test-BobPacketMissingFuel') { throw 'fleet tick must call Test-BobPacketMissingFuel' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
