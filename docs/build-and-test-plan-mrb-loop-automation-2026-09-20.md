@@ -2,6 +2,8 @@
 
 **Date:** 2026-09-20
 **Spec:** `docs/feature-request-mrb-loop-automation-2026-09-20.md`
+**Related:** https://github.com/SimonBarnett/agentic_build/issues/118 — PASS-nits
+merge-then-close (`docs/feature-request-pass-nits-close-finished-boards-2026-09-21.md`).
 **Chair:** Bob
 
 ## Goals
@@ -13,9 +15,6 @@ MRB FAIL. It does not stamp UAT.
 
 ## Non-goals
 
-- Changing FAIL / PASS-nits bars (`bob-hostile-mrb`).
-- Auto-closing finished FR / MRB boards (issue #118 /
-  `docs/feature-request-pass-nits-close-finished-boards-2026-09-21.md`).
 - MRB PDFs.
 - Live GitHub or live `cursor-agent` in Test-Pack.
 
