@@ -55,7 +55,12 @@
         'Get-BobJobRepoStamp',
         'Compact-BobIrcOutbox',
         'Write-BobJobAuditLine',
-        'Write-BobJobAuditFromPacket'
+        'Write-BobJobAuditFromPacket',
+        'Invoke-BobGrokTalkTick',
+        'Test-BobGrokTalkFuelAllowed',
+        'Select-BobGrokTalkFuel',
+        'Add-BobGrokTalkCompletion',
+        'ConvertTo-BobGrokTalkOutLines'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
