@@ -266,6 +266,7 @@ function Invoke-LoopStartMrb {
         Fuel  = $(if ($State.fuel) { [string]$State.fuel } else { 'cursor-models' })
     }
     if ($State.currentSha) { $hArgs['Sha'] = [string]$State.currentSha }
+    if ($State.currentPr) { $hArgs['Pr'] = [string]$State.currentPr }
     if ($State.docs) { $hArgs['Docs'] = [string]$State.docs }
     if ($State.plan) { $hArgs['Plan'] = [string]$State.plan }
     if ($AllowCopilot) { $hArgs['AllowCopilot'] = $true }
@@ -385,6 +386,19 @@ while ($true) {
             $terminal = $true
             $stdout = [string]$decision.stdout
             $exitCode = 0
+            if ($live) {
+                $auditJob = [string]$state.currentJobId
+                if (-not $auditJob) { $auditJob = "loop-$Issue" }
+                try {
+                    Write-BobJobAuditLine -JobId $auditJob -Machine '' -Fuel ([string]$state.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$state.currentPr) -MrbIssue ([string]$state.lastMrb) -Sha ([string]$state.currentSha) -Status 'pass-nits'
+                }
+                catch {
+                    $auditErr = $_.Exception.Message
+                    if (-not $auditErr) { $auditErr = $_.ToString() }
+                    Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
+                    throw
+                }
+            }
         }
         'fail' {
             $terminal = $true

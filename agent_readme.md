@@ -7,21 +7,22 @@ you do not install a Windows service, and you do not put SQL passwords in prompt
 Grok Bot desktop is running on every build machine. `grok.exe` runs as the **Windows logon user**. That user already has MSSQL (integrated auth).
 
 Repo: `https://github.com/SimonBarnett/agentic_build`  
-Local clones: `D:\ai\agentic_build` (marchhare), `C:\src\agentic_build` (dev1, if present).
+Canonical machine table (must match `README.md` and `config/fleet-registry.json`):
+
+| id | Role | Clone path (this house) |
+|---|---|---|
+| `ionos` | VPS; Ergo host; pull worker | `C:\ai\agentic_build` |
+| `marchhare` | Dual-homed build box | `D:\ai\agentic_build` |
+| `flamingo` | Club Madeira seat | `C:\src\agentic_build` |
+| `ce-priority-dev1` | Form Prep / Priority Azure | `C:\src\agentic_build` |
+
+`-Machine` is a registry **id**, not a hostname. IRC status nick for `ce-priority-dev1` is `bob-dev1` on `#bobiverse`.
 
 Skills (auto-load on grok.exe / Grok Bot): `.grok/skills/grok-build-fleet`, `.grok/skills/unstick-grok-bot`, `.grok/skills/harvest-agent-skills`.
 
-## Machines
+## IRC (fleet status)
 
-`-Machine` is an id, not a guessed hostname.
-
-| id | Role |
-|---|---|
-| `marchhare` | This dual-homed Windows box (Grok Bot + adapter). |
-| `dev1` | Form Prep / Priority. Profile `formprep`. |
-| `ionos` | Public media host. Clone `C:\ai\agentic_build`. |
-
-`Get-BobMachines` lists who has heartbeated. If this box is new: `Register-BobMachine -Id <id> -CwdRoots <allowed roots>`.
+Private Ergo `irc.ntsa.uk:6697`, channel `#bobiverse`. Skill stub `bob-irc` (canonical copy in **agentic_irc**). Docs: `docs/bobiverse.md`. Do not open IRC from CI.
 
 ## Load (local-exec on the target computer)
 
@@ -31,6 +32,23 @@ Import-Module "$repo\src\BobBridge.psd1"
 ```
 
 The pull worker `tools\Watch-BobJobs.ps1` (logon task) claims **this** machine’s inbox and runs the build. If you enqueue for another id, that machine’s watcher runs it.
+
+## BobBridge exports (agents)
+
+**Job + fuel + machine (document these to workers):** `Get-BobMachines`, `Register-BobMachine`, `Get-BobHealth`, `Get-BobCapacity`, `Select-BobGitWorker`, `Start-BobBuild`, `Get-BobBuild`, `Get-BobBuilds`, `Send-BobBuildSpec`, `Stop-BobBuild`, `Get-BobJobModel`, `Invoke-BobFleetTick`, `Start-BobWorker`, `Send-BobPrompt`, `Get-BobResult`, `Stop-BobWorker`, `Test-PromptSecrets`.
+
+**Tray + IRC (only `bob-fleet-tray` / `bob-irc` skills):** `Get-BobTrayHover`, `Get-BobTrayBarPaint`, `Get-BobTrayTipPlacement`, `Get-BobWeeklyRemaining`, `ConvertTo-BobIrcPoint`, `Write-BobIrcStatus`, and related `*-BobIrc*` helpers in `BobBridge.psd1`.
+
+## Git task loop (skills, not one mega-skill)
+
+| Skill | Only job |
+|---|---|
+| `bob-spec-intake` | Park FR issue + `/docs` md |
+| `bob-build-dispatch` | Write plan + `Start-BobBuild -Task git` |
+| `bob-job-loop` | `Start-BobBuildLoop.ps1` retry + PASS-nits notify |
+| `bob-hostile-mrb` / `cursor-mrb-dev` | Hand off MRB; FAIL → FIX; PASS-nits merges |
+| `grok-build-fleet` | Start/monitor/stop; picker; heal `Watch-BobJobs` |
+| `bob-build-loop` | Pointer to the rows above |
 
 ## Start a build
 
@@ -45,6 +63,8 @@ Start-BobBuild `
   -ReplyChannel '<your Grok Bot name: Bob, Haitch, Merc, …>'
 ```
 
+Git task with picker: `Start-BobBuild -Task git -Goal '...' -Profile generic`.
+
 Tell the human the `jobId`. Then poll:
 
 ```powershell
@@ -53,6 +73,8 @@ Get-BobBuilds -Machine marchhare
 ```
 
 `lane` is `inbox` → `running` → `outbox`. `state` is `running` / `done` / `failed` / `blocked` / `stopped`. Outbox includes `completion.status` (`ok`/`failed`/`blocked`/`stopped`) and `completion.summary`.
+
+**Job audit:** each fleet outbox completion appends one JSON line to `{BOB_BRIDGE_HOME}\job-audit.jsonl` with `jobId`, `machine`, `fuel`, `model`, `kind`, `prUrl`, `mrbIssue`, `sha`, `status` (fields may be empty on Fake-Grok). `Start-BobBuildLoop.ps1` appends again on MRB PASS-nits.
 
 Follow-up spec on a live job:
 
@@ -72,14 +94,14 @@ The worker also pings `-ReplyChannel` with queued / running / blocked / done. Of
 
 | Profile | When | Hard rules (also injected into grok.exe `--rules` unless yolo) |
 |---|---|---|
-| `formprep` | Priority Form Prep on dev1 | DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets. MSSQL = Windows logon (integrated). Never SQL passwords. **No `--yolo` / `--always-approve`.** |
+| `formprep` | Priority Form Prep on `ce-priority-dev1` | DEV only. Never SQL-flip UPD. Never AllUnprepared. Never commit secrets. MSSQL = Windows logon (integrated). Never SQL passwords. **No `--yolo` / `--always-approve`.** |
 | `teams` | Teams audio / hours | No AccessMedia.All. Do not claim fixture speak is audible. |
 | `mud` | MUD | No spend. Stay on configured host. |
 | `generic` | Default | No production deploys. No force-push. |
 
 ## Spec contents
 
-`goal` / `constraints` / `success` are the spec. Keep secrets out: `password=` or `XAI_API_KEY` in the goal is refused.
+`goal` / `constraints` / `success` are the spec. Keep secrets out: `password=` or `XAI_API_KEY` assignments (including `export XAI_API_KEY …`) in the goal are refused.
 
 Point `cwd` at a repo the target machine can see, under that machine’s `cwdRoots`.
 
@@ -97,3 +119,4 @@ Point `cwd` at a repo the target machine can see, under that machine’s `cwdRoo
 - SQL passwords, `XAI_API_KEY=`, or `password=` assignments in packets.
 - Claim a machine by hostname; use the id.
 - Touch `%USERPROFILE%\.grok\bob-bridge` from Fake-Grok tests.
+- Mark **ready for human UAT** (Bob only).

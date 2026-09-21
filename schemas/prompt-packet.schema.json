@@ -21,6 +21,8 @@
     "docs": { "type": "string" },
     "plan": { "type": "string" },
     "mrb": { "type": "string" },
+    "mrbIssue": { "type": "string" },
+    "prUrl": { "type": "string" },
     "kind": { "type": "string", "enum": ["mrb", "build"] },
     "model": { "type": "string" }
   }

@@ -17,6 +17,7 @@ function Start-BobBuild {
         [string]$Docs,
         [string]$Plan,
         [string]$Mrb,
+        [string]$PrUrl,
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
         [string]$Kind = 'build',
@@ -159,6 +160,7 @@ function Start-BobBuild {
         docs           = $Docs
         plan           = $Plan
         mrb            = $Mrb
+        prUrl          = $(if ($PrUrl) { [string]$PrUrl } else { '' })
         kind           = $Kind
         model          = $Model
     }

@@ -6,6 +6,7 @@ param(
     [int]$Issue,
     [string]$Repo = 'SimonBarnett/agentic_build',
     [string]$Sha,
+    [string]$Pr,
     [string]$Docs,
     [string]$Plan,
     [string]$Cwd,
@@ -112,7 +113,23 @@ Assert-BobMrbWorkerCanPost -WorkerMachine ([string]$sel.machine)
 
 if (-not $Cwd) { $Cwd = $repoRoot }
 $mrbModel = Get-BobJobModel -Kind mrb -Fuel $enqueueFuel
-$q = Start-BobBuild -Task git -Fuel $enqueueFuel -Kind mrb -Model $mrbModel -Machine $sel.machine -PinGitWorker -Cwd $Cwd -Goal $prompt -Repo "https://github.com/$Repo" -Docs $Docs -Plan $Plan -Mrb $issueUrl -AllowCopilot:$AllowCopilot
+$buildArgs = @{
+    Task          = 'git'
+    Fuel          = $enqueueFuel
+    Kind          = 'mrb'
+    Model         = $mrbModel
+    Machine       = $sel.machine
+    PinGitWorker  = $true
+    Cwd           = $Cwd
+    Goal          = $prompt
+    Repo          = "https://github.com/$Repo"
+    Docs          = $Docs
+    Plan          = $Plan
+    Mrb           = $issueUrl
+    AllowCopilot  = $AllowCopilot
+}
+if ($Pr) { $buildArgs['PrUrl'] = [string]$Pr }
+$q = Start-BobBuild @buildArgs
 if (-not $q.ok -or $q.wait) {
     $why = $(if ($q.reason) { [string]$q.reason } else { 'enqueue refused' })
     return [pscustomobject]@{
