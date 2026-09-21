@@ -30,16 +30,16 @@ foreach ($u in @($prUrls)) {
     $n = Get-BobGhPrNumberFromUrl $u
     if ($n -le 0) { continue }
     if (Test-BobGhPrIsMerged -Gh $gh -Repo $Repo -PrNumber $n) {
-        [void]$done.Add("skip merged PR #$n")
+        [void]$done.Add(('skip merged PR #{0}' -f $n))
         continue
     }
     if ($WhatIf) {
-        [void]$done.Add("would merge PR #$n ($u)")
+        [void]$done.Add(('would merge PR #{0} ({1})' -f $n, $u))
         continue
     }
     $m = Invoke-BobGhMergePrIfOpen -Gh $gh -Repo $Repo -PrNumber $n
     if ($m.ok) {
-        [void]$done.Add("merged PR #$n")
+        [void]$done.Add(('merged PR #{0}' -f $n))
     }
     else {
         [void]$done.Add(("FAILED PR #{0}: {1}" -f $n, $m.message))

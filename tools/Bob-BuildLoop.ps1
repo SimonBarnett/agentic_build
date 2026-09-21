@@ -514,7 +514,7 @@ function Invoke-BobGhMergePrIfOpen {
     $savedEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $out = & $Gh pr merge $PrNumber --repo $Repo 2>&1 | Out-String
+        $out = & $Gh pr merge $PrNumber --repo $Repo --merge 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             return [pscustomobject]@{ ok = $false; message = ("gh pr merge failed: {0}" -f $out.Trim()) }
         }
