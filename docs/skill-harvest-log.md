@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-22 — CAST IRON: harvest back to the relevant repo
+
+Simon `#bobiverse`: every skill repo has a harvest skill as foundation
+(like `harvest-agent-skills` here). If you learn something new, harvest
+it back to the **relevant** repo immediately. `harvest-agent-skills` +
+`bob-spec-intake` (new skill packs LOCK a harvest skill in P0).
+
 ## 2026-09-22 — gh pr merge must pass --merge (non-interactive)
 
 ehf #5 PASS-nits finish FAILED: `gh pr merge` without `--merge`/`--rebase`/`--squash` when not a TTY. PR #10 was MERGED a moment later; treat DONE. Driver `Invoke-BobGhMergePrIfOpen` now passes `--merge`.

@@ -5,14 +5,34 @@ description: >
   GitHub (SimonBarnett/agentic_build). Use when you learn a new procedure while
   doing build work, or the user says harvest skills, add it to the skills,
   promote a playbook, skill harvest, hourly skill check, /harvest-agent-skills,
-  or everyone harvest your irc skill (IRC playbooks go to agentic_irc).
-  Do not wait for the hourly task. Does not dispatch product builds
-  (grok-build-fleet / bob-build-dispatch).
+  CAST IRON harvest, harvest back to the relevant repo, or everyone harvest
+  your irc skill (IRC playbooks go to agentic_irc). Do not wait for the hourly
+  task. Does not dispatch product builds (grok-build-fleet / bob-build-dispatch).
 ---
 
 # Harvest agent skills
 
 Remote: `https://github.com/SimonBarnett/agentic_build` (`origin/main`). Local clone `C:\ai\agentic_build` on ionos (else `D:\ai\...` / `C:\src\...`).
+
+## CAST IRON (Simon 2026-09-22)
+
+**If you learn something new, harvest it back to the relevant repo.** Every
+skill product has a harvest skill as its foundation (this file is the one
+for `agentic_build`). Do not leave a playbook only in `~/.grok/skills`.
+Do not wait for the hourly task.
+
+Route the edit to the repo that owns the fact:
+
+| Playbook | Repo | Harvest skill |
+|----------|------|----------------|
+| Fleet / build / MRB / Bob jobs | `SimonBarnett/agentic_build` | `harvest-agent-skills` (this file) |
+| IRC wire, talk seats, SEAL, moot, file, dumb, invite-airc, Ergo, Watch-Bobiverse, Halloy | `SimonBarnett/agentic_irc` | harvest into that repo's `.grok/skills/` |
+| IRC client-as-skill | `SimonBarnett/irc-skill` | that repo's harvest skill |
+| MUD play / Discworld playbooks | `SimonBarnett/mud-skill` | that repo's harvest skill |
+| Other skill products | that public repo | `.grok/skills/harvest-<repo>/SKILL.md` |
+
+New skill repos (`bob-spec-intake`): P0 includes a harvest skill as
+foundation, same job as this one.
 
 All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo start/firewall, Watch-Bobiverse recycle, Halloy): harvest into `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/` (clone `C:\ai\agentic_irc`). This repo keeps a `bob-irc` stub plus `config/bobiverse.json`.
 

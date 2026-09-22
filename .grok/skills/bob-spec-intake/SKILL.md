@@ -16,6 +16,9 @@ description: >
 3. Commit under `/docs`:
    - Markdown: `docs/functional-spec.md` (LOCKED constants, unknowns, Phase 0, acceptance).
    - Keep a source PDF **only if the sender provided one**. Do not invent a PDF.
+   - If the product is a **skill pack**, LOCK a harvest skill as foundation
+     (`.grok/skills/harvest-<repo>/SKILL.md` or equivalent). CAST IRON:
+     learnings harvest back to that repo (`harvest-agent-skills`).
 4. Open a GitHub issue titled from the spec, body linking the md path, label `feature-request`.
 5. Push. Tell the human the issue URL and commit SHA.
 6. Next: run `bob-build-dispatch` (unless the human said park-only / later).
