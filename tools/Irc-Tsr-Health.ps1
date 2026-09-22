@@ -1,4 +1,17 @@
-# Off-DEV testable TSR watchdog health (wake heartbeat only — not irc.log chat mtime).
+# Off-DEV testable TSR watchdog health (PROCESS_HEARTBEAT in wake jsonl — not irc.log / FROM mtime).
+
+function Get-IrcTsrLastProcessHeartbeatTime {
+    param([Parameter(Mandatory)][string]$WakePath)
+    if (-not (Test-Path -LiteralPath $WakePath)) { return $null }
+    $last = $null
+    foreach ($line in [System.IO.File]::ReadLines($WakePath)) {
+        if ($line -notmatch 'PROCESS_HEARTBEAT') { continue }
+        if ($line -match '^(\d{4}-\d{2}-\d{2}T\S+)\s+PROCESS_HEARTBEAT') {
+            $last = [datetime]::Parse($Matches[1], $null, [Globalization.DateTimeStyles]::RoundtripKind)
+        }
+    }
+    return $last
+}
 
 function Test-IrcTsrWakeSilenceStale {
     param(
@@ -9,8 +22,10 @@ function Test-IrcTsrWakeSilenceStale {
     if ($SilenceSec -le 0) { return $false }
     # Missing wake is not chat silence — runner must write PROCESS_HEARTBEAT first; do not recycle on absent file alone.
     if (-not (Test-Path -LiteralPath $WakePath)) { return $false }
-    $stamp = (Get-Item -LiteralPath $WakePath).LastWriteTime
-    $quiet = [int](($Now - $stamp).TotalSeconds)
+    $stamp = Get-IrcTsrLastProcessHeartbeatTime -WakePath $WakePath
+    # FROM lines may touch the file; silence is measured on process heartbeat only.
+    if (-not $stamp) { return $false }
+    $quiet = [int](($Now.ToUniversalTime() - $stamp.ToUniversalTime()).TotalSeconds)
     return ($quiet -ge $SilenceSec)
 }
 

@@ -3079,14 +3079,20 @@ Invoke-Case 'BT0irtsr wake silence matrix' {
     . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
     $now = [datetime]'2026-09-22T12:00:00'
     $wake = Join-Path $bridgeRoot 'irc-tsr-test-wake.jsonl'
-    Set-Content -LiteralPath $wake -Value 'FROM test' -Encoding utf8
-    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-30)
+    $hb30 = ($now.AddSeconds(-30).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wake -Value $hb30 -Encoding utf8
     if (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now) {
-        throw '30s-old wake must not be stale at 60s gate'
+        throw '30s-old process heartbeat must not be stale at 60s gate'
     }
-    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-120)
+    $hb120 = ($now.AddSeconds(-120).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wake -Value $hb120 -Encoding utf8
     if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
-        throw '120s-old wake must be stale'
+        throw '120s-old process heartbeat must be stale'
+    }
+    Add-Content -LiteralPath $wake -Value 'FROM recent chat must not reset silence' -Encoding utf8
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw 'recent FROM must not mask stale process heartbeat'
     }
     $ircLog = Join-Path $bridgeRoot 'irc.log'
     Set-Content -LiteralPath $ircLog -Value 'PRIVMSG quiet channel' -Encoding utf8
@@ -3124,8 +3130,8 @@ Invoke-Case 'BT0irtsr runner core matrix' {
     # #173 fix 5: quiet channel — fresh process heartbeat, idle/old/missing irc.log, no FROM → no recycle
     $now = [datetime]'2026-09-22T12:00:00'
     $wakeQuiet = Join-Path $bridgeRoot 'irc-tsr-fix5-wake.jsonl'
-    Set-Content -LiteralPath $wakeQuiet -Value 'PROCESS_HEARTBEAT' -Encoding utf8
-    (Get-Item -LiteralPath $wakeQuiet).LastWriteTime = $now.AddSeconds(-20)
+    $hbFix5 = ($now.AddSeconds(-20).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wakeQuiet -Value $hbFix5 -Encoding utf8
     $wakeStaleFlag = Test-IrcTsrWakeSilenceStale -WakePath $wakeQuiet -SilenceSec 60 -Now $now
     if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $wakeStaleFlag)) {
         throw 'healthy runner+listen with fresh process heartbeat must not recycle'
@@ -3145,7 +3151,8 @@ Invoke-Case 'BT0irtsr runner core matrix' {
             throw "irc.log $($ircCase.label) must not affect recycle when process heartbeat is fresh"
         }
     }
-    (Get-Item -LiteralPath $wakeQuiet).LastWriteTime = $now.AddSeconds(-120)
+    $hbStale = ($now.AddSeconds(-120).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wakeQuiet -Value $hbStale -Encoding utf8
     if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wakeQuiet -SilenceSec 60 -Now $now)) {
         throw 'stale process heartbeat must trip silence gate'
     }
