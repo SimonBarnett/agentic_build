@@ -62,9 +62,9 @@ Verify on the box: no `BOB v1` kv firehose in Halloy; outbox stays small; one `i
 
 `bob-{machine}` (Grok chair) may own one product repo with **two** shop workers
 (dev + MRB) via `Start-BobRepoPair` / skill `bob-repo-pair`. Workers persist
-until `Invoke-BobRepoPairTick` idle-stops them (default **5 min**). They POST
+until `Invoke-BobRepoPairChairTick` (fleet/watch) idle-stops them (default **5 min**). Persistent seats JOIN shop and POST
 `working_on` through `Update-BobRepoWorkerWorkingOn` → ionos `reportUrl`
 (change-only webhook). Bob reads digest / pair state and reports dev complete /
 MRB complete on `#bobiverse`. Shop `#<machine>` **description** tracks the repo
-(`Set-BobShopChannelRepoDescription`). v1 `Start-BobBuild` / `Start-BobBuildLoop`
+(`Set-BobShopChannelRepoDescription` → `shop-channel-descriptions.json` + `SHOPDESC` on shop). v1 `Start-BobBuild` / `Start-BobBuildLoop`
 remain until a repo is switched to the pair path.

@@ -138,6 +138,7 @@ while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
+        try { Sync-BobShopChannelRepoDescriptions | Out-Null } catch { }
         Write-BobIrcStatus | Out-Null
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null

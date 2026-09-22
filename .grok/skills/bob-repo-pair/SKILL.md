@@ -20,8 +20,8 @@ description: >
 
 | Seat | Role | Skills (via `--rules` / project skills) |
 |------|------|-------------------------------------------|
-| `dev` | implement PRs | `bob-build-dispatch`, `bob-job-loop`, `bob-irc` |
-| `mrb` | hostile MRB | `bob-hostile-mrb`, `cursor-mrb-dev`, `bob-irc` |
+| `dev` | implement PRs | `bob-build-dispatch`, `bob-irc` |
+| `mrb` | hostile MRB | `bob-hostile-mrb`, `bob-irc` |
 
 Nick pattern: `w-<short>-dev` / `w-<short>-mrb` (`io`, `fl`, `mh`, `d1`).
 Workers JOIN shop only — never `#bobiverse`. Bob stays on bobiverse skills
@@ -34,7 +34,8 @@ Import-Module "$repo\src\BobBridge.psd1"
 Start-BobRepoPair -Repo 'SimonBarnett/agentic_build' -Cwd $clone
 Get-BobRepoPair
 Update-BobRepoWorkerWorkingOn -Seat dev -Description 'implement #175 PR'
-Invoke-BobRepoPairTick   # idle-stop after 5 min (BOB_REPO_PAIR_IDLE_SEC)
+Invoke-BobRepoPairChairTick   # fleet/watch tick: tickets, idle/deaf, bobiverse say
+Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
 ```
 
 - **Idle default:** 5 minutes (`BOB_REPO_PAIR_IDLE_SEC`, U1).
@@ -44,10 +45,13 @@ Invoke-BobRepoPairTick   # idle-stop after 5 min (BOB_REPO_PAIR_IDLE_SEC)
   — do not enqueue two implement jobs on the same SHA.
 - **Handoff:** `Register-BobRepoPairDevComplete -PrUrl …` then MRB seat;
   `Register-BobRepoPairMrbComplete` for digest lines.
-- **Bob reports:** `Get-BobRepoPairBobiverseReport` → short English for `#bobiverse`
-  (dev complete / MRB complete). Bob reads digest; workers do not spam channel.
-- **Shop topic:** `Set-BobShopChannelRepoDescription` writes
-  `pending-shop-topic.txt` (repo name = channel description).
+- **Bob reports:** `Invoke-BobRepoPairBobiverseSay` posts digest lines (dev complete /
+  MRB complete) to `#bobiverse` via `outbox.txt`. Workers do not spam channel.
+- **Shop description:** `Set-BobShopChannelRepoDescription` updates
+  `shop-channel-descriptions.json`; `Watch-Bobiverse` / `Sync-BobShopChannelRepoDescriptions`
+  apply `SHOPDESC` to the shop channel when the assigned repo changes.
+- **No nested agents:** workers never call `Start-BobBuild`, `Start-BobBuildLoop`,
+  `Start-BobMrbHandoff`, or `cursor-mrb-dev` handoff.
 
 ## Webhook `working_on`
 
