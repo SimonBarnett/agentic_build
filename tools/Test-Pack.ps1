@@ -3074,6 +3074,75 @@ Invoke-Case 'BT0gtalk worker finally unwedge' {
     $env:BOB_MACHINE_ID = $null
 }
 
+# --- BT0irtsr IRC TSR + Cursor listen watchdog (#163) ---
+Invoke-Case 'BT0irtsr wake silence matrix' {
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    $now = [datetime]'2026-09-22T12:00:00'
+    $wake = Join-Path $bridgeRoot 'irc-tsr-test-wake.jsonl'
+    Set-Content -LiteralPath $wake -Value 'FROM test' -Encoding utf8
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-30)
+    if (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now) {
+        throw '30s-old wake must not be stale at 60s gate'
+    }
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-120)
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw '120s-old wake must be stale'
+    }
+    $ircLog = Join-Path $bridgeRoot 'irc.log'
+    Set-Content -LiteralPath $ircLog -Value 'PRIVMSG quiet channel' -Encoding utf8
+    (Get-Item -LiteralPath $ircLog).LastWriteTime = $now
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-120)
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw 'fresh irc.log must not override wake-only stale check'
+    }
+    $watch = Get-Content (Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1') -Raw
+    if ($watch -match 'irc\.log') { throw 'Watch-IrcTsr must not gate on irc.log mtime' }
+}
+
+Invoke-Case 'BT0irtsr runner core matrix' {
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false)) {
+        throw 'expected healthy runner'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $false -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'dead runner must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $false -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'missing listen child must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 900 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'runner age cap must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $true) {
+        throw 'stale wake must fail'
+    }
+    foreach ($rel in @('tools\Watch-IrcTsr.ps1', 'tools\Start-IrcTsr.ps1', 'tools\Watch-CursorIrc.ps1')) {
+        $raw = Get-Content (Join-Path $RepoRoot $rel) -Raw
+        if ($raw -match "if \(\-not `$MachineId\) \{ `$MachineId = 'ionos' \}") { throw "$rel must not default MachineId to ionos" }
+    }
+    $runner = Get-Content (Join-Path $RepoRoot 'tools\Irc-Tsr-Runner.ps1') -Raw
+    if ($runner -notmatch 'AGENT_LOOP_WAKE_irc-tsr') { throw 'Irc-Tsr-Runner must emit AGENT_LOOP_WAKE_irc-tsr' }
+}
+
+Invoke-Case 'BT0irtsr install and bobiverse isolation' {
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch '_Watch-IrcTsr-') { throw 'Install-BobFleet must register _Watch-IrcTsr-<id>' }
+    if ($installSrc -notmatch '_Watch-CursorIrc-') { throw 'Install-BobFleet must register _Watch-CursorIrc-<id>' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1'))) { throw 'missing tools/_Watch-IrcTsr.ps1' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1'))) { throw 'missing tools/_Watch-CursorIrc.ps1' }
+    $tsWrap = Get-Content (Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1') -Raw
+    if ($tsWrap -notmatch 'Watch-IrcTsr\.ps1') { throw '_Watch-IrcTsr must delegate to Watch-IrcTsr.ps1' }
+    $ciWrap = Get-Content (Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1') -Raw
+    if ($ciWrap -notmatch 'Watch-CursorIrc\.ps1') { throw '_Watch-CursorIrc must delegate to Watch-CursorIrc.ps1' }
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -match 'Watch-IrcTsr|Start-IrcTsr|Watch-CursorIrc') {
+        throw 'Watch-Bobiverse must not fold IRC TSR / Cursor listen pollers'
+    }
+    $watchCi = Get-Content (Join-Path $RepoRoot 'tools\Watch-CursorIrc.ps1') -Raw
+    if ($watchCi -notmatch 'Start-IrcTsr') { throw 'Watch-CursorIrc must start TSR via Start-IrcTsr' }
+    if ($watchCi -match 'grok\.exe') { throw 'Watch-CursorIrc must not invoke grok.exe' }
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
