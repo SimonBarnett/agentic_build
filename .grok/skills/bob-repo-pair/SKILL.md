@@ -46,8 +46,9 @@ Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
 - **Handoff:** `Register-BobRepoPairDevComplete -PrUrl …` then MRB seat;
   `Register-BobRepoPairMrbComplete` for digest lines.
 - **Bob reports:** `Invoke-BobRepoPairBobiverseSay` queues digest lines as `PRIVMSG #bobiverse` in `outbox.txt` for `irc_agent` to send (do not pre-drain).
-- **Shop JOIN:** each seat starts a dedicated shop `irc_agent` (manifest `shop-join-<sessionId>.json`); Fake-Grok must not forge JOIN JSON.
-- **Shop description:** `Set-BobShopChannelRepoDescription` queues `SHOPDESC` on `outbox-wire.txt`; `Invoke-BobIrcOutboxWireConsumer` issues real TOPIC/MODE on the wire (not `say()` chat).
+- **Shop JOIN:** integrated on the seat agent (`Start-BobRepoPairShopIrc`); manifest `shopNickLive` flips true only after `shop-irc-<sessionId>/joined.ok` or JOIN in `irc.log` (not at spawn).
+- **Shop description:** `SHOPDESC` → `Invoke-BobIrcOutboxWireConsumer` → `tools/Bob-IrcWireClient.ps1` sends real TOPIC/MODE (capture: `BOB_IRC_WIRE_CAPTURE`).
+- **Harvest dismiss:** chair reminds via inbox; seat must ack `inbox/harvest-ack.txt` before `Stop-BobWorker`.
 - **Usage webhook:** `Invoke-BobRepoPairChairUsageWebhookIfChanged` on Bob `!bobiverse` cadence via `Watch-Bobiverse` (not every chair tick).
 - **Idle assign:** `Deliver-BobBobiversePeerAssign` targets idle remote bobiverse agents (>20s), not local inbox mentions.
 - **Dismiss:** `Remind-BobRepoPairHarvestBeforeDismiss` before idle-stop.

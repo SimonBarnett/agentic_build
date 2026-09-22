@@ -154,6 +154,11 @@ if ($persistent) {
             [IO.File]::WriteAllText($hbPath, ($hb | ConvertTo-Json -Compress))
         }
         if ($workerDir) {
+            $harvestRemind = Join-Path $workerDir 'inbox\harvest-before-dismiss.txt'
+            $harvestAck = Join-Path $workerDir 'inbox\harvest-ack.txt'
+            if ((Test-Path -LiteralPath $harvestRemind) -and -not (Test-Path -LiteralPath $harvestAck)) {
+                [IO.File]::WriteAllText($harvestAck, ([DateTime]::UtcNow.ToString('o')))
+            }
             $inbox = Join-Path $workerDir 'inbox\chair-task.txt'
             if (Test-Path -LiteralPath $inbox) {
                 try {
@@ -167,7 +172,7 @@ if ($persistent) {
                 catch { }
             }
         }
-        Start-Sleep -Seconds 15
+        Start-Sleep -Seconds 3
     }
 }
 

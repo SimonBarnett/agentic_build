@@ -141,22 +141,6 @@ while ($true) {
         try { Sync-BobShopChannelRepoDescriptions | Out-Null } catch { }
         try { Invoke-BobIrcOutboxWireConsumer | Out-Null } catch { }
         Write-BobIrcStatus | Out-Null
-        try {
-            $stampPath = Join-Path (Get-BobIrcHome) 'bob-peers\_bobiverse-usage-last.txt'
-            $due = $true
-            if (Test-Path $stampPath) {
-                try {
-                    $prev = [datetime]::Parse((Get-Content $stampPath -Raw).Trim(), $null, [Globalization.DateTimeStyles]::RoundtripKind)
-                    if (([DateTime]::UtcNow - $prev.ToUniversalTime()).TotalSeconds -lt $BobiversePullSec) { $due = $false }
-                }
-                catch { }
-            }
-            if ($due) {
-                Invoke-BobRepoPairChairUsageWebhookIfChanged | Out-Null
-                Set-Content -Path $stampPath -Value ([DateTime]::UtcNow.ToString('o')) -Encoding utf8 -NoNewline
-            }
-        }
-        catch { }
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
         Import-BobIrcPeerTranscript | Out-Null

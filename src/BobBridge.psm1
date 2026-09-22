@@ -87,5 +87,11 @@ Export-ModuleMember -Function @(
     'Invoke-BobDigestWebhookPost',
     'Invoke-BobRepoPairChairUsageWebhookIfChanged',
     'Start-BobRepoPairMrbReview',
-    'Test-BobRepoPairTicketCadenceDue'
+    'Test-BobRepoPairTicketCadenceDue',
+    'Start-BobRepoPairShopIrc',
+    'Update-BobRepoPairShopJoinManifest',
+    'Invoke-BobRepoPairMrbSeatHygiene',
+    'Invoke-BobChairBobiverseUsageHook',
+    'Invoke-BobIrcWireSend',
+    'Invoke-BobIrcOutboxWireConsumer'
 )

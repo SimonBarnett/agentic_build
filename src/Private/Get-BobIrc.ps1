@@ -812,14 +812,41 @@ function Add-BobIrcOutboxWireLine {
     Add-Content -LiteralPath $path -Value ([string]$Line).Trim() -Encoding utf8
 }
 
+function Invoke-BobIrcWireSend {
+    param([Parameter(Mandatory)][string]$WireLine)
+    $t = ([string]$WireLine).Trim()
+    if (-not $t) { return [pscustomobject]@{ ok = $true; skipped = 'empty' } }
+    $client = Join-Path (Get-ModuleRoot) 'tools\Bob-IrcWireClient.ps1'
+    if (-not (Test-Path -LiteralPath $client)) {
+        return [pscustomobject]@{ ok = $false; error = 'no_wire_client' }
+    }
+    $home = Get-BobIrcHome
+    $exe = (Get-Command powershell.exe).Source
+    $argList = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $client,
+        '-Line', $t
+    )
+    if ($home) { $argList += @('-IrcHome', $home) }
+    if ($env:BOB_IRC_WIRE_CAPTURE -and $env:BOB_IRC_WIRE_CAPTURE.Trim()) {
+        $argList += @('-WireCapture', $env:BOB_IRC_WIRE_CAPTURE.Trim())
+    }
+    $code = 0
+    try {
+        & $exe @argList | Out-Null
+        if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE }
+    }
+    catch {
+        return [pscustomobject]@{ ok = $false; wire = $t; error = $_.Exception.Message }
+    }
+    return [pscustomobject]@{ ok = ($code -eq 0); wire = $t; exitCode = $code }
+}
+
 function Invoke-BobIrcOutboxWireLine {
     param([Parameter(Mandatory)][string]$Line)
     $t = ([string]$Line).Trim()
     if (-not $t) { return [pscustomobject]@{ ok = $true; skipped = 'empty' } }
     $home = Get-BobIrcHome
     if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
-    $wireLog = Get-BobIrcWireSentLogPath
-    $sentLog = Join-Path $home 'irc-sent.log'
     New-Item -ItemType Directory -Force -Path $home | Out-Null
     if ($t -match '^SHOPDESC\s+(\S+)\s+(.+)$') {
         $chan = [string]$Matches[1]
@@ -833,16 +860,27 @@ function Invoke-BobIrcOutboxWireLine {
         $map[$chan] = $repo
         Write-JsonFile $descPath ([pscustomobject]$map)
         $topicLine = "TOPIC $chan :$repo"
-        Add-Content -LiteralPath $wireLog -Value (([DateTime]::UtcNow.ToString('o')) + ' ' + $topicLine) -Encoding utf8
-        Add-Content -LiteralPath $sentLog -Value $topicLine -Encoding utf8
+        $sent = Invoke-BobIrcWireSend -WireLine $topicLine
+        if (-not $sent.ok) { return [pscustomobject]@{ ok = $false; error = 'wire_send_failed'; wire = $topicLine } }
         return [pscustomobject]@{ ok = $true; wire = $topicLine; kind = 'SHOPDESC' }
     }
     if ($t -match '^TOPIC\s+' -or $t -match '^MODE\s+') {
-        Add-Content -LiteralPath $wireLog -Value (([DateTime]::UtcNow.ToString('o')) + ' ' + $t) -Encoding utf8
-        Add-Content -LiteralPath $sentLog -Value $t -Encoding utf8
+        $sent = Invoke-BobIrcWireSend -WireLine $t
+        if (-not $sent.ok) { return [pscustomobject]@{ ok = $false; error = 'wire_send_failed'; wire = $t } }
         return [pscustomobject]@{ ok = $true; wire = $t }
     }
     return [pscustomobject]@{ ok = $false; error = 'not_wire_line'; line = $t }
+}
+
+function Invoke-BobChairBobiverseUsageHook {
+    [CmdletBinding()]
+    param()
+    try {
+        return Invoke-BobRepoPairChairUsageWebhookIfChanged
+    }
+    catch {
+        return [pscustomobject]@{ ok = $false; posted = $false; error = $_.Exception.Message }
+    }
 }
 
 function Invoke-BobIrcOutboxWireConsumer {
@@ -1530,6 +1568,7 @@ function Request-BobIrcBobiversePull {
     # Simon 2026-09-22: !bobiverse answer is Jeeves-only. Watch must not enqueue
     # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
     # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
+    try { Invoke-BobChairBobiverseUsageHook | Out-Null } catch { }
     if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
         Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
         return $false

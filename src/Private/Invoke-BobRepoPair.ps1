@@ -352,6 +352,7 @@ function Register-BobRepoPairMrbComplete {
     $mrb = $s.seats.mrb
     $tag = 'mrb_complete'
     if ($Verdict -eq 'FAIL') { $tag = 'mrb_fail' }
+    $mrb | Add-Member -NotePropertyName lastMrbVerdict -NotePropertyValue ([string]$Verdict) -Force
     $mrb | Add-Member -NotePropertyName lastComplete -NotePropertyValue $tag -Force
     $mrb | Add-Member -NotePropertyName workingOn -NotePropertyValue ("$tag $PrUrl") -Force
     $mrb | Add-Member -NotePropertyName lastActiveAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
@@ -442,10 +443,11 @@ function Deliver-BobBobiversePeerAssign {
         at      = [DateTime]::UtcNow.ToString('o')
         from    = $(try { Get-ThisMachineId } catch { $null })
     }
+    $nick = 'bob-' + $PeerMachineId
+    $wireTask = "CHAIR_ASSIGN $(if ($SeatHint) { $SeatHint } else { 'work' }) $Task"
+    Add-BobIrcOutboxChannelLine ("PRIVMSG $nick :$wireTask")
     $path = Join-Path $peersDir ($PeerMachineId + '-chair-assign.json')
     Write-JsonFile $path $payload
-    $nick = 'bob-' + $PeerMachineId
-    Add-BobIrcOutboxChannelLine ("PRIVMSG $nick :CHAIR_ASSIGN $(if ($SeatHint) { $SeatHint } else { 'work' }) $Task")
     if (Test-GrokBotAvailable) {
         try {
             $agent = Get-BobRepoPairGrokBotAgent
@@ -570,6 +572,7 @@ function Invoke-BobRepoPairTick {
     $idleSec = Get-BobRepoPairIdleSec
     $stopped = @()
     $restarted = @()
+    $stateDirty = $false
     foreach ($role in @('dev', 'mrb')) {
         $seat = $s.seats.$role
         if (-not $seat) {
@@ -598,13 +601,28 @@ function Invoke-BobRepoPairTick {
             continue
         }
         if ($seat.sessionId) {
-            Remind-BobRepoPairHarvestBeforeDismiss -Seat $role -SessionId ([string]$seat.sessionId)
-            Stop-BobWorker -SessionId ([string]$seat.sessionId) | Out-Null
+            $sid = [string]$seat.sessionId
+            if (-not $seat.pendingHarvestDismiss) {
+                Remind-BobRepoPairHarvestBeforeDismiss -Seat $role -SessionId $sid
+                Deliver-BobRepoPairChairInbox -Seat $role -Task 'HARVEST: run harvest-agent-skills before dismiss; write inbox/harvest-ack.txt when done.'
+                $seat | Add-Member -NotePropertyName pendingHarvestDismiss -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+                $stateDirty = $true
+                continue
+            }
+            $ack = Join-Path (Get-WorkerDir $sid) 'inbox\harvest-ack.txt'
+            $pendingAt = $null
+            try { $pendingAt = [DateTime]::Parse([string]$seat.pendingHarvestDismiss, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() } catch { }
+            $ackOk = Test-Path -LiteralPath $ack
+            $timedOut = $false
+            if ($pendingAt -and (([DateTime]::UtcNow - $pendingAt).TotalSeconds -gt 90)) { $timedOut = $true }
+            if (-not $ackOk -and -not $timedOut) { continue }
+            Stop-BobWorker -SessionId $sid | Out-Null
             $stopped += $role
             $seat | Add-Member -NotePropertyName sessionId -NotePropertyValue $null -Force
+            $seat | Add-Member -NotePropertyName pendingHarvestDismiss -NotePropertyValue $null -Force
         }
     }
-    if ($stopped.Count -gt 0 -or $restarted.Count -gt 0) { Write-BobRepoPairState $s }
+    if ($stopped.Count -gt 0 -or $restarted.Count -gt 0 -or $stateDirty) { Write-BobRepoPairState $s }
     return [pscustomobject]@{ ok = $true; idleStop = @($stopped); restarted = @($restarted) }
 }
 
@@ -1007,7 +1025,15 @@ function Invoke-BobRepoPairMrbSeatHygiene {
                         if ($lb -is [string]) { $labels += $lb }
                         elseif ($lb.name) { $labels += [string]$lb.name }
                     }
-                    if ($labels -contains 'PASS-nits' -or [string]$pr.title -match 'PASS-nits') {
+                    $verdictPath = Join-Path $dir 'outbox\mrb-verdict.json'
+                    $verdict = $null
+                    if (Test-Path -LiteralPath $verdictPath) {
+                        try { $verdict = (Get-Content -LiteralPath $verdictPath -Raw | ConvertFrom-Json).verdict } catch { }
+                    }
+                    if ($s.seats.mrb -and $s.seats.mrb.lastMrbVerdict) {
+                        $verdict = [string]$s.seats.mrb.lastMrbVerdict
+                    }
+                    if ([string]$verdict -eq 'PASS-nits') {
                         $num = [int]$pr.number
                         & $gh pr merge $num --repo $repo --merge --delete-branch 2>$null | Out-Null
                         $actions += "merged_pass_nits_$num"
@@ -1087,6 +1113,8 @@ function Set-BobShopChannelRepoDescription {
     $path = Join-Path $home 'pending-shop-topic.txt'
     $line = ($chan + "`t" + [string]$Repo)
     [IO.File]::WriteAllText($path, $line)
+    Add-BobIrcOutboxWireLine ("SHOPDESC $chan $([string]$Repo)")
+    try { Invoke-BobIrcOutboxWireConsumer | Out-Null } catch { }
     Sync-BobShopChannelRepoDescriptions | Out-Null
     $s = Read-BobRepoPairState
     if ($s) {
