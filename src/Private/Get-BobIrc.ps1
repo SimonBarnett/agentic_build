@@ -788,6 +788,102 @@ function Add-BobIrcOutboxChannelLine {
     Add-Content -Path $outbox -Value ([string]$Line).Trim() -Encoding utf8
 }
 
+function Get-BobIrcOutboxWirePath {
+    $home = Get-BobIrcHome
+    if (-not $home) { return $null }
+    return (Join-Path $home 'outbox-wire.txt')
+}
+
+function Get-BobIrcWireSentLogPath {
+    $home = Get-BobIrcHome
+    if (-not $home) { return $null }
+    return (Join-Path $home 'irc-wire.log')
+}
+
+function Add-BobIrcOutboxWireLine {
+    param([string]$Line)
+    if (-not $Line) { return }
+    $path = Get-BobIrcOutboxWirePath
+    if (-not $path) { return }
+    New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
+    $last = $null
+    try { $last = Get-Content -LiteralPath $path -Tail 1 -ErrorAction SilentlyContinue } catch { }
+    if ($last -and ([string]$last).Trim() -eq [string]$Line.Trim()) { return }
+    Add-Content -LiteralPath $path -Value ([string]$Line).Trim() -Encoding utf8
+}
+
+function Invoke-BobIrcOutboxWireLine {
+    param([Parameter(Mandatory)][string]$Line)
+    $t = ([string]$Line).Trim()
+    if (-not $t) { return [pscustomobject]@{ ok = $true; skipped = 'empty' } }
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    $wireLog = Get-BobIrcWireSentLogPath
+    $sentLog = Join-Path $home 'irc-sent.log'
+    New-Item -ItemType Directory -Force -Path $home | Out-Null
+    if ($t -match '^SHOPDESC\s+(\S+)\s+(.+)$') {
+        $chan = [string]$Matches[1]
+        $repo = [string]$Matches[2].Trim()
+        $descPath = Join-Path $home 'shop-channel-descriptions.json'
+        $map = @{}
+        $existing = Read-JsonFile $descPath
+        if ($existing) {
+            foreach ($p in $existing.PSObject.Properties) { $map[[string]$p.Name] = [string]$p.Value }
+        }
+        $map[$chan] = $repo
+        Write-JsonFile $descPath ([pscustomobject]$map)
+        $topicLine = "TOPIC $chan :$repo"
+        Add-Content -LiteralPath $wireLog -Value (([DateTime]::UtcNow.ToString('o')) + ' ' + $topicLine) -Encoding utf8
+        Add-Content -LiteralPath $sentLog -Value $topicLine -Encoding utf8
+        return [pscustomobject]@{ ok = $true; wire = $topicLine; kind = 'SHOPDESC' }
+    }
+    if ($t -match '^TOPIC\s+' -or $t -match '^MODE\s+') {
+        Add-Content -LiteralPath $wireLog -Value (([DateTime]::UtcNow.ToString('o')) + ' ' + $t) -Encoding utf8
+        Add-Content -LiteralPath $sentLog -Value $t -Encoding utf8
+        return [pscustomobject]@{ ok = $true; wire = $t }
+    }
+    return [pscustomobject]@{ ok = $false; error = 'not_wire_line'; line = $t }
+}
+
+function Invoke-BobIrcOutboxWireConsumer {
+    [CmdletBinding()]
+    param([int]$MaxLines = 32)
+    $path = Get-BobIrcOutboxWirePath
+    if (-not $path -or -not (Test-Path -LiteralPath $path)) {
+        return [pscustomobject]@{ ok = $true; applied = @() }
+    }
+    $lines = @(Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return [pscustomobject]@{ ok = $true; applied = @() } }
+    $keep = New-Object System.Collections.Generic.List[string]
+    $applied = @()
+    $n = 0
+    foreach ($line in $lines) {
+        $t = ([string]$line).Trim()
+        if (-not $t) { continue }
+        if ($n -ge $MaxLines) {
+            [void]$keep.Add($t)
+            continue
+        }
+        $r = Invoke-BobIrcOutboxWireLine -Line $t
+        if ($r.ok) {
+            $applied += $t
+            $n++
+        }
+        else {
+            [void]$keep.Add($t)
+        }
+    }
+    if ($applied.Count -gt 0) {
+        if ($keep.Count -gt 0) {
+            Set-Content -LiteralPath $path -Value @($keep) -Encoding utf8
+        }
+        else {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return [pscustomobject]@{ ok = $true; applied = @($applied) }
+}
+
 function Add-BobIrcBobiversePrivmsg {
     param([Parameter(Mandatory)][string]$Text)
     $chan = '#bobiverse'
@@ -847,9 +943,10 @@ function Sync-BobIrcChannelOpsWire {
         $nick = [string]$prop.Value
         if (-not $chan -or -not $nick) { continue }
         $line = "MODE $chan +o $nick"
-        Add-BobIrcOutboxChannelLine $line
+        Add-BobIrcOutboxWireLine $line
         $queued += $line
     }
+    try { Invoke-BobIrcOutboxWireConsumer | Out-Null } catch { }
     return [pscustomobject]@{ ok = $true; lines = @($queued) }
 }
 
@@ -1624,6 +1721,14 @@ function Write-BobIrcStatus {
         responding        = $responding
         source            = 'irc'
     }
+    try {
+        $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @())
+        if ($poolRows.Count -gt 0) {
+            $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($poolRows) -Force
+            Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($poolRows)
+        }
+    }
+    catch { }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $peerPath = Join-Path $dir ($id + '.json')

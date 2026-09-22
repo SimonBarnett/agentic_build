@@ -128,6 +128,10 @@ function Normalize-BobRepoPairArgvList {
     return @($list | ForEach-Object { [string]$_ })
 }
 
+function Get-BobRepoPairFakeIrcAgentPath {
+    Join-Path (Get-ModuleRoot) 'tools\Fake-IrcAgent.ps1'
+}
+
 function Get-BobRepoPairIrcAgentScriptPath {
     $ircRoot = $null
     if (Test-Path 'C:\ai\agentic_irc') { $ircRoot = 'C:\ai\agentic_irc' }
@@ -151,12 +155,29 @@ function Start-BobRepoPairShopIrc {
     }
     New-Item -ItemType Directory -Force -Path $home | Out-Null
     $manifestPath = Join-Path $home ('shop-join-' + $SessionId + '.json')
+    $seatIrcHome = Join-Path $home ('shop-irc-' + $SessionId)
+    New-Item -ItemType Directory -Force -Path $seatIrcHome | Out-Null
     $ircPid = $null
     $joinKind = 'irc_agent'
 
     if (Test-BobUsesFakeGrok -ErrorAction SilentlyContinue) {
-        return [pscustomobject]@{ ok = $false; error = 'integrated_shop_join'; reason = 'worker agent joins shop' }
+        $fake = Get-BobRepoPairFakeIrcAgentPath
+        if (-not (Test-Path -LiteralPath $fake)) {
+            return [pscustomobject]@{ ok = $false; error = 'no_fake_irc_agent' }
+        }
+        $exe = (Get-Command powershell.exe).Source
+        $cmdLine = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" -IrcHome "{2}" -Nick "{3}" -Channel "{4}" -SessionId "{5}" -ManifestPath "{6}"' -f $exe, $fake, $seatIrcHome, $ShopNick, $ShopChannel, $SessionId, $manifestPath
+        $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine      = $cmdLine
+            CurrentDirectory = (Get-ModuleRoot)
+        }
+        if ($created.ReturnValue -ne 0 -or -not $created.ProcessId) {
+            return [pscustomobject]@{ ok = $false; error = 'irc_spawn_failed' }
+        }
+        $ircPid = ConvertTo-BobRepoPairProcessId $created.ProcessId
+        $joinKind = 'irc_agent'
     }
+    else {
     $agent = Get-BobRepoPairIrcAgentScriptPath
         if (-not $agent) {
             return [pscustomobject]@{ ok = $false; error = 'no_irc_agent' }
@@ -191,14 +212,14 @@ function Start-BobRepoPairShopIrc {
             return [pscustomobject]@{ ok = $false; error = 'no_irc_password' }
         }
         $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
-        $env:AGENTIC_IRC_HOME = $home
+        $env:AGENTIC_IRC_HOME = $seatIrcHome
         $argList = @(
             '-u', $agent,
             '--host', $ircHost,
             '--port', "$ircPort",
             '--nick', $ShopNick,
             '--channel', $ShopChannel,
-            '--home', $home
+            '--home', $seatIrcHome
         )
         $quoted = @($argList | ForEach-Object {
             '"' + (([string]$_) -replace '"', '\"') + '"'
@@ -214,6 +235,7 @@ function Start-BobRepoPairShopIrc {
         }
     $ircPid = ConvertTo-BobRepoPairProcessId $created.ProcessId
     $joinKind = 'irc_agent'
+    }
 
     if (-not $ircPid) {
         return [pscustomobject]@{ ok = $false; error = 'irc_join_failed' }
@@ -254,6 +276,7 @@ function Start-BobRepoPairSeatAgent {
         [string]$ShopChannel
     )
     $dir = Get-WorkerDir $SessionId
+    $cwdFull = [IO.Path]::GetFullPath($Cwd)
     $heartbeatPath = Join-Path $dir 'heartbeat.json'
     $agentPath = Join-Path $dir 'seat-agent.ps1'
     $moduleRoot = Get-ModuleRoot
@@ -274,16 +297,10 @@ function Start-BobRepoPairSeatAgent {
 `$env:BOB_REPO_PAIR_HEARTBEAT_PATH = '$($heartbeatPath.Replace("'","''"))'
 `$env:BOB_REPO_PAIR_WORKER_DIR = '$($dir.Replace("'","''"))'
 `$env:BOB_REPO_PAIR_ROLE = '$Role'
-`$env:BOB_REPO_PAIR_SHOP_NICK = '$($ShopNick.Replace("'","''"))'
-`$env:BOB_REPO_PAIR_SHOP_CHANNEL = '$($ShopChannel.Replace("'","''"))'
-`$env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH = '$($shopManifest.Replace("'","''"))'
 `$parsed = Get-Content -LiteralPath '$($argvJsonPath.Replace("'","''"))' -Raw | ConvertFrom-Json
 `$argvRaw = @(`$parsed | ForEach-Object { [string]`$_ })
 `$grok = '$($grokExe.Replace("'","''"))'
-`$sessionId = '$($grokSessionId.Replace("'","''"))'
 `$workerDir = '$($dir.Replace("'","''"))'
-`$lastChair = `$null
-`$agentPid = `$null
 function Start-GrokSeatProcess {
     param([string[]]`$Argv)
     if (`$grok -match '\.ps1`$') {
@@ -294,6 +311,7 @@ function Start-GrokSeatProcess {
 }
 `$cp = Start-GrokSeatProcess -Argv `$argvRaw
 `$agentPid = `$cp.Id
+`$lastChair = `$null
 while (`$true) {
     if (`$agentPid) {
         `$live = Get-Process -Id `$agentPid -ErrorAction SilentlyContinue
@@ -308,9 +326,6 @@ while (`$true) {
                 `$lastChair = `$chair
                 `$touch = Join-Path `$workerDir 'inbox\chair-touched.txt'
                 [IO.File]::WriteAllText(`$touch, `$chair)
-                `$turn = @('--no-auto-update','--no-alt-screen','--output-format','json','-r',`$sessionId,'-p',`$chair)
-                `$tp = Start-GrokSeatProcess -Argv `$turn
-                while (`$tp -and (Get-Process -Id `$tp.Id -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 2 }
             }
         }
         catch { }
@@ -332,7 +347,6 @@ while (`$true) {
         $ca = Get-BobCursorAgentExePath
         if ($ca) { $cursorAgent = $ca }
     }
-    $cwdFull = [IO.Path]::GetFullPath($Cwd)
     $promptFile = Join-Path $dir 'outbox\initial-prompt.txt'
     [IO.File]::WriteAllText($promptFile, $Prompt)
     $pairRules = (Get-BobRepoPairRulesText -Role $Role).Replace("'", "''")
@@ -367,13 +381,15 @@ while (`$true) {
     if (-not `$task) {
         try { `$task = ([IO.File]::ReadAllText('$($promptFile.Replace("'","''"))')).Trim() } catch { }
     }
-    if (`$task -and `$task -ne `$lastTask) {
-        if (`$cp) {
-            try { Stop-Process -Id `$cp.Id -Force -ErrorAction SilentlyContinue } catch { }
-            `$cp = `$null
-        }
-        `$lastTask = `$task
+    if (-not `$cp) {
+        if (-not `$task) { `$task = 'persistent repo-pair seat idle' }
         `$cp = Start-Process -FilePath (Get-Command powershell.exe).Source -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',`$ps1,'persist','--force','--trust','--output-format','text','--model',`$model,'--rules',`$rules,'--',`$task) -WorkingDirectory '$($cwdFull.Replace("'","''"))' -PassThru
+        `$lastTask = `$task
+    }
+    if (`$task -and `$task -ne `$lastTask) {
+        `$lastTask = `$task
+        `$touch = Join-Path `$workerDir 'inbox\chair-touched.txt'
+        try { [IO.File]::WriteAllText(`$touch, `$task) } catch { }
     }
     if (`$cp -and (Get-Process -Id `$cp.Id -ErrorAction SilentlyContinue)) {
         @{ seat = '$Role'; sessionId = '$SessionId'; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$cp.Id } | ConvertTo-Json -Compress | Set-Content -LiteralPath `$hb -Encoding utf8
@@ -571,6 +587,11 @@ function Start-BobRepoPairWorker {
     }
     [IO.File]::WriteAllText((Join-Path $dir 'outbox\argv.txt'), (($argv | ForEach-Object { $_ }) -join "`n"))
 
+    $joinPre = Start-BobRepoPairShopIrc -ShopChannel $ShopChannel -ShopNick $ShopNick -SessionId $SessionId
+    if (-not $joinPre.ok) {
+        return [pscustomobject]@{ ok = $false; error = 'shop_join_failed'; reason = $(if ($joinPre.error) { $joinPre.error } else { 'irc_spawn' }) }
+    }
+
     $agent = Start-BobRepoPairSeatAgent -Role $Role -Cwd $cwdFull -SessionId $SessionId -Prompt $prompt -InvokeMode $invokeMode -Model $model -Profile $prof -Argv $argv -ShopNick $ShopNick -ShopChannel $ShopChannel
     if (-not $agent.ok) {
         if ($join -and $join.pid) {
@@ -579,22 +600,21 @@ function Start-BobRepoPairWorker {
         return [pscustomobject]@{ ok = $false; error = 'spawn_failed'; reason = $agent.error }
     }
     $procId = $agent.pid
-
-    if ($integratedShop) {
-        $ircHome = Get-BobIrcHome
-        if ($ircHome) { New-Item -ItemType Directory -Force -Path $ircHome | Out-Null }
-        $manifestPath = Join-Path $ircHome ('shop-join-' + $SessionId + '.json')
-        $deadline = [datetime]::UtcNow.AddSeconds(30)
-        while ([datetime]::UtcNow -lt $deadline) {
-            if (Test-Path -LiteralPath $manifestPath) { break }
-            Start-Sleep -Milliseconds 400
-        }
-        if (-not (Test-Path -LiteralPath $manifestPath)) {
-            try { Stop-ProcessTree -ProcessId ([int]$procId) } catch { }
-            return [pscustomobject]@{ ok = $false; error = 'shop_join_failed'; reason = 'integrated_manifest_timeout' }
-        }
-        $join = [pscustomobject]@{ ok = $true; nick = $ShopNick; pid = $procId; manifest = $manifestPath; joinKind = 'irc_agent_worker' }
+    $ircHome = Get-BobIrcHome
+    if ($ircHome) { New-Item -ItemType Directory -Force -Path $ircHome | Out-Null }
+    $manifestPath = Join-Path $ircHome ('shop-join-' + $SessionId + '.json')
+    $deadline = [datetime]::UtcNow.AddSeconds(30)
+    while ([datetime]::UtcNow -lt $deadline) {
+        if (Test-Path -LiteralPath $manifestPath) { break }
+        Start-Sleep -Milliseconds 400
     }
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        try { Stop-ProcessTree -ProcessId ([int]$procId) } catch { }
+        return [pscustomobject]@{ ok = $false; error = 'shop_join_failed'; reason = 'integrated_manifest_timeout' }
+    }
+    $join = Read-JsonFile $manifestPath
+    $shopIrcPid = $null
+    if ($join -and $join.ircAgentPid) { $shopIrcPid = $join.ircAgentPid }
 
     try { Copy-BobProjectSkills | Out-Null } catch { }
     Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $profileName -Prompt $prompt
@@ -615,8 +635,8 @@ function Start-BobRepoPairWorker {
         role          = $Role
         shopNick      = $ShopNick
         shopChannel   = $ShopChannel
-        shopJoinPid   = $(if ($join -and $join.pid) { $join.pid } else { $null })
-        ircJoinManifest = $(if ($join -and $join.manifest) { $join.manifest } else { $null })
+        shopJoinPid   = $(if ($shopIrcPid) { $shopIrcPid } else { $null })
+        ircJoinManifest = $manifestPath
         invokeMode    = $invokeMode
         transport     = $invokeMode
     }

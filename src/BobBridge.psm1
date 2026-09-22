@@ -71,6 +71,7 @@ Export-ModuleMember -Function @(
     'Start-BobRepoPair',
     'Invoke-BobRepoPairTick',
     'Invoke-BobRepoPairChairTick',
+    'Invoke-BobRepoPairChairIdleAssign',
     'Assign-BobRepoPairTask',
     'Invoke-BobRepoPairOutstandingTickets',
     'Invoke-BobRepoPairBobiverseSay',
