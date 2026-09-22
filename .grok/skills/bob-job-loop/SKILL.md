@@ -78,6 +78,12 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
     `MRB PASS-nits:` / `MRB FAIL:`). Unlabeled or other-label open issues
     are work: park intake via `bob-spec-intake` if needed, then loop.
     Also scan open PRs the same way.
+11. **Talk seats own bob jobs (Simon 2026-09-22):** `the bob jobs are
+    YOURS`. Idle `{machine}-{pid}` talk seats run `bob-job-loop` on
+    unowned open issues. Do not leave the queue to `bob-*` / Watch
+    (`marchhare is busy`). Desktop utils are not a substitute for a
+    live loop. First claim on IRC + the issue wins; do not second a
+    live loop.
 
 ## On wakeup
 

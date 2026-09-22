@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-22 — talk seats own bob jobs
+
+Simon `#bobiverse`: `no - the bob jobs are YOURS`. Idle talk seats run
+`bob-job-loop` on unowned open issues. Do not leave the queue to
+`bob-*` / Watch. Home: `bob-job-loop`.
+
 ## 2026-09-22 — bob-job checks open issues as well as FRs
 
 Simon `#bobiverse`: bob-job must scan **all open issues** (and open PRs),
