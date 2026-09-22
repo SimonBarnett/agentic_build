@@ -72,6 +72,8 @@ flowchart TB
   PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
+  CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR"]

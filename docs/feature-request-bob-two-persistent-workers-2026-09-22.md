@@ -12,6 +12,8 @@ flowchart TB
   PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
+  CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR"]
@@ -53,6 +55,8 @@ Change how Bob works:
 12. The **repo name** a `#channel` is working on **is the channel description**. **Change it when the repo changes.**
 13. **Bob** (chair only) **uses the new UAT skill** (`bob-design-uat` / design-uat) **to approve UAT**. Workers do not stamp UAT.
 14. **Workers do their own work.** They **do not invoke another agent** (no nested Start-BobBuild / handoff spawn). The pair *is* the two workers.
+15. **Bob monitors** worker processes **during flight** and **restarts** them if they stop responding.
+16. **Bob orders and assigns** MRB vs dev tasks (chair assigns the role; worker executes it).
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -95,4 +99,6 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A7 | Shop/channel **description** = current repo name; update when the assigned repo changes. |
 | A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
 | A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
-| A10 | BT0/docs validator or pack test covers A1–A9 enough to MRB. |
+| A10 | Bob monitors in-flight processes and restarts if deaf. |
+| A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
+| A12 | BT0/docs validator or pack test covers A1–A11 enough to MRB. |
