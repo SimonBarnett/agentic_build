@@ -70,7 +70,7 @@ flowchart TB
   IN["FR or functional spec for a new repo\nusually turns up"]
   IN --> PARK["bob-machine parks issue + /docs"]
   PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
-  TIX["Bob also checks outstanding tickets\nand assigns them"]
+  TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
   TIX --> ASSIGN
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]

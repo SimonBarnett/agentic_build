@@ -10,7 +10,7 @@ flowchart TB
   IN["FR or functional spec for a new repo\nusually turns up"]
   IN --> PARK["bob-machine parks issue + /docs"]
   PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
-  TIX["Bob also checks outstanding tickets\nand assigns them"]
+  TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
   TIX --> ASSIGN
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
@@ -62,7 +62,7 @@ Change how Bob works:
 14. **Workers do their own work.** They **do not invoke another agent** (no nested Start-BobBuild / handoff spawn). The pair *is* the two workers.
 15. **Bob monitors** worker processes **during flight** and **restarts** them if they stop responding.
 16. **Bob orders and assigns** MRB vs dev tasks (chair assigns the role; worker executes it).
-17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them.
+17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them — **every 2 hours during business hours**.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -91,6 +91,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | U2 | Whether the two workers are grok.exe, cursor-agent, or mixed (dev Composer / MRB Cursor Grok as today). |
 | U3 | How this replaces vs wraps `Start-BobBuildLoop` on the same SHA. |
 | U4 | New-repo path vs existing `bob-spec-intake` create-repo. |
+| U5 | Business-hours window (tz + start/end). Cadence LOCKED: every 2 hours. |
 
 ## Acceptance
 
@@ -107,5 +108,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
 | A10 | Bob monitors in-flight processes and restarts if deaf. |
 | A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
-| A12 | Bob checks outstanding tickets and assigns them (FRs also arrive). |
+| A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
 | A13 | BT0/docs validator or pack test covers A1–A12 enough to MRB. |
