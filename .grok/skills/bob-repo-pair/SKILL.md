@@ -20,7 +20,7 @@ description: >
 
 | Seat | Role | Skills (via `--rules` / project skills) |
 |------|------|-------------------------------------------|
-| `dev` | implement PRs | `bob-spec-intake`, `bob-irc` (no `Start-BobBuild` handoff) |
+| `dev` | implement PRs | `bob-spec-intake`, `bob-build-dispatch`, `grok-build-fleet`, `bob-irc` (no `Start-BobBuild` handoff) |
 | `mrb` | hostile MRB | `bob-hostile-mrb`, `bob-irc` |
 
 Nick pattern: `w-<short>-dev` / `w-<short>-mrb` (`io`, `fl`, `mh`, `d1`).
@@ -49,8 +49,10 @@ Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
   MRB complete) to `#bobiverse` via `outbox.txt`. Workers do not spam channel.
 - **Shop JOIN:** each seat starts `irc_agent.py` on the shop channel (manifest
   `shop-join-<sessionId>.json`); not a `shop-joined-*.flag` file.
-- **Shop description:** `Set-BobShopChannelRepoDescription` queues `TOPIC #<machine> :<repo>`
-  (and `shop-channel-descriptions.json`) when the assigned repo changes.
+- **Shop description:** `Set-BobShopChannelRepoDescription` queues `SHOPDESC #<machine> <repo>`
+  (Ergo topic/description + `shop-channel-descriptions.json`) when the assigned repo changes.
+- **Channel ops (A23):** `config/channel-ops.json` → `channel-ops.json` in IRC home
+  (`bob-{machine}` on `#{machine}`, Jeeves on `#bobiverse`).
 - **Tickets:** `Invoke-BobRepoPairOutstandingTickets` runs on chair tick only when
   `Test-BobRepoPairTicketCadenceDue` (every 2h during business hours).
 - **Usage webhook:** `Invoke-BobRepoPairChairUsageWebhookIfChanged` posts identity +
