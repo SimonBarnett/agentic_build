@@ -40,6 +40,7 @@
 | P7 | Workers do own work; no nested agent invoke |
 | P8 | Bob monitors in-flight processes; restart if deaf |
 | P9 | Bob assigns MRB vs dev tasks |
+| P10 | Bob checks outstanding tickets and assigns |
 
 ## Tests
 
