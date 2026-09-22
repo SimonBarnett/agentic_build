@@ -35,6 +35,7 @@
 | P2 | Implementer/MRB split + next-PR handoff |
 | P3 | Worker `working_on` POST; digest reads it |
 | P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
+| P5 | Channel description = assigned repo name; update on repo change |
 
 ## Tests
 
