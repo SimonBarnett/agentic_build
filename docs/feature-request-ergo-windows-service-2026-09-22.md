@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-22
 **Repo:** https://github.com/SimonBarnett/agentic_build
-**GitHub issue:** (set after `gh issue create`)
+**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/159
 **Implementer PR:** https://github.com/SimonBarnett/agentic_build/pull/60
 **Review SHA (first board):** `13456444b937b4bc9b641ade3d405fd451e02f82`
 **Raised by:** Simon (PR #60 / live ionos cutover). Intake parked by hostile MRB of that SHA.
