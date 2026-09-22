@@ -3122,9 +3122,18 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($pairWorkerSrc -notmatch 'bob-build-dispatch') { throw 'dev seat must bind build skills' }
     if ($pairWorkerSrc -notmatch '--rules') { throw 'cursor persistent seat must pass --rules' }
     if ($pairWorkerSrc -notmatch 'grokbot') { throw 'seat agent must implement grokbot path' }
+    $grokPairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-Grok.ps1') -Raw
+    if ($grokPairSrc -match "Add\('--persistent'\)") { throw 'Get-BobRepoPairArgv must not emit invented grok --persistent' }
+    $fakeGrokSrc = Get-Content (Join-Path $RepoRoot 'tools\Fake-Grok.ps1') -Raw
+    if ($fakeGrokSrc -match '--persistent' -and $fakeGrokSrc -notmatch 'not a real grok flag') { throw 'Fake-Grok must reject invented --persistent' }
+    if ($pairWorkerSrc -notmatch "cursor-agent', 'persist'|cursor-agent', `"persist`"" -and $pairWorkerSrc -notmatch "'persist'") { throw 'cursor seat must launch cursor-agent persist subcommand' }
+    if ($pairSrc -notmatch 'Get-BobBobiverseAgentsIdleOverSec') { throw 'chair must wire idle-over-20s bobiverse agents' }
+    if ($pairSrc -notmatch 'Invoke-BobIrcDrainOutboxLines') { throw 'bobiverse digest must drain PRIVMSG from outbox' }
+    if ($pairSrc -notmatch 'TOPIC \$chan') { throw 'shop channel description must queue IRC TOPIC' }
+    if ($pairSrc -notmatch 'Sync-BobIrcChannelOpsWire') { throw 'channel ops must MODE on wire not JSON copy only' }
     if ($pairWorkerSrc -match '--hello') { throw 'workers must not use irc_agent --hello shop PRIVMSG' }
     if ($pairSrc -match 'Add-BobIrcOutboxChannelLine \$line' -and $pairSrc -notmatch 'Add-BobIrcBobiversePrivmsg') { throw 'bobiverse digest must PRIVMSG #bobiverse not channel say()' }
-    if ($pairSrc -match 'TOPIC \$chan') { throw 'shop description must not use TOPIC PRIVMSG text' }
+    if ($pairSrc -match 'PRIVMSG \$chan.*TOPIC') { throw 'shop description must not fake TOPIC as PRIVMSG text' }
     if ($pairSrc -notmatch 'Sync-BobChannelOpsManifest') { throw 'repo pair must write channel ops manifest (A23)' }
     if ($pairSrc -notmatch 'Test-BobRepoPairTicketCadenceDue') { throw 'chair must gate outstanding tickets on cadence' }
     $digestSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobDigestWebhook.ps1') -Raw
@@ -3216,9 +3225,12 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if (@($say.said).Count -lt 1) { throw 'bobiverse say must post digest lines' }
     $outbox = Join-Path $env:BOB_IRC_HOME 'outbox.txt'
     if (-not (Test-Path $outbox)) { throw 'missing IRC outbox after bobiverse say' }
-    $ob = Get-Content $outbox -Raw
-    if ($ob -notmatch 'dev complete') { throw "outbox missing dev complete: $ob" }
-    if ($ob -notmatch 'MRB complete') { throw "outbox missing MRB complete: $ob" }
+    $drainedPath = Join-Path $env:BOB_IRC_HOME 'outbox-drained.txt'
+    if (-not (Test-Path $drainedPath)) { throw 'bobiverse PRIVMSG must be drained from outbox (not only queued)' }
+    $drained = Get-Content $drainedPath -Raw
+    if ($drained -notmatch 'dev complete') { throw "drained outbox missing dev complete: $drained" }
+    if ($drained -notmatch 'MRB complete') { throw "drained outbox missing MRB complete: $drained" }
+    if ((Get-Content $outbox -Raw) -match 'PRIVMSG #bobiverse') { throw 'bobiverse lines must not remain in outbox after drain' }
 
     $topic = Set-BobShopChannelRepoDescription -Repo 'SimonBarnett/agentic_build' -MachineId flamingo
     if (-not $topic.ok) { throw 'shop topic failed' }
@@ -3228,7 +3240,8 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
     if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
     if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'SHOPDESC') { throw 'outbox must carry SHOPDESC for shop channel description' }
-    if ((Get-Content $outbox -Raw) -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse' }
+    if ($drained -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse' }
+    if ((Get-Content $outbox -Raw) -notmatch 'TOPIC #flamingo') { throw 'shop topic must use IRC TOPIC command' }
 
     $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
     if (-not $usage.posted) { throw 'usage webhook must POST with pools' }

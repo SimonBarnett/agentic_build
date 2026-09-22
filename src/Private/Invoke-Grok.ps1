@@ -189,7 +189,10 @@ function Get-BobRepoPairArgv {
     if ($Profile -and $Profile.Yolo) {
         [void]$argv.Add('--yolo')
     }
-    [void]$argv.Add('--persistent')
+    if ($Profile -and $Profile.AlwaysApprove) {
+        [void]$argv.Add('--always-approve')
+    }
+    # Interactive session (no -p/--single): grok stays running until idle-stop.
     [void]$argv.Add($Prompt)
     return @($argv.ToArray())
 }

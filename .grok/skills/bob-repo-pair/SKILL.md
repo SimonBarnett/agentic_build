@@ -49,7 +49,7 @@ Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
   MRB complete) to `#bobiverse` via `outbox.txt`. Workers do not spam channel.
 - **Shop JOIN:** each seat starts `irc_agent.py` on the shop channel (manifest
   `shop-join-<sessionId>.json`); not a `shop-joined-*.flag` file.
-- **Shop description:** `Set-BobShopChannelRepoDescription` queues `SHOPDESC #<machine> <repo>`
+- **Shop description:** `Set-BobShopChannelRepoDescription` queues `TOPIC #<machine> :<repo>` (and `SHOPDESC` for audit); Watch applies pending topics.
   (Ergo topic/description + `shop-channel-descriptions.json`) when the assigned repo changes.
 - **Channel ops (A23):** `config/channel-ops.json` → `channel-ops.json` in IRC home
   (`bob-{machine}` on `#{machine}`, Jeeves on `#bobiverse`).
