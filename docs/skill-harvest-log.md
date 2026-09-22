@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-22 — MRB no-Bob: find next seat, do not sit
+
+Simon `#bobiverse`: if you MRB and there is no Bob but open issues
+remain, find someone to take the next dev — do not let it sit. Add to
+skills and harvest. `bob-hostile-mrb` + `bob-job-loop`.
+
 ## 2026-09-22 — MRB MUST close, merge, and pull completed PRs
 
 Simon `#bobiverse`: VERY important. After PASS-nits, MRB must close

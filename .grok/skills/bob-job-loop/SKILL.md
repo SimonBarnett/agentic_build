@@ -66,6 +66,11 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    PASS-nits / Missing features park. Do not stop at one FR DONE while
    open FRs sit idle. Skip boards already `phase=pass` and superseded
    issues.
+9. **No Bob, still open issues — find a seat (Simon 2026-09-22):** after
+   MRB, if Bob is absent and open `feature-request` issues remain, do
+   not park the channel waiting for Bob. Ask `#bobiverse` for a spare
+   to take the next FR, or start the next `bob-job-loop` yourself.
+   Harvest into skills when this rule is learned (`harvest-agent-skills`).
 
 ## On wakeup
 

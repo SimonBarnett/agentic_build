@@ -145,6 +145,12 @@ voided issue.
    already PASS. Listing under Missing features is not enough — hand
    each to `bob-job-loop`. Remaining FRs do not block this PASS-nits
    merge.
+8. **No Bob, still open issues — do not sit (Simon 2026-09-22):** if you
+   just MRB'd and Bob is not on channel / not assigning, **do not leave
+   remaining open FRs idle**. Find someone: ask `#bobiverse` for a spare
+   seat, or launch the next `bob-job-loop` yourself on another open FR.
+   Waiting for Bob to notice is a bug. Harvest this playbook when you
+   learn it (`harvest-agent-skills`).
 
 ## Pass bar
 
