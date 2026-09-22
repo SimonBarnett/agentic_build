@@ -43,20 +43,21 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor spending groups (per seat)
+## Cursor spending groups (this host's Cursor account)
 
-**Three RTFM groups per Cursor seat** from `config/bob-seats.json` (Smart
-Catalogue, Club Madeira, ntsa, …):
+**Three RTFM groups** on the card (not xAI seat names — Smart Catalogue /
+Club Madeira / ntsa are Grok Build seats only; issue #151):
 
-1. `{seat}  grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
-2. `{seat}  high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
-3. `{seat}  low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset
-   on this row). MRB/PR fuel gate reads **low cost models** only.
+1. `grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
+2. `high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
+3. `low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset on this
+   row). MRB/PR fuel gate reads **low cost models** only.
 
-Do **not** collapse seats or groups into one `Cursor Models` strip. Local
+Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
+those rows with xAI seat labels. Local
 `Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
-host's seat; fleet `cursor-pools.json` + digest `cursor_pools` / `pcent` fill
-peers.
+host; digest `pcent` / `cursor_pools` update `cursor-pools.json` cache but
+the tray paints **one trio of bars for this machine's Cursor login**.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 
@@ -65,8 +66,8 @@ whispers **`BOB DIGEST v1`** JSON (`i/n` chunks when large); `Import-BobIrcTrayP
 writes tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
 cache — not POINT, not a presence-only digest.
 
-`account_remaining_pct` on `Get-BobTrayHover` is still this host's seat pool
-(MRB fuel gate). Machine rows are Grok Build weekly + fuels
+`account_remaining_pct` on `Get-BobTrayHover` is this host's **low cost models**
+remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 (`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
 
 - Known remaining: each group bar shows N% from Spending (see `box-usage`), not
@@ -98,7 +99,7 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`Smart Catalogue  low cost models  9%  reset 23 Sep`
+`low cost models  9%  reset 23 Sep`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
 

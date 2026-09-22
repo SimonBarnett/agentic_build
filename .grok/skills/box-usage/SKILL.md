@@ -56,10 +56,12 @@ TipForm (Simon labels; RTFM API fields in `tools/Get-CursorAgentUsage.py`):
 | **high cost models** | `GetCurrentPeriodUsage.planUsage.apiPercentUsed` | none for this loop |
 | **low cost models** | `GetCurrentPeriodUsage.planUsage.autoPercentUsed` | `cursor-models` for MRB and PRs (`Get-BobCapacity.cursor_models.remaining_pct`) |
 
-Per Cursor seat (`config/bob-seats.json`), TipForm paints **three labelled
-bars** (`{seat}  grok chat|high cost models|low cost models  N%`). Hover JSON:
-`cursor_groups` + `cursor_pools` (one row per seat per group). Do not collapse
-into a single `Cursor Models` strip.
+TipForm paints **three labelled bars** for this host's Cursor account (`grok
+chat|high cost models|low cost models  N%`). xAI seats in `bob-seats.json`
+(Smart Catalogue, Club Madeira, ntsa) are **not** Cursor quotas — do not prefix
+Cursor bars with those labels (issue #151). Hover JSON: `cursor_groups` +
+`cursor_pools` (three rows). Do not collapse into a single `Cursor Models`
+strip.
 
 Legacy names (docs before Sep 2026): Cursor Models ≈ low cost models; Other
 Models ≈ high cost models; Grok Bot weekly ≈ grok chat.
