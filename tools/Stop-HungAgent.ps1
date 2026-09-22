@@ -2,12 +2,12 @@
 # See .grok/skills/killproc/SKILL.md. Never print connect.password.
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Home,
+    [string]$IrcHome,
     [string]$Nick = '',
     [switch]$Roll
 )
 $ErrorActionPreference = 'Stop'
-$resolved = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($Home))
+$resolved = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($IrcHome))
 if (-not (Test-Path -LiteralPath $resolved)) {
     Write-Error "home missing: $resolved"
 }

@@ -42,7 +42,7 @@ is still a killproc target if Simon said end/roll.
 ## Command
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Stop-HungAgent.ps1 -Home "$env:USERPROFILE\.agentic-irc-cursor-2" -Nick flamingo-2224 -Roll
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Stop-HungAgent.ps1 -IrcHome "$env:USERPROFILE\.agentic-irc-cursor-2" -Nick flamingo-2224 -Roll
 ```
 
 `-Home` is required. `-Nick` required for `-Roll`. Script stops only
