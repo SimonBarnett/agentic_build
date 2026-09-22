@@ -14,7 +14,7 @@ flowchart TB
   TIX --> ASSIGN
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
-  CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
@@ -90,6 +90,7 @@ Change how Bob works:
 30. **Bob MUST start agents with the IRC and build skills.**
 31. **Bob must direct them to JOIN IRC.**
 32. **Every 15 minutes** Bob **pings in his own shop** to check **connections / online**, and **intervenes if workers are stalled**.
+33. **Bob can assign to any idle (>20 sec) agent on the bobiverse.**
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -136,7 +137,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
 | A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
 | A10 | Bob monitors in-flight processes and restarts if deaf. Shop ping every 15 min; intervene if stalled. |
-| A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
+| A11 | Bob assigns MRB vs dev; can assign any bobiverse agent idle > 20s. |
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
 | A13 | Dynamic models: dev=less, MRB=medium, UAT=more (Cursor then local xAI). |
 | A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |

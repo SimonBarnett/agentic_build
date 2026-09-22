@@ -39,7 +39,7 @@
 | P6 | Bob chair UAT via new UAT skill (not worker stamp) |
 | P7 | Workers do own work; no nested agent invoke |
 | P8 | Bob monitors in-flight; shop ping every 15 min; restart/intervene if stalled |
-| P9 | Bob assigns MRB vs dev tasks |
+| P9 | Bob assigns MRB vs dev; any bobiverse agent idle > 20s |
 | P10 | Bob checks outstanding tickets every 2 hours during business hours and assigns |
 | P11 | Dynamic models: dev=less, MRB=medium, UAT=more |
 | P12 | MRB merges dups, closes finished issues, merges PASS-nits PRs |
