@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-22 — gh pr merge must pass --merge (non-interactive)
+
+ehf #5 PASS-nits finish FAILED: `gh pr merge` without `--merge`/`--rebase`/`--squash` when not a TTY. PR #10 was MERGED a moment later; treat DONE. Driver `Invoke-BobGhMergePrIfOpen` now passes `--merge`.
+
 ## 2026-09-22 — MRB no-Bob: find next seat, do not sit
 
 Simon `#bobiverse`: if you MRB and there is no Bob but open issues

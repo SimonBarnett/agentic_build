@@ -57,8 +57,9 @@ passed UAT, they write `candidate PASS-UAT, Bob stamp required`.
 A PASS-nits that leaves git dirty is not finished. The MRB worker MUST,
 in this order, before the driver prints DONE:
 
-1. **Merge** the reviewed PR (`gh pr merge`). Do not claim merged unless
-   that command succeeded (or `gh pr view` is already MERGED).
+1. **Merge** the reviewed PR (`gh pr merge --merge` — non-interactive
+   `gh` requires a strategy). Do not claim merged unless that command
+   succeeded (or `gh pr view` is already MERGED).
 2. **Close finished issues**: the feature-request issue, **every** prior
    FAIL MRB board for this FR, and this PASS-nits issue. Each close
    comment links the merged PR URL.
@@ -132,7 +133,7 @@ voided issue.
 5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**
    FIX worker (`cursor-mrb-dev` / `bob-job-loop`). Do not reuse this FAIL
    issue as the next board.
-6. **PASS-nits:** merge the PR (`gh pr merge`). Nits stay listed; they do
+6. **PASS-nits:** merge the PR (`gh pr merge --merge`). Nits stay listed; they do
    not block the merge. After merge succeeds, close the feature-request
    issue, **every** prior FAIL MRB board for this FR (all FAIL cycles on
    the loop board, not only the latest), and this PASS-nits issue. Each
