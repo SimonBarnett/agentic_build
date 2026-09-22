@@ -20,6 +20,7 @@ flowchart TB
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
+  CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
@@ -79,6 +80,7 @@ Change how Bob works:
     For each: **percent remaining** and **when the next period starts**. **0 shows 0, not n/a.** **n/a only when that pool is not available.** Every pool **MUST** be posted on the webhook.
 24. **Workers use Cursor** unless **out of tokens**, then **their local xAI accounts**.
 25. **Bob decides which to invoke:** `agent` (local) or `agent.com` (cloud).
+26. **Every time Bob calls `!bobiverse`**, he **POSTs the webhook if anything changed** on **Cursor or local xAI** (change-only).
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -135,4 +137,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A19 | Each pool: remaining % + next period start; 0 is 0; n/a only if unavailable; MUST report. |
 | A20 | Workers use Cursor until tokens are out, then local xAI. |
 | A21 | Bob chooses local `agent` vs `agent.com` for each invoke. |
-| A22 | BT0/docs validator or pack test covers A1–A21 enough to MRB. |
+| A22 | On each Bob `!bobiverse`, webhook if Cursor or local xAI usage changed. |
+| A23 | BT0/docs validator or pack test covers A1–A22 enough to MRB. |
