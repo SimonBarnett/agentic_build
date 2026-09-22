@@ -42,6 +42,7 @@
         'Get-BobTrayTitle',
         'Get-BobWeeklyRemaining',
         'Get-BobCursorAgentWeeklyRemaining',
+        'Get-BobCursorSpendingFromApiFixture',
         'Get-BobTrayTipPlacement',
         'Get-BobFleetRegistry',
         'ConvertTo-BobIrcPoint',
