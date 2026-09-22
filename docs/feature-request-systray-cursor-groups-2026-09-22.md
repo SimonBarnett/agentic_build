@@ -2,6 +2,7 @@
 
 **Date:** 2026-09-22
 **Repo:** https://github.com/SimonBarnett/agentic_build
+**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/151
 **Raised by:** Simon on #bobiverse (flamingo-17568 wake)
 **UAT + hostile MRB owner:** Bob
 **Skills:** bob-fleet-tray, box-usage
