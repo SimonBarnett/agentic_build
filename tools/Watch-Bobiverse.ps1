@@ -63,11 +63,13 @@ function Stop-StaleBobiverseIrcAgent {
 }
 
 function Test-BobiverseIrcAgentUp {
+    # Key on fleet bob-* nick — worker homes under .../workers/... contain
+    # "bobiverse" in the path and must not count as the keep-alive agent (#70).
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -match '--nick\s+bob-' -and
             (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     return ($hits.Count -gt 0)
