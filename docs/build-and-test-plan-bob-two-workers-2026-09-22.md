@@ -37,6 +37,7 @@
 | P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
 | P5 | Channel description = assigned repo name; update on repo change |
 | P6 | Bob chair UAT via new UAT skill (not worker stamp) |
+| P7 | Workers do own work; no nested agent invoke |
 
 ## Tests
 

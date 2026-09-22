@@ -80,8 +80,8 @@ flowchart TB
 
   PAIR --> WA
   PAIR --> WB
-  WA -->|"open PR; never push main; never merge own"| WB
-  WB -->|"FAIL: do not merge"| FIX["A (or the other non-reviewer) FIX\nthen B re-MRB"]
+  WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
   FIX --> WA
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]

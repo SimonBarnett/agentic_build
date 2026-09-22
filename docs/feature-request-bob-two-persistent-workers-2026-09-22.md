@@ -20,8 +20,8 @@ flowchart TB
 
   PAIR --> WA
   PAIR --> WB
-  WA -->|"open PR; never push main; never merge own"| WB
-  WB -->|"FAIL: do not merge"| FIX["A (or the other non-reviewer) FIX\nthen B re-MRB"]
+  WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
   FIX --> WA
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
@@ -52,6 +52,7 @@ Change how Bob works:
 11. **Bob refers to the digest** (MRB complete / dev complete / similar states) **to report to the bobiverse**.
 12. The **repo name** a `#channel` is working on **is the channel description**. **Change it when the repo changes.**
 13. **Bob** (chair only) **uses the new UAT skill** (`bob-design-uat` / design-uat) **to approve UAT**. Workers do not stamp UAT.
+14. **Workers do their own work.** They **do not invoke another agent** (no nested Start-BobBuild / handoff spawn). The pair *is* the two workers.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -93,4 +94,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A6 | Bob reads digest states (dev complete / MRB complete / …) and reports them on #bobiverse. |
 | A7 | Shop/channel **description** = current repo name; update when the assigned repo changes. |
 | A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
-| A9 | BT0/docs validator or pack test covers A1–A8 enough to MRB. |
+| A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
+| A10 | BT0/docs validator or pack test covers A1–A9 enough to MRB. |
