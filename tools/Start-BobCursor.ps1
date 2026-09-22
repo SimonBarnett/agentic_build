@@ -185,23 +185,7 @@ Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
         $packet.pid = [int]$created.ProcessId
         # #70 MUST 2: shop-only worker irc_agent (w-io-<pid> on ionos, etc.)
         try {
-            $mid = $env:BOB_MACHINE_ID
-            if (-not $mid) { $mid = $env:COMPUTERNAME.ToLowerInvariant() }
-            $spawn = $null
-            foreach ($root in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc')) {
-                $cand = Join-Path $root 'scripts\start_worker_irc_agent.py'
-                if (Test-Path -LiteralPath $cand) { $spawn = $cand; break }
-            }
-            if ($spawn -and $packet.pid) {
-                $py = (Get-Command python -ErrorAction SilentlyContinue).Source
-                if ($py) {
-                    Start-Process -FilePath $py -ArgumentList @(
-                        '-u', $spawn,
-                        '--machine-id', $mid,
-                        '--pid', "$($packet.pid)"
-                    ) -WindowStyle Hidden | Out-Null
-                }
-            }
+            Start-BobWorkerIrcAgent -WorkerPid ([int]$packet.pid)
         }
         catch { }
     }

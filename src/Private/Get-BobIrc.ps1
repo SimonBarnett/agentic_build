@@ -1507,9 +1507,11 @@ function Write-BobIrcStatus {
     Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd -Weekly $week
     $cursorLabel = $null
     $cursorPeriodEnd = $null
+    $cursorRemainingPct = $null
     try {
         $cw = Get-BobCursorAgentWeeklyRemaining
         if ($cw) {
+            if ($null -ne $cw.remaining_pct) { $cursorRemainingPct = [int]$cw.remaining_pct }
             $cursorLabel = Format-BobCursorAccountLabel -RemainingPct $cw.remaining_pct -UsedPct $cw.used_pct
             if ($cursorLabel -eq 'empty') {
                 $gbp = $null
@@ -1541,23 +1543,26 @@ function Write-BobIrcStatus {
         elseif ($primary.createdAt) { $startedAt = [string]$primary.createdAt }
     }
     $doc = [pscustomobject]@{
-        ok                = $true
-        id                = $id
-        weekly            = $week
-        period_end        = $periodEnd
-        cursor_label      = $cursorLabel
-        cursor_period_end = $cursorPeriodEnd
-        running           = @($running).Count + $liveN
-        queued            = @($inbox).Count
-        lastSeen          = $seen
-        jobs              = $jobs
-        model             = $model
-        kind              = $kind
-        repo              = $topRepo
-        sha               = $sha
-        started_at        = $startedAt
-        responding        = $responding
-        source            = 'irc'
+        ok                     = $true
+        id                     = $id
+        weekly                 = $week
+        period_end             = $periodEnd
+        cursor_label           = $cursorLabel
+        cursor_period_end      = $cursorPeriodEnd
+        remaining_pct          = $cursorRemainingPct
+        account_remaining_pct  = $cursorRemainingPct
+        cursor_remaining_pct   = $cursorRemainingPct
+        running                = @($running).Count + $liveN
+        queued                 = @($inbox).Count
+        lastSeen               = $seen
+        jobs                   = $jobs
+        model                  = $model
+        kind                   = $kind
+        repo                   = $topRepo
+        sha                    = $sha
+        started_at             = $startedAt
+        responding             = $responding
+        source                 = 'irc'
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
