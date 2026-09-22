@@ -143,3 +143,53 @@ function Get-BobArgv {
     [void]$argv.Add($Prompt)
     return , @($argv.ToArray())
 }
+
+function Get-BobRepoPairArgv {
+    param(
+        [Parameter(Mandatory)][string]$Prompt,
+        [Parameter(Mandatory)][string]$Cwd,
+        [string]$SessionId,
+        $Profile,
+        [string]$Model,
+        [ValidateSet('dev', 'mrb')][string]$Role
+    )
+    $argv = New-Object System.Collections.Generic.List[string]
+    [void]$argv.Add('--no-auto-update')
+    [void]$argv.Add('--no-alt-screen')
+    [void]$argv.Add('--output-format')
+    [void]$argv.Add('json')
+    [void]$argv.Add('--cwd')
+    [void]$argv.Add($Cwd)
+    if ($Model) {
+        $cli = $Model
+        try { $cli = Resolve-BobGrokCliModel -Wanted $Model } catch { }
+        if ($cli) {
+            [void]$argv.Add('-m')
+            [void]$argv.Add($cli)
+        }
+    }
+    if ($SessionId) {
+        [void]$argv.Add('-s')
+        [void]$argv.Add($SessionId)
+    }
+    $skillHint = $null
+    try { $skillHint = Get-BobProjectSkillsHint } catch { }
+    $rules = Get-BobRepoPairRulesText -Role $Role
+    if ($Profile -and -not $Profile.Yolo -and $Profile.Rules) {
+        $pr = ([string]$Profile.Rules).Trim()
+        if ($pr) { $rules = ($rules + ' ' + $pr).Trim() }
+    }
+    if ($skillHint -and $rules -notmatch 'SimonBarnett/agentic_build') {
+        $rules = ($rules + ' ' + $skillHint).Trim()
+    }
+    if ($rules) {
+        [void]$argv.Add('--rules')
+        [void]$argv.Add($rules)
+    }
+    if ($Profile -and $Profile.Yolo) {
+        [void]$argv.Add('--yolo')
+    }
+    [void]$argv.Add('--persistent')
+    [void]$argv.Add($Prompt)
+    return @($argv.ToArray())
+}

@@ -55,6 +55,86 @@ function Get-BobDigestWebhookPoolSnapshot {
     return ($parts -join ';')
 }
 
+function Get-BobFleetCursorPoolsSnapshotPath {
+    Join-Path (Get-BridgeRoot) 'fleet-cursor-pools-snapshots.json'
+}
+
+function Save-BobFleetCursorPoolsSnapshot {
+    param(
+        [Parameter(Mandatory)][string]$MachineId,
+        $Pools
+    )
+    $path = Get-BobFleetCursorPoolsSnapshotPath
+    $map = @{}
+    $existing = Read-JsonFile $path
+    if ($existing) {
+        foreach ($p in $existing.PSObject.Properties) { $map[[string]$p.Name] = $p.Value }
+    }
+    $rows = @()
+    foreach ($pool in @($Pools)) {
+        if (-not $pool) { continue }
+        $rows += ,[pscustomobject]@{
+            group_id      = [string]$pool.group_id
+            remaining_pct = $pool.remaining_pct
+            period_end    = $(if ($pool.period_end) { [string]$pool.period_end } else { $null })
+        }
+    }
+    $map[$MachineId] = [pscustomobject]@{ at = [DateTime]::UtcNow.ToString('o'); pools = @($rows) }
+    Write-JsonFile $path ([pscustomobject]$map)
+}
+
+function Merge-BobFleetCursorPoolsLesser {
+    param($LocalPools)
+    $byGroup = @{}
+    foreach ($pool in @($LocalPools)) {
+        if (-not $pool -or -not $pool.group_id) { continue }
+        $gid = [string]$pool.group_id
+        $rem = $pool.remaining_pct
+        if ($null -eq $rem) { continue }
+        try { $rem = [int]$rem } catch { continue }
+        if (-not $byGroup.ContainsKey($gid) -or $rem -lt $byGroup[$gid].remaining_pct) {
+            $byGroup[$gid] = $pool
+        }
+    }
+    $path = Get-BobFleetCursorPoolsSnapshotPath
+    $snap = Read-JsonFile $path
+    if ($snap) {
+        foreach ($prop in @($snap.PSObject.Properties)) {
+            $ent = $prop.Value
+            if (-not $ent -or -not $ent.pools) { continue }
+            foreach ($row in @($ent.pools)) {
+                if (-not $row -or -not $row.group_id) { continue }
+                $gid = [string]$row.group_id
+                $rem = $row.remaining_pct
+                if ($null -eq $rem) { continue }
+                try { $rem = [int]$rem } catch { continue }
+                if (-not $byGroup.ContainsKey($gid) -or $rem -lt $byGroup[$gid].remaining_pct) {
+                    $byGroup[$gid] = [pscustomobject]@{
+                        group_id       = $gid
+                        group_label    = $gid
+                        remaining_pct  = $rem
+                        period_end     = $(if ($row.period_end) { [string]$row.period_end } else { $null })
+                        pct_label      = ('{0}%' -f $rem)
+                    }
+                }
+            }
+        }
+    }
+    $merged = @()
+    foreach ($pool in @($LocalPools)) {
+        if (-not $pool) { continue }
+        $gid = [string]$pool.group_id
+        if ($byGroup.ContainsKey($gid)) {
+            $merged += $byGroup[$gid]
+        }
+        else {
+            $merged += $pool
+        }
+    }
+    if ($merged.Count -eq 0) { return @($LocalPools) }
+    return @($merged)
+}
+
 function Build-BobChairUsageWebhookPayload {
     param([string]$MachineId)
     $id = $MachineId
@@ -62,6 +142,7 @@ function Build-BobChairUsageWebhookPayload {
     $cursorWeek = $null
     try { $cursorWeek = Get-BobCursorAgentWeeklyRemaining } catch { }
     $pools = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cursorWeek -PcentRows @())
+    $pools = @(Merge-BobFleetCursorPoolsLesser -LocalPools $pools)
     $weekly = $null
     $weeklyEnd = $null
     try {
@@ -126,6 +207,13 @@ function Invoke-BobRepoPairChairUsageWebhookIfChanged {
     [CmdletBinding()]
     param([switch]$Force)
     $payload = Build-BobChairUsageWebhookPayload
+    try {
+        $mid = Get-ThisMachineId
+        if ($payload -and $payload.cursor_pools) {
+            Save-BobFleetCursorPoolsSnapshot -MachineId $mid -Pools @($payload.cursor_pools)
+        }
+    }
+    catch { }
     if (-not $Force -and -not (Test-BobDigestUsageWebhookChanged -Payload $payload)) {
         return [pscustomobject]@{ ok = $true; posted = $false; reason = 'unchanged' }
     }

@@ -79,6 +79,7 @@ function Build-BobRepoPairWorkerPrompt {
         return @(
             "You are the persistent DEV worker for repo $Repo on this machine shop."
             $rules
+            'JOIN the machine shop IRC channel now (bob-irc skill). Never join #bobiverse.'
             'Implement git tasks and open PRs. Never push main. Never merge.'
             'After you open a PR, register dev complete; the MRB seat hostile-reviews it; you take the next PR.'
             'Do not put secrets or API key assignments in git or prompts.'
@@ -87,6 +88,7 @@ function Build-BobRepoPairWorkerPrompt {
     return @(
         "You are the persistent MRB worker for repo $Repo on this machine shop."
         $rules
+        'JOIN the machine shop IRC channel now (bob-irc skill). Never join #bobiverse.'
         'Hostile MRB only — never implement the same PR you review.'
         'PASS-nits may merge per existing rule; FAIL means the dev seat FIXes, then you re-MRB.'
         'Do not put secrets or API key assignments in git or prompts.'
@@ -144,7 +146,11 @@ function Test-BobRepoPairSeatShopJoined {
     $manifestPath = Join-Path $home ('shop-join-' + $sid + '.json')
     if (-not (Test-Path -LiteralPath $manifestPath)) { return $false }
     $manifest = Read-JsonFile $manifestPath
-    if (-not $manifest -or [string]$manifest.joinKind -notmatch 'irc_agent') { return $false }
+    if (-not $manifest) { return $false }
+    $jk = [string]$manifest.joinKind
+    if ($jk -eq 'irc_agent_stub' -or $jk -match 'stub') { return $false }
+    if ($jk -notmatch '^(irc_agent|irc_agent_worker)$') { return $false }
+    if ($manifest.shopNickLive -eq $false) { return $false }
     $ircPid = $manifest.ircAgentPid
     if (-not $ircPid) { return $false }
     if ($ircPid -is [System.Array]) { $ircPid = @($ircPid)[0] }
@@ -230,6 +236,7 @@ function Start-BobRepoPair {
     if ($mrb.error) { return [pscustomobject]@{ ok = $false; error = $mrb.error; reason = $mrb.reason; role = 'mrb' } }
     Write-BobRepoPairState $state
     Set-BobShopChannelRepoDescription -Repo $repo -MachineId $mid | Out-Null
+    Sync-BobChannelOpsManifest -MachineId $mid | Out-Null
     return [pscustomobject]@{
         ok    = $true
         repo  = $repo
@@ -538,6 +545,40 @@ function Get-BobShopChannelDescriptionsPath {
     Join-Path (Get-BobIrcHome) 'shop-channel-descriptions.json'
 }
 
+function Get-BobChannelOpsConfigPath {
+    Join-Path (Get-ModuleRoot) 'config\channel-ops.json'
+}
+
+function Sync-BobChannelOpsManifest {
+    [CmdletBinding()]
+    param([string]$MachineId)
+    $path = Get-BobChannelOpsConfigPath
+    if (-not (Test-Path $path)) { return [pscustomobject]@{ ok = $false; error = 'no_config' } }
+    $cfg = Read-JsonFile $path
+    if (-not $cfg -or -not $cfg.channels) { return [pscustomobject]@{ ok = $false; error = 'bad_config' } }
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    New-Item -ItemType Directory -Force -Path $home | Out-Null
+    $mid = $MachineId
+    if (-not $mid) { $mid = Get-ThisMachineId }
+    $shop = Get-BobShopChannelForMachine -MachineId $mid
+    $map = @{}
+    foreach ($p in $cfg.channels.PSObject.Properties) {
+        $map[[string]$p.Name] = [string]$p.Value
+    }
+    if ($shop -and -not $map.ContainsKey($shop)) {
+        $nick = $null
+        try {
+            $bv = Get-BobiverseConfig
+            if ($bv -and $bv.nicks -and $bv.nicks.$mid) { $nick = [string]$bv.nicks.$mid }
+        }
+        catch { }
+        if ($nick) { $map[$shop] = $nick }
+    }
+    Write-JsonFile (Join-Path $home 'channel-ops.json') ([pscustomobject]$map)
+    return [pscustomobject]@{ ok = $true; path = (Join-Path $home 'channel-ops.json') }
+}
+
 function Sync-BobShopChannelRepoDescriptions {
     [CmdletBinding()]
     param()
@@ -567,7 +608,6 @@ function Sync-BobShopChannelRepoDescriptions {
         if ($prev -eq $repo) { continue }
         $map[$chan] = $repo
         $applied += ,[pscustomobject]@{ channel = $chan; repo = $repo }
-        Add-BobIrcOutboxChannelLine ("TOPIC $chan :$repo")
         Add-BobIrcOutboxChannelLine ("SHOPDESC $chan $repo")
     }
     if ($applied.Count -gt 0) {
@@ -663,7 +703,7 @@ function Invoke-BobRepoPairBobiverseSay {
             elseif ($wo -match 'mrb_complete|MRB complete') { $line = "Bob digest: MRB complete for $repo ($wo)." }
         }
         if ($line) {
-            Add-BobIrcOutboxChannelLine $line
+            Add-BobIrcBobiversePrivmsg -Text $line
             $said += $key
             $out += $line
         }
@@ -718,9 +758,90 @@ function Test-BobRepoPairTicketCadenceDue {
     catch { return $true }
 }
 
+function Get-BobRepoPairShopPingIntervalSec {
+    if ($env:BOB_REPO_PAIR_SHOP_PING_SEC -and $env:BOB_REPO_PAIR_SHOP_PING_SEC.Trim()) {
+        try { return [int]$env:BOB_REPO_PAIR_SHOP_PING_SEC } catch { }
+    }
+    return 900
+}
+
+function Invoke-BobRepoPairShopPing {
+    [CmdletBinding()]
+    param()
+    $s = Read-BobRepoPairState
+    if (-not $s -or -not $s.repo) {
+        return [pscustomobject]@{ ok = $true; skipped = 'no_pair' }
+    }
+    $interval = Get-BobRepoPairShopPingIntervalSec
+    if ($s.lastShopPingAt) {
+        try {
+            $last = [DateTime]::Parse([string]$s.lastShopPingAt, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            $age = ([DateTime]::UtcNow - $last).TotalSeconds
+            if ($age -lt $interval) {
+                return [pscustomobject]@{ ok = $true; skipped = 'cadence' }
+            }
+        }
+        catch { }
+    }
+    $mid = [string]$s.machineId
+    if (-not $mid) { $mid = Get-ThisMachineId }
+    $chan = Get-BobShopChannelForMachine -MachineId $mid
+    if ($chan) {
+        Add-BobIrcOutboxChannelLine ("PRIVMSG $chan :Bob shop ping - checking repo-pair worker seats.")
+    }
+    $intervened = @()
+    foreach ($role in @('dev', 'mrb')) {
+        $seat = $null
+        if ($s.seats) { $seat = $s.seats.$role }
+        if (-not $seat) { continue }
+        if (-not (Test-BobRepoPairSeatAlive -Seat $seat)) {
+            $intervened += $role
+            if ($seat.sessionId) {
+                Stop-BobWorker -SessionId ([string]$seat.sessionId) | Out-Null
+                $seat | Add-Member -NotePropertyName sessionId -NotePropertyValue $null -Force
+            }
+            Ensure-BobRepoPairSeat -State $s -Role $role -Cwd ([string]$s.cwd) -Repo ([string]$s.repo) | Out-Null
+        }
+    }
+    $s | Add-Member -NotePropertyName lastShopPingAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+    Write-BobRepoPairState $s
+    return [pscustomobject]@{ ok = $true; intervened = @($intervened) }
+}
+
+function Get-BobBobiverseAgentsIdleOverSec {
+    [CmdletBinding()]
+    param([int]$MinIdleSec = 20)
+    $home = Get-BobIrcHome
+    if (-not $home) { return @() }
+    $peersDir = Join-Path $home 'bob-peers'
+    if (-not (Test-Path -LiteralPath $peersDir)) { return @() }
+    $now = [DateTime]::UtcNow
+    $idle = @()
+    foreach ($f in @(Get-ChildItem -LiteralPath $peersDir -Filter '*.json' -ErrorAction SilentlyContinue)) {
+        $doc = Read-JsonFile $f.FullName
+        if (-not $doc -or -not $doc.id) { continue }
+        $seen = $null
+        if ($doc.lastSeen) {
+            try {
+                $seen = [DateTime]::Parse([string]$doc.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            }
+            catch { continue }
+        }
+        if (-not $seen) { continue }
+        $age = ($now - $seen).TotalSeconds
+        if ($age -lt $MinIdleSec) { continue }
+        $run = $false
+        if ($doc.running -eq $true -or [string]$doc.running -eq '1') { $run = $true }
+        if ($run) { continue }
+        $idle += ,[pscustomobject]@{ machineId = [string]$doc.id; idleSec = [int]$age }
+    }
+    return @($idle)
+}
+
 function Invoke-BobRepoPairChairTick {
     [CmdletBinding()]
     param()
+    try { Invoke-BobRepoPairShopPing | Out-Null } catch { }
     $tick = Invoke-BobRepoPairTick
     $ticket = [pscustomobject]@{ ok = $true; skipped = 'cadence' }
     if (Test-BobRepoPairTicketCadenceDue) {

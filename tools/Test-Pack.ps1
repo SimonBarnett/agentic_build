@@ -3116,8 +3116,19 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($pairWorkerSrc -match 'shop-joined-[^\s''"]+\.flag') { throw 'JOIN must not use shop-joined flag files' }
     if ($pairWorkerSrc -notmatch 'irc_agent') { throw 'shop JOIN must start irc_agent' }
     if ($pairWorkerSrc -match 'seat-supervisor\.ps1') { throw 'repo pair must not use heartbeat supervisor instead of agent' }
+    if ($pairWorkerSrc -match "seat-cursor[^`n]*'-p'") { throw 'repo pair cursor seat must not use -p oneshot launch' }
+    if ($pairWorkerSrc -match 'Get-BobArgv' -and $pairWorkerSrc -notmatch 'Get-BobRepoPairArgv') { throw 'repo pair must use Get-BobRepoPairArgv not oneshot Get-BobArgv' }
+    if ($pairWorkerSrc -match 'irc_agent_stub|shop-irc-loop') { throw 'repo pair must not use IRC JOIN stub/sidecar' }
+    if ($pairWorkerSrc -notmatch 'bob-build-dispatch') { throw 'dev seat must bind build skills' }
+    if ($pairWorkerSrc -notmatch '--rules') { throw 'cursor persistent seat must pass --rules' }
+    if ($pairWorkerSrc -notmatch 'grokbot') { throw 'seat agent must implement grokbot path' }
+    if ($pairWorkerSrc -match '--hello') { throw 'workers must not use irc_agent --hello shop PRIVMSG' }
+    if ($pairSrc -match 'Add-BobIrcOutboxChannelLine \$line' -and $pairSrc -notmatch 'Add-BobIrcBobiversePrivmsg') { throw 'bobiverse digest must PRIVMSG #bobiverse not channel say()' }
+    if ($pairSrc -match 'TOPIC \$chan') { throw 'shop description must not use TOPIC PRIVMSG text' }
+    if ($pairSrc -notmatch 'Sync-BobChannelOpsManifest') { throw 'repo pair must write channel ops manifest (A23)' }
     if ($pairSrc -notmatch 'Test-BobRepoPairTicketCadenceDue') { throw 'chair must gate outstanding tickets on cadence' }
     $digestSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobDigestWebhook.ps1') -Raw
+    if ($digestSrc -notmatch 'Merge-BobFleetCursorPoolsLesser') { throw 'usage webhook must lesser-merge fleet cursor pools' }
     if ($digestSrc -notmatch 'Invoke-BobRepoPairChairUsageWebhookIfChanged') { throw 'chair must post usage webhook on change' }
     if ($digestSrc -notmatch 'cursor_pools') { throw 'usage webhook must include cursor_pools' }
     if ($digestSrc -notmatch 'local_weekly') { throw 'usage webhook must include local_weekly grok pool' }
@@ -3216,7 +3227,8 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $desc = Get-Content $descPath -Raw
     if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
     if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
-    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'TOPIC') { throw 'outbox must carry TOPIC for shop channel description' }
+    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'SHOPDESC') { throw 'outbox must carry SHOPDESC for shop channel description' }
+    if ((Get-Content $outbox -Raw) -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse' }
 
     $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
     if (-not $usage.posted) { throw 'usage webhook must POST with pools' }

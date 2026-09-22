@@ -5,8 +5,14 @@
                    "mrbCursor":  "grok-4.6",
                    "buildGrok":  "build0.1",
                    "buildGrokFallback":  "grok-4.5",
-                   "buildCursor":  "composer-2.5"
+                   "buildCursor":  "composer-2.5",
+                   "uatCursor":  "claude-opus-5-thinking-high"
                },
+    "repoPairModelTier":  {
+                              "less":  "composer-2.5",
+                              "medium":  "grok-4.6",
+                              "more":  "claude-opus-5-thinking-high"
+                          },
     "fuelModelFamilies":  {
                               "cursor-models":  "cursor",
                               "grok-build":  "grok",
@@ -68,7 +74,7 @@
                                            "yolo":  false,
                                            "timeoutSec":  7200,
                                            "maxPerCwd":  2,
-                                           "rules":  "Persistent dev seat. Load bob-spec-intake, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via inbox/chair-task."
+                                           "rules":  "Persistent dev seat. Load bob-spec-intake, bob-build-dispatch, grok-build-fleet, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via inbox/chair-task."
                                        },
                      "repo-pair-mrb":  {
                                            "yolo":  false,
