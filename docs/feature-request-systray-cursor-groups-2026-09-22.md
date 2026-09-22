@@ -27,6 +27,11 @@ Cursor *usage-group* split. One blob per seat is still wrong.
 4. Numbers come from Cursor Spending (RTFM). Do not invent remaining %.
 5. No UAT stamp. No secrets in git or goals.
 6. Additive UI only.
+7. **Agents that are on IRC are running.** Simon (same wake): *and there
+   definitely are agents running because you're all here*. The card must
+   list live `bob-*` and talk seats (`{machine}-{seatPid}`) from NAMES /
+   digest workers — not `no jobs` / offline while those nicks are in
+   `#bobiverse`.
 
 ## UNKNOWN (do not invent)
 
