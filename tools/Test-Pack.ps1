@@ -134,6 +134,8 @@ Invoke-Case 'BT0 skills' {
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
     }
+    $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
+    if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
 
 # --- BT0 parse ---

@@ -1,5 +1,11 @@
 ﻿# Skill harvest log
 
+## 2026-09-22 — killproc -Roll shop channel from nick
+
+Marchhare-20280: killproc -Roll joined #flamingo on marchhare-23624.
+`Stop-HungAgent` now sets `--channel #bobiverse,#<machine>` from the
+nick (marchhare-23624 -> #marchhare). Do not hardcode #flamingo.
+
 ## 2026-09-22 — killproc: -IrcHome, working seat, new cursor-agent
 
 Simon: harvest the second-seat night. Param is `-IrcHome` (never `-Home`;

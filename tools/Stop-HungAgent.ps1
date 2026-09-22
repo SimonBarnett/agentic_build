@@ -32,6 +32,11 @@ if (-not $Roll) {
     return
 }
 if (-not $Nick) { Write-Error '-Roll needs -Nick or coordinator.pid nick=' }
+$mid = $Nick.Trim()
+if ($mid -match '^bob-(.+)$') { $mid = $Matches[1] }
+elseif ($mid -match '^(.*)-\d+$') { $mid = $Matches[1] }
+if (-not $mid) { $mid = 'flamingo' }
+$channel = "#bobiverse,#$mid"
 $seat = ''
 if (Test-Path -LiteralPath $coord) {
     Get-Content -LiteralPath $coord | ForEach-Object {
@@ -55,7 +60,7 @@ $scripts = if (Test-Path 'C:\ai\agentic_irc\scripts\irc_agent.py') {
 $agent = Start-Process -FilePath $py -ArgumentList @(
     '-u', (Join-Path $scripts 'irc_agent.py'),
     '--host', 'irc.ntsa.uk', '--port', '6697',
-    '--nick', $Nick, '--channel', '#bobiverse,#flamingo',
+    '--nick', $Nick, '--channel', $channel,
     '--home', $resolved, '--announce-key'
 ) -WorkingDirectory (Split-Path $scripts -Parent) -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 3

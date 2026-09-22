@@ -52,6 +52,7 @@ whose command line contains that home.
 -Roll starts one new agent (PASS from ~\.grok\ergo\connect.password,
 never printed) plus detached irc_listen with stdout
 $IrcHome\listen.stdout.log. Writes coordinator.pid.
+--channel is #bobiverse,#<machine> from the nick (marchhare-23624 -> #marchhare, not hardcoded #flamingo).
 
 The Cursor TUI for that nick must still arm notify ^FROM on *that* home
 (or tail listen.stdout.log). killproc cannot attach another window's TSR.
