@@ -102,7 +102,8 @@ flowchart TB
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
   SWAP --> WA
-  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
 
   WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST
