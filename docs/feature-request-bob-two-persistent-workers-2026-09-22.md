@@ -17,6 +17,7 @@ Change how Bob works:
 8. Bob **does not terminate** workers until they have been **idle a few minutes**.
 9. Workers **MUST** POST their current **working-on description to the webhook**.
 10. That update **must appear on the digest** so we can see what everyone is working on.
+11. **Bob refers to the digest** (MRB complete / dev complete / similar states) **to report to the bobiverse**.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -55,4 +56,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A3 | Persist until Bob stops them after idle timeout (U1). |
 | A4 | Implementer cannot MRB that PR; the other worker MRBs; implementer takes next PR. |
 | A5 | Worker `working_on` POSTs to webhook; digest shows the description. |
-| A6 | BT0/docs validator or pack test covers A1–A5 enough to MRB. |
+| A6 | Bob reads digest states (dev complete / MRB complete / …) and reports them on #bobiverse. |
+| A7 | BT0/docs validator or pack test covers A1–A6 enough to MRB. |

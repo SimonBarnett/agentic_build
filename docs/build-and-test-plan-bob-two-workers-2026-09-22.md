@@ -34,6 +34,7 @@
 | P1 | Bob can spawn/reuse two workers for one repo; persist; idle-stop |
 | P2 | Implementer/MRB split + next-PR handoff |
 | P3 | Worker `working_on` POST; digest reads it |
+| P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
 
 ## Tests
 
