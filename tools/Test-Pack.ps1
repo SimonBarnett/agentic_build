@@ -1,4 +1,4 @@
-﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 [CmdletBinding()]
 param(
     [string]$RepoRoot
@@ -1090,6 +1090,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     $stampBob = Join-Path $peerDir '_bobiverse-last.txt'
     if (Test-Path $stampBob) { Remove-Item -LiteralPath $stampBob -Force }
+    $env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL = '1'
     $p1 = Request-BobIrcBobiversePull -MinIntervalSec 120
     if (-not $p1) { throw 'first Request-BobIrcBobiversePull must enqueue !bobiverse' }
     $obLines1 = @(Get-Content $ob | Where-Object { $_ })

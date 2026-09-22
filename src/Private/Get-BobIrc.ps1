@@ -1365,10 +1365,18 @@ function Request-BobIrcBobiversePull {
         }
         catch { }
     }
+    # Simon 2026-09-22: !bobiverse answer is Jeeves-only. Watch must not enqueue
+    # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
+    # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
+    if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
+        Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
+        return $false
+    }
     Add-BobIrcOutboxChannelLine '!bobiverse'
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
     return $true
 }
+
 
 function Import-BobIrcTrayPull {
     $home = Get-BobIrcHome

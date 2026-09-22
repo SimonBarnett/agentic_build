@@ -1,4 +1,10 @@
-﻿# Skill harvest log
+# Skill harvest log
+
+## 2026-09-22 — Watch must not enqueue !bobiverse (Simon go-for-it)
+
+Simon on #bobiverse: go for it. `!bobiverse` answer is Jeeves-only.
+`Request-BobIrcBobiversePull` no longer enqueues channel `!bobiverse`
+unless `BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1`. Talk seats never answer it.
 
 ## 2026-09-22 — fleet harvest irc skill + failed-pong restart
 
