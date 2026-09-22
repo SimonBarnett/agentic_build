@@ -63,45 +63,36 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 
 ### Flow
 
+Proposed pair model (`#175` — Simon check this logic before more impl):
+
 ```mermaid
 flowchart TB
-  subgraph IN["Inputs"]
-    A1["Other agent cannot complete"]
-    A2["Writes functional spec"]
-    A3["Sends spec to Bob"]
-    F1["Feature-request issue + /docs md"]
+  IN["FR or functional spec for a new repo"]
+  IN --> PARK["bob-machine parks issue + /docs"]
+  PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
+  CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
+  CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
+
+  subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
+    WA["Worker A: implement next PR"]
+    WB["Worker B: MRB that PR"]
   end
 
-  A1 --> A2 --> A3
-  A3 --> PARK
-  F1 --> PARK["Bob parks issue + markdown"]
-  PARK --> PLAN["Write build-and-test plan"]
+  PAIR --> WA
+  PAIR --> WB
+  WA -->|"open PR; never push main; never merge own"| WB
+  WB -->|"FAIL: do not merge"| FIX["A (or the other non-reviewer) FIX\nthen B re-MRB"]
+  FIX --> WA
+  WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
+  NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
+  SWAP --> WA
+  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
 
-  PLAN --> FUEL{"Cursor Models remaining > 0?"}
-  FUEL -->|yes| CUR["Fuel cursor-models\nMRB: Cursor Grok grok-4.6\nPR: Composer composer-2.5"]
-  FUEL -->|no| GROK["Fuel grok-build\nMRB: grok.exe grok-4.6\nPR: build0.1 else grok-4.5"]
-
-  CUR --> BUILD
-  GROK --> BUILD
-
-  subgraph BUILD["Worker"]
-    D1["Implement on work/job"]
-    D2["Open PR. Never push main. Never merge."]
-  end
-
-  BUILD --> MRB
-
-  subgraph MRB["Hostile MRB (handed off)"]
-    M1["Start-BobMrbHandoff.ps1"]
-    M2["New GitHub issue per PR head: FAIL or PASS-nits"]
-    M3["Missing features: park new FRs"]
-  end
-
-  MRB --> VER{"Verdict"}
-  VER -->|FAIL| FIX["Do not merge\nspawn FIX worker now"]
-  FIX --> FUEL
-  VER -->|PASS-nits| MERGE["MRB agent merges the PR"]
-  MERGE --> UAT["Bob stamps ready for human UAT"]
+  WA --> POST["Workers MUST POST working_on to webhook"]
+  WB --> POST
+  POST --> DIG["Digest updates"]
+  DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nworkers never stamp UAT"]
 ```
 
 ### Talking to build agents

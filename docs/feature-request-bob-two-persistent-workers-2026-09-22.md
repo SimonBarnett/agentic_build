@@ -3,6 +3,38 @@
 **Parked:** 2026-09-22 by flamingo-24108 from Simon Query.  
 **Repo:** SimonBarnett/agentic_build (extends current fleet; do not break v1 job loop).
 
+## Proposed flow (Simon check this logic)
+
+```mermaid
+flowchart TB
+  IN["FR or functional spec for a new repo"]
+  IN --> PARK["bob-machine parks issue + /docs"]
+  PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
+  CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
+  CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
+
+  subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
+    WA["Worker A: implement next PR"]
+    WB["Worker B: MRB that PR"]
+  end
+
+  PAIR --> WA
+  PAIR --> WB
+  WA -->|"open PR; never push main; never merge own"| WB
+  WB -->|"FAIL: do not merge"| FIX["A (or the other non-reviewer) FIX\nthen B re-MRB"]
+  FIX --> WA
+  WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
+  NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
+  SWAP --> WA
+  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
+
+  WA --> POST["Workers MUST POST working_on to webhook"]
+  WB --> POST
+  POST --> DIG["Digest updates"]
+  DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nworkers never stamp UAT"]
+```
+
 ## Ask (LOCKED)
 
 Change how Bob works:
