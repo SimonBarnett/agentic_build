@@ -41,7 +41,7 @@
 | P8 | Bob monitors in-flight processes; restart if deaf |
 | P9 | Bob assigns MRB vs dev tasks |
 | P10 | Bob checks outstanding tickets every 2 hours during business hours and assigns |
-| P11 | Dev cheap Cursor model; MRB expensive reasoning (FRs + tests) |
+| P11 | Dynamic models: dev=less, MRB=medium, UAT=more |
 | P12 | MRB merges dups, closes finished issues, merges PASS-nits PRs |
 | P13 | Each bob webhooks identity + local grok remaining |
 | P14 | Each bob reports account Cursor values; take the lesser of variance |

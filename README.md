@@ -85,8 +85,8 @@ flowchart TB
   MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
-    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
@@ -106,7 +106,7 @@ flowchart TB
   WB --> POST
   POST --> DIG["Digest updates"]
   DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
-  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nworkers never stamp UAT"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nUAT model: MORE\nworkers never stamp UAT"]
 ```
 
 ### Talking to build agents

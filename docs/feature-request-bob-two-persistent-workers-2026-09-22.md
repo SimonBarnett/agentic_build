@@ -25,8 +25,8 @@ flowchart TB
   MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
-    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
@@ -46,7 +46,7 @@ flowchart TB
   WB --> POST
   POST --> DIG["Digest updates"]
   DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
-  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nworkers never stamp UAT"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nUAT model: MORE\nworkers never stamp UAT"]
 ```
 
 ## Ask (LOCKED)
@@ -70,7 +70,7 @@ Change how Bob works:
 15. **Bob monitors** worker processes **during flight** and **restarts** them if they stop responding.
 16. **Bob orders and assigns** MRB vs dev tasks (chair assigns the role; worker executes it).
 17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them — **every 2 hours during business hours**.
-18. **Same fuel as before:** build/dev is a **cheap Cursor model** (`composer-2.5`). **MRB is more expensive** (`grok-4.6`) because that is where we want **reasoning** to add new FRs and tests.
+18. **Workers dynamically switch model by role:** **dev = less**, **MRB = medium**, **UAT = more**. Cursor first; local xAI if tokens out. Never Other Models.
 19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
 20. **Each bob** sends a **webhook to identify itself** and **how much local grok is left** on its account.
 21. **Each bob** also reports the **Cursor values it sees for the whole account**. **Take the lesser of any variance.**
@@ -85,6 +85,7 @@ Change how Bob works:
 26. **Every time Bob calls `!bobiverse`**, he **POSTs the webhook if anything changed** on **Cursor or local xAI** (change-only).
 27. **`bob-{machine}` is ops in their own shop channel.** **Jeeves is ops in `#bobiverse`.**
 28. **Update the control systray** to the **proper Cursor metrics** (grok chat / high cost / low cost — remaining % + next period; 0 is 0). Not seat-nickname pools.
+29. Model pick is **dynamic per task kind** (dev/MRB/UAT → less/medium/more), not a single model for the pair.
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -115,6 +116,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | U3 | How this replaces vs wraps `Start-BobBuildLoop` on the same SHA. |
 | U4 | New-repo path vs existing `bob-spec-intake` create-repo. |
 | U5 | Business-hours window (tz + start/end). Cadence LOCKED: every 2 hours. |
+| U6 | Exact Cursor/xAI slugs for less / medium / more (dev / MRB / UAT). |
 
 ## Acceptance
 
@@ -132,7 +134,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A10 | Bob monitors in-flight processes and restarts if deaf. |
 | A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
-| A13 | Dev = cheap Cursor model; MRB = expensive reasoning model (new FRs + tests). |
+| A13 | Dynamic models: dev=less, MRB=medium, UAT=more (Cursor then local xAI). |
 | A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |
 | A15 | Each bob webhooks identity + local grok remaining. |
 | A16 | Each bob reports account-wide Cursor values; fleet uses the lesser if they differ. |
