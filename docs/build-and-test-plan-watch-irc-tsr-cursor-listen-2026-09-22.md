@@ -8,9 +8,9 @@
 
 ## Goals
 
-- `Start-IrcTsr.ps1` / `Irc-Tsr-Runner.ps1` run `irc_listen.py` and append `AGENT_LOOP_WAKE_irc-tsr` on `FROM` lines.
-- `Watch-IrcTsr.ps1` restarts TSR when runner/listen child is gone, runner age exceeds cap, or **wake** heartbeat is stale.
-- Idle `#bobiverse` must not recycle: silence gate uses `irc-tsr-*-wake.jsonl` only (not `irc.log` mtime).
+- `Start-IrcTsr.ps1` / `Irc-Tsr-Runner.ps1` run `irc_listen.py`, append `PROCESS_HEARTBEAT` to `irc-tsr-*-wake.jsonl` on start and every 30s while listen is alive, and emit `AGENT_LOOP_WAKE_irc-tsr` on `FROM` lines.
+- `Watch-IrcTsr.ps1` restarts TSR when runner/listen child is gone, runner age exceeds cap, or **process** wake heartbeat is stale.
+- Idle `#bobiverse` must not recycle: silence gate uses wake file mtime only (not `irc.log` mtime; missing wake is not stale until heartbeat is written).
 - `Watch-CursorIrc.ps1` keeps `cursor-<machine-id>` `irc_agent` + TSR up; `Watch-Bobiverse.ps1` stays dumb.
 - `Install-BobFleet` registers `_Watch-IrcTsr-<id>` and `_Watch-CursorIrc-<id>` (AtLogOn + demand start).
 - Off-DEV Test-Pack only; no live Ergo; no secret assignments in git.
