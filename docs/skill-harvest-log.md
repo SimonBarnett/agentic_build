@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-22 — MRB MUST close, merge, and pull completed PRs
+
+Simon `#bobiverse`: VERY important. After PASS-nits, MRB must close
+finished issues, merge the pull request, and pull completed PRs so the
+next job is not on stale main. `bob-hostile-mrb` + `bob-job-loop`.
+Detailed FRs are also meant to be done at MRB (not park-only).
+
 ## 2026-09-22 — harvest before dismiss + PASS-nits merge race
 
 Simon `#bobiverse`: Bob must remind workers to harvest skills before

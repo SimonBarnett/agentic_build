@@ -52,6 +52,26 @@ IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
 or `PASS-nits` only. PASS-nits **includes merge**. If the worker thinks it
 passed UAT, they write `candidate PASS-UAT, Bob stamp required`.
 
+## PASS-nits MUST close, merge, and pull (Simon 2026-09-22 — VERY important)
+
+A PASS-nits that leaves git dirty is not finished. The MRB worker MUST,
+in this order, before the driver prints DONE:
+
+1. **Merge** the reviewed PR (`gh pr merge`). Do not claim merged unless
+   that command succeeded (or `gh pr view` is already MERGED).
+2. **Close finished issues**: the feature-request issue, **every** prior
+   FAIL MRB board for this FR, and this PASS-nits issue. Each close
+   comment links the merged PR URL.
+3. **Pull completed PRs** on the product checkout and isolated worktrees
+   (`git fetch` + fast-forward `main` / default branch to the merge SHA).
+   The next FR must not start on stale main. Dispatcher verifies
+   `origin/main` contains the merge commit before `start_build` on a
+   remaining issue.
+
+The loop finish race (`FAILED: PASS-nits finish: PR still open after gh
+pr merge`) is not a reason to skip close/pull. If the PR is already
+MERGED and the FR is CLOSED, treat DONE, then still pull.
+
 Escape hatch: if Cursor Agent and grok.exe both cannot start, Bob writes the
 MRB himself using the rest of this skill. Say that in the issue.
 

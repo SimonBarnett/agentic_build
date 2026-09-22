@@ -70,10 +70,15 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 ## On wakeup
 
 - `DONE: MRB PASS-nits ...` — tell the human the issue, SHA, and PR. Do
-  not stamp ready for human UAT. Bob chairs that. Then list open
+  not stamp ready for human UAT. Bob chairs that. Confirm the MRB
+  **merged the PR, closed the finished FR / FAIL / PASS issues, and
+  pulled the merge onto product main** (Simon 2026-09-22 — VERY
+  important). If merge/close was skipped, run `Close-BobBuildLoopFinished`
+  and `git fetch` + fast-forward before anything else. Then list open
   `feature-request` issues on that repo; for each not already PASS and
   not superseded, launch a new `bob-job-loop` (isolated worktree + unique
-  log). Also launch any issues the MRB just parked under Missing features.
+  log) **from the pulled main**. Also launch any issues the MRB just
+  parked under Missing features.
 - `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
   secrets in the goal), then relaunch. Do not start a second loop on the
   same FR while one is still alive.
@@ -96,10 +101,12 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    retry the MRB job.
 5. FAIL: do not merge. Read Required fixes. Start a FIX worker. Comment
    the new PR / next board on the prior FAIL issue.
-6. PASS-nits: the MRB worker already merged and closed the finished FR,
-   prior FAIL boards, and PASS board (see `Close-BobBuildLoopFinished` in
-   `tools/Bob-BuildLoop.ps1` if the worker skipped a close). Print `DONE`
-   and exit 0.
+6. PASS-nits: the MRB worker already **merged the PR**, **closed** the
+   finished FR, prior FAIL boards, and PASS board, and **pulled** the
+   completed PR onto product main (see `Close-BobBuildLoopFinished` in
+   `tools/Bob-BuildLoop.ps1` if the worker skipped a close). If `gh pr
+   view` is MERGED but local main is behind, `git fetch` + fast-forward
+   before printing `DONE`. Print `DONE` and exit 0.
 
 Never Other Models. Copilot only with `-AllowCopilot`. No MRB PDF. No
 `password=` / `XAI_API_KEY=` assignments. Test-Pack seams: `-Once`
