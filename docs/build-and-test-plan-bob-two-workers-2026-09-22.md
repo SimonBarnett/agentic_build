@@ -50,6 +50,7 @@
 | P17 | Workers use Cursor unless out of tokens, then local xAI |
 | P18 | Bob decides local agent vs agent.com |
 | P19 | Each Bob !bobiverse: webhook if Cursor or local xAI changed |
+| P20 | bob-machine ops on own shop; Jeeves ops on #bobiverse |
 
 ## Tests
 
