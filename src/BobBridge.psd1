@@ -77,7 +77,10 @@
         'Register-BobRepoPairMrbComplete',
         'Get-BobRepoPairBobiverseReport',
         'Set-BobShopChannelRepoDescription',
-        'Invoke-BobDigestWebhookPost'
+        'Invoke-BobDigestWebhookPost',
+        'Invoke-BobRepoPairChairUsageWebhookIfChanged',
+        'Start-BobRepoPairMrbReview',
+        'Test-BobRepoPairTicketCadenceDue'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

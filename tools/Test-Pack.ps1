@@ -3109,7 +3109,18 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $env:BOB_REPO_PAIR_IDLE_SEC = '120'
 
     $pairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobRepoPair.ps1') -Raw
-    if ($pairSrc -match '(?<!Stop-)Start-BobWorker') { throw 'repo pair must not spawn oneshot Start-BobWorker' }
+    $pairWorkerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobRepoPairWorker.ps1') -Raw
+    if ($pairSrc -match '(?<!Stop-)Start-BobWorker' -or $pairWorkerSrc -match '(?<!Stop-)Start-BobWorker') {
+        throw 'repo pair must not spawn oneshot Start-BobWorker'
+    }
+    if ($pairWorkerSrc -match 'shop-joined-[^\s''"]+\.flag') { throw 'JOIN must not use shop-joined flag files' }
+    if ($pairWorkerSrc -notmatch 'irc_agent') { throw 'shop JOIN must start irc_agent' }
+    if ($pairWorkerSrc -match 'seat-supervisor\.ps1') { throw 'repo pair must not use heartbeat supervisor instead of agent' }
+    if ($pairSrc -notmatch 'Test-BobRepoPairTicketCadenceDue') { throw 'chair must gate outstanding tickets on cadence' }
+    $digestSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobDigestWebhook.ps1') -Raw
+    if ($digestSrc -notmatch 'Invoke-BobRepoPairChairUsageWebhookIfChanged') { throw 'chair must post usage webhook on change' }
+    if ($digestSrc -notmatch 'cursor_pools') { throw 'usage webhook must include cursor_pools' }
+    if ($digestSrc -notmatch 'local_weekly') { throw 'usage webhook must include local_weekly grok pool' }
     if ($pairSrc -match 'bob-job-loop|cursor-mrb-dev') { throw 'repo pair prompts must not reference nested handoff skills' }
     $fleetSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
     if ($fleetSrc -notmatch 'Invoke-BobRepoPairChairTick') { throw 'Invoke-BobFleetTick must tick repo pair chair' }
@@ -3205,10 +3216,21 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $desc = Get-Content $descPath -Raw
     if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
     if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
-    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'SHOPDESC') { throw 'outbox must carry SHOPDESC for channel description' }
+    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'TOPIC') { throw 'outbox must carry TOPIC for shop channel description' }
+
+    $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
+    if (-not $usage.posted) { throw 'usage webhook must POST with pools' }
+    $usageCap = Get-ChildItem $cap -Filter 'usage-post-*.json' | Select-Object -First 1
+    if (-not $usageCap) { throw 'missing usage-post capture json' }
+    $usageJson = Get-Content $usageCap.FullName -Raw | ConvertFrom-Json
+    if (-not $usageJson.cursor_pools -or @($usageJson.cursor_pools).Count -lt 3) { throw 'usage webhook missing cursor_pools' }
+    if (-not $usageJson.local_weekly) { throw 'usage webhook missing local_weekly' }
 
     $chair = Invoke-BobRepoPairChairTick
     if (-not $chair.ok) { throw 'chair tick failed' }
+    if ($chair.tickets -and $chair.tickets.skipped -ne 'cadence' -and $chair.tickets.ticketCount -gt 0) {
+        throw 'chair tick must not assign tickets every fleet poll (cadence gate)'
+    }
 
     $pairPath = Join-Path $bridgeRoot 'repo-pair.json'
     $st = Get-Content $pairPath -Raw | ConvertFrom-Json

@@ -140,6 +140,7 @@ while ($true) {
         Start-BobiverseIrcAgent
         try { Sync-BobShopChannelRepoDescriptions | Out-Null } catch { }
         Write-BobIrcStatus | Out-Null
+        try { Invoke-BobRepoPairChairUsageWebhookIfChanged | Out-Null } catch { }
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
         Import-BobIrcPeerTranscript | Out-Null

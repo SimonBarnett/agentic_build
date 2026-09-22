@@ -68,13 +68,13 @@
                                            "yolo":  false,
                                            "timeoutSec":  7200,
                                            "maxPerCwd":  2,
-                                           "rules":  "Persistent dev seat. Load bob-build-dispatch, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via Assign-BobRepoPairTask."
+                                           "rules":  "Persistent dev seat. Load bob-spec-intake, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via inbox/chair-task."
                                        },
                      "repo-pair-mrb":  {
                                            "yolo":  false,
                                            "timeoutSec":  7200,
                                            "maxPerCwd":  2,
-                                           "rules":  "Persistent MRB seat. Load bob-hostile-mrb, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via Assign-BobRepoPairTask. Enforce Test-BobRepoPairSelfMrb before reviewing."
+                                           "rules":  "Persistent MRB seat. Load bob-hostile-mrb, bob-irc, reinstall-agentic-build-skills. JOIN shop only. Do not Start-BobBuild, Start-BobBuildLoop, Start-BobMrbHandoff, or cursor-mrb-dev handoff. Chair assigns via inbox/chair-task. Enforce Test-BobRepoPairSelfMrb before reviewing. Merge dups, close finished issues, merge PASS-nits."
                                        }
                  },
     "agents":  {

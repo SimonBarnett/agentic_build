@@ -110,8 +110,11 @@ function Test-BobRepoPairSeatProcessResponding {
     )
     $statusPath = Join-Path (Get-WorkerDir $SessionId) 'status.json'
     $status = Read-JsonFile $statusPath
-    if (-not $status -or -not $status.pid) { return $false }
-    $pidVal = $status.pid
+    if (-not $status) { return $false }
+    $pidVal = $null
+    if ($status.agentPid) { $pidVal = $status.agentPid }
+    elseif ($status.pid) { $pidVal = $status.pid }
+    if (-not $pidVal) { return $false }
     if ($pidVal -is [System.Array]) { $pidVal = @($pidVal)[0] }
     $proc = Get-Process -Id ([int]$pidVal) -ErrorAction SilentlyContinue
     if (-not $proc) { return $false }
@@ -131,12 +134,21 @@ function Test-BobRepoPairSeatProcessResponding {
 }
 
 function Test-BobRepoPairSeatShopJoined {
-    param($WorkerEntry)
-    if (-not $WorkerEntry -or -not $WorkerEntry.shopNick) { return $false }
+    param($WorkerEntry, [string]$SessionId)
+    if (-not $WorkerEntry) { return $false }
+    $sid = $SessionId
+    if (-not $sid -and $WorkerEntry.sessionId) { $sid = [string]$WorkerEntry.sessionId }
+    if (-not $sid) { return $false }
     $home = Get-BobIrcHome
     if (-not $home) { return $false }
-    $flag = Join-Path $home ('shop-joined-' + [string]$WorkerEntry.shopNick + '.flag')
-    return (Test-Path -LiteralPath $flag)
+    $manifestPath = Join-Path $home ('shop-join-' + $sid + '.json')
+    if (-not (Test-Path -LiteralPath $manifestPath)) { return $false }
+    $manifest = Read-JsonFile $manifestPath
+    if (-not $manifest -or [string]$manifest.joinKind -notmatch 'irc_agent') { return $false }
+    $ircPid = $manifest.ircAgentPid
+    if (-not $ircPid) { return $false }
+    if ($ircPid -is [System.Array]) { $ircPid = @($ircPid)[0] }
+    return ($null -ne (Get-Process -Id ([int]$ircPid) -ErrorAction SilentlyContinue))
 }
 
 function Test-BobRepoPairSeatAlive {
@@ -145,7 +157,7 @@ function Test-BobRepoPairSeatAlive {
     if (-not $w) { return $false }
     if ([string]$w.kind -ne 'persistent') { return $false }
     if (-not (Test-BobRepoPairSeatProcessResponding -SessionId ([string]$w.sessionId))) { return $false }
-    if (-not (Test-BobRepoPairSeatShopJoined -WorkerEntry $w)) { return $false }
+    if (-not (Test-BobRepoPairSeatShopJoined -WorkerEntry $w -SessionId ([string]$w.sessionId))) { return $false }
     return $true
 }
 
@@ -160,8 +172,6 @@ function Ensure-BobRepoPairSeat {
     $seat = $null
     if ($State.seats -and $State.seats.$Role) { $seat = $State.seats.$Role }
     if ($seat -and (Test-BobRepoPairSeatAlive -Seat $seat)) {
-        $seat | Add-Member -NotePropertyName lastActiveAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
-        $seat | Add-Member -NotePropertyName idleSince -NotePropertyValue $null -Force
         return $seat
     }
     $mid = [string]$State.machineId
@@ -361,21 +371,68 @@ function Test-BobRepoPairSelfMrb {
     return [pscustomobject]@{ ok = $true; allowed = $true; reason = 'different_pr' }
 }
 
-function Assign-BobRepoPairTask {
+function Start-BobRepoPairMrbReview {
     [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$PrUrl,
+        [string]$Task
+    )
+    $guard = Test-BobRepoPairSelfMrb -Seat mrb -PrUrl $PrUrl
+    if (-not $guard.allowed) {
+        return [pscustomobject]@{ ok = $false; error = 'self_mrb_blocked'; reason = $guard.reason }
+    }
+    $taskText = $Task
+    if (-not $taskText) { $taskText = "hostile MRB $PrUrl" }
+    return Assign-BobRepoPairTask -Seat mrb -Task $taskText -PrUrl $PrUrl
+}
+
+function Deliver-BobRepoPairChairInbox {
     param(
         [Parameter(Mandatory)][ValidateSet('dev', 'mrb')][string]$Seat,
         [Parameter(Mandatory)][string]$Task,
         [string]$PrUrl
     )
     $s = Read-BobRepoPairState
+    if (-not $s -or -not $s.seats -or -not $s.seats.$Seat) { return }
+    $row = $s.seats.$Seat
+    if (-not $row.sessionId) { return }
+    $dir = Get-WorkerDir ([string]$row.sessionId)
+    $inboxDir = Join-Path $dir 'inbox'
+    New-Item -ItemType Directory -Force -Path $inboxDir | Out-Null
+    $body = [string]$Task
+    if ($PrUrl) { $body = ($body + "`n" + $PrUrl) }
+    [IO.File]::WriteAllText((Join-Path $inboxDir 'chair-task.txt'), $body)
+    $prompt = @{
+        seat    = $Seat
+        task    = [string]$Task
+        prUrl   = $(if ($PrUrl) { [string]$PrUrl } else { $null })
+        sentAt  = [DateTime]::UtcNow.ToString('o')
+    }
+    Write-JsonFile (Join-Path $inboxDir 'chair-prompt.json') $prompt
+}
+
+function Assign-BobRepoPairTask {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('dev', 'mrb')][string]$Seat,
+        [Parameter(Mandatory)][string]$Task,
+        [string]$PrUrl,
+        [switch]$SkipWorkingOnPost
+    )
+    $s = Read-BobRepoPairState
     if (-not $s -or -not $s.seats -or -not $s.seats.$Seat) {
         return [pscustomobject]@{ ok = $false; error = 'no_pair' }
     }
-    if ($PrUrl) {
+    if ($Seat -eq 'mrb' -and $PrUrl) {
         $guard = Test-BobRepoPairSelfMrb -Seat $Seat -PrUrl $PrUrl
         if (-not $guard.allowed) {
-            if ($Seat -eq 'mrb' -or $Task -match '(?i)mrb|review') {
+            return [pscustomobject]@{ ok = $false; error = 'self_mrb_blocked'; reason = $guard.reason }
+        }
+    }
+    elseif ($PrUrl) {
+        $guard = Test-BobRepoPairSelfMrb -Seat $Seat -PrUrl $PrUrl
+        if (-not $guard.allowed) {
+            if ($Seat -eq 'dev' -or $Task -match '(?i)mrb|review') {
                 return [pscustomobject]@{ ok = $false; error = 'self_mrb_blocked'; reason = $guard.reason }
             }
         }
@@ -383,10 +440,16 @@ function Assign-BobRepoPairTask {
     $row = $s.seats.$Seat
     $row | Add-Member -NotePropertyName chairTask -NotePropertyValue ([string]$Task) -Force
     if ($PrUrl) { $row | Add-Member -NotePropertyName chairPrUrl -NotePropertyValue ([string]$PrUrl) -Force }
-    $row | Add-Member -NotePropertyName lastActiveAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
-    $row | Add-Member -NotePropertyName idleSince -NotePropertyValue $null -Force
     Write-BobRepoPairState $s
-    Update-BobRepoWorkerWorkingOn -Seat $Seat -Description ([string]$Task) | Out-Null
+    Deliver-BobRepoPairChairInbox -Seat $Seat -Task $Task -PrUrl $PrUrl
+    if (-not $SkipWorkingOnPost) {
+        Update-BobRepoWorkerWorkingOn -Seat $Seat -Description ([string]$Task) | Out-Null
+        $s = Read-BobRepoPairState
+        $row = $s.seats.$Seat
+        $row | Add-Member -NotePropertyName lastActiveAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+        $row | Add-Member -NotePropertyName idleSince -NotePropertyValue $null -Force
+        Write-BobRepoPairState $s
+    }
     return [pscustomobject]@{ ok = $true; seat = $Seat; task = $Task; prUrl = $PrUrl }
 }
 
@@ -504,6 +567,7 @@ function Sync-BobShopChannelRepoDescriptions {
         if ($prev -eq $repo) { continue }
         $map[$chan] = $repo
         $applied += ,[pscustomobject]@{ channel = $chan; repo = $repo }
+        Add-BobIrcOutboxChannelLine ("TOPIC $chan :$repo")
         Add-BobIrcOutboxChannelLine ("SHOPDESC $chan $repo")
     }
     if ($applied.Count -gt 0) {
@@ -553,7 +617,7 @@ function Invoke-BobRepoPairOutstandingTickets {
         $seat = 'dev'
         if ($labels -contains 'mrb') { $seat = 'mrb' }
         $task = "issue #$num $title"
-        $r = Assign-BobRepoPairTask -Seat $seat -Task $task
+        $r = Assign-BobRepoPairTask -Seat $seat -Task $task -SkipWorkingOnPost
         if ($r.ok) { $assigned += ,[pscustomobject]@{ number = $num; seat = $seat } }
     }
     $s | Add-Member -NotePropertyName lastTicketCheckAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
@@ -611,16 +675,63 @@ function Invoke-BobRepoPairBobiverseSay {
     return [pscustomobject]@{ ok = $true; said = @($out) }
 }
 
+function Get-BobRepoPairTicketIntervalSec {
+    if ($env:BOB_REPO_PAIR_TICKET_INTERVAL_SEC -and $env:BOB_REPO_PAIR_TICKET_INTERVAL_SEC.Trim()) {
+        try { return [int]$env:BOB_REPO_PAIR_TICKET_INTERVAL_SEC } catch { }
+    }
+    return 7200
+}
+
+function Test-BobRepoPairBusinessHours {
+    $tzId = 'GMT Standard Time'
+    if ($env:BOB_REPO_PAIR_BUSINESS_TZ -and $env:BOB_REPO_PAIR_BUSINESS_TZ.Trim()) {
+        $tzId = $env:BOB_REPO_PAIR_BUSINESS_TZ.Trim()
+    }
+    try { $tz = [TimeZoneInfo]::FindSystemTimeZoneById($tzId) } catch { return $true }
+    $local = [TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
+    if ($local.DayOfWeek -in @([DayOfWeek]::Saturday, [DayOfWeek]::Sunday)) { return $false }
+    $startH = 9
+    $endH = 17
+    if ($env:BOB_REPO_PAIR_BUSINESS_START_HOUR) {
+        try { $startH = [int]$env:BOB_REPO_PAIR_BUSINESS_START_HOUR } catch { }
+    }
+    if ($env:BOB_REPO_PAIR_BUSINESS_END_HOUR) {
+        try { $endH = [int]$env:BOB_REPO_PAIR_BUSINESS_END_HOUR } catch { }
+    }
+    return ($local.Hour -ge $startH -and $local.Hour -lt $endH)
+}
+
+function Test-BobRepoPairTicketCadenceDue {
+    [CmdletBinding()]
+    param([switch]$Force)
+    if ($Force) { return $true }
+    if (-not (Test-BobRepoPairBusinessHours)) { return $false }
+    $s = Read-BobRepoPairState
+    if (-not $s) { return $false }
+    $interval = Get-BobRepoPairTicketIntervalSec
+    if (-not $s.lastTicketCheckAt) { return $true }
+    try {
+        $last = [DateTime]::Parse([string]$s.lastTicketCheckAt, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        $age = ([DateTime]::UtcNow - $last).TotalSeconds
+        return ($age -ge $interval)
+    }
+    catch { return $true }
+}
+
 function Invoke-BobRepoPairChairTick {
     [CmdletBinding()]
     param()
-    $ticket = Invoke-BobRepoPairOutstandingTickets
     $tick = Invoke-BobRepoPairTick
+    $ticket = [pscustomobject]@{ ok = $true; skipped = 'cadence' }
+    if (Test-BobRepoPairTicketCadenceDue) {
+        $ticket = Invoke-BobRepoPairOutstandingTickets
+    }
     $say = Invoke-BobRepoPairBobiverseSay
+    try { Invoke-BobRepoPairChairUsageWebhookIfChanged | Out-Null } catch { }
     return [pscustomobject]@{
-        ok       = $true
-        tickets  = $ticket
-        tick     = $tick
+        ok        = $true
+        tickets   = $ticket
+        tick      = $tick
         bobiverse = $say
     }
 }
