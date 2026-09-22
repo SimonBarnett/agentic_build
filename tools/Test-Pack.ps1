@@ -1112,6 +1112,36 @@ Invoke-Case 'BT0o bobiverse irc' {
     $peerSelf = Read-BobIrcPeer -Id testhost
     if (-not $peerSelf) { throw 'Write-BobIrcStatus must write bob-peers json without POINT outbox' }
 
+    $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+    '{"percentUsed":10}' | Set-Content -Path $cursorFile -Encoding utf8
+    $webhookCap = Join-Path $bridgeRoot 'digest-webhook-capture.ndjson'
+    if (Test-Path $webhookCap) { Remove-Item -LiteralPath $webhookCap -Force }
+    $postedState = Join-Path $peerDir '_digest-webhook-posted.json'
+    if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $webhookCap
+    $env:BOB_MACHINE_ID = 'testhost'
+    Write-BobIrcStatus | Out-Null
+    if (Test-Path $webhookCap) { Remove-Item -LiteralPath $webhookCap -Force }
+    Write-BobIrcStatus | Out-Null
+    Write-BobIrcStatus | Out-Null
+    $capLines = @()
+    if (Test-Path $webhookCap) { $capLines = @(Get-Content $webhookCap | Where-Object { $_ }) }
+    if ($capLines.Count -ne 0) { throw "lastSeen-only webhook must not POST: $($capLines -join ' | ')" }
+    '{"percentUsed":50}' | Set-Content -Path $cursorFile -Encoding utf8
+    Write-BobIrcStatus | Out-Null
+    $capLines = @(Get-Content $webhookCap | Where-Object { $_ })
+    if ($capLines.Count -ne 1) { throw "fuel delta must POST once: count=$($capLines.Count)" }
+    if ($capLines[0] -notmatch '"op":"merge"' -or $capLines[0] -notmatch '"machine":"testhost"') {
+        throw "webhook payload=$($capLines[0])"
+    }
+    if ($capLines[0] -match 'password=|xai_api_key=') { throw 'webhook must not carry secrets in JSON' }
+    Write-BobIrcStatus | Out-Null
+    $capLines = @(Get-Content $webhookCap | Where-Object { $_ })
+    if ($capLines.Count -ne 1) { throw "duplicate webhook after same fuel: count=$($capLines.Count)" }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+    $env:BOB_MACHINE_ID = $null
+
     $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
     if ($stamp -eq '?' -or -not $stamp) {
         $stamp2 = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = $RepoRoot; repo = '?' })
@@ -1134,9 +1164,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
     if ($tickSrc -match 'Write-BobIrcStatus') { throw 'fleet tick must not POINT; that is Watch-Bobiverse automation' }
 
-    $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
     '{"percentUsed":98}' | Set-Content -Path $cursorFile -Encoding utf8
-    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
     $cu = Get-BobCursorAgentWeeklyRemaining
     if ([int]$cu.used_pct -ne 98) { throw "cursor used=$($cu.used_pct)" }
     if ([int]$cu.remaining_pct -ne 2) { throw "cursor remaining=$($cu.remaining_pct) expected 2 from 98% used" }
