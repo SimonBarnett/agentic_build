@@ -36,6 +36,7 @@
 | P3 | Worker `working_on` POST; digest reads it |
 | P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
 | P5 | Channel description = assigned repo name; update on repo change |
+| P6 | Bob chair UAT via new UAT skill (not worker stamp) |
 
 ## Tests
 

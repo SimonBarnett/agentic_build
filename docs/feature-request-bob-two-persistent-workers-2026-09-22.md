@@ -19,6 +19,7 @@ Change how Bob works:
 10. That update **must appear on the digest** so we can see what everyone is working on.
 11. **Bob refers to the digest** (MRB complete / dev complete / similar states) **to report to the bobiverse**.
 12. The **repo name** a `#channel` is working on **is the channel description**. **Change it when the repo changes.**
+13. **Bob** (chair only) **uses the new UAT skill** (`bob-design-uat` / design-uat) **to approve UAT**. Workers do not stamp UAT.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -59,4 +60,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A5 | Worker `working_on` POSTs to webhook; digest shows the description. |
 | A6 | Bob reads digest states (dev complete / MRB complete / …) and reports them on #bobiverse. |
 | A7 | Shop/channel **description** = current repo name; update when the assigned repo changes. |
-| A8 | BT0/docs validator or pack test covers A1–A7 enough to MRB. |
+| A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
+| A9 | BT0/docs validator or pack test covers A1–A8 enough to MRB. |
