@@ -115,45 +115,20 @@ function Start-BobRepoPairShopIrc {
         if (-not (Test-Path $stubPy)) {
             [IO.File]::WriteAllText($stubPy, "# BT0 shop irc stub`nimport time`nwhile True: time.sleep(60)`n")
         }
-        $stubPs1 = Join-Path $home ('shop-irc-' + $SessionId + '.ps1')
-        $py = $null
-        foreach ($c in @('python.exe', 'py.exe')) {
-            $cmd = Get-Command $c -ErrorAction SilentlyContinue
-            if ($cmd -and $cmd.Source -notmatch 'WindowsApps') { $py = $cmd.Source; break }
-        }
-        if ($py) {
-            $body = @"
-`$ErrorActionPreference = 'SilentlyContinue'
-& '$($py.Replace("'","''"))' -u '$($stubPy.Replace("'","''"))'
-"@
-            [IO.File]::WriteAllText($stubPs1, $body)
-            $exe = (Get-Command powershell.exe).Source
-            $cmdLine = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}"' -f $exe, $stubPs1
-            $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-                CommandLine      = $cmdLine
-                CurrentDirectory = $home
-            }
-            if ($created.ReturnValue -eq 0 -and $created.ProcessId) {
-                $ircPid = ConvertTo-BobRepoPairProcessId $created.ProcessId
-            }
-        }
-        if (-not $ircPid) {
-            $joinKind = 'irc_agent_stub'
-            $loopPs1 = Join-Path $home ('shop-irc-loop-' + $SessionId + '.ps1')
-            $body = @"
+        $loopPs1 = Join-Path $home ('shop-irc-loop-' + $SessionId + '.ps1')
+        $body = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 while (`$true) { Start-Sleep -Seconds 60 }
 "@
-            [IO.File]::WriteAllText($loopPs1, $body)
-            $exe = (Get-Command powershell.exe).Source
-            $cmdLine = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" irc_agent.py --nick {2} --channel {3}' -f $exe, $loopPs1, $ShopNick, $ShopChannel
-            $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-                CommandLine      = $cmdLine
-                CurrentDirectory = $home
-            }
-            if ($created.ReturnValue -eq 0 -and $created.ProcessId) {
-                $ircPid = ConvertTo-BobRepoPairProcessId $created.ProcessId
-            }
+        [IO.File]::WriteAllText($loopPs1, $body)
+        $exe = (Get-Command powershell.exe).Source
+        $cmdLine = '"{0}" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{1}" irc_agent.py --nick {2} --channel {3}' -f $exe, $loopPs1, $ShopNick, $ShopChannel
+        $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine      = $cmdLine
+            CurrentDirectory = $home
+        }
+        if ($created.ReturnValue -eq 0 -and $created.ProcessId) {
+            $ircPid = ConvertTo-BobRepoPairProcessId $created.ProcessId
         }
     }
     else {
