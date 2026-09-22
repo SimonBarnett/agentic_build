@@ -1644,6 +1644,61 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $env:BOB_CURSOR_USAGE_FILE = $null
 }
 
+# --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
+Invoke-Case 'BT0l24 shop channel worker reportUrl' {
+    param($bridgeRoot)
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    if ((Get-BobIrcShopChannel -MachineId ionos) -ne '#ionos') { throw 'ionos shop channel' }
+    if ((Get-BobIrcShopChannel -MachineId dev1) -ne '#ce-priority-dev1') { throw 'dev1 shop alias' }
+    if ((Get-BobIrcBuilderChannels -MachineId ionos) -ne '#bobiverse,#ionos') { throw 'builder channels ionos' }
+    if ((Get-BobWorkerIrcNick -MachineId ionos -WorkerPid 4242) -ne 'w-io-4242') { throw 'worker nick ionos' }
+    if ((Get-BobWorkerIrcNick -MachineId ce-priority-dev1 -WorkerPid 99) -ne 'w-d1-99') { throw 'worker nick dev1' }
+
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
+    if (-not [string]$cfg.reportUrl) { throw 'config/bobiverse.json must define reportUrl' }
+    if ([string]$cfg.reportUrl -match 'password=|xai_api_key=') { throw 'reportUrl must not embed secrets' }
+
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'Invoke-WebRequest.*-Method POST') { throw 'digest webhook must POST only' }
+    if ($ircSrc -match '-Method\s+Get') { throw 'digest webhook must not HTTP GET reportUrl' }
+
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -notmatch 'Get-BobIrcBuilderChannels') { throw 'Watch-Bobiverse must join fleet + shop' }
+    $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    if ($installIrc -notmatch 'Get-BobIrcBuilderChannels') { throw 'Install-BobIrc agent must join fleet + shop' }
+    if ($installIrc -notmatch 'mootChannel') { throw 'Install-BobIrc moot must stay on fleet channel only' }
+
+    $workerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1') -Raw
+    if ($workerSrc -notmatch 'start_worker_irc_agent\.py') { throw 'worker IRC spawn helper missing' }
+
+    foreach ($root in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc')) {
+        $spawn = Join-Path $root 'scripts\start_worker_irc_agent.py'
+        if (-not (Test-Path -LiteralPath $spawn)) { continue }
+        $py = $null
+        foreach ($c in @(
+                (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+                (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+            )) {
+            if ($c -and (Test-Path -LiteralPath $c)) { $py = $c; break }
+        }
+        if (-not $py) { break }
+        $dryLines = @(& $py $spawn --dry-run --machine-id ionos --pid 4242 2>&1)
+        if ($LASTEXITCODE -ne 0 -or $dryLines.Count -eq 0) { break }
+        $dry = ($dryLines | Out-String)
+        if ($dry -notmatch 'w-io-4242') { throw "worker dry-run nick: $dry" }
+        if ($dry -notmatch '#ionos') { throw "worker dry-run shop: $dry" }
+        if ($dry -match '#bobiverse') { throw "worker dry-run must be shop-only: $dry" }
+        break
+    }
+
+    $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($docsBv -notmatch 'shop') { throw 'docs/bobiverse.md must document shop channels' }
+    $skillIrc = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-irc\SKILL.md') -Raw
+    if ($skillIrc -notmatch 'shop') { throw 'bob-irc skill must mention shop JOIN' }
+    $env:BOB_IRC_CONFIG = $null
+}
+
 # --- BT0p git-task capacity picker (issue #8) ---
 Invoke-Case 'BT0p git-task picker' {
     param($bridgeRoot)

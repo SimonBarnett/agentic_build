@@ -100,10 +100,12 @@ function Start-BobiverseIrcAgent {
     }
     $mid = $env:BOB_MACHINE_ID
     if (-not $mid) { $mid = $env:COMPUTERNAME.ToLowerInvariant() }
+    $resolvedMid = Resolve-BobiverseMachineId $mid
+    if ($resolvedMid) { $mid = $resolvedMid }
     $nick = $null
     if ($cfg.nicks) { $nick = [string]$cfg.nicks.$mid }
     if (-not $nick) { $nick = 'bob-' + $mid }
-    $channel = [string]$cfg.channel
+    $channel = Get-BobIrcBuilderChannels -MachineId $mid
     $ircHost = [string]$cfg.host
     $ircPort = 6697
     if ($cfg.port) { $ircPort = [int]$cfg.port }
