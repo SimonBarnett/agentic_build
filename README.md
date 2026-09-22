@@ -75,6 +75,8 @@ flowchart TB
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
+  RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]

@@ -15,6 +15,8 @@ flowchart TB
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
+  RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
@@ -76,6 +78,7 @@ Change how Bob works:
     - **local xAI / Grok Build weekly** (per box seat)
     For each: **percent remaining** and **when the next period starts**. **0 shows 0, not n/a.** **n/a only when that pool is not available.** Every pool **MUST** be posted on the webhook.
 24. **Workers use Cursor** unless **out of tokens**, then **their local xAI accounts**.
+25. **Bob decides which to invoke:** `agent` (local) or `agent.com` (cloud).
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -131,4 +134,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A18 | Webhook usage = real pools (grok chat / high / low / local grok weekly). No Madeira/Catalogue pool names. |
 | A19 | Each pool: remaining % + next period start; 0 is 0; n/a only if unavailable; MUST report. |
 | A20 | Workers use Cursor until tokens are out, then local xAI. |
-| A21 | BT0/docs validator or pack test covers A1–A20 enough to MRB. |
+| A21 | Bob chooses local `agent` vs `agent.com` for each invoke. |
+| A22 | BT0/docs validator or pack test covers A1–A21 enough to MRB. |
