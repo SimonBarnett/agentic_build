@@ -3173,6 +3173,45 @@ Invoke-Case 'BT0irtsr runner core matrix' {
     if ($runner -notmatch 'PROCESS_HEARTBEAT') { throw 'Irc-Tsr-Runner must touch wake with PROCESS_HEARTBEAT while listen is alive' }
 }
 
+Invoke-Case 'BT0bobircd install contract' {
+    $ircd = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+    if ($ircd -notmatch "ServiceName = 'BobIrcd'") { throw 'Install-BobIrcd must default service BobIrcd' }
+    if ($ircd -notmatch 'nssm\.exe') { throw 'Install-BobIrcd must use Ergo-root nssm.exe' }
+    if ($ircd -match 'filebrowser') { throw 'Install-BobIrcd must not copy NSSM from filebrowser' }
+    if ($ircd -notmatch 'Unregister-ScheduledTask') { throw 'Install-BobIrcd must unregister BobIrcd-ionos' }
+    if ($ircd -notmatch 'BobIrcd-ionos') { throw 'Install-BobIrcd must name old task BobIrcd-ionos' }
+    if ($ircd -match '(?<!Un)Register-ScheduledTask') { throw 'Install-BobIrcd must not register BobIrcd-ionos' }
+    if ($ircd -match 'Stop-Process.*ergo') { throw 'Install-BobIrcd must not Stop-Process ergo' }
+    if ($ircd -notmatch 'sc\.exe create') { throw 'Install-BobIrcd must create service via sc.exe' }
+    if ($ircd -notmatch 'start= auto') { throw 'Install-BobIrcd must set Automatic start' }
+    if ($ircd -notmatch 'Application') { throw 'Install-BobIrcd must set NSSM Application to ergo.exe' }
+    if ($ircd -notmatch "AppParameters.*run --conf ircd\.yaml") { throw 'Install-BobIrcd must pass run --conf ircd.yaml' }
+    if ($ircd -notmatch 'AppExit') { throw 'Install-BobIrcd must configure NSSM AppExit Restart' }
+    if ($ircd -notmatch 'Restart-Service') { throw 'Install-BobIrcd help must document Restart-Service' }
+}
+
+Invoke-Case 'BT0bobircd cert and ionos docs' {
+    $cert = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcdCert.ps1') -Raw
+    if ($cert -notmatch 'Restart-Service') { throw 'Install-BobIrcdCert must Restart-Service BobIrcd' }
+    if ($cert -match 'Start-ScheduledTask|Stop-ScheduledTask|(?<!Un)Register-ScheduledTask|Unregister-ScheduledTask|BobFleet-') {
+        throw 'Install-BobIrcdCert must not touch scheduled tasks or BobFleet'
+    }
+    $doc = Get-Content (Join-Path $RepoRoot 'docs\bobiverse-ionos-ircd.md') -Raw
+    if ($doc -notmatch 'Start-Service BobIrcd') { throw 'ionos doc must document Start-Service BobIrcd' }
+    if ($doc -notmatch 'Restart-Service BobIrcd') { throw 'ionos doc must document Restart-Service BobIrcd' }
+    if ($doc -match 'Start-ScheduledTask -TaskName.*BobIrcd-ionos') { throw 'ionos doc must not tell operators to start BobIrcd-ionos' }
+    if ($doc -match '\| Task \|.*BobIrcd-ionos') { throw 'ionos doc must not list BobIrcd-ionos as a logon task' }
+    if ($doc -notmatch 'Install-BobIrcdCert') { throw 'ionos doc must reference in-repo cert recycle script' }
+}
+
+Invoke-Case 'BT0bobircd fleet isolation' {
+    $fleet = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($fleet -notmatch 'Register-ScheduledTask') { throw 'Install-BobFleet must keep logon scheduled tasks' }
+    if ($fleet -match 'BobIrcd') { throw 'Install-BobFleet must not register BobIrcd service' }
+    $ircd = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+    if ($ircd -match 'BobFleet') { throw 'Install-BobIrcd must not stop BobFleet tasks' }
+}
+
 Invoke-Case 'BT0irtsr install and bobiverse isolation' {
     $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
     if ($installSrc -notmatch '_Watch-IrcTsr-') { throw 'Install-BobFleet must register _Watch-IrcTsr-<id>' }
