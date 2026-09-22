@@ -78,8 +78,8 @@ flowchart TB
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR"]
-    WB["Worker B: MRB that PR"]
+    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
+    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA

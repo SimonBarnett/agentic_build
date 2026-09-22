@@ -18,8 +18,8 @@ flowchart TB
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR"]
-    WB["Worker B: MRB that PR"]
+    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
+    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
@@ -63,6 +63,8 @@ Change how Bob works:
 15. **Bob monitors** worker processes **during flight** and **restarts** them if they stop responding.
 16. **Bob orders and assigns** MRB vs dev tasks (chair assigns the role; worker executes it).
 17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them — **every 2 hours during business hours**.
+18. **Same fuel as before:** build/dev is a **cheap Cursor model** (`composer-2.5`). **MRB is more expensive** (`grok-4.6`) because that is where we want **reasoning** to add new FRs and tests.
+19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -109,4 +111,6 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A10 | Bob monitors in-flight processes and restarts if deaf. |
 | A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
-| A13 | BT0/docs validator or pack test covers A1–A12 enough to MRB. |
+| A13 | Dev = cheap Cursor model; MRB = expensive reasoning model (new FRs + tests). |
+| A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |
+| A15 | BT0/docs validator or pack test covers A1–A14 enough to MRB. |

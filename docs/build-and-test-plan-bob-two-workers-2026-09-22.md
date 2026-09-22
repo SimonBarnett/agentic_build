@@ -41,6 +41,8 @@
 | P8 | Bob monitors in-flight processes; restart if deaf |
 | P9 | Bob assigns MRB vs dev tasks |
 | P10 | Bob checks outstanding tickets every 2 hours during business hours and assigns |
+| P11 | Dev cheap Cursor model; MRB expensive reasoning (FRs + tests) |
+| P12 | MRB merges dups, closes finished issues, merges PASS-nits PRs |
 
 ## Tests
 
