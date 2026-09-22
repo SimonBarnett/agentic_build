@@ -27,6 +27,8 @@ Home on each box: `~\.agentic-irc-bobiverse` (not the Club Madeira `#cm-bob-osca
 
 `Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.
 
+On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` from `config/bobiverse.json` (`op=merge`, header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret` — never git). The digest **chair** (`chairNick` / `Install-BobChair.ps1`) is separate from `bob-<machine>` builders; Watch does not start the chair.
+
 Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests chair **`BOB DIGEST v1`** JSON whispers (chunked when needed) from `irc.log` into `bob-peers\` plus `cursor-pools.json` cache. Legacy **`BOB TRAY v1`** kv lines still work. Protocol: `agentic_irc` `!bobiverse` digest + issue #142 / `docs/feature-request-bobiverse-digest-feeds-systray-2026-09-21.md`.
 
 Example tray line (machine-readable, not for channel spam):

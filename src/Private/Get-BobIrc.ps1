@@ -1521,6 +1521,169 @@ function Import-BobIrcTrayPull {
     return $updated
 }
 
+function Get-BobDigestWebhookPostStatePath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_digest-webhook-posted.json')
+}
+
+function Get-BobDigestReportUrl {
+    $cfg = Get-BobiverseConfig
+    $url = ''
+    if ($cfg -and $cfg.reportUrl) { $url = [string]$cfg.reportUrl }
+    if (-not $url.Trim()) { $url = [string]$env:BOB_REPORT_URL }
+    if (-not $url.Trim()) { $url = [string]$env:AGENTIC_IRC_REPORT_URL }
+    $url = $url.Trim()
+    if ($url) { return $url }
+    return $null
+}
+
+function Get-BobDigestReportSecret {
+    $s = [string]$env:BOB_REPORT_SECRET
+    if ($s.Trim()) { return $s.Trim() }
+    $p = Join-Path $env:USERPROFILE '.grok\bob\report.secret'
+    if (Test-Path $p) {
+        try { return (Get-Content -LiteralPath $p -Raw).Trim() } catch { }
+    }
+    return $null
+}
+
+function Get-BobDigestWebhookFingerprint {
+    param($Doc)
+    if (-not $Doc) { return '' }
+    $jobsNorm = @()
+    foreach ($j in @($Doc.jobs)) {
+        if (-not $j) { continue }
+        $jobsNorm += ,([ordered]@{ repo = [string]$j.repo; state = [string]$j.state })
+    }
+    $jobsJson = '[]'
+    if ($jobsNorm.Count -gt 0) {
+        $jobsJson = ($jobsNorm | ConvertTo-Json -Compress -Depth 4)
+    }
+    $parts = @(
+        [string]([int]$Doc.running)
+        [string]([int]$Doc.queued)
+        [string]$Doc.weekly
+        [string]$Doc.cursor_label
+        [string]$Doc.cursor_period_end
+        [string]$Doc.period_end
+        [string]$Doc.model
+        [string]$Doc.kind
+        [string]$Doc.repo
+        [string]$Doc.sha
+        [string]$Doc.fuel
+        [string]$Doc.working_on
+        [string]$Doc.online
+        [string]$Doc.status
+        [string]$Doc.responding
+        [string]$Doc.remaining_pct
+        $jobsJson
+    )
+    return ($parts -join '|')
+}
+
+function Build-BobDigestWebhookMergePayload {
+    param($Doc)
+    $id = [string]$Doc.id
+    if (-not $id) { return $null }
+    $payload = [ordered]@{
+        op      = 'merge'
+        machine = $id
+        online  = $true
+        status  = 'I am online'
+    }
+    if ($null -ne $Doc.weekly -and [string]$Doc.weekly -ne '') { $payload.weekly = [int]$Doc.weekly }
+    if ($Doc.cursor_label) { $payload.cursor_label = [string]$Doc.cursor_label }
+    if ($Doc.cursor_period_end) { $payload.cursor_period_end = [string]$Doc.cursor_period_end }
+    if ($Doc.period_end) { $payload.period_end = [string]$Doc.period_end }
+    if ($Doc.model) { $payload.model = [string]$Doc.model }
+    if ($Doc.kind) { $payload.kind = [string]$Doc.kind }
+    if ($Doc.repo) { $payload.repo = [string]$Doc.repo }
+    if ($Doc.sha) { $payload.sha = [string]$Doc.sha }
+    if ($Doc.fuel) { $payload.fuel = $Doc.fuel }
+    if ($Doc.working_on) { $payload.working_on = [string]$Doc.working_on }
+    if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
+    if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
+    if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
+    return [pscustomobject]$payload
+}
+
+function Test-BobDigestWebhookPayloadSecretFree {
+    param([string]$Json)
+    if (-not $Json) { return $true }
+    $lower = $Json.ToLowerInvariant()
+    foreach ($m in @('password=', 'xai_api_key=', 'x-bob-secret', 'report.secret', 'connect.password', 'bob_report_secret')) {
+        if ($lower.Contains($m)) { return $false }
+    }
+    return $true
+}
+
+function Invoke-BobDigestWebhookPost {
+    param([Parameter(Mandatory)]$Payload)
+    $capture = [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE
+    $body = $Payload | ConvertTo-Json -Depth 8 -Compress
+    if (-not (Test-BobDigestWebhookPayloadSecretFree $body)) { return $null }
+    if ($capture.Trim()) {
+        $capPath = $capture.Trim()
+        $capDir = Split-Path $capPath -Parent
+        if ($capDir -and -not (Test-Path $capDir)) {
+            New-Item -ItemType Directory -Force -Path $capDir | Out-Null
+        }
+        Add-Content -LiteralPath $capPath -Value $body -Encoding utf8
+        return 204
+    }
+    $url = Get-BobDigestReportUrl
+    if (-not $url) { return $null }
+    $secret = Get-BobDigestReportSecret
+    if (-not $secret) { return $null }
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Method POST -Body $body -ContentType 'application/json' `
+            -Headers @{ 'X-Bob-Secret' = $secret } -UseBasicParsing -TimeoutSec 15
+        return [int]$resp.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            try { return [int]$_.Exception.Response.StatusCode.value__ } catch { }
+        }
+        return $null
+    }
+}
+
+function Send-BobDigestWebhookIfChanged {
+    param(
+        [Parameter(Mandatory)]$Doc,
+        $Before
+    )
+    if ($Before) {
+        if ((Get-BobDigestWebhookFingerprint $Before) -eq (Get-BobDigestWebhookFingerprint $Doc)) {
+            return $null
+        }
+    }
+    $fp = Get-BobDigestWebhookFingerprint $Doc
+    $mid = [string]$Doc.id
+    if (-not $mid) { return $null }
+    $posted = @{}
+    $statePath = Get-BobDigestWebhookPostStatePath
+    if (Test-Path $statePath) {
+        try {
+            $j = Read-JsonFile $statePath
+            foreach ($p in @($j.PSObject.Properties)) { $posted[[string]$p.Name] = [string]$p.Value }
+        }
+        catch { }
+    }
+    if ($posted.ContainsKey($mid) -and [string]$posted[$mid] -eq $fp) { return $null }
+    if (-not (Get-BobDigestReportUrl) -and -not [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE.Trim()) {
+        return $null
+    }
+    $payload = Build-BobDigestWebhookMergePayload $Doc
+    if (-not $payload) { return $null }
+    $code = Invoke-BobDigestWebhookPost -Payload $payload
+    if ($null -ne $code -and $code -ge 200 -and $code -lt 300) {
+        $posted[$mid] = $fp
+        try { Write-JsonFile $statePath ([pscustomobject]$posted) } catch { }
+        return $code
+    }
+    return $null
+}
+
 function Write-BobIrcStatus {
     $id = Get-ThisMachineId
     if (-not $id) { return }
@@ -1641,6 +1804,7 @@ function Write-BobIrcStatus {
     if ($talk) { Add-BobIrcOutboxChannelLine $talk }
     $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
     if ($warn) { Add-BobIrcOutboxChannelLine $warn }
+    Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
 }
 
 function Import-BobIrcPeerTranscript {
