@@ -47,6 +47,7 @@
 | P14 | Each bob reports account Cursor values; take the lesser of variance |
 | P15 | Workers do not send to IRC channels; webhook only |
 | P16 | Webhook real usage pools: remaining % + period start; 0 is 0; n/a only if unavailable |
+| P17 | Workers use Cursor unless out of tokens, then local xAI |
 
 ## Tests
 

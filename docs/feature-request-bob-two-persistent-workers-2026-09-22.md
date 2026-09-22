@@ -20,8 +20,8 @@ flowchart TB
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
-    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
@@ -75,6 +75,7 @@ Change how Bob works:
     - **low cost models** (cursor-models fuel)
     - **local xAI / Grok Build weekly** (per box seat)
     For each: **percent remaining** and **when the next period starts**. **0 shows 0, not n/a.** **n/a only when that pool is not available.** Every pool **MUST** be posted on the webhook.
+24. **Workers use Cursor** unless **out of tokens**, then **their local xAI accounts**.
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -129,4 +130,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A17 | Workers do not PRIVMSG shop/fleet channels; status is webhook-only. |
 | A18 | Webhook usage = real pools (grok chat / high / low / local grok weekly). No Madeira/Catalogue pool names. |
 | A19 | Each pool: remaining % + next period start; 0 is 0; n/a only if unavailable; MUST report. |
-| A20 | BT0/docs validator or pack test covers A1–A19 enough to MRB. |
+| A20 | Workers use Cursor until tokens are out, then local xAI. |
+| A21 | BT0/docs validator or pack test covers A1–A20 enough to MRB. |

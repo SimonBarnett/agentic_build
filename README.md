@@ -80,8 +80,8 @@ flowchart TB
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
-    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
