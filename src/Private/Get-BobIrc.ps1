@@ -411,6 +411,33 @@ function Save-BobSeatPeriodEnd {
     try { Write-JsonFile $p $doc } catch { }
 }
 
+
+function Merge-BobIrcPeerRemaining {
+    param($Prev, $Incoming)
+    if (-not $Incoming) { return $Incoming }
+    $keys = @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')
+    $rem = $null
+    foreach ($k in $keys) {
+        $names = @($Incoming.PSObject.Properties.Name)
+        if ($names -contains $k -and $null -ne $Incoming.$k -and [string]$Incoming.$k -ne '') {
+            try { $rem = [int]$Incoming.$k; break } catch { }
+        }
+    }
+    if ($null -eq $rem -and $Prev) {
+        foreach ($k in $keys) {
+            $pnames = @($Prev.PSObject.Properties.Name)
+            if ($pnames -contains $k -and $null -ne $Prev.$k -and [string]$Prev.$k -ne '') {
+                try { $rem = [int]$Prev.$k; break } catch { }
+            }
+        }
+    }
+    if ($null -eq $rem) { return $Incoming }
+    foreach ($k in $keys) {
+        $Incoming | Add-Member -NotePropertyName $k -NotePropertyValue $rem -Force
+    }
+    return $Incoming
+}
+
 function ConvertTo-BobIrcPoint {
     param($Doc)
     $mid = [string]$Doc.id
@@ -449,7 +476,17 @@ function ConvertTo-BobIrcPoint {
             $crst = $cd.ToUniversalTime().ToString('yyyy-MM-dd')
         } catch { $crst = '-' }
     }
-    $line = "BOB v1 id=$mid weekly=$w reset=$reset cur=$cur crst=$crst running=$run queued=$q lastSeen=$seen jobs=$jobs"
+    $remPart = ''
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        $rnames = @($Doc.PSObject.Properties.Name)
+        if ($rnames -contains $rk -and $null -ne $Doc.$rk -and [string]$Doc.$rk -ne '') {
+            try {
+                $remPart = (' remaining={0}' -f [int]$Doc.$rk)
+                break
+            } catch { }
+        }
+    }
+    $line = "BOB v1 id=$mid weekly=$w reset=$reset cur=$cur crst=$crst running=$run queued=$q lastSeen=$seen jobs=$jobs$remPart"
     if ($line.Length -gt 350) { $line = $line.Substring(0, 349) + '-' }
     return $line
 }
@@ -497,7 +534,13 @@ function ConvertFrom-BobIrcPoint {
     if ($kv.ContainsKey('crst') -and [string]$kv['crst'] -ne '-') {
         $cursorPeriodEnd = [string]$kv['crst']
     }
-    return [pscustomobject]@{
+    $remainingPct = $null
+    foreach ($rk in @('remaining', 'remaining_pct', 'crem')) {
+        if ($kv.ContainsKey($rk) -and [string]$kv[$rk] -ne '-' -and [string]$kv[$rk] -ne '') {
+            try { $remainingPct = [int]$kv[$rk]; break } catch { $remainingPct = $null }
+        }
+    }
+    $out = [pscustomobject]@{
         ok                = $true
         id                = $mid
         weekly            = $weekly
@@ -510,6 +553,12 @@ function ConvertFrom-BobIrcPoint {
         jobs              = $jobs
         source            = 'irc'
     }
+    if ($null -ne $remainingPct) {
+        $out | Add-Member -NotePropertyName remaining_pct -NotePropertyValue $remainingPct -Force
+        $out | Add-Member -NotePropertyName account_remaining_pct -NotePropertyValue $remainingPct -Force
+        $out | Add-Member -NotePropertyName cursor_remaining_pct -NotePropertyValue $remainingPct -Force
+    }
+    return $out
 }
 
 function Read-BobIrcPeer {
@@ -1068,6 +1117,14 @@ function Merge-BobIrcDigestPeerWithPrevious {
     if ($names -notcontains 'cursor_period_end' -and $Prev.cursor_period_end) {
         $Doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$Prev.cursor_period_end) -Force
     }
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        if ($names -notcontains $rk) {
+            $pv = $Prev.$rk
+            if ($null -ne $pv -and [string]$pv -ne '') {
+                try { $Doc | Add-Member -NotePropertyName $rk -NotePropertyValue ([int]$pv) -Force } catch { }
+            }
+        }
+    }
     if (-not (Test-BobIrcDigestMachineHasJobPayload $Ent)) {
         $prevJobs = @()
         foreach ($j in @($Prev.jobs)) { if ($j) { $prevJobs += ,$j } }
@@ -1161,6 +1218,9 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
         period_end        = $periodEnd
         cursor_label      = $(if ($names -contains 'cursor_label' -and $Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
         cursor_period_end = $(if ($names -contains 'cursor_period_end' -and $Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
+        remaining_pct     = $(if ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
+        account_remaining_pct = $(if ($names -contains 'account_remaining_pct' -and $null -ne $Ent.account_remaining_pct -and [string]$Ent.account_remaining_pct -ne '') { try { [int]$Ent.account_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
+        cursor_remaining_pct  = $(if ($names -contains 'cursor_remaining_pct' -and $null -ne $Ent.cursor_remaining_pct -and [string]$Ent.cursor_remaining_pct -ne '') { try { [int]$Ent.cursor_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
         running           = $(try { [int]$Ent.running } catch { 0 })
         queued            = $(try { [int]$Ent.queued } catch { 0 })
         lastSeen          = $(if ($Ent.lastSeen) { [string]$Ent.lastSeen } else { $null })
@@ -1449,6 +1509,11 @@ function Import-BobIrcTrayPull {
             catch { }
         }
         Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
+        $prevTray = $null
+        if (Test-Path $peerPath) {
+            try { $prevTray = Read-JsonFile $peerPath } catch { }
+        }
+        $doc = Merge-BobIrcPeerRemaining -Prev $prevTray -Incoming $doc
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
@@ -1618,6 +1683,7 @@ function Import-BobIrcPeerTranscript {
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
             Save-BobCursorAccountCache -Label ([string]$doc.cursor_label) -PeriodEnd $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
         }
+        $doc = Merge-BobIrcPeerRemaining -Prev $prev -Incoming $doc
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
