@@ -3,8 +3,9 @@
 # Does NOT start Watch-CursorIrc or cursor-<id> extras.
 [CmdletBinding()]
 param(
-    [int]$PollSec = 45,
+    [int]$PollSec = 30,
     [int]$RestartAfterSec = 600,
+    [int]$SilenceSec = 60,
     [string]$MachineId,
     [string]$RepoRoot
 )
@@ -51,10 +52,23 @@ function Test-TsrHealthy {
         $age = [int]((Get-Date) - $proc.StartTime).TotalSeconds
         if ($age -ge $RestartAfterSec) { return $false }
     }
+    if ($SilenceSec -gt 0) {
+        $wake = Join-Path $logDir "irc-tsr-$nick-wake.jsonl"
+        $ircLog = Join-Path $ircHome 'irc.log'
+        $stamp = $null
+        if (Test-Path $wake) { $stamp = (Get-Item $wake).LastWriteTime }
+        if (Test-Path $ircLog) {
+            $logStamp = (Get-Item $ircLog).LastWriteTime
+            if (-not $stamp -or $logStamp -gt $stamp) { $stamp = $logStamp }
+        }
+        if (-not $stamp) { return $false }
+        $quiet = [int]((Get-Date) - $stamp).TotalSeconds
+        if ($quiet -ge $SilenceSec) { return $false }
+    }
     return $true
 }
 
-Write-TsrWatchLog "watch start poll=${PollSec}s restartAfter=${RestartAfterSec}s nick=$nick"
+Write-TsrWatchLog "watch start poll=${PollSec}s silence=${SilenceSec}s restartAfter=${RestartAfterSec}s nick=$nick"
 while ($true) {
     try {
         if (-not (Test-TsrHealthy)) {
