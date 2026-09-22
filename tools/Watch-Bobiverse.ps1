@@ -63,11 +63,21 @@ function Stop-StaleBobiverseIrcAgent {
 }
 
 function Test-BobiverseIrcAgentUp {
+    $mid = $env:BOB_MACHINE_ID
+    if (-not $mid) { $mid = $env:COMPUTERNAME.ToLowerInvariant() }
+    $expectNick = 'bob-' + $mid
+    try {
+        $cfgPath = Join-Path $RepoRoot 'config\bobiverse.json'
+        if (Test-Path $cfgPath) {
+            $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+            if ($cfg.nicks -and $cfg.nicks.$mid) { $expectNick = [string]$cfg.nicks.$mid }
+        }
+    } catch { }
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -match [regex]::Escape($expectNick) -and
             (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     return ($hits.Count -gt 0)
@@ -126,9 +136,7 @@ function Start-BobiverseIrcAgent {
         '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$mid-builder"
+        '--home', $ircHome
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }

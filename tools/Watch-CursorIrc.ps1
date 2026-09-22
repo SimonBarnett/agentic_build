@@ -32,7 +32,6 @@ function Get-CursorIrcPython {
 
 $mid = $env:BOB_MACHINE_ID
 if (-not $mid) { $mid = 'ionos' }
-$nick = "cursor-$mid"
 $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-cursor'
 if ($env:AGENTIC_IRC_CURSOR_HOME -and $env:AGENTIC_IRC_CURSOR_HOME.Trim()) {
     $ircHome = $env:AGENTIC_IRC_CURSOR_HOME.Trim()
@@ -46,6 +45,21 @@ if (-not $ircRoot) {
     Write-CursorIrcLog 'no agentic_irc checkout; skip'
     exit 1
 }
+
+function Get-CursorCoordinatorNick {
+    param([string]$MachineId, [string]$IrcHomeDir, [switch]$Renew)
+    $pidPath = Join-Path $IrcHomeDir 'coordinator.pid'
+    if ($Renew -or -not (Test-Path $pidPath)) {
+        $coord = $PID
+        Set-Content -Path $pidPath -Value $coord -NoNewline -Encoding utf8
+    }
+    else {
+        try { $coord = [int](Get-Content $pidPath -Raw).Trim() } catch { $coord = $PID }
+    }
+    return ('{0}-{1}' -f $MachineId, $coord)
+}
+
+$nick = Get-CursorCoordinatorNick -MachineId $mid -IrcHomeDir $ircHome
 
 $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
 if (-not (Test-Path $pwFile)) {
@@ -140,6 +154,7 @@ while ($true) {
     try {
         New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
         Start-CursorIrcAgent -Py $py -Nick $nick -IrcHomeDir $ircHome
+        # TSR must follow every agent start or the coordinator cannot hear IRC.
         Start-CursorIrcListen -Py $py -IrcHomeDir $ircHome
     }
     catch {

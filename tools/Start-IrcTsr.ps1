@@ -9,7 +9,6 @@ param(
 $ErrorActionPreference = 'Continue'
 if (-not $MachineId) { $MachineId = $env:BOB_MACHINE_ID }
 if (-not $MachineId) { $MachineId = 'ionos' }
-$nick = "cursor-$MachineId"
 if (-not $IrcHome) {
     $IrcHome = Join-Path $env:USERPROFILE '.agentic-irc-cursor'
     if ($env:AGENTIC_IRC_CURSOR_HOME) { $IrcHome = $env:AGENTIC_IRC_CURSOR_HOME.Trim() }
@@ -20,6 +19,13 @@ if (-not $IrcRoot) {
     }
 }
 if (-not $IrcRoot) { throw 'agentic_irc checkout not found' }
+
+$pidPath = Join-Path $IrcHome 'coordinator.pid'
+if (-not (Test-Path $pidPath)) {
+    Set-Content -Path $pidPath -Value $PID -NoNewline -Encoding utf8
+}
+try { $coord = [int](Get-Content $pidPath -Raw).Trim() } catch { $coord = $PID }
+$nick = '{0}-{1}' -f $MachineId, $coord
 
 $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
