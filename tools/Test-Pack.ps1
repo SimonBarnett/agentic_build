@@ -122,12 +122,15 @@ function Invoke-Case {
         $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
         $env:BOB_GROK_TALK_TEST_THROW = $null
         $env:AGENTIC_IRC_HOME = $null
+        $env:BOB_REPORT_CAPTURE_DIR = $null
+        $env:BOB_REPO_PAIR_IDLE_SEC = $null
+        $env:BOB_REPORT_URL = $null
     }
 }
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'bob-repo-pair', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -3092,6 +3095,90 @@ Invoke-Case 'BT0house agent export list' {
     if ($agent -notmatch 'Select-BobGitWorker') { throw 'agent_readme missing agent export list' }
     if ($agent -notmatch 'Get-BobTrayHover') { throw 'agent_readme must classify tray exports' }
     if ($agent -notmatch 'job-audit') { throw 'agent_readme must document job-audit.jsonl' }
+}
+
+# --- BT0pair175 bob two persistent workers (issue #175) ---
+Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'flamingo'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $cap = Join-Path $bridgeRoot 'webhook-cap'
+    $env:BOB_REPORT_CAPTURE_DIR = $cap
+    $env:BOB_REPO_PAIR_IDLE_SEC = '120'
+
+    $pairSkill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-repo-pair\SKILL.md') -Raw
+    if ($pairSkill -notmatch 'Start-BobRepoPair') { throw 'bob-repo-pair skill missing Start-BobRepoPair' }
+    if ($pairSkill -notmatch 'no self-MRB|self-MRB') { throw 'bob-repo-pair skill must document self-MRB rule' }
+    if ($pairSkill -notmatch 'working_on') { throw 'bob-repo-pair skill must document working_on webhook' }
+    if ($pairSkill -notmatch '5 min') { throw 'bob-repo-pair skill must document idle default' }
+    $bv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($bv -notmatch 'Start-BobRepoPair') { throw 'bobiverse.md must document repo pair' }
+
+    $live = Start-BobRepoPair -Repo 'SimonBarnett/agentic_build' -Cwd $cwd -MachineId flamingo
+    if (-not $live.ok) { throw "Start-BobRepoPair live: $($live | ConvertTo-Json -Compress)" }
+    $wc = @(Get-BobWorkers).Count
+    if ($wc -ne 2) { throw "expected 2 overlay workers got $wc" }
+
+    $pr = 'https://github.com/SimonBarnett/agentic_build/pull/175'
+    $regCheck = Register-BobRepoPairDevComplete -PrUrl $pr
+    if (-not $regCheck.ok) { throw "Register-BobRepoPairDevComplete: $($regCheck.error)" }
+    $deny = Test-BobRepoPairSelfMrb -Seat dev -PrUrl $pr
+    if ($deny.allowed) { throw 'dev must not MRB own PR' }
+    $allow = Test-BobRepoPairSelfMrb -Seat mrb -PrUrl $pr
+    if (-not $allow.allowed) { throw 'mrb seat must be allowed to review implementer PR' }
+
+    $sha = 'dead175beef'
+    $a = Set-BobRepoPairDevActiveSha -Sha $sha
+    if (-not $a.ok) { throw 'first active sha should ok' }
+    $dup = Test-BobRepoPairMayEnqueueBuild -Sha $sha
+    if ($dup.allowed) { throw 'second job same sha must be blocked' }
+
+    $u1 = Update-BobRepoWorkerWorkingOn -Seat dev -Description 'implement #175 pair module'
+    if (-not $u1.ok) { throw 'working_on update failed' }
+    if (-not $u1.webhook.posted) { throw 'first working_on must POST' }
+    $posts1 = @(Get-ChildItem $cap -Filter 'post-*.json').Count
+    if ($posts1 -lt 1) { throw 'capture dir missing post json' }
+    $u2 = Update-BobRepoWorkerWorkingOn -Seat dev -Description 'implement #175 pair module'
+    if ($u2.webhook.posted) { throw 'unchanged working_on must not POST again' }
+
+    Register-BobRepoPairMrbComplete -PrUrl $pr -Verdict PASS-nits | Out-Null
+    $lines = @(Get-BobRepoPairBobiverseReport)
+    if ($lines.Count -lt 2) { throw "expected dev+mrb report lines got $($lines.Count)" }
+    if (($lines -join ' ') -notmatch 'dev complete') { throw "missing dev complete: $($lines -join ' | ')" }
+    if (($lines -join ' ') -notmatch 'MRB complete') { throw "missing MRB complete: $($lines -join ' | ')" }
+
+    $topic = Set-BobShopChannelRepoDescription -Repo 'SimonBarnett/agentic_build' -MachineId flamingo
+    if (-not $topic.ok) { throw 'shop topic failed' }
+    $pending = Get-Content $topic.path -Raw
+    if ($pending -notmatch '#flamingo') { throw "shop topic channel: $pending" }
+    if ($pending -notmatch 'SimonBarnett/agentic_build') { throw "shop topic repo: $pending" }
+
+    Remove-Module BobBridge -Force
+    $env:BOB_BRIDGE_HOME = $bridgeRoot
+    $env:BOB_GROK_EXE = $fake
+    $env:BOB_MACHINE_ID = 'flamingo'
+    $env:BOB_REPORT_CAPTURE_DIR = $cap
+    $env:BOB_REPO_PAIR_IDLE_SEC = '120'
+    Import-Module $src -Force
+    $reg = Start-BobRepoPair -Repo 'SimonBarnett/agentic_build' -Cwd $cwd -MachineId flamingo -RegisterOnly
+    if (-not $reg.ok) { throw 'register-only pair failed' }
+    $pairPath = Join-Path $bridgeRoot 'repo-pair.json'
+    $st = Get-Content $pairPath -Raw | ConvertFrom-Json
+    $st.seats.dev.lastActiveAt = [DateTime]::UtcNow.AddMinutes(-10).ToString('o')
+    ($st | ConvertTo-Json -Depth 8) | Set-Content -Path $pairPath -Encoding utf8
+    $overlayPath = Join-Path $bridgeRoot 'overlay.json'
+    $ov = Get-Content $overlayPath -Raw | ConvertFrom-Json
+    $ov.workers += ,[pscustomobject]@{
+        sessionId = [string]$st.seats.dev.sessionId
+        title     = 'w-fl-dev'
+        cwd       = $cwd
+        kind      = 'oneshot'
+        profile   = 'generic'
+        createdAt = [DateTime]::UtcNow.ToString('o')
+    }
+    ($ov | ConvertTo-Json -Depth 8) | Set-Content -Path $overlayPath -Encoding utf8
+    $tick = Invoke-BobRepoPairTick
+    if (@($tick.idleStop) -notcontains 'dev') { throw "idle tick must stop dev seat: $($tick.idleStop -join ',')" }
 }
 
 Write-Host ''

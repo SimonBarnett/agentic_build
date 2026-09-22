@@ -57,3 +57,14 @@ Do not open IRC from CI. Ergo `PASS` is `~\.grok\ergo\connect.password` (env `AG
 A huge `outbox.txt` of pending lines makes `irc_agent.py` drain at FLOOD_S=0.8s; Ergo flood limits drop the client. `Compact-BobIrcOutbox` compacts old `MOOT v1 POINT` backlogs over 32KB. With quiet talk, outbox should stay small (change lines + `!bobiverse` only).
 
 Verify on the box: no `BOB v1` kv firehose in Halloy; outbox stays small; one `irc_agent` process; tray peers refresh after `!bobiverse`.
+
+## Two persistent workers per repo (issue #175)
+
+`bob-{machine}` (Grok chair) may own one product repo with **two** shop workers
+(dev + MRB) via `Start-BobRepoPair` / skill `bob-repo-pair`. Workers persist
+until `Invoke-BobRepoPairTick` idle-stops them (default **5 min**). They POST
+`working_on` through `Update-BobRepoWorkerWorkingOn` → ionos `reportUrl`
+(change-only webhook). Bob reads digest / pair state and reports dev complete /
+MRB complete on `#bobiverse`. Shop `#<machine>` **description** tracks the repo
+(`Set-BobShopChannelRepoDescription`). v1 `Start-BobBuild` / `Start-BobBuildLoop`
+remain until a repo is switched to the pair path.

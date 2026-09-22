@@ -60,7 +60,19 @@
         'Test-BobGrokTalkFuelAllowed',
         'Select-BobGrokTalkFuel',
         'Add-BobGrokTalkCompletion',
-        'ConvertTo-BobGrokTalkOutLines'
+        'ConvertTo-BobGrokTalkOutLines',
+        'Get-BobRepoPair',
+        'Start-BobRepoPair',
+        'Invoke-BobRepoPairTick',
+        'Update-BobRepoWorkerWorkingOn',
+        'Test-BobRepoPairSelfMrb',
+        'Test-BobRepoPairMayEnqueueBuild',
+        'Set-BobRepoPairDevActiveSha',
+        'Register-BobRepoPairDevComplete',
+        'Register-BobRepoPairMrbComplete',
+        'Get-BobRepoPairBobiverseReport',
+        'Set-BobShopChannelRepoDescription',
+        'Invoke-BobDigestWebhookPost'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

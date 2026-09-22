@@ -52,10 +52,10 @@
 
 ## Definition of done (first ticket / P0–P1)
 
-- [ ] PR title includes the FR issue number
-- [ ] T0 green
-- [ ] Hostile MRB by the **other** worker; implementer does not merge
-- [ ] No UAT stamp
+- [x] PR title includes the FR issue number
+- [x] T0 green
+- [x] Hostile MRB by the **other** worker; implementer does not merge
+- [x] No UAT stamp
 
 ## Kickoff (`Start-BobBuild -Goal`)
 

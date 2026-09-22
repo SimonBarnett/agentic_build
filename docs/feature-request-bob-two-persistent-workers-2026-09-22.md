@@ -22,6 +22,9 @@ flowchart TB
 
   PAIR --> WA
   PAIR --> WB
+  ASSIGN --> WA
+  ASSIGN --> WB
+  MON -.-> PAIRBOX
   WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
   WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
   FIX --> WA
