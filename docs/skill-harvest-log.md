@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-22 — bob-job checks open issues as well as FRs
+
+Simon `#bobiverse`: bob-job must scan **all open issues** (and open PRs),
+not only `--label feature-request`. Skip pure MRB meta boards. Unlabeled
+/ other-label open issues are work (intake then loop). Homes:
+`bob-job-loop` + `bob-hostile-mrb`.
+
 ## 2026-09-22 — CAST IRON: harvest back to the relevant repo
 
 Simon `#bobiverse`: every skill repo has a harvest skill as foundation

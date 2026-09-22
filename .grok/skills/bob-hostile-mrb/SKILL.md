@@ -4,10 +4,10 @@ description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
   in-session. PASS-nits: that MRB agent merges the PR. FAIL or remaining
-  open feature-request issues: dispatcher passes each to a new worker. No
-  MRB PDFs. Use when the user says MRB, hostile review, review the push,
-  ready for UAT, hand off MRB, missing features, or /bob-hostile-mrb. Loop
-  table is bob-build-loop.
+  open issues (FRs and other actionable issues): dispatcher passes each
+  to a new worker. No MRB PDFs. Use when the user says MRB, hostile
+  review, review the push, ready for UAT, hand off MRB, missing features,
+  or /bob-hostile-mrb. Loop table is bob-build-loop.
 ---
 
 # Hostile MRB (GitHub issue)
@@ -141,17 +141,18 @@ voided issue.
    unless `gh pr merge` succeeded.
 7. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
    dispatcher must pass work to **new** workers for (a) this FAIL's
-   Required fixes (FIX worker), and (b) any other open issues labeled
-   `feature-request` (or Missing features just parked) that are not
-   already PASS. Listing under Missing features is not enough — hand
-   each to `bob-job-loop`. Remaining FRs do not block this PASS-nits
-   merge.
+   Required fixes (FIX worker), and (b) **any other open actionable
+   issues** — not only those labeled `feature-request` (Simon
+   2026-09-22: bob-job checks open issues as well as FRs). Skip pure
+   MRB meta boards. Missing features just parked count. Listing under
+   Missing features is not enough — hand each to `bob-job-loop`.
+   Remaining issues do not block this PASS-nits merge.
 8. **No Bob, still open issues — do not sit (Simon 2026-09-22):** if you
    just MRB'd and Bob is not on channel / not assigning, **do not leave
-   remaining open FRs idle**. Find someone: ask `#bobiverse` for a spare
-   seat, or launch the next `bob-job-loop` yourself on another open FR.
-   Waiting for Bob to notice is a bug. Harvest this playbook when you
-   learn it (`harvest-agent-skills`).
+   remaining open issues idle**. Find someone: ask `#bobiverse` for a
+   spare seat, or launch the next `bob-job-loop` yourself on another
+   open actionable issue. Waiting for Bob to notice is a bug. Harvest
+   this playbook when you learn it (`harvest-agent-skills`).
 
 ## Pass bar
 
