@@ -16,6 +16,8 @@ flowchart TB
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> USE["Each bob webhooks identity +\nlocal grok remaining +\nCursor account values it sees"]
+  USE --> MIN["Take the lesser of any Cursor variance"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
@@ -65,6 +67,8 @@ Change how Bob works:
 17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them — **every 2 hours during business hours**.
 18. **Same fuel as before:** build/dev is a **cheap Cursor model** (`composer-2.5`). **MRB is more expensive** (`grok-4.6`) because that is where we want **reasoning** to add new FRs and tests.
 19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
+20. **Each bob** sends a **webhook to identify itself** and **how much local grok is left** on its account.
+21. **Each bob** also reports the **Cursor values it sees for the whole account**. **Take the lesser of any variance.**
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -113,4 +117,6 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
 | A13 | Dev = cheap Cursor model; MRB = expensive reasoning model (new FRs + tests). |
 | A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |
-| A15 | BT0/docs validator or pack test covers A1–A14 enough to MRB. |
+| A15 | Each bob webhooks identity + local grok remaining. |
+| A16 | Each bob reports account-wide Cursor values; fleet uses the lesser if they differ. |
+| A17 | BT0/docs validator or pack test covers A1–A16 enough to MRB. |

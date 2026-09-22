@@ -76,6 +76,8 @@ flowchart TB
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> USE["Each bob webhooks identity +\nlocal grok remaining +\nCursor account values it sees"]
+  USE --> MIN["Take the lesser of any Cursor variance"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
