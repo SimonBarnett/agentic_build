@@ -16,8 +16,8 @@ flowchart TB
   CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
-  CHAIR --> USE["Each bob webhooks identity +\nlocal grok remaining +\nCursor account values it sees"]
-  USE --> MIN["Take the lesser of any Cursor variance"]
+  CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
+  USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ncheap Cursor model composer-2.5"]
@@ -69,6 +69,12 @@ Change how Bob works:
 19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
 20. **Each bob** sends a **webhook to identify itself** and **how much local grok is left** on its account.
 21. **Each bob** also reports the **Cursor values it sees for the whole account**. **Take the lesser of any variance.**
+23. Usage pools are the **real Cursor/xAI meters**, not seat nicknames. There is **no Club Madeira pool** and **no Smart Catalogue pool** (those are xAI seat labels in `bob-seats.json`). Report:
+    - **grok chat** (Sand)
+    - **high cost models**
+    - **low cost models** (cursor-models fuel)
+    - **local xAI / Grok Build weekly** (per box seat)
+    For each: **percent remaining** and **when the next period starts**. **0 shows 0, not n/a.** **n/a only when that pool is not available.** Every pool **MUST** be posted on the webhook.
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -121,4 +127,6 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A15 | Each bob webhooks identity + local grok remaining. |
 | A16 | Each bob reports account-wide Cursor values; fleet uses the lesser if they differ. |
 | A17 | Workers do not PRIVMSG shop/fleet channels; status is webhook-only. |
-| A18 | BT0/docs validator or pack test covers A1–A17 enough to MRB. |
+| A18 | Webhook usage = real pools (grok chat / high / low / local grok weekly). No Madeira/Catalogue pool names. |
+| A19 | Each pool: remaining % + next period start; 0 is 0; n/a only if unavailable; MUST report. |
+| A20 | BT0/docs validator or pack test covers A1–A19 enough to MRB. |
