@@ -1,5 +1,13 @@
 ﻿# Skill harvest log
 
+## 2026-09-22 — killproc (end hung agents)
+
+Simon: create a new killproc skill to end hung (jung) agents.
+`Stop-HungAgent.ps1 -Home <seat> -Nick <nick> -Roll` kills only
+`irc_agent`/`irc_listen` on that home, then rolls a replacement.
+Do not spray Stop-Process. Named Grok Bot remains `unstick-grok-bot`.
+Skill `killproc`.
+
 ## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
 
 `bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
