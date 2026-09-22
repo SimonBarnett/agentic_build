@@ -18,6 +18,7 @@ flowchart TB
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> PING15["Every 15 min Bob pings own shop\ncheck connections / online\nintervene if workers stalled"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
   CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
@@ -88,6 +89,7 @@ Change how Bob works:
 29. Model pick is **dynamic per task kind** (dev/MRB/UAT → less/medium/more), not a single model for the pair.
 30. **Bob MUST start agents with the IRC and build skills.**
 31. **Bob must direct them to JOIN IRC.**
+32. **Every 15 minutes** Bob **pings in his own shop** to check **connections / online**, and **intervenes if workers are stalled**.
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -133,7 +135,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A7 | Shop/channel **description** = current repo name; update when the assigned repo changes. |
 | A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
 | A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
-| A10 | Bob monitors in-flight processes and restarts if deaf. |
+| A10 | Bob monitors in-flight processes and restarts if deaf. Shop ping every 15 min; intervene if stalled. |
 | A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
 | A13 | Dynamic models: dev=less, MRB=medium, UAT=more (Cursor then local xAI). |

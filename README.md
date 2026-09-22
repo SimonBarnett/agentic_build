@@ -78,6 +78,7 @@ flowchart TB
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> PING15["Every 15 min Bob pings own shop\ncheck connections / online\nintervene if workers stalled"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
   CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
