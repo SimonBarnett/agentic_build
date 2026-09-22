@@ -18,5 +18,7 @@ and `docs/bobiverse.md`. Do not duplicate join/recycle/firewall facts here.
 Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
+**Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, …). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
+
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).

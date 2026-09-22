@@ -43,6 +43,49 @@ function Resolve-BobiverseMachineId {
     return $null
 }
 
+function Get-BobIrcShopChannel {
+    param([Parameter(Mandatory)][string]$MachineId)
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) {
+        $t = [string]$MachineId.Trim().ToLowerInvariant()
+        if ($t -eq 'dev1') { $mid = 'ce-priority-dev1' }
+        else { $mid = [string]$MachineId.Trim() }
+    }
+    if ($mid -eq 'dev1') { $mid = 'ce-priority-dev1' }
+    return '#' + $mid
+}
+
+function Get-BobIrcBuilderChannels {
+    param([Parameter(Mandatory)][string]$MachineId)
+    $cfg = Get-BobiverseConfig
+    $fleet = '#bobiverse'
+    if ($cfg -and $cfg.channel) {
+        $c = [string]$cfg.channel
+        if ($c) { $fleet = $c }
+    }
+    $shop = Get-BobIrcShopChannel -MachineId $MachineId
+    return ($fleet + ',' + $shop)
+}
+
+function Get-BobWorkerIrcNick {
+    param(
+        [Parameter(Mandatory)][string]$MachineId,
+        [Parameter(Mandatory)][int]$WorkerPid
+    )
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { throw "bad machine id: $MachineId" }
+    $shortByMid = @{
+        flamingo           = 'fl'
+        marchhare          = 'mh'
+        ionos              = 'io'
+        'ce-priority-dev1' = 'd1'
+    }
+    $short = $shortByMid[$mid]
+    if (-not $short) { throw "bad machine id: $MachineId" }
+    if ($WorkerPid -le 0) { throw 'WorkerPid must be positive' }
+    return "w-$short-$WorkerPid"
+}
+
 function Resolve-BobiverseMachineFromIrcNick {
     param([string]$Nick)
     if (-not $Nick) { return $null }

@@ -23,6 +23,10 @@ Nicks (one builder agent per machine):
 
 Home on each box: `~\.agentic-irc-bobiverse` (not the Club Madeira `#cm-bob-oscar` homes).
 
+## Shop channels (`#<machine>`)
+
+Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `#ionos`, `#ce-priority-dev1`; `#dev1` is the same room as `#ce-priority-dev1`). `bob-*` builders JOIN `#bobiverse` **and** the local shop (`Get-BobIrcBuilderChannels` in `Watch-Bobiverse` / `Install-BobIrc`). Git/MRB workers never JOIN `#bobiverse`; they appear on the shop only as `w-<short>-<pid>` (`w-io-<pid>` on ionos, `w-fl-<pid>` on flamingo, etc.) via `Start-BobWorkerIrcAgent` → `agentic_irc` `start_worker_irc_agent.py`. No `!report` write path on IRC; digest updates use write-only `reportUrl` POST (below).
+
 ## Status on disk
 
 `Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.
