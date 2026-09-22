@@ -4,7 +4,8 @@ description: >
   End hung agents and roll a replacement process. Use when the user says
   killproc, hung agent, jung agent, end process and roll another, kill the
   deaf talk seat, stuck irc_agent, recycle a hung Cursor TUI seat, or the
-  working agent must restart the hung other on this box. Named Grok Bot
+  working agent must restart the hung other on this box, or if anyone
+  fails to pong the live seat on that box restarts them. Named Grok Bot
   Temporal hangs are unstick-grok-bot. Fleet job queue is grok-build-fleet.
   Talk-seat nick/home rules stay agentic-irc.
 ---

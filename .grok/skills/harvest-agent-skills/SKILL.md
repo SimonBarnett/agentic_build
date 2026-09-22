@@ -4,7 +4,8 @@ description: >
   Promote repeatable fleet/build playbooks into agentic_build .grok/skills on
   GitHub (SimonBarnett/agentic_build). Use when you learn a new procedure while
   doing build work, or the user says harvest skills, add it to the skills,
-  promote a playbook, skill harvest, hourly skill check, or /harvest-agent-skills.
+  promote a playbook, skill harvest, hourly skill check, /harvest-agent-skills,
+  or everyone harvest your irc skill (IRC playbooks go to agentic_irc).
   Do not wait for the hourly task. Does not dispatch product builds
   (grok-build-fleet / bob-build-dispatch).
 ---

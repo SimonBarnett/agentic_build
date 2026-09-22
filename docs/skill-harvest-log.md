@@ -1,5 +1,11 @@
 ﻿# Skill harvest log
 
+## 2026-09-22 — fleet harvest irc skill + failed-pong restart
+
+Simon `#bobiverse`: `everyone harvest your irc skill`; live seat on a
+box restarts a nick that fails to pong. Triggers added to
+`harvest-agent-skills` and `killproc`. IRC body lives in `agentic_irc`.
+
 ## 2026-09-22 — killproc -Roll shop channel from nick
 
 Marchhare-20280: killproc -Roll joined #flamingo on marchhare-23624.
