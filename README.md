@@ -75,6 +75,7 @@ flowchart TB
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
   CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
