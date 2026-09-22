@@ -45,6 +45,7 @@
 | P12 | MRB merges dups, closes finished issues, merges PASS-nits PRs |
 | P13 | Each bob webhooks identity + local grok remaining |
 | P14 | Each bob reports account Cursor values; take the lesser of variance |
+| P15 | Workers do not send to IRC channels; webhook only |
 
 ## Tests
 

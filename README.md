@@ -97,7 +97,7 @@ flowchart TB
   SWAP --> WA
   NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
 
-  WA --> POST["Workers MUST POST working_on to webhook"]
+  WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST
   POST --> DIG["Digest updates"]
   DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]

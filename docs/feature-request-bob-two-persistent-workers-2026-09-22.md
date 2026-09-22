@@ -37,7 +37,7 @@ flowchart TB
   SWAP --> WA
   NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
 
-  WA --> POST["Workers MUST POST working_on to webhook"]
+  WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST
   POST --> DIG["Digest updates"]
   DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
@@ -69,6 +69,7 @@ Change how Bob works:
 19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
 20. **Each bob** sends a **webhook to identify itself** and **how much local grok is left** on its account.
 21. **Each bob** also reports the **Cursor values it sees for the whole account**. **Take the lesser of any variance.**
+22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
 
@@ -119,4 +120,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |
 | A15 | Each bob webhooks identity + local grok remaining. |
 | A16 | Each bob reports account-wide Cursor values; fleet uses the lesser if they differ. |
-| A17 | BT0/docs validator or pack test covers A1–A16 enough to MRB. |
+| A17 | Workers do not PRIVMSG shop/fleet channels; status is webhook-only. |
+| A18 | BT0/docs validator or pack test covers A1–A17 enough to MRB. |
