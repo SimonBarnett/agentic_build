@@ -7,7 +7,8 @@ function Test-IrcTsrWakeSilenceStale {
         [datetime]$Now = [datetime]::Now
     )
     if ($SilenceSec -le 0) { return $false }
-    if (-not (Test-Path -LiteralPath $WakePath)) { return $true }
+    # Missing wake is not chat silence — runner must write PROCESS_HEARTBEAT first; do not recycle on absent file alone.
+    if (-not (Test-Path -LiteralPath $WakePath)) { return $false }
     $stamp = (Get-Item -LiteralPath $WakePath).LastWriteTime
     $quiet = [int](($Now - $stamp).TotalSeconds)
     return ($quiet -ge $SilenceSec)
