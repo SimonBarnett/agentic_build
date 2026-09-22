@@ -132,6 +132,7 @@ Invoke-Case 'BT0 skills' {
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
+        if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
     }
 }
 

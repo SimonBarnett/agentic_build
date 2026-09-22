@@ -1,9 +1,18 @@
 ﻿# Skill harvest log
 
+## 2026-09-22 — killproc: -IrcHome, working seat, new cursor-agent
+
+Simon: harvest the second-seat night. Param is `-IrcHome` (never `-Home`;
+`$Home` is read-only). Working live seat killproc-rolls the hung *other*
+home only; missing cursor-2 means no hung seat. `-Roll` is still deaf
+until a Cursor TSR. After close: new `cursor-agent.ps1` with prompt file
+(`--trust --force --model grok-4.6`); no `cmd.exe /c` prompt; no Halloy
+SendKeys. Skill `killproc`. Talk-seat nick/home stay `agentic-irc`.
+
 ## 2026-09-22 — killproc (end hung agents)
 
 Simon: create a new killproc skill to end hung (jung) agents.
-`Stop-HungAgent.ps1 -Home <seat> -Nick <nick> -Roll` kills only
+`Stop-HungAgent.ps1 -IrcHome <seat> -Nick <nick> -Roll` kills only
 `irc_agent`/`irc_listen` on that home, then rolls a replacement.
 Do not spray Stop-Process. Named Grok Bot remains `unstick-grok-bot`.
 Skill `killproc`.
