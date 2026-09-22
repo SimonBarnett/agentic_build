@@ -104,6 +104,11 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 - `FAILED: PASS-nits finish: PR still open after gh pr merge` — race.
   If `gh pr view` is already MERGED and the FR issue is CLOSED (or has
   PASS-nits merge comment), treat as DONE. Do not relaunch a build.
+- `FAILED: PASS-nits finish: gh pr merge failed: GraphQL: Merge already
+  in progress` — same race. `gh pr view --json merged` is invalid (no
+  such field); that made `Test-BobGhPrIsMerged` always false and skipped
+  the close. Re-check `--json state,mergedAt`. If `state` is MERGED,
+  close leftover FR / FAIL / PASS boards and pull. Do not relaunch.
 - Before the driver dismisses a worker (DONE or last FAILED), remind it
   to harvest repeatable playbooks (`harvest-agent-skills`). Empty harvest:
   no commit.

@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-22 — PASS-nits merge-in-progress + no gh `merged` field
+
+`gh pr view --json state,merged` fails (unknown field `merged`).
+`Test-BobGhPrIsMerged` then always returned false, so PASS-nits finish
+retried `gh pr merge` and died on `GraphQL: Merge already in progress`
+without closing boards (agentic_irc #135 / PR #145). Query
+`state,mergedAt`. If merge stderr is in-progress but `state` is MERGED,
+treat merged and close. Home: `bob-job-loop` + `tools/Bob-BuildLoop.ps1`.
+
 ## 2026-09-22 — talk seats own bob jobs
 
 Simon `#bobiverse`: `no - the bob jobs are YOURS`. Idle talk seats run

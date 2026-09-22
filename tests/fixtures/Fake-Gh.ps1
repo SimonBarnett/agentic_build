@@ -99,11 +99,38 @@ if ($joined -match '(?i)\bissue\s+list\b') {
     Exit-Mode 0
 }
 
+function Get-FakeGhPrViewJson {
+    $next = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    if ($next -and (Test-Path -LiteralPath $next)) {
+        return [IO.File]::ReadAllText($next)
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        $sidecar = $log + '.pr-view.json'
+        if (Test-Path -LiteralPath $sidecar) {
+            return [IO.File]::ReadAllText($sidecar)
+        }
+    }
+    $json = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    if (-not $json) { $json = '{"state":"OPEN","mergedAt":null}' }
+    return $json
+}
+
+function Write-FakeGhPrViewMerged {
+    $merged = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $next = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    if ($next) {
+        [IO.File]::WriteAllText($next, $merged)
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        [IO.File]::WriteAllText(($log + '.pr-view.json'), $merged)
+    }
+}
+
 if ($joined -match '(?i)\bpr\s+view\b') {
     Write-FakeGhLog 'pr view'
-    $json = $env:BOB_FAKE_GH_PR_VIEW_JSON
-    if (-not $json) { $json = '{"state":"OPEN","merged":false}' }
-    Write-Output $json
+    Write-Output (Get-FakeGhPrViewJson)
     Exit-Mode 0
 }
 
@@ -113,7 +140,12 @@ if ($joined -match '(?i)\bpr\s+merge\b') {
         [Console]::Error.WriteLine('Fake-Gh: pr merge denied')
         Exit-Mode 1
     }
-    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","merged":true}'
+    if ($mode -eq 'merge-in-progress') {
+        Write-FakeGhPrViewMerged
+        [Console]::Error.WriteLine('GraphQL: Merge already in progress (mergePullRequest)')
+        Exit-Mode 1
+    }
+    Write-FakeGhPrViewMerged
     Exit-Mode 0
 }
 

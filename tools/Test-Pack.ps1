@@ -2823,6 +2823,41 @@ Invoke-Case 'BT118f pass-nits finish closes via fake gh' {
     }
 }
 
+Invoke-Case 'BT118g pass-nits merge-in-progress already MERGED' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-merge-in-progress.jsonl'
+    $next = Join-Path $bridgeRoot 'fake-gh-pr-view-next.json'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $savedNext = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'merge-in-progress'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    $env:BOB_FAKE_GH_PR_VIEW_NEXT = $next
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state = Add-BobBuildLoopPass -State $state -Pass ([pscustomobject]@{
+            sha = 'abc1234deadbeef'; pr = 'https://github.com/fixture/repo/pull/2'
+            mrb = 'https://github.com/fixture/repo/issues/115'; verdict = 'PASS-nits'; issue = 115
+        })
+        $r = Invoke-BobPassNitsFinish -State $state -PassIssue 115 -Gh $fakeGh
+        if (-not $r.ok) { throw "in-progress MERGED must succeed: $($r.message)" }
+        $closes = @(Get-Content $log | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.op -eq 'issue close' -or $_.command -eq 'issue close' })
+        if ($closes.Count -lt 2) { throw "expected issue close after in-progress merge, got $($closes.Count)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+        $env:BOB_FAKE_GH_PR_VIEW_NEXT = $savedNext
+    }
+}
+
 # --- BT0gtalk grok-talk inbox worker (#126 / #129) ---
 Invoke-Case 'BT0gtalk inbox outbox fuel' {
     param($bridgeRoot)

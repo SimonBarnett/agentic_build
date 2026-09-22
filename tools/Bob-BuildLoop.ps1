@@ -486,12 +486,13 @@ function Test-BobGhPrIsMerged {
     $savedEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $json = & $Gh pr view $PrNumber --repo $Repo --json state,merged 2>&1 | Out-String
+        # gh has no --json field named "merged" (use state / mergedAt).
+        $json = & $Gh pr view $PrNumber --repo $Repo --json state,mergedAt 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) { return $false }
         if (-not $json.Trim()) { return $false }
         $o = $json | ConvertFrom-Json
-        if ($o.PSObject.Properties['merged'] -and $o.merged -eq $true) { return $true }
         if ([string]$o.state -eq 'MERGED') { return $true }
+        if ($o.PSObject.Properties['mergedAt'] -and $o.mergedAt) { return $true }
         return $false
     }
     finally {
@@ -517,6 +518,10 @@ function Invoke-BobGhMergePrIfOpen {
         # Non-interactive gh requires a strategy (--merge/--rebase/--squash).
         $out = & $Gh pr merge $PrNumber --repo $Repo --merge 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
+            # Race: merge already in flight / done. Re-read state (valid JSON fields).
+            if (Test-BobGhPrIsMerged -Gh $Gh -Repo $Repo -PrNumber $PrNumber) {
+                return [pscustomobject]@{ ok = $true; merged = $true; alreadyMerged = $true }
+            }
             return [pscustomobject]@{ ok = $false; message = ("gh pr merge failed: {0}" -f $out.Trim()) }
         }
         if (-not (Test-BobGhPrIsMerged -Gh $Gh -Repo $Repo -PrNumber $PrNumber)) {
