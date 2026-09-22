@@ -13,7 +13,7 @@ flowchart TB
   TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
   TIX --> ASSIGN
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
-  CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
+  CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
   CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
@@ -86,6 +86,8 @@ Change how Bob works:
 27. **`bob-{machine}` is ops in their own shop channel.** **Jeeves is ops in `#bobiverse`.**
 28. **Update the control systray** to the **proper Cursor metrics** (grok chat / high cost / low cost — remaining % + next period; 0 is 0). Not seat-nickname pools.
 29. Model pick is **dynamic per task kind** (dev/MRB/UAT → less/medium/more), not a single model for the pair.
+30. **Bob MUST start agents with the IRC and build skills.**
+31. **Bob must direct them to JOIN IRC.**
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -123,7 +125,7 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | ID | Check |
 |----|--------|
 | A1 | Skill/docs: `bob-{machine}` = grok chair; two workers per assigned repo. |
-| A2 | Spawn path: Bob starts workers with build + IRC skills; they JOIN shop (and fleet policy). |
+| A2 | Bob MUST start workers with IRC + build skills and **direct them to JOIN IRC**. |
 | A3 | Persist until Bob stops them after idle timeout (U1). |
 | A4 | Implementer cannot MRB that PR; the other worker MRBs; implementer takes next PR. |
 | A5 | Worker `working_on` POSTs to webhook; digest shows the description. |

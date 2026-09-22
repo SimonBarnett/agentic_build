@@ -31,7 +31,7 @@
 | Phase | Exit |
 |-------|------|
 | P0 | FR + this plan + issue; skill text for pair spawn + idle + webhook |
-| P1 | Bob can spawn/reuse two workers for one repo; persist; idle-stop |
+| P1 | Bob MUST start pair with IRC+build skills and direct JOIN IRC; persist; idle-stop |
 | P2 | Implementer/MRB split + next-PR handoff |
 | P3 | Worker `working_on` POST; digest reads it |
 | P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
