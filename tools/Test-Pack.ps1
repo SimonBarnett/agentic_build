@@ -3109,23 +3109,27 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $env:BOB_REPO_PAIR_IDLE_SEC = '120'
 
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match 'Fake-IrcAgent\.ps1' } |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match 'Bob-IrcTcpTestServer\.ps1' } |
         ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch { } }
 
     $wireCapture = Join-Path $bridgeRoot 'irc-wire.capture'
-    $privCapture = Join-Path $env:BOB_IRC_HOME 'privmsg-sent.capture'
+    if (Test-Path $wireCapture) { Remove-Item $wireCapture -Force }
     $env:BOB_IRC_WIRE_CAPTURE = $wireCapture
-    $env:BOB_IRC_WIRE_SKIP_LIVE = '1'
-    $env:BOB_IRC_PRIVMSG_CAPTURE = $privCapture
-    $fakeIrc = Join-Path $RepoRoot 'tools\Fake-IrcAgent.ps1'
+    Remove-Item Env:BOB_IRC_WIRE_SKIP_LIVE -ErrorAction SilentlyContinue
+    $tcpPort = 17175
+    if ($env:BOB_IRC_WIRE_TCP_PORT) { try { $tcpPort = [int]$env:BOB_IRC_WIRE_TCP_PORT } catch { } }
+    $env:BOB_IRC_WIRE_TCP_PORT = [string]$tcpPort
+    New-Item -ItemType Directory -Force -Path $env:BOB_IRC_HOME | Out-Null
+    Set-Content -LiteralPath (Join-Path $env:BOB_IRC_HOME 'wire-tcp-port.txt') -Value $tcpPort -Encoding utf8 -NoNewline
+    Set-Content -LiteralPath (Join-Path $env:BOB_IRC_HOME 'wire-capture-path.txt') -Value $wireCapture -Encoding utf8 -NoNewline
+    $tcpServer = Join-Path $RepoRoot 'tools\Bob-IrcTcpTestServer.ps1'
     $exe = (Get-Command powershell.exe).Source
     Start-Process -FilePath $exe -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $fakeIrc,
-        '-IrcHome', $env:BOB_IRC_HOME,
-        '-Nick', 'bob-flamingo',
-        '-Channel', '#bobiverse',
-        '-SessionId', 'chair-outbox'
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $tcpServer,
+        '-Port', $tcpPort,
+        '-LogPath', (Join-Path $bridgeRoot 'irc-tcp-test.log')
     ) -WindowStyle Hidden | Out-Null
+    Start-Sleep -Seconds 1
 
     $pairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobRepoPair.ps1') -Raw
     $pairWorkerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobRepoPairWorker.ps1') -Raw
@@ -3133,7 +3137,8 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
         throw 'repo pair must not spawn oneshot Start-BobWorker'
     }
     if ($pairWorkerSrc -match 'shop-joined-[^\s''"]+\.flag') { throw 'JOIN must not use shop-joined flag files' }
-    if ($pairWorkerSrc -notmatch 'irc_agent') { throw 'shop JOIN must start irc_agent' }
+    if ($pairWorkerSrc -notmatch 'Bob-RepoPairShopJoinClient|irc_agent\.py') { throw 'shop JOIN must use wire client or irc_agent' }
+    if ($pairWorkerSrc -match 'Fake-IrcAgent') { throw 'repo pair shop must not use Fake-IrcAgent sidecar' }
     if ($pairWorkerSrc -match 'seat-supervisor\.ps1') { throw 'repo pair must not use heartbeat supervisor instead of agent' }
     if ($pairWorkerSrc -match "seat-cursor[^`n]*'-p'") { throw 'repo pair cursor seat must not use -p oneshot launch' }
     if ($pairWorkerSrc -match 'Get-BobArgv' -and $pairWorkerSrc -notmatch 'Get-BobRepoPairArgv') { throw 'repo pair must use Get-BobRepoPairArgv not oneshot Get-BobArgv' }
@@ -3151,10 +3156,11 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($pairSrc -match 'Invoke-BobIrcDrainOutboxLines') { throw 'bobiverse digest must not delete PRIVMSG before irc_agent sends' }
     if ($pairSrc -notmatch 'Invoke-BobIrcOutboxWireConsumer|Add-BobIrcOutboxWireLine') { throw 'shop TOPIC/MODE/SHOPDESC must use wire consumer not chat say()' }
     if ($pairSrc -notmatch 'Remind-BobRepoPairHarvestBeforeDismiss') { throw 'idle-stop must remind workers to harvest skills' }
-    if ($pairWorkerSrc -match 'shop-join-[^\s''"]+\.json' -and $fakeGrokSrc -match 'shopNickLive') { throw 'Fake-Grok must not forge shop-join manifest' }
+    if ($fakeGrokSrc -match 'harvest-before-dismiss' -and $fakeGrokSrc -match 'harvest-ack' -and $fakeGrokSrc -notmatch 'HARVEST') { throw 'Fake-Grok must not auto-ack harvest without HARVEST task' }
     if ($pairWorkerSrc -notmatch 'BOB_REPO_PAIR_INTEGRATED_IRC') { throw 'shop JOIN must be integrated on worker seat agent' }
     if ($pairWorkerSrc -match 'shopNickLive\s*=\s*\$true' -and $pairWorkerSrc -notmatch 'shopNickLive\s*=\s*\$false') { throw 'shop manifest must not forge shopNickLive at spawn' }
     if ($pairSrc -match 'irc-sent\.log') { throw 'must not treat irc-sent.log as bobiverse send proof' }
+    if ($pairSrc -notmatch 'Invoke-BobIrcChairOutboxDrainOnce|Invoke-BobRepoPairBobiverseSay') { throw 'bobiverse digest must wire-send PRIVMSG' }
     if ($pairSrc -notmatch 'Sync-BobIrcChannelOpsWire') { throw 'channel ops must MODE on wire not JSON copy only' }
     if ($pairSrc -notmatch 'SHOPDESC') { throw 'shop channel description must queue SHOPDESC for wire consumer' }
     if ($pairSrc -match 'Add-BobIrcOutboxChannelLine \$line' -and $pairSrc -notmatch 'Add-BobIrcBobiversePrivmsg') { throw 'bobiverse digest must PRIVMSG #bobiverse not channel say()' }
@@ -3192,6 +3198,16 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     Start-Sleep -Seconds 5
     if (-not (Test-BobRepoPairSeatAlive -Seat $live.dev)) { throw 'dev seat not alive (process/shop)' }
     if (-not (Test-BobRepoPairSeatAlive -Seat $live.mrb)) { throw 'mrb seat not alive (process/shop)' }
+
+    $fakeIrc = Join-Path $RepoRoot 'tools\Fake-IrcAgent.ps1'
+    Start-Process -FilePath $exe -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $fakeIrc,
+        '-IrcHome', $env:BOB_IRC_HOME,
+        '-Nick', 'bob-flamingo',
+        '-Channel', '#bobiverse',
+        '-SessionId', 'chair-outbox'
+    ) -WindowStyle Hidden | Out-Null
+    Start-Sleep -Seconds 1
 
     $fakeSeat = [pscustomobject]@{ sessionId = [guid]::NewGuid().ToString() }
     $overlayPath = Join-Path $bridgeRoot 'overlay.json'
@@ -3248,37 +3264,22 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     Register-BobRepoPairMrbComplete -PrUrl $pr -Verdict PASS-nits | Out-Null
     $say = Invoke-BobRepoPairBobiverseSay
     if (@($say.said).Count -lt 1) { throw 'bobiverse say must post digest lines' }
-    $outbox = Join-Path $env:BOB_IRC_HOME 'outbox.txt'
-    if (-not (Test-Path $outbox)) { throw 'missing IRC outbox after bobiverse say' }
-    $outRaw = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
-        try {
-            $outRaw = [IO.File]::ReadAllText($outbox)
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    if (-not $outRaw) { throw 'missing IRC outbox after bobiverse say' }
-    if ($outRaw -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse PRIVMSG must remain in outbox until irc_agent sends' }
     Start-Sleep -Seconds 3
-    if (-not (Test-Path $privCapture)) { throw 'irc agent must capture sent PRIVMSG lines' }
-    $sent = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
+    $wireRaw = $null
+    for ($ri = 0; $ri -lt 20; $ri++) {
         try {
-            $sent = [IO.File]::ReadAllText($privCapture)
-            break
+            if (Test-Path $wireCapture) { $wireRaw = [IO.File]::ReadAllText($wireCapture) }
+            if ($wireRaw -match 'LIVE PRIVMSG #bobiverse' -and $wireRaw -match 'dev complete') { break }
         }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
+        catch { }
+        Start-Sleep -Milliseconds 300
     }
-    if (-not $sent) { throw 'irc agent must capture sent PRIVMSG lines' }
-    if ($sent -notmatch 'dev complete') { throw "privmsg capture missing dev complete: $sent" }
-    if ($sent -notmatch 'MRB complete') { throw "privmsg capture missing MRB complete: $sent" }
-    if ($sent -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse on the wire' }
+    if (-not $wireRaw) { throw 'wire capture missing after bobiverse say' }
+    if ($wireRaw -notmatch 'LIVE PRIVMSG #bobiverse') { throw 'bobiverse digest must LIVE-send PRIVMSG on IRC wire' }
+    if ($wireRaw -notmatch 'dev complete') { throw "wire capture missing dev complete: $wireRaw" }
+    if ($wireRaw -notmatch 'MRB complete') { throw "wire capture missing MRB complete: $wireRaw" }
     if (Test-Path (Join-Path $env:BOB_IRC_HOME 'outbox-drained.txt')) { throw 'must not use outbox-drained anti-send path' }
+    if (Test-Path (Join-Path $env:BOB_IRC_HOME 'privmsg-sent.capture')) { throw 'must not use privmsg-sent.capture as send proof' }
 
     $topic = Set-BobShopChannelRepoDescription -Repo 'SimonBarnett/agentic_build' -MachineId flamingo
     if (-not $topic.ok) { throw 'shop topic failed' }
@@ -3287,7 +3288,7 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $desc = Get-Content $descPath -Raw
     if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
     if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
-    if (-not (Test-Path $wireCapture) -or (Get-Content $wireCapture -Raw) -notmatch 'TOPIC #flamingo') { throw 'SHOPDESC consumer must issue real TOPIC on IRC wire' }
+    if (-not (Test-Path $wireCapture) -or (Get-Content $wireCapture -Raw) -notmatch 'LIVE TOPIC #flamingo') { throw 'SHOPDESC consumer must LIVE TOPIC on IRC wire' }
 
     $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
     if (-not $usage.posted) { throw 'usage webhook must POST with pools' }
@@ -3312,7 +3313,7 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($tick.idleStop -and @($tick.idleStop).Count -gt 0) { throw 'idle tick must remind harvest before first stop' }
     $harvestPath = Join-Path $bridgeRoot "workers\$devSidBefore\inbox\harvest-before-dismiss.txt"
     if (-not (Test-Path $harvestPath)) { throw 'idle-stop must write harvest remind inbox' }
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 8
     $tickHarv = Invoke-BobRepoPairTick
     if (@($tickHarv.idleStop) -notcontains 'dev') { throw "idle tick must stop dev after harvest ack: $($tickHarv.idleStop -join ',')" }
 
@@ -3324,29 +3325,17 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     Start-Sleep -Seconds 3
     if (@($idleAssign.assigned).Count -lt 1) { throw 'idle assign must target remote bobiverse peer' }
     if ([string]$idleAssign.assigned[0].peer -eq 'flamingo') { throw 'idle assign must not target local chair only' }
-    $priv2 = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
-        try {
-            $priv2 = [IO.File]::ReadAllText($privCapture)
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    if (-not $priv2) { throw 'missing privmsg capture for idle assign' }
-    $outAssign = $null
+    $wireAssign = $null
     for ($ri = 0; $ri -lt 20; $ri++) {
         try {
-            if (Test-Path $outbox) { $outAssign = [IO.File]::ReadAllText($outbox) }
-            if ($priv2 -match 'PRIVMSG bob-ionos :CHAIR_ASSIGN') { break }
-            if ($outAssign -match 'PRIVMSG bob-ionos :CHAIR_ASSIGN') { break }
+            if (Test-Path $wireCapture) { $wireAssign = [IO.File]::ReadAllText($wireCapture) }
+            if ($wireAssign -match 'LIVE PRIVMSG bob-ionos :CHAIR_ASSIGN') { break }
         }
         catch { }
         Start-Sleep -Milliseconds 300
     }
-    if ($priv2 -notmatch 'PRIVMSG bob-ionos :CHAIR_ASSIGN' -and $outAssign -notmatch 'PRIVMSG bob-ionos :CHAIR_ASSIGN') {
-        throw 'idle assign must PRIVMSG remote bob chair nick'
+    if (-not $wireAssign -or $wireAssign -notmatch 'LIVE PRIVMSG bob-ionos :CHAIR_ASSIGN') {
+        throw 'idle assign must LIVE PRIVMSG remote bob chair nick on wire'
     }
 
     $st2 = Get-Content $pairPath -Raw | ConvertFrom-Json

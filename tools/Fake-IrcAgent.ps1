@@ -1,11 +1,9 @@
-# Test-pack IRC agent double: drains chair outbox PRIVMSG and outbox-wire via real wire capture/TCP (not irc-sent.log fiction).
+# Test-pack IRC agent double: drains chair outbox PRIVMSG and outbox-wire via TCP/live wire (not forged JOIN).
 param(
     [Parameter(Mandatory)][string]$IrcHome,
     [Parameter(Mandatory)][string]$Nick,
     [Parameter(Mandatory)][string]$Channel,
-    [string]$SessionId,
-    [string]$ManifestPath,
-    [switch]$ShopSeat
+    [string]$SessionId
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -13,8 +11,6 @@ New-Item -ItemType Directory -Force -Path $IrcHome | Out-Null
 $posPath = Join-Path $IrcHome 'outbox.pos'
 $outbox = Join-Path $IrcHome 'outbox.txt'
 $wirePath = Join-Path $IrcHome 'outbox-wire.txt'
-$privCapture = $env:BOB_IRC_PRIVMSG_CAPTURE
-if (-not $privCapture) { $privCapture = Join-Path $IrcHome 'privmsg-sent.capture' }
 
 function Get-OutboxPos {
     if (-not (Test-Path $posPath)) { return 0 }
@@ -26,89 +22,24 @@ function Set-OutboxPos {
     Set-Content -LiteralPath $posPath -Value $Pos -Encoding utf8 -NoNewline
 }
 
-function Invoke-WireLine {
+function Send-WireLine {
     param([string]$Line)
     $t = ([string]$Line).Trim()
-    if (-not $t) { return $true }
+    if (-not $t) { return $false }
     $client = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Bob-IrcWireClient.ps1'
-    if (Test-Path -LiteralPath $client) {
-        $exe = (Get-Command powershell.exe).Source
-        & $exe -NoProfile -ExecutionPolicy Bypass -File $client -Line $t -IrcHome $IrcHome | Out-Null
-        return $true
-    }
-    return $false
-}
-
-function Confirm-ShopJoin {
-    param([string]$ManifestPath, [string]$SeatHome, [string]$Nick, [string]$Channel)
-    if (-not $ManifestPath) { return }
-    $joinedOk = Join-Path $SeatHome 'joined.ok'
-    $ircLog = Join-Path $SeatHome 'irc.log'
-    $live = $false
-    if (Test-Path -LiteralPath $joinedOk) { $live = $true }
-    elseif (Test-Path -LiteralPath $ircLog) {
-        $raw = Get-Content -LiteralPath $ircLog -Raw -ErrorAction SilentlyContinue
-        if ($raw -and $raw -match [regex]::Escape($Nick) -and $raw -match 'JOIN') { $live = $true }
-    }
-    if (-not $live) {
-        # Simulate Ergo JOIN after irc_agent would connect (test double speaks wire).
-        $joinLine = ":$Nick!u@h JOIN $Channel"
-        Add-Content -LiteralPath $ircLog -Value $joinLine -Encoding utf8
-        Set-Content -LiteralPath $joinedOk -Value ([DateTime]::UtcNow.ToString('o')) -Encoding utf8 -NoNewline
-        $live = $true
-    }
-    if (-not $live) { return }
-    $manifest = @{
-        channel       = $Channel
-        nick          = $Nick
-        sessionId     = $SessionId
-        joinedAt      = [DateTime]::UtcNow.ToString('o')
-        policy        = 'shop_only_no_bobiverse'
-        joinKind      = 'irc_agent_worker'
-        shopNickLive  = $true
-        ircAgentPid   = $PID
-        wireAgent     = $true
-        joinProof     = 'irc.log'
-    }
-    ($manifest | ConvertTo-Json -Compress) | Set-Content -LiteralPath $ManifestPath -Encoding utf8
-}
-
-$seatHome = $IrcHome
-if ($ShopSeat -and $SessionId) {
-    $seatHome = Join-Path $IrcHome ('shop-irc-' + $SessionId)
-    New-Item -ItemType Directory -Force -Path $seatHome | Out-Null
-}
-
-if ($SessionId -and $ManifestPath) {
-    $manifestPath = $ManifestPath
-}
-elseif ($SessionId) {
-    $manifestPath = Join-Path $IrcHome ("shop-join-$SessionId.json")
-}
-if ($ShopSeat -and $SessionId -and $manifestPath) {
-    $pending = @{
-        channel       = $Channel
-        nick          = $Nick
-        sessionId     = $SessionId
-        joinedAt      = $null
-        policy        = 'shop_only_no_bobiverse'
-        joinKind      = 'irc_agent_worker'
-        shopNickLive  = $false
-        ircAgentPid   = $PID
-    }
-    ($pending | ConvertTo-Json -Compress) | Set-Content -LiteralPath $manifestPath -Encoding utf8
+    if (-not (Test-Path -LiteralPath $client)) { return $false }
+    $exe = (Get-Command powershell.exe).Source
+    & $exe -NoProfile -ExecutionPolicy Bypass -File $client -Line $t -IrcHome $IrcHome | Out-Null
+    return ($LASTEXITCODE -eq 0)
 }
 
 while ($true) {
-    if ($ShopSeat -and $manifestPath) {
-        Confirm-ShopJoin -ManifestPath $manifestPath -SeatHome $seatHome -Nick $Nick -Channel $Channel
-    }
     if (Test-Path -LiteralPath $wirePath) {
         $wireLines = @(Get-Content -LiteralPath $wirePath -ErrorAction SilentlyContinue)
         if ($wireLines.Count -gt 0) {
             $keep = New-Object System.Collections.Generic.List[string]
             foreach ($wl in $wireLines) {
-                if (Invoke-WireLine -Line $wl) { continue }
+                if (Send-WireLine -Line $wl) { continue }
                 [void]$keep.Add([string]$wl)
             }
             if ($keep.Count -gt 0) {
@@ -143,8 +74,8 @@ while ($true) {
                     $consumed += ([Text.Encoding]::UTF8.GetByteCount($line + "`n"))
                     continue
                 }
-                if ($t.StartsWith('PRIVMSG ')) {
-                    [IO.File]::AppendAllText($privCapture, ($t + [Environment]::NewLine))
+                if ($t.StartsWith('PRIVMSG ') -or $t.StartsWith('TOPIC ') -or $t.StartsWith('MODE ')) {
+                    if (-not (Send-WireLine -Line $t)) { break }
                     $consumed += ([Text.Encoding]::UTF8.GetByteCount($line + "`n"))
                     continue
                 }

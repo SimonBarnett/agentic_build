@@ -154,11 +154,6 @@ if ($persistent) {
             [IO.File]::WriteAllText($hbPath, ($hb | ConvertTo-Json -Compress))
         }
         if ($workerDir) {
-            $harvestRemind = Join-Path $workerDir 'inbox\harvest-before-dismiss.txt'
-            $harvestAck = Join-Path $workerDir 'inbox\harvest-ack.txt'
-            if ((Test-Path -LiteralPath $harvestRemind) -and -not (Test-Path -LiteralPath $harvestAck)) {
-                [IO.File]::WriteAllText($harvestAck, ([DateTime]::UtcNow.ToString('o')))
-            }
             $inbox = Join-Path $workerDir 'inbox\chair-task.txt'
             if (Test-Path -LiteralPath $inbox) {
                 try {
@@ -167,6 +162,16 @@ if ($persistent) {
                         $lastTask = $task
                         $touch = Join-Path $workerDir 'inbox\chair-touched.txt'
                         [IO.File]::WriteAllText($touch, $task)
+                        $exec = Join-Path $workerDir 'outbox\chair-executed.txt'
+                        [IO.File]::WriteAllText($exec, $task)
+                        if ($task -match '(?i)HARVEST') {
+                            $skillsDir = Join-Path $workerDir '.grok\skills'
+                            New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
+                            $stamp = Join-Path $skillsDir ('harvest-stamp-' + [guid]::NewGuid().ToString('n') + '.txt')
+                            [IO.File]::WriteAllText($stamp, ([DateTime]::UtcNow.ToString('o')))
+                            $harvestAck = Join-Path $workerDir 'inbox\harvest-ack.txt'
+                            [IO.File]::WriteAllText($harvestAck, ('harvested ' + $stamp))
+                        }
                     }
                 }
                 catch { }

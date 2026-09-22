@@ -155,8 +155,15 @@ function Test-BobRepoPairSeatShopJoined {
     if ($jk -eq 'irc_agent_stub' -or $jk -match 'stub') { return $false }
     if ($jk -notmatch '^(irc_agent|irc_agent_worker)$') { return $false }
     if ($manifest.shopNickLive -eq $false) { return $false }
+    $proof = $null
+    if ($manifest.joinProof) { $proof = [string]$manifest.joinProof }
+    if ($proof -eq 'irc.log' -or $proof -eq 'wireAgent') { return $false }
+    if ($proof -ne 'wire_tcp' -and $proof -ne 'irc_agent_live' -and $proof -ne 'irc_agent') { return $false }
     $ircPid = $manifest.ircAgentPid
     if (-not $ircPid) { return $false }
+    if ($proof -eq 'wire_tcp' -or $proof -eq 'irc_agent_live') {
+        return $true
+    }
     if ($ircPid -is [System.Array]) { $ircPid = @($ircPid)[0] }
     $ircProc = Get-Process -Id ([int]$ircPid) -ErrorAction SilentlyContinue
     if (-not $ircProc) { return $false }
@@ -446,6 +453,10 @@ function Deliver-BobBobiversePeerAssign {
     $nick = 'bob-' + $PeerMachineId
     $wireTask = "CHAIR_ASSIGN $(if ($SeatHint) { $SeatHint } else { 'work' }) $Task"
     Add-BobIrcOutboxChannelLine ("PRIVMSG $nick :$wireTask")
+    $wireSent = Send-BobIrcWireLineImmediate -Line ("PRIVMSG $nick :$wireTask")
+    if (-not $wireSent.ok) {
+        return [pscustomobject]@{ ok = $false; error = 'wire_send_failed'; peer = $PeerMachineId }
+    }
     $path = Join-Path $peersDir ($PeerMachineId + '-chair-assign.json')
     Write-JsonFile $path $payload
     if (Test-GrokBotAvailable) {
@@ -613,9 +624,11 @@ function Invoke-BobRepoPairTick {
             $pendingAt = $null
             try { $pendingAt = [DateTime]::Parse([string]$seat.pendingHarvestDismiss, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime() } catch { }
             $ackOk = Test-Path -LiteralPath $ack
-            $timedOut = $false
-            if ($pendingAt -and (([DateTime]::UtcNow - $pendingAt).TotalSeconds -gt 90)) { $timedOut = $true }
-            if (-not $ackOk -and -not $timedOut) { continue }
+            if (-not $ackOk) {
+                $stamp = Get-ChildItem -LiteralPath (Join-Path (Get-WorkerDir $sid) '.grok\skills') -Filter 'harvest-stamp-*.txt' -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($stamp) { $ackOk = $true }
+            }
+            if (-not $ackOk) { continue }
             Stop-BobWorker -SessionId $sid | Out-Null
             $stopped += $role
             $seat | Add-Member -NotePropertyName sessionId -NotePropertyValue $null -Force
@@ -798,6 +811,7 @@ function Invoke-BobRepoPairBobiverseSay {
     if ($out.Count -gt 0) {
         $s | Add-Member -NotePropertyName bobiverseSaid -NotePropertyValue @($said) -Force
         Write-BobRepoPairState $s
+        try { Invoke-BobIrcChairOutboxDrainOnce | Out-Null } catch { }
     }
     return [pscustomobject]@{ ok = $true; said = @($out) }
 }
@@ -1051,6 +1065,7 @@ function Invoke-BobRepoPairChairTick {
     [CmdletBinding()]
     param()
     try { Invoke-BobRepoPairShopPing | Out-Null } catch { }
+    try { Invoke-BobChairBobiverseCommand | Out-Null } catch { }
     $tick = Invoke-BobRepoPairTick
     $idleAssign = Invoke-BobRepoPairChairIdleAssign
     $ticket = [pscustomobject]@{ ok = $true; skipped = 'cadence' }

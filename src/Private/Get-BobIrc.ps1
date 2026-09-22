@@ -872,6 +872,56 @@ function Invoke-BobIrcOutboxWireLine {
     return [pscustomobject]@{ ok = $false; error = 'not_wire_line'; line = $t }
 }
 
+function Invoke-BobChairBobiverseCommand {
+    [CmdletBinding()]
+    param()
+    Add-BobIrcOutboxChannelLine '!bobiverse'
+    try { Invoke-BobChairBobiverseUsageHook | Out-Null } catch { }
+    return [pscustomobject]@{ ok = $true }
+}
+
+function Send-BobIrcWireLineImmediate {
+    param([Parameter(Mandatory)][string]$Line)
+    return Invoke-BobIrcWireSend -WireLine $Line
+}
+
+function Invoke-BobIrcChairOutboxDrainOnce {
+    [CmdletBinding()]
+    param()
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    $outbox = Join-Path $home 'outbox.txt'
+    if (-not (Test-Path -LiteralPath $outbox)) {
+        return [pscustomobject]@{ ok = $true; sent = @() }
+    }
+    $lines = @(Get-Content -LiteralPath $outbox -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return [pscustomobject]@{ ok = $true; sent = @() } }
+    $keep = New-Object System.Collections.Generic.List[string]
+    $sent = @()
+    foreach ($line in $lines) {
+        $t = ([string]$line).Trim()
+        if (-not $t) { continue }
+        if ($t.StartsWith('PRIVMSG ') -or $t.StartsWith('TOPIC ') -or $t.StartsWith('MODE ') -or $t -eq '!bobiverse') {
+            $wire = $t
+            if ($t -eq '!bobiverse') { $wire = 'PRIVMSG #bobiverse :!bobiverse' }
+            $r = Invoke-BobIrcWireSend -WireLine $wire
+            if ($r.ok) { $sent += $t } else { [void]$keep.Add($t) }
+        }
+        else {
+            [void]$keep.Add($t)
+        }
+    }
+    if ($sent.Count -gt 0) {
+        if ($keep.Count -gt 0) {
+            Set-Content -LiteralPath $outbox -Value @($keep) -Encoding utf8
+        }
+        else {
+            Remove-Item -LiteralPath $outbox -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return [pscustomobject]@{ ok = $true; sent = @($sent) }
+}
+
 function Invoke-BobChairBobiverseUsageHook {
     [CmdletBinding()]
     param()
@@ -1569,10 +1619,6 @@ function Request-BobIrcBobiversePull {
     # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
     # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
     try { Invoke-BobChairBobiverseUsageHook | Out-Null } catch { }
-    if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
-        Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-        return $false
-    }
     Add-BobIrcOutboxChannelLine '!bobiverse'
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
     return $true
