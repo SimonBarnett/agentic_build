@@ -18,6 +18,11 @@ All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo start/firew
 
 **During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit, push `origin/main`. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
 
+Simon: **Bob must remind workers to harvest before dismissing them.** The
+job loop (`bob-job-loop`) tells the worker to harvest on DONE / last
+FAILED. Do not dismiss a worker that learned a playbook without that
+check. Empty harvest: no commit.
+
 Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit, push `origin/main`.
 
 ## Scan

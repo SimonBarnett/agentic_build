@@ -1,5 +1,13 @@
 # Skill harvest log
 
+## 2026-09-22 — harvest before dismiss + PASS-nits merge race
+
+Simon `#bobiverse`: Bob must remind workers to harvest skills before
+dismissing them. `harvest-agent-skills` + `bob-job-loop` On wakeup.
+`FAILED: PASS-nits finish: PR still open after gh pr merge` is a race:
+if the PR is MERGED and the FR is CLOSED / PASS-nits, treat DONE; do
+not relaunch a build (marchhare irc-skill #1).
+
 ## 2026-09-22 — Watch must not enqueue !bobiverse (Simon go-for-it)
 
 Simon on #bobiverse: go for it. `!bobiverse` answer is Jeeves-only.

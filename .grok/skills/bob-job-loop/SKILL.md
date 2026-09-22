@@ -77,6 +77,12 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 - `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
   secrets in the goal), then relaunch. Do not start a second loop on the
   same FR while one is still alive.
+- `FAILED: PASS-nits finish: PR still open after gh pr merge` — race.
+  If `gh pr view` is already MERGED and the FR issue is CLOSED (or has
+  PASS-nits merge comment), treat as DONE. Do not relaunch a build.
+- Before the driver dismisses a worker (DONE or last FAILED), remind it
+  to harvest repeatable playbooks (`harvest-agent-skills`). Empty harvest:
+  no commit.
 
 ## What the driver does
 
