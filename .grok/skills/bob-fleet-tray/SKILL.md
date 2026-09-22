@@ -43,13 +43,20 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor pool bars (one per seat)
+## Cursor spending groups (per seat)
 
-**One bar per Cursor seat** from `config/bob-seats.json` (Smart Catalogue,
-Club Madeira, ntsa, …). Each heading is `{seat label}  Models  {N%|n/a}`
-plus reset and optional overage GBP. Do **not** collapse seats into a single
-`Cursor Models` strip. Local `Get-BobCursorAgentWeeklyRemaining` fills the
-seat for this machine; fleet peers + `cursor-pools.json` cache fill the rest.
+**Three RTFM groups per Cursor seat** from `config/bob-seats.json` (Smart
+Catalogue, Club Madeira, ntsa, …):
+
+1. `{seat}  grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
+2. `{seat}  high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
+3. `{seat}  low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset
+   on this row). MRB/PR fuel gate reads **low cost models** only.
+
+Do **not** collapse seats or groups into one `Cursor Models` strip. Local
+`Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
+host's seat; fleet `cursor-pools.json` + digest `cursor_pools` / `pcent` fill
+peers.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 
@@ -62,8 +69,8 @@ cache — not POINT, not a presence-only digest.
 (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 (`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
 
-- Known remaining: seat bar shows N% from Spending Cursor Models (100 − used)
-  for that account, not Sand overage.
+- Known remaining: each group bar shows N% from Spending (see `box-usage`), not
+  Sand overage mislabelled as low cost models.
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage
   GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents
   → GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overage,
@@ -91,7 +98,7 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`Smart Catalogue  Models  9%  reset 23 Sep`
+`Smart Catalogue  low cost models  9%  reset 23 Sep`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
 
@@ -99,7 +106,9 @@ Job lines under a machine (local jobs or `!report` digest):
 
 `START  SimonBarnett/agentic_irc  395c499  composer-2.5  report digest  1m52s`
 
-No `grok.exe ? running` when repo/sha exist on the packet. Idle machine:
+No `grok.exe ? running` when repo/sha exist on the packet. When digest
+`workers` / `working_on` or live `bob-*` / `{machine}-{seatPid}` nicks are on
+IRC, paint a **START** line (not `no jobs`). Idle machine with no IRC workers:
 `no jobs`.
 
 Do not show `Cursor Models (-GBP x.xx)` as the remaining figure. That was

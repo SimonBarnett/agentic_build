@@ -207,9 +207,23 @@ function ConvertTo-BobCursorUsageDoc {
         try { $sandExhausted = [bool]$j.sand_exhausted } catch { $sandExhausted = $null }
     }
     if ($j.sand_period_end) { $sandPeriodEnd = [string]$j.sand_period_end }
+    $spendGroups = @()
+    if ($j.cursor_spending_groups) {
+        foreach ($g in @($j.cursor_spending_groups)) {
+            if (-not $g) { continue }
+            $spendGroups += ,[pscustomobject]@{
+                id             = $(if ($g.id) { [string]$g.id } else { $null })
+                label          = $(if ($g.label) { [string]$g.label } else { $null })
+                used_pct       = $(if ($null -ne $g.used_pct -and [string]$g.used_pct -ne '') { [int]$g.used_pct } else { $null })
+                remaining_pct  = $(if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') { [int]$g.remaining_pct } else { $null })
+                source         = $(if ($g.source) { [string]$g.source } else { $null })
+            }
+        }
+    }
     return [pscustomobject]@{
         remaining_pct = $(if ($null -eq $remain) { $null } else { [int]$remain })
         used_pct      = $(if ($null -eq $used) { $null } else { [int][math]::Round([double]$used) })
+        cursor_spending_groups = @($spendGroups)
         overage_gbp   = $overGbp
         overage_usd   = $overUsd
         on_demand_used_cents = $cents
@@ -619,13 +633,81 @@ function ConvertTo-BobTrayIntOrNull {
     try { return [int]$Value } catch { return $null }
 }
 
+function Get-BobCursorSpendingGroupCatalog {
+    return @(
+        [pscustomobject]@{ id = 'grok-chat'; label = 'grok chat'; pcent_source = 'grok-chat' }
+        [pscustomobject]@{ id = 'high-cost-models'; label = 'high cost models'; pcent_source = 'high-cost-models' }
+        [pscustomobject]@{ id = 'low-cost-models'; label = 'low cost models'; pcent_source = 'cursor-models' }
+    )
+}
+
+function Get-BobCursorGroupRemainFromLocalDoc {
+    param($LocalCursorDoc, [string]$GroupId)
+    if (-not $LocalCursorDoc) { return $null }
+    foreach ($g in @($LocalCursorDoc.cursor_spending_groups)) {
+        if (-not $g) { continue }
+        if ([string]$g.id -ne $GroupId) { continue }
+        if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+            return [int]$g.remaining_pct
+        }
+    }
+    if ($GroupId -eq 'low-cost-models' -and $null -ne $LocalCursorDoc.remaining_pct) {
+        return [int]$LocalCursorDoc.remaining_pct
+    }
+    if ($GroupId -eq 'grok-chat' -and $null -ne $LocalCursorDoc.sand_remaining_pct) {
+        return [int]$LocalCursorDoc.sand_remaining_pct
+    }
+    return $null
+}
+
+function Get-BobCursorGroupRemainFromSeatCache {
+    param($SeatCacheEntry, [string]$GroupId)
+    if (-not $SeatCacheEntry) { return $null }
+    if ($SeatCacheEntry.groups) {
+        $g = $SeatCacheEntry.groups.$GroupId
+        if ($g -and $null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+            try { return [int]$g.remaining_pct } catch { }
+        }
+    }
+    if ($GroupId -eq 'low-cost-models' -and $null -ne $SeatCacheEntry.remaining_pct -and [string]$SeatCacheEntry.remaining_pct -ne '') {
+        try { return [int]$SeatCacheEntry.remaining_pct } catch { }
+    }
+    return $null
+}
+
+function New-BobTrayIrcWorkerJobRow {
+    param([string]$MachineId, [string]$Description, [string]$Nick)
+    $desc = $Description
+    if (-not $desc) { $desc = 'irc agent' }
+    $model = 'irc'
+    if ($Nick) { $model = [string]$Nick }
+    $job = [pscustomobject]@{
+        id          = ('irc-worker-' + $MachineId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        machine     = $MachineId
+        repo        = 'irc'
+        sha         = $null
+        model       = $model
+        description = $desc
+        run_time    = $null
+        state       = 'START'
+        source      = 'irc-worker'
+    }
+    return ConvertTo-BobTrayJobRow -Job $job -DefaultMachine $MachineId -State 'START' -SkipGit
+}
+
 function Expand-BobReportDigestView {
     param($Digest)
     $tasksByMachine = @{}
     $uptimeByMachine = @{}
     $pcentRows = @()
+    $workersByMachine = @{}
     if (-not $Digest) {
-        return [pscustomobject]@{ tasksByMachine = $tasksByMachine; uptimeByMachine = $uptimeByMachine; pcentRows = $pcentRows }
+        return [pscustomobject]@{
+            tasksByMachine   = $tasksByMachine
+            uptimeByMachine  = $uptimeByMachine
+            pcentRows        = $pcentRows
+            workersByMachine = $workersByMachine
+        }
     }
 
     $machineNodes = @()
@@ -676,6 +758,21 @@ function Expand-BobReportDigestView {
                     }
                 }
             }
+            $wCount = 0
+            $wOn = $null
+            $nodeNames = @($node.PSObject.Properties.Name)
+            if ($nodeNames -contains 'workers' -and $null -ne $node.workers -and [string]$node.workers -ne '') {
+                if ($node.workers -is [System.Array] -or ($node.workers -is [System.Collections.IEnumerable] -and $node.workers -isnot [string])) {
+                    $wCount = @($node.workers).Count
+                }
+                else {
+                    try { $wCount = [int]$node.workers } catch { }
+                }
+            }
+            if ($nodeNames -contains 'working_on' -and $node.working_on) { $wOn = [string]$node.working_on }
+            if ($wCount -gt 0 -or $wOn) {
+                $workersByMachine[$mid] = [pscustomobject]@{ count = $wCount; working_on = $wOn }
+            }
         }
     }
     else {
@@ -710,10 +807,39 @@ function Expand-BobReportDigestView {
         }
     }
 
+    if ($Digest.workers) {
+        foreach ($wn in @($Digest.workers)) {
+            if (-not $wn) { continue }
+            $nick = [string]$wn
+            if ($wn -is [pscustomobject] -or $wn -is [System.Collections.IDictionary]) {
+                if ($wn.nick) { $nick = [string]$wn.nick }
+                elseif ($wn.id) { $nick = [string]$wn.id }
+            }
+            $mac = Resolve-BobiverseMachineFromIrcNick $nick
+            if (-not $mac) { continue }
+            $desc = 'irc agent'
+            if ($wn -is [pscustomobject] -and $wn.working_on) { $desc = [string]$wn.working_on }
+            $cur = $workersByMachine[$mac]
+            if (-not $cur) {
+                $workersByMachine[$mac] = [pscustomobject]@{ count = 1; working_on = $desc; nick = $nick }
+            }
+            else {
+                $cnt = [int]$cur.count
+                if ($cnt -lt 1) { $cnt = 1 }
+                $workersByMachine[$mac] = [pscustomobject]@{
+                    count      = $cnt + 1
+                    working_on = $(if ($cur.working_on) { [string]$cur.working_on } else { $desc })
+                    nick       = $nick
+                }
+            }
+        }
+    }
+
     return [pscustomobject]@{
-        tasksByMachine  = $tasksByMachine
-        uptimeByMachine = $uptimeByMachine
-        pcentRows       = $pcentRows
+        tasksByMachine   = $tasksByMachine
+        uptimeByMachine  = $uptimeByMachine
+        pcentRows        = $pcentRows
+        workersByMachine = $workersByMachine
     }
 }
 
@@ -748,16 +874,12 @@ function Get-BobCursorPoolsForTray {
         $PcentRows
     )
     $cache = Read-BobCursorPoolsCache
+    $catalog = @(Get-BobCursorSpendingGroupCatalog)
     $pools = @()
     foreach ($seat in @(Get-BobSeatConfig)) {
         $sid = [string]$seat.id
         $label = [string]$seat.label
         if (-not $label) { $label = $sid }
-        $remain = $null
-        $used = $null
-        $periodEnd = $null
-        $overageLabel = $null
-        $pctLabel = 'n/a'
         $onSeat = $false
         foreach ($sm in @($seat.machines)) {
             if ([string]$sm -and [string]$sm.ToLowerInvariant() -eq [string]$MachineId.ToLowerInvariant()) {
@@ -765,49 +887,37 @@ function Get-BobCursorPoolsForTray {
                 break
             }
         }
-        if ($onSeat -and $LocalCursorDoc) {
-            if ($null -ne $LocalCursorDoc.remaining_pct) { $remain = [int]$LocalCursorDoc.remaining_pct }
-            if ($null -ne $LocalCursorDoc.used_pct) { $used = $LocalCursorDoc.used_pct }
-            if ($LocalCursorDoc.period_end) { $periodEnd = [string]$LocalCursorDoc.period_end }
+        $ce = $null
+        if ($cache.by_seat.ContainsKey($sid)) { $ce = $cache.by_seat[$sid] }
+        $periodEnd = $null
+        if ($onSeat -and $LocalCursorDoc -and $LocalCursorDoc.period_end) {
+            $periodEnd = [string]$LocalCursorDoc.period_end
         }
-        if ($cache.by_seat.ContainsKey($sid)) {
-            $ce = $cache.by_seat[$sid]
-            if ($null -ne $ce.remaining_pct -and [string]$ce.remaining_pct -ne '' -and $null -eq $remain) {
-                try { $remain = [int]$ce.remaining_pct } catch { }
-            }
-            if ($ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
-            if ($ce.overage_label) { $overageLabel = [string]$ce.overage_label }
-            if ($ce.label -and $pctLabel -eq 'n/a') {
-                $parsed = Parse-BobCursorPoolLabel ([string]$ce.label)
-                if ($parsed -and $null -ne $parsed.remaining_pct) { $remain = [int]$parsed.remaining_pct }
-                if ($parsed -and $parsed.overage) { $overageLabel = [string]$parsed.overage }
-            }
-        }
-        if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
-        elseif ($onSeat -and $LocalCursorDoc) {
-            $acct = Format-BobCursorAccountLabel -RemainingPct $null -UsedPct $(if ($null -ne $used) { $used } else { $null })
-            if ($acct -and $acct -ne 'empty') {
-                $pctLabel = $acct
-                if (Test-BobCursorOverageLabel $acct) { $overageLabel = $acct }
-            }
-        }
-        if ($pctLabel -eq 'n/a' -and $overageLabel) { $pctLabel = $overageLabel }
+        if ($ce -and $ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
         $resetLabel = Format-BobResetLabel $periodEnd
-        $heading = ('{0}  Models  {1}' -f $label, $pctLabel)
-        if ($resetLabel) { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
-        if ($overageLabel -and $pctLabel -notmatch [char]0x00A3 -and $overageLabel -ne $pctLabel) {
-            $heading = ('{0}  {1}' -f $heading, $overageLabel)
-        }
-        $pools += ,[pscustomobject]@{
-            seat_id         = $sid
-            seat_label      = $label
-            remaining_pct   = $remain
-            period_end      = $periodEnd
-            reset_label     = $resetLabel
-            pct_label       = $pctLabel
-            overage_label   = $overageLabel
-            heading         = $heading
-            account_name    = 'Cursor Models'
+        foreach ($grp in $catalog) {
+            $gid = [string]$grp.id
+            $glabel = [string]$grp.label
+            $remain = $null
+            if ($onSeat) { $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid }
+            if ($null -eq $remain) { $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid }
+            $pctLabel = 'n/a'
+            if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
+            $heading = ('{0}  {1}  {2}' -f $label, $glabel, $pctLabel)
+            if ($resetLabel -and $gid -eq 'low-cost-models') { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
+            $pools += ,[pscustomobject]@{
+                seat_id         = $sid
+                seat_label      = $label
+                group_id        = $gid
+                group_label     = $glabel
+                remaining_pct   = $remain
+                period_end      = $periodEnd
+                reset_label     = $(if ($gid -eq 'low-cost-models') { $resetLabel } else { $null })
+                pct_label       = $pctLabel
+                overage_label   = $null
+                heading         = $heading
+                account_name    = $glabel
+            }
         }
     }
     foreach ($pc in @($PcentRows)) {
@@ -819,7 +929,16 @@ function Get-BobCursorPoolsForTray {
         $reportMac = [string]$pc.machine
         if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
         $seatId = $src
-        if ($src -eq 'cursor-models') {
+        $groupId = $null
+        if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
+            $groupId = 'low-cost-models'
+            $macForSeat = $MachineId
+            if ($reportMac) { $macForSeat = $reportMac }
+            $seat = Get-BobSeatForMachine -MachineId $macForSeat
+            if ($seat) { $seatId = [string]$seat.id }
+        }
+        elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
+            $groupId = $src
             $macForSeat = $MachineId
             if ($reportMac) { $macForSeat = $reportMac }
             $seat = Get-BobSeatForMachine -MachineId $macForSeat
@@ -827,18 +946,23 @@ function Get-BobCursorPoolsForTray {
         }
         elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
             $seatId = $src
+            $groupId = 'low-cost-models'
         }
+        if (-not $groupId) { continue }
         foreach ($pool in $pools) {
-            if ([string]$pool.seat_id -eq $seatId) {
+            if ([string]$pool.seat_id -eq $seatId -and [string]$pool.group_id -eq $groupId) {
                 $pool.remaining_pct = $pct
                 $pool.pct_label = ('{0}%' -f $pct)
-                $pool.heading = ('{0}  Models  {1}' -f $pool.seat_label, $pool.pct_label)
+                $pool.heading = ('{0}  {1}  {2}' -f $pool.seat_label, $pool.group_label, $pool.pct_label)
                 if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
                 break
             }
         }
         if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
-            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
+            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $pct
+            if ($groupId -eq 'low-cost-models') {
+                Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
+            }
         }
     }
     return $pools
@@ -910,6 +1034,8 @@ function Get-BobTrayHover {
     $digestTasksByMachine = $digestView.tasksByMachine
     $uptimeByMachine = $digestView.uptimeByMachine
     $digestPcentRows = @($digestView.pcentRows)
+    $digestWorkersByMachine = @{}
+    if ($digestView.workersByMachine) { $digestWorkersByMachine = $digestView.workersByMachine }
 
     $running = @()
     $queuedJobs = @()
@@ -1216,6 +1342,23 @@ function Get-BobTrayHover {
             }
             if ($digestRows.Count -gt 0) { $rows = $digestRows }
         }
+        if ($rows.Count -eq 0 -and $digestWorkersByMachine.ContainsKey($mid)) {
+            $wi = $digestWorkersByMachine[$mid]
+            $desc = $null
+            if ($wi.working_on) { $desc = [string]$wi.working_on }
+            $nick = $null
+            if ($wi.nick) { $nick = [string]$wi.nick }
+            $rows += ,(New-BobTrayIrcWorkerJobRow -MachineId $mid -Description $desc -Nick $nick)
+        }
+        if ($rows.Count -eq 0 -and $moot) {
+            foreach ($nk in @($moot.nicks)) {
+                $mac = Resolve-BobiverseMachineFromIrcNick $nk
+                if ($mac -eq $mid) {
+                    $rows += ,(New-BobTrayIrcWorkerJobRow -MachineId $mid -Description 'on #bobiverse' -Nick $nk)
+                    break
+                }
+            }
+        }
         if ($rows.Count -gt 1) {
             $rows = @(
                 $rows | Sort-Object -Property @{
@@ -1326,6 +1469,20 @@ function Get-BobTrayHover {
     }
     catch { }
     $cursorPools = @(Get-BobCursorPoolsForTray -MachineId $machineId -LocalCursorDoc $cursorWeek -PcentRows $digestPcentRows)
+    $cursorGroups = @()
+    foreach ($pool in $cursorPools) {
+        if (-not $pool) { continue }
+        $cursorGroups += ,[pscustomobject]@{
+            seat_id        = $pool.seat_id
+            seat_label     = $pool.seat_label
+            group_id       = $pool.group_id
+            group_label    = $pool.group_label
+            remaining_pct  = $pool.remaining_pct
+            pct_label      = $pool.pct_label
+            heading        = $pool.heading
+            source         = $(if ($pool.group_id -eq 'grok-chat') { 'GetSandUsageStatus.usagePercent' } elseif ($pool.group_id -eq 'high-cost-models') { 'GetCurrentPeriodUsage.planUsage.apiPercentUsed' } else { 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' })
+        }
+    }
     $poolLines = @()
     foreach ($pool in $cursorPools) {
         if ($pool.heading) { $poolLines += ('  {0}' -f $pool.heading) }
@@ -1366,7 +1523,8 @@ function Get-BobTrayHover {
         peer_peek      = $peerPeek
         tier           = $tier
         cursor_pools   = @($cursorPools)
-        account_name   = 'Cursor Models'
+        cursor_groups  = @($cursorGroups)
+        account_name   = 'low cost models'
         account_label  = $acctPctLabel
         account_remaining_pct = $cursorRemain
         account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })

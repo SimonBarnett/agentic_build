@@ -166,6 +166,73 @@ def _parse_used_remain(raw) -> tuple[int | None, int | None]:
     return used_i, remain
 
 
+def _group_row(
+    group_id: str,
+    label: str,
+    used: int | None,
+    remain: int | None,
+    source: str,
+) -> dict:
+    row: dict = {"id": group_id, "label": label, "source": source}
+    if used is not None:
+        row["used_pct"] = used
+    if remain is not None:
+        row["remaining_pct"] = remain
+    return row
+
+
+def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
+    """Cursor Spending RTFM: grok chat (Sand), high/low cost (planUsage api/auto %)."""
+    groups: list[dict] = []
+    sand_used = sand_remain = None
+    if sand:
+        sand_raw = sand.get("usagePercent")
+        if sand_raw is None:
+            sand_raw = sand.get("percentUsed")
+        sand_used, sand_remain = _parse_used_remain(sand_raw)
+    groups.append(
+        _group_row(
+            "grok-chat",
+            "grok chat",
+            sand_used,
+            sand_remain,
+            "GetSandUsageStatus.usagePercent",
+        )
+    )
+
+    api_used = api_remain = auto_used = auto_remain = None
+    if period:
+        pu = period.get("planUsage") or {}
+        api_raw = pu.get("apiPercentUsed")
+        if api_raw is None:
+            api_raw = period.get("apiPercentUsed")
+        api_used, api_remain = _parse_pct_points(api_raw)
+        auto_raw = pu.get("autoPercentUsed")
+        if auto_raw is None:
+            auto_raw = period.get("autoPercentUsed")
+        auto_used, auto_remain = _parse_pct_points(auto_raw)
+
+    groups.append(
+        _group_row(
+            "high-cost-models",
+            "high cost models",
+            api_used,
+            api_remain,
+            "GetCurrentPeriodUsage.planUsage.apiPercentUsed",
+        )
+    )
+    groups.append(
+        _group_row(
+            "low-cost-models",
+            "low cost models",
+            auto_used,
+            auto_remain,
+            "GetCurrentPeriodUsage.planUsage.autoPercentUsed",
+        )
+    )
+    return groups
+
+
 def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
     cursor_used = None
     cursor_remain = None
@@ -226,6 +293,8 @@ def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
     if period_end:
         out["period_end"] = period_end
 
+    out["cursor_spending_groups"] = build_spending_groups(period, sand)
+
     if sand:
         sand_end = sand.get("nextResetTimestampUtc") or sand.get("period_end")
         if sand_end:
@@ -261,6 +330,9 @@ def main() -> int:
             period = fix.get("period")
             sand = fix.get("sand") or {}
             out = build_usage_doc(period, sand)
+            override = fix.get("cursor_spending_groups")
+            if override:
+                out["cursor_spending_groups"] = override
             if (
                 out.get("used_pct") is None
                 and out.get("sand_used_pct") is None

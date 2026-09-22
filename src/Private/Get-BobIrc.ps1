@@ -43,6 +43,39 @@ function Resolve-BobiverseMachineId {
     return $null
 }
 
+function Resolve-BobiverseMachineFromIrcNick {
+    param([string]$Nick)
+    if (-not $Nick) { return $null }
+    $n = [string]$Nick.Trim()
+    if (-not $n) { return $null }
+    $byId = Resolve-BobiverseMachineId $n
+    if ($byId) { return $byId }
+    $cfg = Get-BobiverseConfig
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            $nk = [string]$p.Value
+            if ($nk -and ($nk -eq $n -or $nk.ToLowerInvariant() -eq $n.ToLowerInvariant())) {
+                return [string]$p.Name
+            }
+        }
+    }
+    $nl = $n.ToLowerInvariant()
+    if ($nl -match '^bob-(.+)$') {
+        $tail = [string]$Matches[1]
+        $c = Resolve-BobiverseMachineId $tail
+        if ($c) { return $c }
+        foreach ($mid in @(Get-BobiverseMachineIds)) {
+            if ($tail -eq $mid) { return $mid }
+        }
+    }
+    foreach ($mid in @(Get-BobiverseMachineIds)) {
+        $ml = $mid.ToLowerInvariant()
+        if ($nl -eq $ml) { return $mid }
+        if ($nl -match ('^' + [regex]::Escape($ml) + '-\d+$')) { return $mid }
+    }
+    return $null
+}
+
 function Get-BobIrcHome {
     if ($env:BOB_IRC_HOME -and $env:BOB_IRC_HOME.Trim()) {
         return [IO.Path]::GetFullPath($env:BOB_IRC_HOME.Trim())
@@ -195,6 +228,44 @@ function Parse-BobCursorPoolLabel {
         label         = $l
         overage       = $null
     }
+}
+
+function Save-BobCursorPoolGroupForSeat {
+    param(
+        [Parameter(Mandatory)][string]$SeatId,
+        [Parameter(Mandatory)][string]$GroupId,
+        $RemainingPct,
+        [string]$PeriodEnd
+    )
+    $sid = [string]$SeatId
+    $gid = [string]$GroupId
+    if (-not $sid -or -not $gid) { return }
+    $p = Get-BobCursorPoolsCachePath
+    if (-not $p) { return }
+    $cache = Read-BobCursorPoolsCache
+    $entry = $null
+    if ($cache.by_seat.ContainsKey($sid)) { $entry = $cache.by_seat[$sid] }
+    if (-not $entry) { $entry = [pscustomobject]@{} }
+    $groups = @{}
+    if ($entry.groups) {
+        foreach ($gp in @($entry.groups.PSObject.Properties)) {
+            $groups[[string]$gp.Name] = $gp.Value
+        }
+    }
+    $grow = [pscustomobject]@{}
+    if ($groups.ContainsKey($gid)) { $grow = $groups[$gid] }
+    if ($null -ne $RemainingPct -and [string]$RemainingPct -ne '') {
+        $grow | Add-Member -NotePropertyName remaining_pct -NotePropertyValue ([int]$RemainingPct) -Force
+    }
+    if ($PeriodEnd) {
+        $grow | Add-Member -NotePropertyName period_end -NotePropertyValue ([string]$PeriodEnd) -Force
+    }
+    $grow | Add-Member -NotePropertyName updated_at -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+    $groups[$gid] = $grow
+    $entry | Add-Member -NotePropertyName groups -NotePropertyValue ([pscustomobject]$groups) -Force
+    $cache.by_seat[$sid] = $entry
+    $out = [pscustomobject]@{ by_seat = $cache.by_seat }
+    try { Write-JsonFile $p $out } catch { }
 }
 
 function Save-BobCursorPoolForSeat {
@@ -891,6 +962,27 @@ function Resolve-BobCursorPoolSeatId {
     return $rawId
 }
 
+function Normalize-BobCursorSpendingGroupId {
+    param([string]$Raw)
+    if (-not $Raw) { return 'low-cost-models' }
+    $s = [string]$Raw.Trim().ToLowerInvariant()
+    switch ($s) {
+        'grok-chat' { return 'grok-chat' }
+        'grok_chat' { return 'grok-chat' }
+        'high-cost-models' { return 'high-cost-models' }
+        'high_cost_models' { return 'high-cost-models' }
+        'low-cost-models' { return 'low-cost-models' }
+        'low_cost_models' { return 'low-cost-models' }
+        'cursor-models' { return 'low-cost-models' }
+        default {
+            if ($s -match 'grok\s*chat') { return 'grok-chat' }
+            if ($s -match 'high') { return 'high-cost-models' }
+            if ($s -match 'low') { return 'low-cost-models' }
+            return 'low-cost-models'
+        }
+    }
+}
+
 function Apply-BobIrcDigestCursorPools {
     param($Pools)
     foreach ($pool in @($Pools)) {
@@ -917,7 +1009,16 @@ function Apply-BobIrcDigestCursorPools {
             if ($label) { $label = ('{0} {1}' -f $label, $ov) }
             else { $label = $ov }
         }
-        Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $rem -PeriodEnd $period -Label $label
+        $groupId = $null
+        if ($pool.group) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group) }
+        elseif ($pool.group_id) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group_id) }
+        elseif ($label) { $groupId = Normalize-BobCursorSpendingGroupId $label }
+        if ($groupId) {
+            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
+        }
+        if (-not $groupId -or $groupId -eq 'low-cost-models') {
+            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $rem -PeriodEnd $period -Label $label
+        }
     }
 }
 
@@ -1028,6 +1129,31 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
     $topModel = $null
     if ($names -contains 'model' -and $Ent.model) { $topModel = [string]$Ent.model }
     elseif ($primaryJob -and $primaryJob.model) { $topModel = [string]$primaryJob.model }
+    $workerCount = 0
+    if ($names -contains 'workers' -and $null -ne $Ent.workers -and [string]$Ent.workers -ne '') {
+        if ($Ent.workers -is [System.Array] -or ($Ent.workers -is [System.Collections.IEnumerable] -and $Ent.workers -isnot [string])) {
+            $workerCount = @($Ent.workers).Count
+        }
+        else {
+            try { $workerCount = [int]$Ent.workers } catch { $workerCount = 0 }
+        }
+    }
+    $runFlag = 0
+    try { $runFlag = [int]$Ent.running } catch { }
+    if ($jobs.Count -eq 0 -and ($workerCount -gt 0 -or $runFlag -gt 0)) {
+        $syn = Get-BobIrcDigestSyntheticTaskFromMachine $Ent
+        if ($syn) {
+            $jobs += ,[pscustomobject]@{
+                repo        = 'irc'
+                state       = 'START'
+                machine     = $mid
+                sha         = $syn.sha
+                model       = $syn.model
+                description = $syn.description
+                run_time    = $syn.run_time
+            }
+        }
+    }
     return [pscustomobject]@{
         ok                = $true
         id                = $mid
@@ -1059,12 +1185,41 @@ function Get-BobIrcDigestTaskFromJobs {
     return $null
 }
 
+function Get-BobIrcDigestSyntheticTaskFromMachine {
+    param($Ent)
+    if (-not $Ent) { return $null }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
+    $workerCount = 0
+    if ($names -contains 'workers' -and $null -ne $Ent.workers -and [string]$Ent.workers -ne '') {
+        if ($Ent.workers -is [System.Array] -or ($Ent.workers -is [System.Collections.IEnumerable] -and $Ent.workers -isnot [string])) {
+            $workerCount = @($Ent.workers).Count
+        }
+        else {
+            try { $workerCount = [int]$Ent.workers } catch { }
+        }
+    }
+    $runFlag = 0
+    try { $runFlag = [int]$Ent.running } catch { }
+    if ($workerCount -le 0 -and $runFlag -le 0) { return $null }
+    $desc = 'irc agent'
+    if ($names -contains 'working_on' -and $Ent.working_on) { $desc = [string]$Ent.working_on }
+    return [pscustomobject]@{
+        repo        = 'irc'
+        sha         = $null
+        model       = $(if ($workerCount -gt 0) { ('workers={0}' -f $workerCount) } else { 'running' })
+        description = $desc
+        run_time    = $null
+        state       = 'START'
+    }
+}
+
 function Get-BobIrcDigestReportPatchFromMachine {
     param($Ent)
     if (-not $Ent) { return $null }
     $names = Get-BobIrcDigestMachinePropertyNames $Ent
     $node = [ordered]@{}
     $primary = Get-BobIrcDigestTaskFromJobs @(Get-BobIrcDigestJobSourcesFromMachine $Ent)
+    if (-not $primary) { $primary = Get-BobIrcDigestSyntheticTaskFromMachine $Ent }
     if ($primary) {
         $node.task = [pscustomobject]@{
             repo        = $(if ($primary.repo) { [string]$primary.repo } else { $null })
@@ -1116,7 +1271,18 @@ function Build-BobIrcReportDigestFromBobiverse {
             if ($existing.pcent) { $merged.pcent = $existing.pcent }
             if ($existing.uptime_since) { $merged.uptime_since = [string]$existing.uptime_since }
         }
-        if ($patch.task) { $merged.task = $patch.task }
+        if ($patch.task) {
+            $keepExisting = $false
+            if ($existing -and $existing.task) {
+                $exSha = [string]$existing.task.sha
+                $ptSha = [string]$patch.task.sha
+                if ($exSha -and -not $ptSha) { $keepExisting = $true }
+                elseif ($exSha -and $ptSha -and $exSha -ne $ptSha) {
+                    if ($patch.task.repo -eq 'irc' -and $existing.task.repo -ne 'irc') { $keepExisting = $true }
+                }
+            }
+            if (-not $keepExisting) { $merged.task = $patch.task }
+        }
         if ($patch.pcent) { $merged.pcent = $patch.pcent }
         $patchNames = Get-BobIrcDigestMachinePropertyNames $ent
         if ($patchNames -contains 'uptime_since' -and $patch.uptime_since) {
