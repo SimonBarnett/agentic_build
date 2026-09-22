@@ -22,6 +22,7 @@ flowchart TB
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
   CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
   CHAIR --> OPS["bob-machine is ops in own shop channel\nJeeves is ops in #bobiverse"]
+  MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
@@ -83,6 +84,7 @@ Change how Bob works:
 25. **Bob decides which to invoke:** `agent` (local) or `agent.com` (cloud).
 26. **Every time Bob calls `!bobiverse`**, he **POSTs the webhook if anything changed** on **Cursor or local xAI** (change-only).
 27. **`bob-{machine}` is ops in their own shop channel.** **Jeeves is ops in `#bobiverse`.**
+28. **Update the control systray** to the **proper Cursor metrics** (grok chat / high cost / low cost — remaining % + next period; 0 is 0). Not seat-nickname pools.
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -141,4 +143,5 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A21 | Bob chooses local `agent` vs `agent.com` for each invoke. |
 | A22 | On each Bob `!bobiverse`, webhook if Cursor or local xAI usage changed. |
 | A23 | `bob-{machine}` is ops on `#{machine}`; Jeeves is ops on `#bobiverse`. |
-| A24 | BT0/docs validator or pack test covers A1–A23 enough to MRB. |
+| A24 | Control systray paints proper Cursor meters (not Madeira/Catalogue pool names). |
+| A25 | BT0/docs validator or pack test covers A1–A24 enough to MRB. |

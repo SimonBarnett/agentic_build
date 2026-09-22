@@ -51,6 +51,7 @@
 | P18 | Bob decides local agent vs agent.com |
 | P19 | Each Bob !bobiverse: webhook if Cursor or local xAI changed |
 | P20 | bob-machine ops on own shop; Jeeves ops on #bobiverse |
+| P21 | Control systray reflects proper Cursor metrics |
 
 ## Tests
 
