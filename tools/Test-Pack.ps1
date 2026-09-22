@@ -378,13 +378,14 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if (@($h.cursor_pools).Count -lt 6) { throw "idle cursor_pools count=$(@($h.cursor_pools).Count) expected >=6 (3 groups x 2+ seats)" }
+    if (@($h.cursor_pools).Count -lt 3) { throw "idle cursor_pools count=$(@($h.cursor_pools).Count) expected >=3 (control Cursor groups)" }
     if (@($h.cursor_groups).Count -lt 3) { throw "idle cursor_groups count=$(@($h.cursor_groups).Count) expected >=3" }
     if ([string]$h.jobs_text -notmatch '(?m)grok chat') { throw "idle jobs_text missing grok chat group: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)high cost models') { throw "idle jobs_text missing high cost models group: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)low cost models') { throw "idle jobs_text missing low cost models group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  grok chat') { throw "idle jobs_text missing Smart Catalogue pool: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Club Madeira  grok chat') { throw "idle jobs_text missing Club Madeira pool: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -match '(?m)Smart Catalogue  grok chat|Club Madeira  grok chat') {
+        throw "control systray must not use seat-nickname pool headings: $($h.jobs_text)"
+    }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.account_name -ne 'low cost models') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
@@ -1147,7 +1148,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  low cost models  2%') { throw "jobs_text cursor pool=$($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+low cost models  2%') { throw "jobs_text cursor pool=$($hCur.jobs_text)" }
     $env:BOB_MACHINE_ID = $null
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
@@ -1233,9 +1234,10 @@ Invoke-Case 'BT0o2 cursor models spending meter' {
     $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 99) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  low cost models  99%') { throw "jobs_text must show Smart Catalogue low cost models 99%: $($hCur.jobs_text)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)Smart Catalogue  high cost models  94%') { throw "jobs_text must show high cost models 94%: $($hCur.jobs_text)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)Smart Catalogue  grok chat  0%') { throw "jobs_text must show grok chat 0% from Sand: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+low cost models  99%') { throw "jobs_text must show low cost models 99%: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+high cost models  94%') { throw "jobs_text must show high cost models 94%: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+grok chat  0%') { throw "jobs_text must show grok chat 0% from Sand: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch 'reset 16 Oct') { throw "control meters must show next period reset: $($hCur.jobs_text)" }
     if ([string]$hCur.jobs_text -match [char]0x00A3) { throw 'jobs_text must not show Sand overage GBP as Cursor Models remaining' }
     $env:BOB_MACHINE_ID = $null
 }
@@ -1306,9 +1308,8 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_pools).Count -lt 3) { throw "cursor_pools=$(@($h.cursor_pools).Count)" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  9%') { throw "Smart Catalogue bar must use ionos digest pcent: $txt" }
-    if ($txt -notmatch '(?m)Club Madeira  low cost models  37%') { throw "Club Madeira bar must use flamingo cursor-models pcent: $txt" }
-    if ($txt -notmatch '(?m)ntsa  low cost models  0%') { throw "ntsa seat must show 0% not n/a: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  9%') { throw "low cost bar must use ionos digest pcent: $txt" }
+    if ($txt -match '(?m)Club Madeira  low cost models') { throw "control systray must not paint peer seat pool nicknames: $txt" }
     if ($txt -notmatch 'deadbee') { throw "ionos digest sha missing: $txt" }
     if ($txt -notmatch 'digest fixture line') { throw "ionos description missing: $txt" }
     if ($txt -notmatch '3m11s') { throw "ionos run_time missing: $txt" }
@@ -1420,8 +1421,8 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     if ($txt -notmatch 'beef142') { throw "hover missing digest sha: $txt" }
     if ($txt -notmatch 'digest ingest fixture') { throw "hover missing description: $txt" }
     if ($txt -notmatch 'face142') { throw "hover missing flamingo sha: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  11%') { throw "Smart Catalogue bar from digest pools: $txt" }
-    if ($txt -notmatch '(?m)Club Madeira  low cost models  22%') { throw "Club Madeira bar from digest pools: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  11%') { throw "low cost bar from digest pools: $txt" }
+    if ($txt -match '(?m)Club Madeira  low cost models') { throw "control systray must not paint peer seat pool nicknames: $txt" }
     if ($txt -notmatch '(?m)ionos[^\r\n]*\(12%\)') { throw "ionos weekly bar missing: $txt" }
     if ($txt -notmatch '(?m)flamingo[^\r\n]*\(8%\)') { throw "flamingo weekly bar missing: $txt" }
     if ($txt -notmatch 'reset 28 Sep') { throw "ionos reset label missing: $txt" }
@@ -1551,6 +1552,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
   "used_pct": 5,
   "remaining_pct": 95,
   "period_end": "2026-10-16T00:00:00Z",
+  "sand_period_end": "2026-09-23T00:00:00Z",
   "sand_used_pct": 25,
   "sand_remaining_pct": 75,
   "cursor_spending_groups": [
@@ -1583,12 +1585,12 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_groups).Count -lt 3) { throw "cursor_groups=$(@($h.cursor_groups).Count)" }
-    if ($txt -notmatch '(?m)Smart Catalogue  grok chat  75%') { throw "ionos local grok chat bar: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  high cost models  90%') { throw "ionos local high cost bar: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  95%') { throw "ionos local low cost bar: $txt" }
-    if ($txt -match '(?m)Smart Catalogue  low cost models  95%[^\r\n]*\r?\n[ ]+Smart Catalogue  low cost models') {
-        throw 'must not collapse Cursor groups into one low cost row only'
-    }
+    if ($txt -notmatch '(?m)^[ ]+grok chat  75%') { throw "ionos local grok chat bar: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+high cost models  90%') { throw "ionos local high cost bar: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  95%') { throw "ionos local low cost bar: $txt" }
+    if ($txt -notmatch 'reset 16 Oct') { throw "plan groups must show Cursor period reset: $txt" }
+    if ($txt -notmatch 'reset 23 Sep') { throw "grok chat must show Sand period reset: $txt" }
+    if ($txt -match '(?m)Smart Catalogue  low cost models') { throw "must not use seat nickname pool headings: $txt" }
     if ($txt -notmatch 'digest worker fixture line') { throw "flamingo irc worker line missing: $txt" }
     if ($txt -match '(?m)^[ ]+flamingo[^\r\n]*\r?\n[ ]+no jobs') { throw "flamingo tile must not lead with no jobs: $txt" }
     $skillUsage = Get-Content (Join-Path $RepoRoot '.grok\skills\box-usage\SKILL.md') -Raw
@@ -3097,6 +3099,41 @@ Invoke-Case 'BT0house agent export list' {
     if ($agent -notmatch 'Select-BobGitWorker') { throw 'agent_readme missing agent export list' }
     if ($agent -notmatch 'Get-BobTrayHover') { throw 'agent_readme must classify tray exports' }
     if ($agent -notmatch 'job-audit') { throw 'agent_readme must document job-audit.jsonl' }
+}
+
+# --- BT0p21 control systray Cursor meters (issue #175 P21) ---
+Invoke-Case 'BT0p21 control systray cursor meters' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ce-priority-dev1'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ce-priority-dev1 -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-p21-control'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    @'
+{
+  "machines": {
+    "ce-priority-dev1": {
+      "pcent": { "cursor-models": 0 },
+      "running": 0,
+      "jobs": []
+    }
+  }
+}
+'@ | Set-Content -Path (Join-Path $ircHome 'bob-peers\_report-digest.json') -Encoding utf8
+
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools count=$(@($h.cursor_pools).Count) want 3 control groups" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  0%') { throw "ntsa box must show 0% not n/a: $txt" }
+    if ($txt -match '(?m)low cost models  n/a') { throw "zero remaining must not render n/a: $txt" }
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -notmatch 'Format-BobCursorControlPoolHeading') { throw 'hover must format control Cursor pool headings' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
 }
 
 # --- BT0pair175 bob two persistent workers (issue #175 / FIX #177) ---

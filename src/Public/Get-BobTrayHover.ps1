@@ -867,6 +867,105 @@ function ConvertFrom-BobReportDigestTask {
     }
 }
 
+function Format-BobCursorControlPoolPctLabel {
+    param($RemainingPct)
+    if ($null -eq $RemainingPct) { return 'n/a' }
+    return ('{0}%' -f [int]$RemainingPct)
+}
+
+function Format-BobCursorControlPoolHeading {
+    param(
+        [string]$GroupLabel,
+        [string]$PctLabel,
+        [string]$ResetLabel
+    )
+    $heading = ('{0}  {1}' -f $GroupLabel, $PctLabel)
+    if ($ResetLabel) { $heading = ('{0}  {1}' -f $heading, $ResetLabel) }
+    return $heading
+}
+
+function Select-BobCursorGroupRemainMinimum {
+    param([AllowNull()]$Values)
+    $known = @()
+    foreach ($v in @($Values)) {
+        if ($null -eq $v) { continue }
+        try { $known += ,[int]$v } catch { }
+    }
+    if ($known.Count -eq 0) { return $null }
+    return ($known | Measure-Object -Minimum).Minimum
+}
+
+function Get-BobCursorGroupPeriodEndForTray {
+    param(
+        $LocalCursorDoc,
+        $SeatCacheEntry,
+        [string]$GroupId,
+        [switch]$OnSeat
+    )
+    $gid = [string]$GroupId
+    if ($OnSeat -and $LocalCursorDoc) {
+        if ($gid -eq 'grok-chat') {
+            if ($LocalCursorDoc.sand_period_end) { return [string]$LocalCursorDoc.sand_period_end }
+            if ($LocalCursorDoc.period_end) { return [string]$LocalCursorDoc.period_end }
+        }
+        elseif ($LocalCursorDoc.period_end) {
+            return [string]$LocalCursorDoc.period_end
+        }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.groups) {
+        $g = $SeatCacheEntry.groups.$gid
+        if ($g -and $g.period_end) { return [string]$g.period_end }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.period_end -and $gid -ne 'grok-chat') {
+        return [string]$SeatCacheEntry.period_end
+    }
+    return $null
+}
+
+function Resolve-BobCursorPcentRowMapping {
+    param($Pc, [string]$MachineId)
+    if (-not $Pc) { return $null }
+    $src = [string]$Pc.source
+    if (-not $src) { return $null }
+    $pct = ConvertTo-BobTrayIntOrNull $Pc.pct
+    if ($null -eq $pct) { return $null }
+    $reportMac = [string]$Pc.machine
+    if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
+    $seatId = $src
+    $groupId = $null
+    if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
+        $groupId = 'low-cost-models'
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
+        $groupId = $src
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
+        $seatId = $src
+        $groupId = 'low-cost-models'
+    }
+    if (-not $groupId) { return $null }
+    return [pscustomobject]@{ seat_id = $seatId; group_id = $groupId; pct = $pct }
+}
+
+function Set-BobCursorControlPoolRow {
+    param($Pool, $RemainingPct, [string]$PeriodEnd)
+    $resetLabel = Format-BobResetLabel $PeriodEnd
+    $pctLabel = Format-BobCursorControlPoolPctLabel $RemainingPct
+    $Pool.remaining_pct = $RemainingPct
+    $Pool.period_end = $PeriodEnd
+    $Pool.reset_label = $resetLabel
+    $Pool.pct_label = $pctLabel
+    $Pool.heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
+}
+
 function Get-BobCursorPoolsForTray {
     param(
         [string]$MachineId,
@@ -875,95 +974,67 @@ function Get-BobCursorPoolsForTray {
     )
     $cache = Read-BobCursorPoolsCache
     $catalog = @(Get-BobCursorSpendingGroupCatalog)
-    $pools = @()
-    foreach ($seat in @(Get-BobSeatConfig)) {
-        $sid = [string]$seat.id
-        $label = [string]$seat.label
-        if (-not $label) { $label = $sid }
-        $onSeat = $false
-        foreach ($sm in @($seat.machines)) {
-            if ([string]$sm -and [string]$sm.ToLowerInvariant() -eq [string]$MachineId.ToLowerInvariant()) {
-                $onSeat = $true
-                break
-            }
-        }
-        $ce = $null
-        if ($cache.by_seat.ContainsKey($sid)) { $ce = $cache.by_seat[$sid] }
-        $periodEnd = $null
-        if ($onSeat -and $LocalCursorDoc -and $LocalCursorDoc.period_end) {
-            $periodEnd = [string]$LocalCursorDoc.period_end
-        }
-        if ($ce -and $ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
-        $resetLabel = Format-BobResetLabel $periodEnd
-        foreach ($grp in $catalog) {
-            $gid = [string]$grp.id
-            $glabel = [string]$grp.label
-            $remain = $null
-            if ($onSeat) { $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid }
-            if ($null -eq $remain) { $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid }
-            $pctLabel = 'n/a'
-            if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
-            $heading = ('{0}  {1}  {2}' -f $label, $glabel, $pctLabel)
-            if ($resetLabel -and $gid -eq 'low-cost-models') { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
-            $pools += ,[pscustomobject]@{
-                seat_id         = $sid
-                seat_label      = $label
-                group_id        = $gid
-                group_label     = $glabel
-                remaining_pct   = $remain
-                period_end      = $periodEnd
-                reset_label     = $(if ($gid -eq 'low-cost-models') { $resetLabel } else { $null })
-                pct_label       = $pctLabel
-                overage_label   = $null
-                heading         = $heading
-                account_name    = $glabel
+    $localSeat = Get-BobSeatForMachine -MachineId $MachineId
+    $controlSeatId = $null
+    $controlSeatLabel = $null
+    $onSeat = $false
+    $ce = $null
+    if ($localSeat) {
+        $onSeat = $true
+        $controlSeatId = [string]$localSeat.id
+        $controlSeatLabel = [string]$localSeat.label
+        if (-not $controlSeatLabel) { $controlSeatLabel = $controlSeatId }
+        if ($cache.by_seat.ContainsKey($controlSeatId)) { $ce = $cache.by_seat[$controlSeatId] }
+    }
+
+    $pcentByKey = @{}
+    foreach ($pc in @($PcentRows)) {
+        $map = Resolve-BobCursorPcentRowMapping -Pc $pc -MachineId $MachineId
+        if (-not $map) { continue }
+        $key = ([string]$map.seat_id) + '|' + ([string]$map.group_id)
+        if (-not $pcentByKey.ContainsKey($key)) { $pcentByKey[$key] = @() }
+        $pcentByKey[$key] += ,[int]$map.pct
+        if ([string]$map.seat_id -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            Save-BobCursorPoolGroupForSeat -SeatId ([string]$map.seat_id) -GroupId ([string]$map.group_id) -RemainingPct ([int]$map.pct)
+            if ([string]$map.group_id -eq 'low-cost-models') {
+                Save-BobCursorPoolForSeat -SeatId ([string]$map.seat_id) -RemainingPct ([int]$map.pct)
             }
         }
     }
-    foreach ($pc in @($PcentRows)) {
-        if (-not $pc) { continue }
-        $src = [string]$pc.source
-        if (-not $src) { continue }
-        $pct = ConvertTo-BobTrayIntOrNull $pc.pct
-        if ($null -eq $pct) { continue }
-        $reportMac = [string]$pc.machine
-        if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
-        $seatId = $src
-        $groupId = $null
-        if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
-            $groupId = 'low-cost-models'
-            $macForSeat = $MachineId
-            if ($reportMac) { $macForSeat = $reportMac }
-            $seat = Get-BobSeatForMachine -MachineId $macForSeat
-            if ($seat) { $seatId = [string]$seat.id }
+
+    $pools = @()
+    foreach ($grp in $catalog) {
+        $gid = [string]$grp.id
+        $glabel = [string]$grp.label
+        $remain = $null
+        if ($onSeat) {
+            $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid
         }
-        elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
-            $groupId = $src
-            $macForSeat = $MachineId
-            if ($reportMac) { $macForSeat = $reportMac }
-            $seat = Get-BobSeatForMachine -MachineId $macForSeat
-            if ($seat) { $seatId = [string]$seat.id }
+        if ($null -eq $remain -and $ce) {
+            $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid
         }
-        elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
-            $seatId = $src
-            $groupId = 'low-cost-models'
-        }
-        if (-not $groupId) { continue }
-        foreach ($pool in $pools) {
-            if ([string]$pool.seat_id -eq $seatId -and [string]$pool.group_id -eq $groupId) {
-                $pool.remaining_pct = $pct
-                $pool.pct_label = ('{0}%' -f $pct)
-                $pool.heading = ('{0}  {1}  {2}' -f $pool.seat_label, $pool.group_label, $pool.pct_label)
-                if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
-                break
+        if ($controlSeatId) {
+            $pkey = $controlSeatId + '|' + $gid
+            if ($pcentByKey.ContainsKey($pkey)) {
+                $remain = Select-BobCursorGroupRemainMinimum -Values (@($remain) + @($pcentByKey[$pkey]))
             }
         }
-        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
-            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $pct
-            if ($groupId -eq 'low-cost-models') {
-                Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
-            }
+        $periodEnd = Get-BobCursorGroupPeriodEndForTray -LocalCursorDoc $LocalCursorDoc -SeatCacheEntry $ce -GroupId $gid -OnSeat:$onSeat
+        $row = [pscustomobject]@{
+            seat_id       = $controlSeatId
+            seat_label    = $controlSeatLabel
+            group_id      = $gid
+            group_label   = $glabel
+            remaining_pct = $null
+            period_end    = $null
+            reset_label   = $null
+            pct_label     = 'n/a'
+            overage_label = $null
+            heading       = $null
+            account_name  = $glabel
         }
+        Set-BobCursorControlPoolRow -Pool $row -RemainingPct $remain -PeriodEnd $periodEnd
+        $pools += ,$row
     }
     return $pools
 }
