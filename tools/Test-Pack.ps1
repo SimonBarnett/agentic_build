@@ -146,6 +146,8 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'Disconnect') { throw 'setup-github-cursor must document dashboard Disconnect when All repos is already set' }
         if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
         if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'visionary') { throw 'bob-spec-intake New product must call visionary first' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'validate-vision-pack') { throw 'bob-spec-intake must run validate-vision-pack before park/dispatch' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'validate-vision-pack') { throw 'visionary must refuse until validate-vision-pack exits 0' }
         if ($n -eq 'visionary' -and $raw -notmatch 'measurable') { throw 'visionary must require measurable success' }
         if ($n -eq 'visionary' -and $raw -notmatch 'docs/mocks') { throw 'visionary must park HTML mocks in docs/mocks' }
         if ($n -eq 'visionary' -and $raw -notmatch 'bob-spec-intake') { throw 'visionary must hand park to bob-spec-intake' }

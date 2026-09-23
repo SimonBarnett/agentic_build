@@ -21,7 +21,10 @@ description: >
 0. **Visionary first.** Skill `visionary`. High-reasoning / plan-mode.
    Fill `docs/templates/vision.md` in this session before `gh repo create`.
    Refuse park/dispatch until shape and success metrics are LOCKED or
-   UNKNOWN.
+   UNKNOWN, **and** `python tools/validate-vision-pack.py docs/vision.md
+   --mocks-dir docs/mocks` exits 0 (product `tools/` else sister clone
+   `C:\ai\skills-visionary`, `D:\ai\skills-visionary`,
+   `C:\src\skills-visionary`). Non-zero = refuse.
 1. Choose a clear public repo name under `SimonBarnett` (kebab-case).
 2. Create the repo with **New GitHub repo** below if it does not exist.
 3. Commit under `/docs`:
@@ -43,8 +46,10 @@ description: >
    `SimonBarnett/skills-visionary`). High-reasoning / plan-mode. Confirm
    target repo; do **not** `gh repo create`. Fill success metrics LOCKED
    or UNKNOWN in the FR markdown (see visionary); add `docs/mocks/*.html`
-   when the FR has a UI. Refuse commit/issue/dispatch until the gate
-   passes.
+   when the FR has a UI. Run `python tools/validate-vision-pack.py
+   <fr.md> [--mocks-dir docs/mocks]` (product `tools/` else sister
+   clone as in New product step 0). Refuse commit/issue/dispatch until
+   the gate passes (validator exit 0).
 1. Confirm target repo. **Do not break** prior versions.
 2. Prefer new work in `v2/`, `v3/`, when the feature is a parallel product surface; keep root/`v1` frozen if the spec says so.
 3. Commit `docs/feature-request-<slug>-YYYY-MM-DD.md` with summary plus **gap vs current tree**. Keep a source PDF only if one was supplied.

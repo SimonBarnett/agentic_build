@@ -27,6 +27,11 @@ Refuse dispatch (`bob-job-loop` / `bob-build-dispatch`) until:
 - Shape is LOCKED (service | website | app) or UNKNOWN
 - At least one success row has metric, target, how-measured, fail-when
   (or the whole Success section is UNKNOWN)
+- `python tools/validate-vision-pack.py <vision.md> [--mocks-dir <dir>]`
+  exits 0. Prefer the product repo copy; else the skills-visionary
+  sister clone (`C:\ai\skills-visionary`, `D:\ai\skills-visionary`,
+  `C:\src\skills-visionary`). `bob-spec-intake` must run this before
+  park/dispatch. Non-zero = refuse.
 
 Poetry is not a target. If you cannot score it later, it is UNKNOWN.
 
