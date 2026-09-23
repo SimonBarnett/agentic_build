@@ -45,6 +45,8 @@ line wakes you. Stdout is `DONE` / `FAILED` only.
 Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 (default `~\.grok\bob-bridge\loops\`).
 
+A new persistent worker seat is Watch-AgentHealth only (`watch-agent-health`). This driver starts **jobs**, not seats.
+
 ## Dispatcher hard rules
 
 1. One FR, one loop board, one isolated cwd/worktree.

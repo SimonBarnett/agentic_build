@@ -127,16 +127,20 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'watch-agent-health')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
+        if ($n -eq 'killproc' -and $raw -notmatch 'watch-agent-health') { throw 'killproc must send new workers to watch-agent-health' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }
         if ($n -eq 'setup-github-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'setup-github-webhooks must document git URL' }
         if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
+        if ($n -eq 'watch-agent-health' -and $raw -notmatch 'Start-BobWatchWorker') { throw 'watch-agent-health must document Start-BobWatchWorker' }
     }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\Start-BobWatchWorker.ps1'))) { throw 'missing tools/Start-BobWatchWorker.ps1' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\Watch-AgentHealth\Watch-AgentHealth.ps1'))) { throw 'missing tools/Watch-AgentHealth/Watch-AgentHealth.ps1' }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }

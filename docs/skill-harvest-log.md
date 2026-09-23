@@ -1,5 +1,15 @@
 # Skill harvest log
 
+## 2026-09-23 — Watch-AgentHealth is the only build-worker create
+
+Simon: put the Watch-AgentHealth tools in harvest; this is the only way
+to create build workers. Fleet snapshot `tools/Watch-AgentHealth` +
+`Start-BobWatchWorker.ps1`. Skill `watch-agent-health`. Shortcuts and
+the launcher start hidden. One seat, one home, one `irc_listen`. Do not
+Start-TalkSeat / raw TUI for a worker. Jobs (`Start-BobCursor` / 
+`Start-BobWorker`) stay one-shot. IRC wire note harvested to
+`agentic-irc`. Product remains `SimonBarnett/AgentMonitor`.
+
 ## 2026-09-23 — leftover FAIL after another worker merged
 
 AgentMonitor #22: MRB of `7d49dd0` posted PASS-nits, then `gh pr merge`
