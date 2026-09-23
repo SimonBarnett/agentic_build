@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-23 — harvest as a PR, not main
+
+Simon `#bobiverse`: update builder skills — send skills harvest as a
+PR, NOT a commit to main. Home: `harvest-agent-skills` +
+`Harvest-AgentSkills.ps1`.
+
 ## 2026-09-23 — FR you parked is a bob job
 
 Simon `#bobiverse`: `Standing rule if you get a FR, you bob job it`.
