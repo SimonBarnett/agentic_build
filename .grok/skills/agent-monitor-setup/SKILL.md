@@ -73,10 +73,11 @@ AgentMonitor repo skills; this skill only owns tray wiring + install.
 ## CAST IRON — IRC on systray launch (Simon 2026-09-23)
 
 Tray **Agents** / TipForm Cursor|Grok clicks launch `Watch-AgentHealth.ps1`
-which **Ensure-WatchIrcSeat**: starts `irc_agent` + `irc_listen` on the watch
-home and JOINs `#bobiverse`, `#{machine}`, `#agentic_irc`. The TUI agent
-receives IRC only via monitor `FROM` forwards (skill `watch-seat`) — not by
-probing logs.
+which binds the **next free** `.agentic-irc-watch-*` / `-2` / `-3` … slot,
+**Ensure-WatchIrcSeat** (starts `irc_agent` + `irc_listen`, JOINs `#bobiverse`,
+`#{machine}`, `#agentic_irc`), and prunes orphan python/nodes for **that slot
+only**. Opening seat 3/4 must not kill seat 1. The TUI agent receives IRC only
+via monitor `FROM` forwards (skill `watch-seat`) — not by probing logs.
 
 ## Hard rules
 
