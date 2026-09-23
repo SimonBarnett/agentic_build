@@ -13,7 +13,7 @@
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
 param(
-    [int]$PollSec = 30,
+    [int]$PollSec = 60,
     [int]$StallSec = 600,
     [int]$HeartbeatStaleSec = 90,
     [string]$RepoRoot
@@ -740,11 +740,7 @@ function Hide-BobTrayCard {
 }
 
 function Get-BobTrayCursorHelpTooltip {
-    return @'
-grok chat: Grok Bot / Sand pool (grok-bot fuel; not Cursor build).
-high cost models: API-tier Cursor spending.
-low cost models: Cursor build fuel gate (cursor-models for MRB and PR jobs).
-'@.Trim()
+    return (Get-BobTrayCursorGroupHelpTooltip -GroupId '')
 }
 
 function Format-BobTrayCursorOverspendLine {
@@ -811,7 +807,8 @@ function Add-BobTrayUsageRow {
         $RemainingPct,
         [int]$BarWidth,
         [System.Drawing.Image]$Icon,
-        $HeadingColor
+        $HeadingColor,
+        [string]$HelpText
     )
     $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
     $iconW = 0
@@ -834,6 +831,24 @@ function Add-BobTrayUsageRow {
     $nm.Text = $Heading
     $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
     $script:tileHost.Controls.Add($nm)
+    if ($HelpText) {
+        $helpX = ($X + $iconW) + $nm.PreferredWidth + 6
+        $help = New-Object System.Windows.Forms.Label
+        $help.AutoSize = $true
+        $help.Text = '?'
+        $help.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        $help.ForeColor = $muted
+        $help.BackColor = [System.Drawing.Color]::Transparent
+        $help.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
+        $script:tileHost.Controls.Add($help)
+        if (-not $script:bobTrayHelpTip) {
+            $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
+            $script:bobTrayHelpTip.ShowAlways = $true
+            $script:bobTrayHelpTip.AutoPopDelay = 20000
+        }
+        $script:bobTrayHelpTip.SetToolTip($help, $HelpText)
+    }
     $barY = $Y + 20
     $barX = $X + $iconW
     $bar = New-Object System.Windows.Forms.Panel
@@ -930,8 +945,14 @@ function Rebuild-BobTrayTiles {
                     $poolColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
                 }
                 $poolPct = $pool.remaining_pct
+                $help = $null
+                try {
+                    $gid = [string]$pool.group_id
+                    if (-not $gid -and $pool.id) { $gid = [string]$pool.id }
+                    $help = Get-BobTrayCursorGroupHelpTooltip -GroupId $gid
+                } catch { $help = Get-BobTrayCursorHelpTooltip }
                 $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $heading `
-                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor
+                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor -HelpText $help
                 $y += 4
             }
             $y += 2
@@ -959,6 +980,7 @@ function Rebuild-BobTrayTiles {
             if (-not $resolved) { continue }
             $id = [string]$resolved
             $pct = $m.remaining_pct
+            # 0% is real (#179) — only missing/null is n/a.
             $pctLabel = 'n/a'
             if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
             $seat = [string]$m.seat_label

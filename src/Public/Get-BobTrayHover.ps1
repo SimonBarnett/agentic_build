@@ -740,6 +740,39 @@ function Get-BobCursorSpendingGroupCatalog {
     )
 }
 
+function Get-BobTrayCursorGroupHelpTooltip {
+    param([string]$GroupId)
+    switch -Regex ($GroupId) {
+        '^(grok-chat|grok.chat|sand)$' {
+            return @'
+grok chat (Cursor Sand / Grok Bot pool)
+Included: Grok Bot desktop turns (Temporal sand). Fuel for grok-bot only — not MRB/PR builds.
+Source: GetSandUsageStatus.usagePercent (remaining = 100 − used). 0% means exhausted, not unknown.
+'@.Trim()
+        }
+        '^(high-cost-models|high.cost|other-models)$' {
+            return @'
+high cost models (Cursor spending API tier)
+Included: Max Mode / premium API models billed on planUsage.apiPercentUsed.
+Not the cursor-models MRB/PR fuel gate. 0% means this bar is empty, not n/a.
+'@.Trim()
+        }
+        '^(low-cost-models|low.cost|cursor-models)$' {
+            return @'
+low cost models (Cursor Models / build fuel)
+Included: Auto / Composer / agent low-cost models on planUsage.autoPercentUsed.
+This is the cursor-models gate for MRB and PR jobs. 0% means no fuel left — show 0%, never n/a.
+'@.Trim()
+        }
+        default {
+            return @'
+Cursor spending group. Hover a named bar (grok chat / high cost / low cost) for models in that quota.
+0% is a real remaining value — never shown as n/a.
+'@.Trim()
+        }
+    }
+}
+
 function Get-BobCursorGroupRemainFromLocalDoc {
     param($LocalCursorDoc, [string]$GroupId)
     if (-not $LocalCursorDoc) { return $null }
@@ -799,12 +832,14 @@ function Expand-BobReportDigestView {
     $tasksByMachine = @{}
     $uptimeByMachine = @{}
     $pcentRows = @()
+    $weeklyRows = @()
     $workersByMachine = @{}
     if (-not $Digest) {
         return [pscustomobject]@{
             tasksByMachine   = $tasksByMachine
             uptimeByMachine  = $uptimeByMachine
             pcentRows        = $pcentRows
+            weeklyRows       = $weeklyRows
             workersByMachine = $workersByMachine
         }
     }
@@ -843,6 +878,15 @@ function Expand-BobReportDigestView {
             }
             if ($node.uptime_since) {
                 $uptimeByMachine[$mid] = [string]$node.uptime_since
+            }
+            # Digest weekly (xAI) — include 0 (#179).
+            $weekPct = ConvertTo-BobTrayIntOrNull $node.weekly
+            if ($null -ne $weekPct) {
+                $weeklyRows += ,[pscustomobject]@{
+                    machine = $mid
+                    weekly  = $weekPct
+                    period_end = $(if ($node.period_end) { [string]$node.period_end } elseif ($node.reset) { [string]$node.reset } else { $null })
+                }
             }
             if ($node.pcent) {
                 foreach ($pcProp in @($node.pcent.PSObject.Properties)) {
@@ -938,6 +982,7 @@ function Expand-BobReportDigestView {
         tasksByMachine   = $tasksByMachine
         uptimeByMachine  = $uptimeByMachine
         pcentRows        = $pcentRows
+        weeklyRows       = $weeklyRows
         workersByMachine = $workersByMachine
     }
 }
@@ -1000,8 +1045,9 @@ function Get-BobCursorPoolsForTray {
         $glabel = [string]$grp.label
         $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid
         if ($null -eq $remain) { $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid }
+        # 0% is a real value (#179) — only missing/null is n/a.
         $pctLabel = 'n/a'
-        if ($null -ne $remain) { $pctLabel = ('{0}%' -f [int]$remain) }
+        if ($null -ne $remain -and [string]$remain -ne '') { $pctLabel = ('{0}%' -f [int]$remain) }
         $heading = ('{0}  {1}' -f $glabel, $pctLabel)
         if ($resetLabel -and $gid -eq 'low-cost-models') { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
         $pools += ,[pscustomobject]@{
@@ -1134,6 +1180,7 @@ function Get-BobTrayHover {
     $digestTasksByMachine = $digestView.tasksByMachine
     $uptimeByMachine = $digestView.uptimeByMachine
     $digestPcentRows = @($digestView.pcentRows)
+    $digestWeeklyRows = @($digestView.weeklyRows)
     $digestWorkersByMachine = @{}
     if ($digestView.workersByMachine) { $digestWorkersByMachine = $digestView.workersByMachine }
 
@@ -1232,6 +1279,20 @@ function Get-BobTrayHover {
         if ($src -eq 'grok-build' -and $mac) {
             $weeklyBy[$mac] = $pct
         }
+    }
+    # HTTP digest machine.weekly → Grok tiles (#179). 0% is valid.
+    foreach ($wr in @($digestWeeklyRows)) {
+        if (-not $wr) { continue }
+        $mac = [string]$wr.machine
+        if ($mac) { $mac = Resolve-BobiverseMachineId $mac }
+        if (-not $mac) { continue }
+        $pct = ConvertTo-BobTrayIntOrNull $wr.weekly
+        if ($null -eq $pct) { continue }
+        $weeklyBy[$mac] = $pct
+        if ($wr.period_end) { $periodEndBy[$mac] = [string]$wr.period_end }
+        try {
+            Save-BobSeatPeriodEnd -MachineId $mac -PeriodEnd $(if ($wr.period_end) { [string]$wr.period_end } else { $null }) -Weekly $pct
+        } catch { }
     }
     $cursorWeek = $null
     $cursorRemain = $null
