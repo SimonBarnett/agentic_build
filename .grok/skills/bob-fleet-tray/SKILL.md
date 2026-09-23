@@ -45,19 +45,31 @@ Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 
 ## Cursor spending groups (this host's Cursor account)
 
-**Three RTFM groups** on the card (not xAI seat names — Smart Catalogue /
+**Four groups** on the card (not xAI seat names — Smart Catalogue /
 Club Madeira / ntsa are Grok Build seats only; issue #151):
 
 1. `grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
 2. `high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
-3. `low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset on this
-   row). MRB/PR fuel gate reads **low cost models** only.
+3. `low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset).
+   MRB/PR fuel gate reads **low cost models** only.
+4. `on-demand  {N%|n/a}` — spend-limit remaining
+   (`spendLimitUsage.individualUsed` / `individualLimit`). This is the pool
+   Cursor uses **after included usage is exhausted** (docs:
+   cursor.com/help/models-and-usage/usage-limits). Each on-demand row has
+   `reset DD Mon` (billingCycleEnd) and a `?` help tip.
+
+Header **overspend £…** is on-demand spend this cycle (USD→GBP), **right-
+aligned inside the tile host** (392px — never past the TipForm edge).
+
+Provider **bonus** (`planUsage.bonusSpend` / `remainingBonus` /
+`bonusTooltip`) is free usage beyond purchased included — surfaced in the
+on-demand `?` help, not a fifth bar.
 
 Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
 those rows with xAI seat labels. Local
 `Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
 host; digest `pcent` / `cursor_pools` update `cursor-pools.json` cache but
-the tray paints **one trio of bars for this machine's Cursor login**.
+the tray paints **one set of bars for this machine's Cursor login**.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 

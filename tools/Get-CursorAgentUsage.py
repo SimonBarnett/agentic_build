@@ -138,6 +138,64 @@ def _on_demand_usd_cents(period: dict | None) -> tuple[int | None, str | None]:
     return None, None
 
 
+def _on_demand_limit_cents(period: dict | None) -> int | None:
+    """Monthly on-demand spend limit (USD cents) from spendLimitUsage.individualLimit."""
+    if not period:
+        return None
+    slu = period.get("spendLimitUsage") or {}
+    for key in ("individualLimit", "limit"):
+        v = slu.get(key)
+        if v is None or v == "":
+            continue
+        try:
+            cents = int(round(float(v)))
+        except (TypeError, ValueError):
+            continue
+        if cents < 0:
+            continue
+        return cents
+    return None
+
+
+def _on_demand_remain_pct(used_cents: int | None, limit_cents: int | None) -> tuple[int | None, int | None]:
+    """Remaining % of the on-demand monthly spend limit (not included plan %)."""
+    if used_cents is None or limit_cents is None or limit_cents <= 0:
+        return None, None
+    used_pct = int(round(100.0 * float(used_cents) / float(limit_cents)))
+    if used_pct < 0:
+        used_pct = 0
+    remain = int(round(100.0 - (100.0 * float(used_cents) / float(limit_cents))))
+    if remain < 0:
+        remain = 0
+    if remain > 100:
+        remain = 100
+    if used_pct > 100:
+        used_pct = 100
+    return used_pct, remain
+
+
+def _bonus_fields(period: dict | None) -> dict:
+    """Provider bonus usage beyond purchased included (planUsage.bonusSpend)."""
+    out: dict = {}
+    if not period:
+        return out
+    pu = period.get("planUsage") or {}
+    try:
+        if pu.get("bonusSpend") is not None and pu.get("bonusSpend") != "":
+            out["bonus_spend_cents"] = int(round(float(pu.get("bonusSpend"))))
+    except (TypeError, ValueError):
+        pass
+    if "remainingBonus" in pu:
+        try:
+            out["remaining_bonus"] = bool(pu.get("remainingBonus"))
+        except (TypeError, ValueError):
+            pass
+    tip = pu.get("bonusTooltip")
+    if tip:
+        out["bonus_tooltip"] = str(tip)
+    return out
+
+
 def _parse_pct_points(raw) -> tuple[int | None, int | None]:
     """Spending Cursor Models: autoPercentUsed is already percentage points (1 => 1% used)."""
     if raw is None or raw == "":
@@ -182,7 +240,7 @@ def _group_row(
 
 
 def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
-    """Cursor Spending RTFM: grok chat (Sand), high/low cost (planUsage api/auto %)."""
+    """Cursor Spending: grok chat, high/low cost, on-demand (post-included pay-as-you-go)."""
     groups: list[dict] = []
     sand_used = sand_remain = None
     if sand:
@@ -230,6 +288,21 @@ def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
             "GetCurrentPeriodUsage.planUsage.autoPercentUsed",
         )
     )
+
+    # After included (and any provider bonus) is gone, spend draws on-demand against
+    # the monthly spend limit — https://cursor.com/help/models-and-usage/usage-limits
+    used_cents, _ = _on_demand_usd_cents(period)
+    limit_cents = _on_demand_limit_cents(period)
+    od_used, od_remain = _on_demand_remain_pct(used_cents, limit_cents)
+    groups.append(
+        _group_row(
+            "on-demand",
+            "on-demand",
+            od_used,
+            od_remain,
+            "GetCurrentPeriodUsage.spendLimitUsage.individualUsed/individualLimit",
+        )
+    )
     return groups
 
 
@@ -252,6 +325,8 @@ def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
         sand_used, sand_remain = _parse_used_remain(sand_raw)
 
     cents, cents_src = _on_demand_usd_cents(period)
+    limit_cents = _on_demand_limit_cents(period)
+    od_used, od_remain = _on_demand_remain_pct(cents, limit_cents)
     overage_gbp = None
     overage_usd = None
     overage_source = None
@@ -282,12 +357,18 @@ def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
     if overage_usd is not None:
         out["overage_usd"] = overage_usd
         out["on_demand_used_cents"] = cents
+    if limit_cents is not None:
+        out["on_demand_limit_cents"] = limit_cents
+    if od_remain is not None:
+        out["on_demand_remaining_pct"] = od_remain
+        out["on_demand_used_pct"] = od_used
     if overage_gbp is not None:
         out["overage_gbp"] = overage_gbp
     if overage_source:
         out["overage_source"] = overage_source
     if fx_rate is not None:
         out["usd_gbp_rate"] = fx_rate
+    out.update(_bonus_fields(period))
 
     period_end = _period_end_iso(period)
     if period_end:
@@ -299,6 +380,12 @@ def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
         sand_end = sand.get("nextResetTimestampUtc") or sand.get("period_end")
         if sand_end:
             out["sand_period_end"] = str(sand_end)
+        ods = sand.get("onDemandSettings") or {}
+        if "enabled" in ods:
+            try:
+                out["on_demand_enabled"] = bool(ods.get("enabled"))
+            except (TypeError, ValueError):
+                pass
 
     return out
 

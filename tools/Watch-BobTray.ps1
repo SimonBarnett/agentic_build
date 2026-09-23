@@ -990,9 +990,19 @@ function Add-BobTraySectionHeader {
         else { $rt.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73) }
         $rt.BackColor = [System.Drawing.Color]::Transparent
         $rt.Text = $RightText
-        # Right-align within tip card (~420 usable width)
-        $rightEdge = 410
-        $rt.Location = New-Object System.Drawing.Point ([Math]::Max(($X + $iconW + 40), ($rightEdge - $rt.PreferredWidth)), $Y)
+        # Right-align inside the tile host (392px), not past the TipForm edge (bug: 410 > host).
+        $hostW = 392
+        if ($script:tileHost -and $script:tileHost.ClientSize.Width -gt 40) {
+            $hostW = $script:tileHost.ClientSize.Width
+        }
+        $textW = [System.Windows.Forms.TextRenderer]::MeasureText(
+            $RightText,
+            $rt.Font,
+            [System.Drawing.Size]::Empty,
+            [System.Windows.Forms.TextFormatFlags]::NoPadding
+        ).Width
+        $x = [Math]::Max(0, $hostW - $textW - 2)
+        $rt.Location = New-Object System.Drawing.Point $x, $Y
         $script:tileHost.Controls.Add($rt)
     }
     return ($Y + 22)

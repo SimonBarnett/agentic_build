@@ -1104,8 +1104,12 @@ function Normalize-BobCursorSpendingGroupId {
         'low-cost-models' { return 'low-cost-models' }
         'low_cost_models' { return 'low-cost-models' }
         'cursor-models' { return 'low-cost-models' }
+        'on-demand' { return 'on-demand' }
+        'ondemand' { return 'on-demand' }
+        'overage' { return 'on-demand' }
         default {
             if ($s -match 'grok\s*chat') { return 'grok-chat' }
+            if ($s -match 'on[- ]?demand|overage|spend') { return 'on-demand' }
             if ($s -match 'high') { return 'high-cost-models' }
             if ($s -match 'low') { return 'low-cost-models' }
             return 'low-cost-models'
