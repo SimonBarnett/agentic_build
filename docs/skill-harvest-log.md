@@ -1,5 +1,13 @@
 # Skill harvest log
 
+## 2026-09-23 — new repo is public PRs plus the git webhook
+
+Simon: creating a new repo must leave it public so anyone can open a
+PR, and must add the GitHub hook in the same turn. Home:
+`bob-spec-intake` section **New GitHub repo**. Hook playbook stays
+`setup-github-webhooks` (`https://irc.ntsa.uk/bob/v1/git`, events
+push / pull_request / issues, no secret).
+
 ## 2026-09-23 — split setup-github-webhooks + setup-ssl-certs
 
 Simon: one skill that shows how to set up webhooks on git, one on
