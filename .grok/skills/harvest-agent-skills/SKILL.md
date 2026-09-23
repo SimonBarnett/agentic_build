@@ -36,14 +36,14 @@ foundation, same job as this one.
 
 All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo start/firewall, Watch-Bobiverse recycle, Halloy): harvest into `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/` (clone `C:\ai\agentic_irc`). This repo keeps a `bob-irc` stub plus `config/bobiverse.json`.
 
-**During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit, push `origin/main`. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
+**During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit on a branch, push that branch, and open a pull request. Do not commit onto `main`. Do not push `origin/main`. Same rule on every repo in the table above. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
 
 Simon: **Bob must remind workers to harvest before dismissing them.** The
 job loop (`bob-job-loop`) tells the worker to harvest on DONE / last
 FAILED. Do not dismiss a worker that learned a playbook without that
 check. Empty harvest: no commit.
 
-Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit, push `origin/main`.
+Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit on a branch, push that branch, open a pull request. Do not push `origin/main`.
 
 ## Scan
 
@@ -64,6 +64,7 @@ Append a short dated section to `docs/skill-harvest-log.md` (create if missing).
 
 ## Do not
 
+- Push `origin/main`. A harvest is a pull request.
 - Commit "nothing found".
 - Force-push, secrets, `password=` / `XAI_API_KEY=` assignments.
 - Invent skills from noisy session chat.

@@ -3372,6 +3372,15 @@ Invoke-Case 'BT0house watch wrappers marked generated' {
     }
     $harvest = Get-Content (Join-Path $RepoRoot '.grok\skills\harvest-agent-skills\SKILL.md') -Raw
     if ($harvest -notmatch '_Watch-\*') { throw 'harvest-agent-skills must skip _Watch-* wrappers' }
+    if ($harvest -match 'commit, push ``origin/main``') { throw 'harvest-agent-skills must not push origin/main' }
+    if ($harvest -notmatch 'pull request') { throw 'harvest-agent-skills must open a pull request' }
+    $fleet = Get-Content (Join-Path $RepoRoot '.grok\skills\grok-build-fleet\SKILL.md') -Raw
+    if ($fleet -match 'commit, push\)') { throw 'grok-build-fleet must not say commit, push' }
+    if ($fleet -notmatch 'pull request') { throw 'grok-build-fleet must open a pull request' }
+    $hourly = Get-Content (Join-Path $RepoRoot 'tools\Harvest-AgentSkills.ps1') -Raw
+    if ($hourly -match 'commit and push origin/main') { throw 'Harvest-AgentSkills must not push origin/main' }
+    if ($hourly -notmatch 'Do not push origin/main') { throw 'Harvest-AgentSkills must forbid origin/main' }
+    if ($hourly -notmatch 'pull request') { throw 'Harvest-AgentSkills must open a pull request' }
 }
 
 Invoke-Case 'BT0house bob-build-loop pointer' {

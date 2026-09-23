@@ -29,7 +29,7 @@ if ($pending.Count -gt 0) {
 $goal = @'
 Follow .grok/skills/harvest-agent-skills/SKILL.md on this repo.
 
-Scan ~/.grok/skills, ~/.grok/long-running-background-tasks, and docs/ for repeatable procedures that are not already a project skill. If you find one, add SKILL.md, update tools/Test-Pack.ps1 BT0 skills, run Test-Pack, append docs/skill-harvest-log.md, commit and push origin/main.
+Scan ~/.grok/skills, ~/.grok/long-running-background-tasks, and docs/ for repeatable procedures that are not already a project skill. If you find one, add SKILL.md, update tools/Test-Pack.ps1 BT0 skills, run Test-Pack, append docs/skill-harvest-log.md, commit on a branch, push that branch, and open a pull request. Do not push origin/main.
 
 If nothing is worth promoting: write a one-line note to %USERPROFILE%\.grok\long-running-background-tasks\skill-harvest.log (create dir if needed) and exit. Do not commit. Do not start other fleet jobs.
 '@
@@ -41,12 +41,12 @@ $job = Start-BobBuild `
     -ReplyChannel $ReplyChannel `
     -Goal $goal `
     -Constraints @(
-        'Do not force-push; do not commit secrets',
+        'Do not force-push; do not push origin/main; do not commit secrets',
         'Do not set or request an API key environment variable assignment',
         'No empty commits',
         'Do not claim ready for human UAT'
     ) `
-    -Success 'Either a skill commit is on origin/main with docs note, or the local harvest log says no candidates'
+    -Success 'Either an open pull request contains the skill commit and docs note, or the local harvest log says no candidates'
 
 $job | ConvertTo-Json -Compress -Depth 6
 if (-not $job.ok) { exit 1 }

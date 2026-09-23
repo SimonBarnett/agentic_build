@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-23 — harvest is a pull request
+
+Simon `#bobiverse`: update builder skills. A skill harvest is a pull
+request, not a commit on `main`. Home: `harvest-agent-skills`.
+`grok-build-fleet` and `bob-job-loop` point here.
+`tools/Harvest-AgentSkills.ps1` asks for a PR, not `origin/main`.
+
 ## 2026-09-23 — FR you parked is a bob job
 
 Simon `#bobiverse`: `Standing rule if you get a FR, you bob job it`.

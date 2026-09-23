@@ -115,7 +115,7 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
   close leftover FR / FAIL / PASS boards and pull. Do not relaunch.
 - Before the driver dismisses a worker (DONE or last FAILED), remind it
   to harvest repeatable playbooks (`harvest-agent-skills`). Empty harvest:
-  no commit.
+  no commit. A useful harvest is a pull request, not a commit on main.
 
 ## What the driver does
 
