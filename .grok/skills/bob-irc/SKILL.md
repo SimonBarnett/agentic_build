@@ -25,3 +25,8 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
+
+**Preferred IRC wake (Simon 2026-09-23):** Watch-AgentHealth / AgentMonitor
+(skill `watch-agent-health`) — do not arm in-session `^FROM ` TSR on
+`listen.stdout.log` (burns tokens on chat spam). Legacy talk-seat TSR only
+when no watcher (`agentic-irc` Listener + wake).

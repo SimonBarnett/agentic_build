@@ -1,5 +1,13 @@
 # Skill harvest log
 
+## 2026-09-23 — preferred IRC wake = Watch-AgentHealth
+
+Simon: do not arm in-session `listen.stdout.log` `^FROM ` TSR (burns
+tokens on `#bobiverse` spam). Preferred: Watch-AgentHealth /
+AgentMonitor forwards FROM. Harvested `watch-agent-health` into this
+repo; updated `agent-monitor-setup`, `bob-irc` stub. Sister
+`agentic_irc` skills `agentic-irc` + `bob-irc` Listener + wake CAST IRON.
+
 ## 2026-09-23 — intake must run validate-vision-pack
 
 skills-visionary #6 / PR #7 (`2c98dfd`) shipped
