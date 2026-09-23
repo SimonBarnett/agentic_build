@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-23 — intake must run validate-vision-pack
+
+skills-visionary #6 / PR #7 (`2c98dfd`) shipped
+`tools/validate-vision-pack.py`. `bob-spec-intake` and `visionary` now
+refuse park/dispatch unless that command exits 0 (product `tools/` else
+sister clone). Home: `bob-spec-intake`, `visionary`.
+
 ## 2026-09-23 — visionary at new-product intake
 
 Simon: high-reasoning skill for the long-term strategy of a new product
