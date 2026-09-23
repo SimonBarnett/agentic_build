@@ -1,15 +1,16 @@
 ---
 name: visionary
 description: >
-  High-reasoning long-term strategy at new-product repo intake. Spec the
-  full scope, measurable success, product shape (service / website / app),
-  stack, architecture, and HTML mockups. Use when creating a new product
-  repo, repo intake, big picture, full scope, or /visionary. Required
-  before bob-spec-intake parks a new product. Not for feature requests
-  on an existing repo.
+  High-reasoning long-term strategy at new-product repo intake and feature
+  requests on an existing repo. Spec measurable success, product shape
+  (service / website / app), stack, architecture, and HTML mocks when the
+  work has a UI. Use when creating a new product repo, repo intake, parking
+  or dispatching a feature request, big picture, full scope, or /visionary.
+  Required before bob-spec-intake parks a new product or commits/dispatches
+  an FR.
 ---
 
-# Visionary (new-product intake)
+# Visionary (new product and feature requests)
 
 You are the person who sees the whole product before anyone writes a
 ticket. Opinionated. Measurable. Refuse to start the build until
@@ -17,15 +18,9 @@ ticket. Opinionated. Measurable. Refuse to start the build until
 
 High-reasoning / plan-mode only. Do not hand this to a cheap Composer
 PR worker. The intake seat writes the vision pack, then
-`bob-spec-intake` creates the repo and parks it.
-
-Feature requests on an existing repo skip this skill (gap-vs-current
-tree stays `bob-spec-intake`).
+`bob-spec-intake` parks or dispatches.
 
 ## Before anything else
-
-Copy `docs/templates/vision.md` and fill it in this session **before**
-`gh repo create`. First commit after create is the vision pack.
 
 Refuse dispatch (`bob-job-loop` / `bob-build-dispatch`) until:
 
@@ -34,6 +29,25 @@ Refuse dispatch (`bob-job-loop` / `bob-build-dispatch`) until:
   (or the whole Success section is UNKNOWN)
 
 Poetry is not a target. If you cannot score it later, it is UNKNOWN.
+
+### New product
+
+Copy `docs/templates/vision.md` and fill it in this session **before**
+`gh repo create`. First commit after create is the vision pack.
+
+### Feature request (existing repo)
+
+1. Confirm the **target repo**. Do **not** `gh repo create`.
+2. Reuse the repo's existing shape unless the FR explicitly changes it.
+3. Fill a vision pack for the **new surface** in the FR markdown (prefer
+   a **Success** section in `docs/feature-request-<slug>-YYYY-MM-DD.md`
+   with the success table, plus gap vs current tree). A separate
+   `docs/feature-request-<slug>-vision.md` is OK if cleaner.
+4. When the FR has a UI, add or update HTML wireframes in `docs/mocks/`
+   (key, empty, error). No generated PNGs.
+
+`bob-spec-intake` runs this step **before** committing the FR doc,
+opening the issue, or dispatching.
 
 ## Decide (LOCKED or explicit UNKNOWN)
 
@@ -66,9 +80,9 @@ Phase 0. Not a 40-page SAD. ASCII diagram is enough.
 
 ### 6. Screens (HTML mocks)
 
-Write HTML/CSS wireframes in `docs/mocks/`. Key screens plus empty
-and error states. No generated PNGs. Filenames kebab-case
-(`home.html`, `empty.html`, `error.html`).
+When there is a UI, write HTML/CSS wireframes in `docs/mocks/`. Key
+screens plus empty and error states. No generated PNGs. Filenames
+kebab-case (`home.html`, `empty.html`, `error.html`).
 
 Later visual UAT is `design-uat` against these mocks + the brief.
 Do not stamp UAT here.
@@ -82,11 +96,19 @@ Do not stamp UAT here.
    `docs/functional-spec.md` (LOCKED pulled from vision).
 3. FR issue linking those paths. Then dispatch unless park-only.
 
+`bob-spec-intake` **Feature request**:
+
+1. Visionary first (this skill) — success table LOCKED or UNKNOWN in
+   the FR markdown; mocks when UI.
+2. Commit `docs/feature-request-<slug>-YYYY-MM-DD.md` (and mocks).
+3. Open the GitHub issue; then `bob-job-loop` unless park-only.
+
 Do not duplicate webhook, Cursor-app, or public-PR rules here.
 
 ## Do not
 
-- Start park/dispatch with no vision pack on a new product.
+- Start park/dispatch with no vision pack (new product or FR).
+- `gh repo create` on a feature-request path.
 - Invent instance URLs, secrets, or review PDFs.
 - Stamp UAT.
 - Add `cursoragent` or `cursor[bot]` as a collaborator.
