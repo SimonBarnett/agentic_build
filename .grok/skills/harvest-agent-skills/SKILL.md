@@ -51,6 +51,8 @@ Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in
 2. `~\.grok\long-running-background-tasks\` scripts that encode a procedure the repo does not.
 3. Recent `docs/*ops*.md` and this repo's uncommitted playbooks.
 4. Existing skills — do not duplicate. Point at the owner skill instead.
+   New-product strategy (measurable success, shape, stack, mocks) is
+   `visionary`, not a second harvest skill.
 
 A candidate is useful only if it is **repeatable**, has a clear trigger, and is not a single incident report.
 
