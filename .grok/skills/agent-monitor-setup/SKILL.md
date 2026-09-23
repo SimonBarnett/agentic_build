@@ -20,21 +20,28 @@ having two separate desktop/tray icons.
 
 | Entry | Watch-AgentHealth arg | Icon source (same as Desktop shortcut) |
 |-------|-----------------------|-----------------------------------------|
-| Cursor | `cursor` | `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
-| Grok | `grok` | `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
+| Cursor | `cursor` **always `-New`** | Desktop `Cursor.lnk` IconLocation/TargetPath, else `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
+| Grok | `grok` **always `-New`** | Desktop `Grok Bot.lnk`, else `%ProgramFiles%\Grok Bot\Grok Bot.exe`, else `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
 
-- **Icon parity.** Each entry's icon is extracted from the agent app `.exe`
-  with `Icon.ExtractAssociatedIcon`, so it matches the AgentMonitor Desktop
-  shortcut (`shortcuts/*.lnk` IconLocation), not the tray robot glyph.
+- **CAST IRON — always new (Simon 2026-09-23).** Tray Agents clicks, TipForm
+  Cursor/Grok section icons, and Desktop agent links **always** pass `-New`
+  (fresh session id + full skills + seed prompt). They must **never** resume
+  a stored session. Explicit CLI `resume` is opt-in only for rare recovery.
+- **CAST IRON — Cursor model auto (Simon 2026-09-23).** Tray / TipForm Cursor
+  launches always pass `-Model auto` so Composer starts in Auto (not a sticky
+  prior model). Grok has no `auto` model id; tray Grok uses the CLI default.
+- **Icon parity.** Icons come from `ExtractAssociatedIcon` on the agent `.exe`,
+  then plated on a light chip so dark glyphs stay visible on the dark TipForm /
+  menu (badge fallback is a bright C/G chip). Desktop `.lnk` IconLocation
+  points at the agent `.exe` (not a tiny broken `.ico`). Tray resolver must
+  include **Program Files\Grok Bot** and read Desktop `.lnk` first — see
+  `bob-fleet-tray` § Agent shortcut icons.
 - **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
-  real path). TipForm section headers and Agents menu always show a **branded**
-  Cursor / Grok icon (`ExtractAssociatedIcon` from the desktop app when
-  present, else a C/G badge). Missing apps are soft-greyed but still visible.
-  Click launches a **hidden** watch worker (`powershell -WindowStyle Hidden
-  -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok`) so the watch
-  console stays hidden but the agent TUI stays visible (do **not** pass
-  `-Windows off`). Desktop shortcut `*-New`/`*-Resume` `.cmd` files stay
-  fully hidden via `Run-Hidden.vbs`.
+  real path). Click launches a **hidden** watch worker (`powershell
+  -WindowStyle Hidden -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok
+  -New` and for Cursor `-Model auto`) so the watch console stays hidden but
+  the agent TUI stays visible (do **not** pass `-Windows off`). Legacy
+  `*-Resume` Desktop names still launch `-New` via `Run-Hidden.vbs`.
 - **Not installed** = icon is greyed (desaturated, still visible). The entry
   stays clickable; clicking **initialises the setup**
   (`tools/Install-AgentMonitor.ps1 -Agent <cursor|grok>`), which deploys
@@ -58,21 +65,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Install-AgentMo
 
 Idempotent: re-running updates the deploy in place.
 
-## Preferred IRC wake (Simon 2026-09-23)
-
-Watch-AgentHealth is the **preferred** way to receive IRC in a Cursor/Grok
-session. The monitor forwards `FROM` into the TUI so agents do **not** arm
-an in-session `listen.stdout.log` `^FROM ` TSR (that burns tokens on
-`#bobiverse` spam). Fleet create + wake playbook: skill `watch-agent-health`.
-IRC wire: `agentic-irc`. Seat behaviour: AgentMonitor `watch-seat`.
-
 ## Skill harvest
 
 This setup ships with the agentic_build skill harvest: `Copy-BobProjectSkills`
-/ `Install-BobFleet` copy this `SKILL.md` (and `watch-agent-health`) into
-`~\.grok\skills`, and `harvest-agent-skills` lists them. The watch-seat
-runtime contract stays in the AgentMonitor repo skills; this skill owns
-tray wiring + install.
+/ `Install-BobFleet` copy this `SKILL.md` into `~\.grok\skills`, and
+`harvest-agent-skills` lists it. The watch-seat runtime contract stays in the
+AgentMonitor repo skills; this skill only owns tray wiring + install.
+
+## CAST IRON — IRC on systray launch (Simon 2026-09-23)
+
+Tray **Agents** / TipForm Cursor|Grok clicks launch `Watch-AgentHealth.ps1`
+which binds the **next free** `.agentic-irc-watch-*` / `-2` / `-3` … slot,
+**Ensure-WatchIrcSeat** (starts `irc_agent` + `irc_listen`, JOINs `#bobiverse`,
+`#{machine}`, `#agentic_irc`), and prunes orphan python/nodes for **that slot
+only**. Opening seat 3/4 must not kill seat 1. The TUI agent receives IRC only
+via monitor `FROM` forwards (skill `watch-seat`) — not by probing logs.
 
 ## Hard rules
 

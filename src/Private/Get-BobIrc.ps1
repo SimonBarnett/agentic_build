@@ -1094,25 +1094,25 @@ function Resolve-BobCursorPoolSeatId {
 
 function Normalize-BobCursorSpendingGroupId {
     param([string]$Raw)
-    if (-not $Raw) { return 'low-cost-models' }
+    if (-not $Raw) { return 'auto' }
     $s = [string]$Raw.Trim().ToLowerInvariant()
     switch ($s) {
         'grok-chat' { return 'grok-chat' }
         'grok_chat' { return 'grok-chat' }
         'high-cost-models' { return 'high-cost-models' }
         'high_cost_models' { return 'high-cost-models' }
-        'low-cost-models' { return 'low-cost-models' }
-        'low_cost_models' { return 'low-cost-models' }
-        'cursor-models' { return 'low-cost-models' }
-        'on-demand' { return 'on-demand' }
-        'ondemand' { return 'on-demand' }
-        'overage' { return 'on-demand' }
+        'auto' { return 'auto' }
+        'low-cost-models' { return 'auto' }
+        'low_cost_models' { return 'auto' }
+        'cursor-models' { return 'auto' }
+        'on-demand' { return 'auto' }
+        'ondemand' { return 'auto' }
+        'overage' { return 'auto' }
         default {
             if ($s -match 'grok\s*chat') { return 'grok-chat' }
-            if ($s -match 'on[- ]?demand|overage|spend') { return 'on-demand' }
             if ($s -match 'high') { return 'high-cost-models' }
-            if ($s -match 'low') { return 'low-cost-models' }
-            return 'low-cost-models'
+            if ($s -match 'auto|low|cursor|on[- ]?demand|overage|spend') { return 'auto' }
+            return 'auto'
         }
     }
 }

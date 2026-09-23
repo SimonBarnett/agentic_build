@@ -307,7 +307,7 @@ function Get-BobCursorSpendingFromApiFixture {
     $groups = @(
         [pscustomobject]@{ id = 'grok-chat'; label = 'grok chat'; used_pct = $sandUsed; remaining_pct = $sandRemain; source = 'GetSandUsageStatus.usagePercent' }
         [pscustomobject]@{ id = 'high-cost-models'; label = 'high cost models'; used_pct = $apiUsed; remaining_pct = $apiRemain; source = 'GetCurrentPeriodUsage.planUsage.apiPercentUsed' }
-        [pscustomobject]@{ id = 'low-cost-models'; label = 'low cost models'; used_pct = $autoUsed; remaining_pct = $autoRemain; source = 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' }
+        [pscustomobject]@{ id = 'auto'; label = 'auto'; used_pct = $autoUsed; remaining_pct = $autoRemain; source = 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' }
     )
     $periodEnd = $null
     if ($period -and $period.billingCycleEnd) { $periodEnd = [string]$period.billingCycleEnd }
@@ -319,21 +319,6 @@ function Get-BobCursorSpendingFromApiFixture {
         }
         if ($null -ne $period.spendLimitUsage.individualLimit) {
             try { $limitCents = [int][math]::Round([double]$period.spendLimitUsage.individualLimit) } catch { }
-        }
-    }
-    $odUsed = $odRemain = $null
-    if ($null -ne $cents -and $null -ne $limitCents -and $limitCents -gt 0) {
-        $odUsed = [int][math]::Min(100, [math]::Round(100.0 * $cents / $limitCents))
-        $odRemain = [int][math]::Max(0, [math]::Round(100.0 - (100.0 * $cents / $limitCents)))
-        $groups += ,[pscustomobject]@{
-            id = 'on-demand'; label = 'on-demand'; used_pct = $odUsed; remaining_pct = $odRemain
-            source = 'GetCurrentPeriodUsage.spendLimitUsage.individualUsed/individualLimit'
-        }
-    }
-    else {
-        $groups += ,[pscustomobject]@{
-            id = 'on-demand'; label = 'on-demand'; used_pct = $null; remaining_pct = $null
-            source = 'GetCurrentPeriodUsage.spendLimitUsage.individualUsed/individualLimit'
         }
     }
     $overageUsd = $overageGbp = $null
@@ -367,10 +352,6 @@ function Get-BobCursorSpendingFromApiFixture {
         $out.overage_source = 'period.spendLimitUsage.individualUsed'
     }
     if ($null -ne $limitCents) { $out.on_demand_limit_cents = $limitCents }
-    if ($null -ne $odRemain) {
-        $out.on_demand_remaining_pct = $odRemain
-        $out.on_demand_used_pct = $odUsed
-    }
     if ($null -ne $overageGbp) { $out.overage_gbp = $overageGbp }
     if ($sand -and $sand.nextResetTimestampUtc) { $out.sand_period_end = [string]$sand.nextResetTimestampUtc }
     if ($fix.cursor_spending_groups) { $out.cursor_spending_groups = @($fix.cursor_spending_groups) }
@@ -781,10 +762,9 @@ function Get-BobCursorSpendingGroupCatalog {
     return @(
         [pscustomobject]@{ id = 'grok-chat'; label = 'grok chat'; pcent_source = 'grok-chat' }
         [pscustomobject]@{ id = 'high-cost-models'; label = 'high cost models'; pcent_source = 'high-cost-models' }
-        [pscustomobject]@{ id = 'low-cost-models'; label = 'low cost models'; pcent_source = 'cursor-models' }
-        # After included (+ provider bonus) is gone: pay-as-you-go vs monthly spend limit
-        # (cursor.com/help/models-and-usage/usage-limits — "on-demand usage").
-        [pscustomobject]@{ id = 'on-demand'; label = 'on-demand'; pcent_source = 'on-demand' }
+        # Auto model picker → planUsage.autoPercentUsed (Cursor Models / autoBucketModels).
+        # Not on-demand. Legacy id low-cost-models still accepted in remain lookups.
+        [pscustomobject]@{ id = 'auto'; label = 'auto'; pcent_source = 'cursor-models' }
     )
 }
 
@@ -800,31 +780,23 @@ Source: GetSandUsageStatus.usagePercent (remaining = 100 − used). 0% means exh
         }
         '^(high-cost-models|high.cost|other-models)$' {
             return @'
-high cost models (Cursor spending API tier)
-Included: Max Mode / premium API models billed on planUsage.apiPercentUsed.
-Not the cursor-models MRB/PR fuel gate. 0% means this bar is empty, not n/a.
+high cost models (named / Other Models / API tier)
+Included: specific third-party / premium API models on planUsage.apiPercentUsed.
+Not the Auto meter. 0% means this bar is empty, not n/a.
 '@.Trim()
         }
-        '^(low-cost-models|low.cost|cursor-models)$' {
+        '^(auto|low-cost-models|low.cost|cursor-models)$' {
             return @'
-low cost models (Cursor Models / build fuel)
-Included: Auto / Composer / agent low-cost models on planUsage.autoPercentUsed.
-This is the cursor-models gate for MRB and PR jobs. 0% means no fuel left — show 0%, never n/a.
-'@.Trim()
-        }
-        '^(on-demand|ondemand|overage|spend-limit)$' {
-            return @'
-on-demand (pay-as-you-go after included)
-When Cursor Models / Other Models included usage is exhausted, requests continue here if on-demand is enabled (Spending → On-Demand Usage).
-Bar remaining % = spendLimitUsage (individualLimit − individualUsed) / individualLimit.
-Header "overspend £…" is on-demand spend this cycle (USD→GBP). Reset = billingCycleEnd.
-Docs: cursor.com/help/models-and-usage/usage-limits + account-and-billing/overages.
-Provider bonus (planUsage.bonusSpend / remainingBonus) is free usage beyond purchased included — not a separate tray bar; when remainingBonus is false, bonus is gone and on-demand is what you are on.
+auto (Auto model / Cursor Models pool)
+When the model picker is Auto, requests draw from this meter (planUsage.autoPercentUsed).
+autoBucketModels includes default (Auto), Composer, Grok, Vega, etc. Docs: Auto bills at the
+routed model's list price and uses the Cursor Models pool (Other Models only if the router
+picks third-party). This is the cursor-models MRB/PR fuel gate. Not on-demand.
 '@.Trim()
         }
         default {
             return @'
-Cursor spending group. Hover a named bar (grok chat / high cost / low cost / on-demand) for that quota.
+Cursor spending group. Hover a named bar (grok chat / high cost / auto) for that quota.
 0% is a real remaining value — never shown as n/a.
 '@.Trim()
         }
@@ -834,21 +806,22 @@ Cursor spending group. Hover a named bar (grok chat / high cost / low cost / on-
 function Get-BobCursorGroupRemainFromLocalDoc {
     param($LocalCursorDoc, [string]$GroupId)
     if (-not $LocalCursorDoc) { return $null }
+    $want = [string]$GroupId
+    if ($want -eq 'low-cost-models' -or $want -eq 'cursor-models') { $want = 'auto' }
     foreach ($g in @($LocalCursorDoc.cursor_spending_groups)) {
         if (-not $g) { continue }
-        if ([string]$g.id -ne $GroupId) { continue }
+        $gid = [string]$g.id
+        if ($gid -eq 'low-cost-models' -or $gid -eq 'cursor-models') { $gid = 'auto' }
+        if ($gid -ne $want) { continue }
         if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
             return [int]$g.remaining_pct
         }
     }
-    if ($GroupId -eq 'low-cost-models' -and $null -ne $LocalCursorDoc.remaining_pct) {
+    if ($want -eq 'auto' -and $null -ne $LocalCursorDoc.remaining_pct) {
         return [int]$LocalCursorDoc.remaining_pct
     }
-    if ($GroupId -eq 'grok-chat' -and $null -ne $LocalCursorDoc.sand_remaining_pct) {
+    if ($want -eq 'grok-chat' -and $null -ne $LocalCursorDoc.sand_remaining_pct) {
         return [int]$LocalCursorDoc.sand_remaining_pct
-    }
-    if ($GroupId -eq 'on-demand' -and $null -ne $LocalCursorDoc.on_demand_remaining_pct -and [string]$LocalCursorDoc.on_demand_remaining_pct -ne '') {
-        return [int]$LocalCursorDoc.on_demand_remaining_pct
     }
     return $null
 }
@@ -862,8 +835,14 @@ function Get-BobCursorGroupRemainFromSeatCache {
             try { return [int]$g.remaining_pct } catch { }
         }
     }
-    if ($GroupId -eq 'low-cost-models' -and $null -ne $SeatCacheEntry.remaining_pct -and [string]$SeatCacheEntry.remaining_pct -ne '') {
+    if (($GroupId -eq 'low-cost-models' -or $GroupId -eq 'auto') -and $null -ne $SeatCacheEntry.remaining_pct -and [string]$SeatCacheEntry.remaining_pct -ne '') {
         try { return [int]$SeatCacheEntry.remaining_pct } catch { }
+    }
+    if ($SeatCacheEntry.groups -and $GroupId -eq 'auto' -and -not $SeatCacheEntry.groups.auto) {
+        $g = $SeatCacheEntry.groups.'low-cost-models'
+        if ($g -and $null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+            try { return [int]$g.remaining_pct } catch { }
+        }
     }
     return $null
 }
@@ -1143,14 +1122,14 @@ function Get-BobCursorPoolsForTray {
         if ($reportMac -and [string]$reportMac -ne [string]$MachineId) { continue }
         $seatId = $localSeatId
         $groupId = $null
-        if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
-            $groupId = 'low-cost-models'
+        if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models' -or $src -eq 'auto') {
+            $groupId = 'auto'
             $macForSeat = $MachineId
             if ($reportMac) { $macForSeat = $reportMac }
             $seat = Get-BobSeatForMachine -MachineId $macForSeat
             if ($seat) { $seatId = [string]$seat.id }
         }
-        elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models' -or $src -eq 'on-demand') {
+        elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
             $groupId = $src
             $macForSeat = $MachineId
             if ($reportMac) { $macForSeat = $reportMac }
@@ -1712,7 +1691,6 @@ function Get-BobTrayHover {
             source         = $(
                 if ($pool.group_id -eq 'grok-chat') { 'GetSandUsageStatus.usagePercent' }
                 elseif ($pool.group_id -eq 'high-cost-models') { 'GetCurrentPeriodUsage.planUsage.apiPercentUsed' }
-                elseif ($pool.group_id -eq 'on-demand') { 'GetCurrentPeriodUsage.spendLimitUsage.individualUsed/individualLimit' }
                 else { 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' }
             )
         }
@@ -1758,7 +1736,7 @@ function Get-BobTrayHover {
         tier           = $tier
         cursor_pools   = @($cursorPools)
         cursor_groups  = @($cursorGroups)
-        account_name   = 'low cost models'
+        account_name   = 'auto'
         account_label  = $acctPctLabel
         account_remaining_pct = $cursorRemain
         account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })
