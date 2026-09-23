@@ -480,3 +480,9 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
 Simon: seat is not on IRC by probing logs; AgentMonitor forwards FROM.
 Systray Agents launch must Ensure-WatchIrcSeat (agent+listen, all channels).
 Homes: AgentMonitor watch-seat / agent-monitor; tray skill agent-monitor-setup.
+
+## 2026-09-23 — next-free watch slots + scoped orphan prune
+
+Simon: seats 3/4 must open; orphan python/nodes terminated on start without
+killing other seats. Home: AgentMonitor Watch-AgentHealth Bind-WatchSlot;
+tray skill agent-monitor-setup.
