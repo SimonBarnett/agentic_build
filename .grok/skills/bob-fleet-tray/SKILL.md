@@ -186,8 +186,8 @@ Each entry uses a **visible** agent icon (`ExtractAssociatedIcon` plated on a
 light chip, else a bright C/G badge). Not installed -> greyed icon, click
 **initialises setup** (`tools/Install-AgentMonitor.ps1`); installed -> click
 launches `Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok **-New**` (always a
-fresh session + skills + prompt — never resume). Owner skill:
-`agent-monitor-setup`.
+fresh session + skills + prompt — never resume). Cursor also gets
+`-Model auto`. Owner skill: `agent-monitor-setup`.
 
 ## Hard rules
 

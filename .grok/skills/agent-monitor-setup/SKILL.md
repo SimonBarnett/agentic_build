@@ -27,6 +27,9 @@ having two separate desktop/tray icons.
   Cursor/Grok section icons, and Desktop agent links **always** pass `-New`
   (fresh session id + full skills + seed prompt). They must **never** resume
   a stored session. Explicit CLI `resume` is opt-in only for rare recovery.
+- **CAST IRON — Cursor model auto (Simon 2026-09-23).** Tray / TipForm Cursor
+  launches always pass `-Model auto` so Composer starts in Auto (not a sticky
+  prior model). Grok has no `auto` model id; tray Grok uses the CLI default.
 - **Icon parity.** Icons come from `ExtractAssociatedIcon` on the agent `.exe`,
   then plated on a light chip so dark glyphs stay visible on the dark TipForm /
   menu (badge fallback is a bright C/G chip). Desktop `.lnk` IconLocation
@@ -34,9 +37,9 @@ having two separate desktop/tray icons.
 - **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
   real path). Click launches a **hidden** watch worker (`powershell
   -WindowStyle Hidden -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok
-  -New`) so the watch console stays hidden but the agent TUI stays visible
-  (do **not** pass `-Windows off`). Legacy `*-Resume` Desktop names still
-  launch `-New` via `Run-Hidden.vbs`.
+  -New` and for Cursor `-Model auto`) so the watch console stays hidden but
+  the agent TUI stays visible (do **not** pass `-Windows off`). Legacy
+  `*-Resume` Desktop names still launch `-New` via `Run-Hidden.vbs`.
 - **Not installed** = icon is greyed (desaturated, still visible). The entry
   stays clickable; clicking **initialises the setup**
   (`tools/Install-AgentMonitor.ps1 -Agent <cursor|grok>`), which deploys

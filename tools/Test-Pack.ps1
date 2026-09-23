@@ -742,6 +742,7 @@ Invoke-Case 'BT0l tray hover' {
     $watchBody = $watchFn.Value
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
     if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
+    if ($watchBody -notmatch "'-Model',\s*'auto'|\"-Model\",\s*\"auto\"|-Model.*auto") { throw 'systray Cursor Agents must pass -Model auto' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }

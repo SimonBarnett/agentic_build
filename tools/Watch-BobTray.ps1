@@ -673,9 +673,14 @@ function Start-BobTrayAgentWatch {
     $ps = (Get-Command powershell.exe).Source
     $kindFlag = if (([string]$Agent.kind).ToLowerInvariant() -eq 'grok') { '-Grok' } else { '-Cursor' }
     # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
-    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1}' -f $Agent.kind, $ps1)
+    # Cursor always --model auto (Simon 2026-09-23).
+    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New')
+    if (([string]$Agent.kind).ToLowerInvariant() -eq 'cursor') {
+        $launchArgs += @('-Model', 'auto')
+    }
+    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} model={2}' -f $Agent.kind, $ps1, $(if ($Agent.kind -eq 'cursor') { 'auto' } else { 'n/a' }))
     Start-Process -FilePath $ps `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New') `
+        -ArgumentList $launchArgs `
         -WorkingDirectory $script:agentMonitorDir -WindowStyle Hidden | Out-Null
 }
 
