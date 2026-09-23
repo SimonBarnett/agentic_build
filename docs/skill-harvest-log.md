@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-23 — FR you parked is a bob job
+
+Simon `#bobiverse`: `Standing rule if you get a FR, you bob job it`.
+Park (`bob-spec-intake`) then `bob-job-loop` unless he said park-only.
+Homes: `bob-spec-intake` + `bob-job-loop`.
+
 ## 2026-09-22 — PASS-nits merge-in-progress + no gh `merged` field
 
 `gh pr view --json state,merged` fails (unknown field `merged`).

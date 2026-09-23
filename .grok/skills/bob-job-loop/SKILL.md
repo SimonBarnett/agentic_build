@@ -84,6 +84,10 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
     (`marchhare is busy`). Desktop utils are not a substitute for a
     live loop. First claim on IRC + the issue wins; do not second a
     live loop.
+12. **If you get a FR, you bob job it (Simon 2026-09-23):** after
+    `bob-spec-intake` parks the issue + `/docs`, start `bob-job-loop`
+    on that issue. Do not leave a new FR as park-only unless Simon
+    said park-only / later.
 
 ## On wakeup
 
