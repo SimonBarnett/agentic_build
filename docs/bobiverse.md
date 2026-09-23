@@ -30,6 +30,8 @@ Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `
 ## Status on disk
 
 `Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.
+Historical park (2026-09-20 quieter-talk intake, DM-centric `!bobiverse` later superseded by #74 / digest): `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` / issue #36.
+
 
 On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` from `config/bobiverse.json` (`op=merge`, header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret` — never git). The digest **chair** (`chairNick` / `Install-BobChair.ps1`) is separate from `bob-<machine>` builders; Watch does not start the chair.
 

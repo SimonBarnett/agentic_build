@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-23 — land quiet-talk park doc (#36 FIX)
+
+Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.
+
 ## 2026-09-23 — preferred IRC wake = Watch-AgentHealth
 
 Simon: do not arm in-session `listen.stdout.log` `^FROM ` TSR (burns
