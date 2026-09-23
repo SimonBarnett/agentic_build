@@ -178,6 +178,15 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 8. If card flashes on poll: verify SuspendLayout/ResumeLayout wraps
    `Rebuild-BobTrayTiles` (no SetRedraw).
 
+## Agents menu
+
+The context menu has an **Agents** submenu (the two watch-seat agents as one
+menu; select which). Each entry (Cursor, Grok) uses the **same icon as its
+Desktop shortcut** (`Icon.ExtractAssociatedIcon` on the agent `.exe`). Not
+installed -> greyed icon, click **initialises setup**
+(`tools/Install-AgentMonitor.ps1`); installed -> click launches
+`Watch-AgentHealth.cmd <cursor|grok>`. Owner skill: `agent-monitor-setup`.
+
 ## Hard rules
 
 - Not a Windows service.
