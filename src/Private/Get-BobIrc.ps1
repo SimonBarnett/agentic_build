@@ -1674,6 +1674,67 @@ function Get-BobDigestReportSecret {
     return $null
 }
 
+function Get-BobDigestWebhookJobsFingerprint {
+    param($Doc)
+    $jobsNorm = @()
+    foreach ($j in @($Doc.jobs)) {
+        if (-not $j) { continue }
+        $jobsNorm += ,([ordered]@{ repo = [string]$j.repo; state = [string]$j.state })
+    }
+    if ($jobsNorm.Count -eq 0) { return '[]' }
+    return ($jobsNorm | ConvertTo-Json -Compress -Depth 4)
+}
+
+function Test-BobIrcDigestWebhookChairInSync {
+    param($Chair, $Local)
+    if (-not $Chair -or -not $Local) { return $false }
+    if ([string]$Chair.source -ne 'irc-digest') {
+        return (Get-BobDigestWebhookFingerprint $Chair) -eq (Get-BobDigestWebhookFingerprint $Local)
+    }
+    if ([int]$Chair.running -ne [int]$Local.running) { return $false }
+    if ([int]$Chair.queued -ne [int]$Local.queued) { return $false }
+    if ($null -ne $Chair.weekly -and [string]$Chair.weekly -ne '' -and [string]$Chair.weekly -ne [string]$Local.weekly) {
+        return $false
+    }
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        $cv = $Chair.$rk
+        $lv = $Local.$rk
+        if ($null -eq $cv -or [string]$cv -eq '') { continue }
+        if ($null -eq $lv -or [string]$lv -eq '') { return $false }
+        if ([int]$cv -ne [int]$lv) { return $false }
+    }
+    if ($Chair.cursor_label -and [string]$Chair.cursor_label -ne '' -and [string]$Chair.cursor_label -ne [string]$Local.cursor_label) {
+        return $false
+    }
+    if ($Chair.cursor_period_end -and [string]$Chair.cursor_period_end -ne [string]$Local.cursor_period_end) { return $false }
+    if ($Chair.period_end -and [string]$Chair.period_end -ne [string]$Local.period_end) { return $false }
+    if ($Chair.model -and [string]$Chair.model -ne [string]$Local.model) { return $false }
+    if ($Chair.kind -and [string]$Chair.kind -ne [string]$Local.kind) { return $false }
+    if ($Chair.repo -and [string]$Chair.repo -ne [string]$Local.repo) { return $false }
+    if ($Chair.sha -and [string]$Chair.sha -ne [string]$Local.sha) { return $false }
+    if ($Chair.fuel -and [string]$Chair.fuel -ne [string]$Local.fuel) { return $false }
+    if ($Chair.working_on -and [string]$Chair.working_on -ne [string]$Local.working_on) { return $false }
+    if ($null -ne $Chair.online -and [string]$Chair.online -ne [string]$Local.online) { return $false }
+    if ($Chair.status -and [string]$Chair.status -ne [string]$Local.status) { return $false }
+    if ($null -ne $Chair.responding -and [string]$Chair.responding -ne [string]$Local.responding) { return $false }
+    $chairJobs = @($Chair.jobs)
+    $localJobs = @($Local.jobs)
+    if ($chairJobs.Count -gt 0 -or $localJobs.Count -gt 0) {
+        $chairFp = Get-BobDigestWebhookJobsFingerprint $Chair
+        $localFp = Get-BobDigestWebhookJobsFingerprint $Local
+        if ($chairFp -ne $localFp) {
+            if ($localFp -eq '[]' -and $chairJobs.Count -eq 1) {
+                $sj = $chairJobs[0]
+                if ([string]$sj.repo -eq 'irc' -and [string]$sj.state -match '^(?i)START$') {
+                    return $true
+                }
+            }
+            return $false
+        }
+    }
+    return $true
+}
+
 function Get-BobDigestWebhookFingerprint {
     param($Doc)
     if (-not $Doc) { return '' }
@@ -1781,7 +1842,7 @@ function Send-BobDigestWebhookIfChanged {
         $Before
     )
     if ($Before) {
-        if ((Get-BobDigestWebhookFingerprint $Before) -eq (Get-BobDigestWebhookFingerprint $Doc)) {
+        if (Test-BobIrcDigestWebhookChairInSync -Chair $Before -Local $Doc) {
             return $null
         }
     }

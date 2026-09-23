@@ -1075,7 +1075,27 @@ Invoke-Case 'BT0o bobiverse irc' {
     if (-not (Get-Command Sync-BobDigestWebhookAfterBobiversePull -ErrorAction SilentlyContinue)) {
         throw 'Sync-BobDigestWebhookAfterBobiversePull must resolve after Import-Module (#247)'
     }
+    foreach ($watchCmd in @(
+            'Write-BobIrcStatus',
+            'Request-BobIrcBobiversePull',
+            'Import-BobIrcTrayPull',
+            'Sync-BobDigestWebhookAfterBobiversePull',
+            'Import-BobIrcPeerTranscript',
+            'Compact-BobIrcOutbox'
+        )) {
+        if (-not (Get-Command $watchCmd -ErrorAction SilentlyContinue)) {
+            throw "Watch-Bobiverse module surface missing $watchCmd (#255)"
+        }
+    }
+    if ($watchBv -match 'Get-BobIrcChairDigestPeerForMachine') {
+        if (-not (Get-Command Get-BobIrcChairDigestPeerForMachine -ErrorAction SilentlyContinue)) {
+            throw 'Watch calls Get-BobIrcChairDigestPeerForMachine but it is not exported (#255)'
+        }
+    }
     $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -match 'BOB_IRC_ENQUEUE_BOBIVERSE_PULL') {
+        throw 'Request-BobIrcBobiversePull must not gate on BOB_IRC_ENQUEUE_BOBIVERSE_PULL (#255)'
+    }
     if ($ircSrc -notmatch '_chair-digest-peers\.json') { throw 'chair digest peer cache must not use _report-digest.json patch (#247)' }
     if ($ircSrc -notmatch 'Test-BobIrcBobiversePullSeat') { throw 'Get-BobIrc must gate !bobiverse to bob-* builders (#196)' }
     if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest !bobiverse tray/digest whispers' }
@@ -1198,16 +1218,33 @@ Invoke-Case 'BT0o bobiverse irc' {
     $env:BOB_CURSOR_USAGE_FILE = $cursorFileChair
     $localChairBase = Write-BobIrcStatus -SkipDigestWebhook -PassThru
     if (-not $localChairBase) { throw 'Write-BobIrcStatus must return local doc for chair sync' }
+    $chairJobs = @()
+    foreach ($cj in @($localChairBase.jobs)) {
+        if (-not $cj) { continue }
+        $chairJobs += @{
+            repo  = [string]$cj.repo
+            state = [string]$cj.state
+        }
+    }
     $chairEnt = @{
-        weekly        = $localChairBase.weekly
-        remaining_pct = $localChairBase.remaining_pct
-        running       = $localChairBase.running
-        queued        = $localChairBase.queued
-        model         = $localChairBase.model
-        kind          = $localChairBase.kind
-        repo          = $localChairBase.repo
-        sha           = $localChairBase.sha
-        lastSeen      = $localChairBase.lastSeen
+        weekly            = $localChairBase.weekly
+        remaining_pct     = $localChairBase.remaining_pct
+        running           = $localChairBase.running
+        queued            = $localChairBase.queued
+        model             = $localChairBase.model
+        kind              = $localChairBase.kind
+        repo              = $localChairBase.repo
+        sha               = $localChairBase.sha
+        lastSeen          = $localChairBase.lastSeen
+        cursor_label      = $localChairBase.cursor_label
+        cursor_period_end = $localChairBase.cursor_period_end
+        period_end        = $localChairBase.period_end
+        fuel              = $localChairBase.fuel
+        working_on        = $localChairBase.working_on
+        online            = $localChairBase.online
+        status            = $localChairBase.status
+        responding        = $localChairBase.responding
+        jobs              = $chairJobs
     }
     $chairPeersPath = Join-Path $peerDir '_chair-digest-peers.json'
     if (Test-Path $chairPeersPath) { Remove-Item -LiteralPath $chairPeersPath -Force }
@@ -1219,24 +1256,33 @@ Invoke-Case 'BT0o bobiverse irc' {
     $ingested = @(Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-ionos' -DigestObj $chairDigestObj -ResetTrayPos)
     if ($ingested -notcontains 'ionos') { throw "chair digest whisper ingest=$($ingested -join ',')" }
     if (-not (Test-Path $chairPeersPath)) { throw 'chair digest whisper must write _chair-digest-peers.json (#247)' }
-    # Align cached chair row with the live local peer fingerprint (digest Ent is a subset of Write-BobIrcStatus).
-    $chairMap = @{ ionos = $localChairBase }
-    [IO.File]::WriteAllText($chairPeersPath, ($chairMap | ConvertTo-Json -Depth 8))
     $webhookCapChair = Join-Path $bridgeRoot 'digest-webhook-chair-sync.ndjson'
     if (Test-Path $webhookCapChair) { Remove-Item -LiteralPath $webhookCapChair -Force }
     if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
     $env:BOB_DIGEST_WEBHOOK_CAPTURE = $webhookCapChair
+    function Invoke-TestWatchBobiverseChairSync {
+        param($LocalDoc)
+        if ($LocalDoc) {
+            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $LocalDoc
+        }
+    }
     $localChair = Write-BobIrcStatus -SkipDigestWebhook -PassThru
-    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChair
-    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChair
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChair
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChair
     $chairCap = @()
     if (Test-Path $webhookCapChair) { $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ }) }
     if ($chairCap.Count -ne 0) { throw "chair match must not POST: $($chairCap -join ' | ')" }
     '{"percentUsed":55}' | Set-Content -Path $cursorFileChair -Encoding utf8
     $localChairDelta = Write-BobIrcStatus -SkipDigestWebhook -PassThru
-    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChairDelta
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChairDelta
     $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ })
     if ($chairCap.Count -ne 1) { throw "chair-diff fuel delta must POST once via Sync: count=$($chairCap.Count)" }
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    $localChairLastSeen = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChairLastSeen
+    $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ })
+    if ($chairCap.Count -ne 1) { throw "lastSeen-only chair sync must not POST again: count=$($chairCap.Count)" }
     if ($chairCap[0] -notmatch '"op":"merge"' -or $chairCap[0] -notmatch '"machine":"ionos"') {
         throw "chair-diff webhook payload=$($chairCap[0])"
     }
