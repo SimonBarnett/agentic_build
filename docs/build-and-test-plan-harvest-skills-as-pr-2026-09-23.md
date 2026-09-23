@@ -1,4 +1,4 @@
-# Build/test plan: harvest as PR (#TBD)
+# Build/test plan: harvest as PR (#214)
 
 1. Edit `harvest-agent-skills` and `tools/Harvest-AgentSkills.ps1`.
 2. Point `grok-build-fleet` harvest line at the same rule.
