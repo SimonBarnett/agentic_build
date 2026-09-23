@@ -70,6 +70,14 @@ This setup ships with the agentic_build skill harvest: `Copy-BobProjectSkills`
 `harvest-agent-skills` lists it. The watch-seat runtime contract stays in the
 AgentMonitor repo skills; this skill only owns tray wiring + install.
 
+## CAST IRON — IRC on systray launch (Simon 2026-09-23)
+
+Tray **Agents** / TipForm Cursor|Grok clicks launch `Watch-AgentHealth.ps1`
+which **Ensure-WatchIrcSeat**: starts `irc_agent` + `irc_listen` on the watch
+home and JOINs `#bobiverse`, `#{machine}`, `#agentic_irc`. The TUI agent
+receives IRC only via monitor `FROM` forwards (skill `watch-seat`) — not by
+probing logs.
+
 ## Hard rules
 
 - Not a Windows service. Recycle the tray (skill `bob-fleet-tray`) after menu

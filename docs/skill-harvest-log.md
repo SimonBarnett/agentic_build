@@ -474,3 +474,9 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
   state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
   commit to main.
 
+
+## 2026-09-23 — watch seat IRC from watcher + ensure on launch
+
+Simon: seat is not on IRC by probing logs; AgentMonitor forwards FROM.
+Systray Agents launch must Ensure-WatchIrcSeat (agent+listen, all channels).
+Homes: AgentMonitor watch-seat / agent-monitor; tray skill agent-monitor-setup.
