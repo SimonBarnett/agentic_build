@@ -127,12 +127,13 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
+        if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'github-irc-webhooks must document git URL' }
     }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
@@ -1000,6 +1001,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
     if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
     if ([string]$cfg.host -ne 'irc.ntsa.uk') { throw "host=$($cfg.host)" }
+    if ([string]$cfg.reportUrl -ne 'https://irc.ntsa.uk/bob/v1/report') { throw "reportUrl=$($cfg.reportUrl)" }
     if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
     $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
     if ($installIrc -notmatch 'AGENTIC_IRC_PASSWORD') { throw 'Install-BobIrc must load connect.password' }

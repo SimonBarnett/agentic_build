@@ -12,8 +12,11 @@ description: >
 
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
-else `C:\src\...`). Nicks/host live in this repo's `config/bobiverse.json`
-and `docs/bobiverse.md`. Do not duplicate join/recycle/firewall facts here.
+else `C:\src\...`). Nicks/host/`reportUrl` live in this repo's
+`config/bobiverse.json` (`reportUrl` is HTTPS
+`https://irc.ntsa.uk/bob/v1/report`) and `docs/bobiverse.md`. GitHub
+hooks + IIS SSL: skill `github-irc-webhooks`. Do not duplicate
+join/recycle/firewall facts here.
 
 Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
