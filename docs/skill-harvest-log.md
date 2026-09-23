@@ -120,7 +120,8 @@ Simon #bobiverse / issue #196: each `bob-<machine>` on `Watch-Bobiverse`
 enqueues `!bobiverse` on the ~120s cadence again. `Test-BobIrcBobiversePullSeat`
 blocks talk seats (`{machine}-{pid}`) and shop `w-*` workers. After chair
 digest ingest, `Sync-BobDigestWebhookAfterBobiversePull` POSTs only when local
-fuel/jobs/online differs from `_report-digest.json` (#141 change-only).
+fuel/jobs/online differs from the chair digest machine row (`_chair-digest-peers.json`;
+#141 change-only).
 
 ## 2026-09-22 — fleet harvest irc skill + failed-pong restart
 

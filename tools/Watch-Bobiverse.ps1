@@ -143,10 +143,13 @@ while ($true) {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
         $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
-        $pulled = Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec
+        Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
-        if ($pulled -and $localDoc) {
-            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+        if ($localDoc) {
+            $syncMid = [string]$localDoc.id
+            if ($syncMid -and (Get-BobIrcChairDigestPeerForMachine -MachineId $syncMid)) {
+                Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+            }
         }
         Import-BobIrcPeerTranscript | Out-Null
     }

@@ -1064,7 +1064,16 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -notmatch 'Request-BobIrcBobiversePull') { throw 'Watch-Bobiverse must poll !bobiverse for tray pull' }
     if ($watchBv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'Watch-Bobiverse must POST digest webhook after !bobiverse ingest (#196)' }
     if ($watchBv -notmatch 'SkipDigestWebhook') { throw 'Watch-Bobiverse must defer webhook until after chair digest (#196)' }
+    if ($watchBv -match '\$pulled\b') { throw 'Watch must not gate Sync on !bobiverse enqueue; chair answer lands later (#247)' }
+    $psd1Bv = Get-Content (Join-Path $RepoRoot 'src\BobBridge.psd1') -Raw
+    $psm1Bv = Get-Content (Join-Path $RepoRoot 'src\BobBridge.psm1') -Raw
+    if ($psd1Bv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'BobBridge.psd1 must export Sync-BobDigestWebhookAfterBobiversePull (#247)' }
+    if ($psm1Bv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'BobBridge.psm1 must export Sync-BobDigestWebhookAfterBobiversePull (#247)' }
+    if (-not (Get-Command Sync-BobDigestWebhookAfterBobiversePull -ErrorAction SilentlyContinue)) {
+        throw 'Sync-BobDigestWebhookAfterBobiversePull must resolve after Import-Module (#247)'
+    }
     $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch '_chair-digest-peers\.json') { throw 'chair digest peer cache must not use _report-digest.json patch (#247)' }
     if ($ircSrc -notmatch 'Test-BobIrcBobiversePullSeat') { throw 'Get-BobIrc must gate !bobiverse to bob-* builders (#196)' }
     if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest !bobiverse tray/digest whispers' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse may still harvest MOOT POINT transcript' }
@@ -1178,7 +1187,60 @@ Invoke-Case 'BT0o bobiverse irc' {
     $capLines = @(Get-Content $webhookCap | Where-Object { $_ })
     if ($capLines.Count -ne 1) { throw "duplicate webhook after same fuel: count=$($capLines.Count)" }
     $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_NICK = 'bob-ionos'
+    $cursorFileChair = Join-Path $bridgeRoot 'cursor-usage-chair-sync.json'
+    '{"percentUsed":10}' | Set-Content -Path $cursorFileChair -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFileChair
+    $localChairBase = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    if (-not $localChairBase) { throw 'Write-BobIrcStatus must return local doc for chair sync' }
+    $chairEnt = @{
+        weekly        = $localChairBase.weekly
+        remaining_pct = $localChairBase.remaining_pct
+        running       = $localChairBase.running
+        queued        = $localChairBase.queued
+        model         = $localChairBase.model
+        kind          = $localChairBase.kind
+        repo          = $localChairBase.repo
+        sha           = $localChairBase.sha
+        lastSeen      = $localChairBase.lastSeen
+    }
+    $chairPeersPath = Join-Path $peerDir '_chair-digest-peers.json'
+    if (Test-Path $chairPeersPath) { Remove-Item -LiteralPath $chairPeersPath -Force }
+    $chairDigestObj = @{
+        v        = 1
+        ts       = '2026-09-21T12:00:00Z'
+        machines = @{ ionos = $chairEnt }
+    }
+    $ingested = @(Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-ionos' -DigestObj $chairDigestObj -ResetTrayPos)
+    if ($ingested -notcontains 'ionos') { throw "chair digest whisper ingest=$($ingested -join ',')" }
+    if (-not (Test-Path $chairPeersPath)) { throw 'chair digest whisper must write _chair-digest-peers.json (#247)' }
+    # Align cached chair row with the live local peer fingerprint (digest Ent is a subset of Write-BobIrcStatus).
+    $chairMap = @{ ionos = $localChairBase }
+    [IO.File]::WriteAllText($chairPeersPath, ($chairMap | ConvertTo-Json -Depth 8))
+    $webhookCapChair = Join-Path $bridgeRoot 'digest-webhook-chair-sync.ndjson'
+    if (Test-Path $webhookCapChair) { Remove-Item -LiteralPath $webhookCapChair -Force }
+    if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $webhookCapChair
+    $localChair = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChair
+    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChair
+    $chairCap = @()
+    if (Test-Path $webhookCapChair) { $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ }) }
+    if ($chairCap.Count -ne 0) { throw "chair match must not POST: $($chairCap -join ' | ')" }
+    '{"percentUsed":55}' | Set-Content -Path $cursorFileChair -Encoding utf8
+    $localChairDelta = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localChairDelta
+    $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ })
+    if ($chairCap.Count -ne 1) { throw "chair-diff fuel delta must POST once via Sync: count=$($chairCap.Count)" }
+    if ($chairCap[0] -notmatch '"op":"merge"' -or $chairCap[0] -notmatch '"machine":"ionos"') {
+        throw "chair-diff webhook payload=$($chairCap[0])"
+    }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
     $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
 
     $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
     if ($stamp -eq '?' -or -not $stamp) {
@@ -1480,6 +1542,9 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     foreach ($need in @('ionos', 'flamingo', 'marchhare', 'ce-priority-dev1')) {
         if ($got -notcontains $need) { throw "digest ingest missing peer $need : $($got -join ',')" }
         if (-not (Test-Path (Join-Path $ircHome "bob-peers\$need.json"))) { throw "missing bob-peers/$need.json" }
+    }
+    if (-not (Test-Path (Join-Path $ircHome 'bob-peers\_chair-digest-peers.json'))) {
+        throw 'digest ingest must cache chair machine rows (#247)'
     }
     $ionosPeer = Read-BobIrcPeer -Id ionos
     if ([string]$ionosPeer.source -ne 'irc-digest') { throw "ionos source=$($ionosPeer.source)" }

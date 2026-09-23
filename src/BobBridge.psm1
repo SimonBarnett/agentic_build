@@ -58,6 +58,7 @@ Export-ModuleMember -Function @(
     'Import-BobIrcPeerTranscript',
     'Import-BobIrcTrayPull',
     'Request-BobIrcBobiversePull',
+    'Sync-BobDigestWebhookAfterBobiversePull',
     'ConvertFrom-BobIrcTrayLine',
     'Get-BobJobRepoStamp',
     'Get-BobIrcShopChannel',

@@ -1415,6 +1415,7 @@ function Import-BobIrcDigestJson {
         $doc = ConvertTo-BobIrcPeerFromDigestMachine -MachineId ([string]$prop.Name) -Ent $prop.Value
         if (-not $doc) { continue }
         $resolved = [string]$doc.id
+        Save-BobIrcChairDigestPeer -MachineId $resolved -ChairPeer $doc
         $peerPath = Join-Path $dir ($resolved + '.json')
         $prev = $null
         if (Test-Path $peerPath) {
@@ -1495,18 +1496,44 @@ function Test-BobIrcBobiversePullSeat {
     return $false
 }
 
+function Get-BobIrcChairDigestPeersPath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_chair-digest-peers.json')
+}
+
+function Save-BobIrcChairDigestPeer {
+    param(
+        [string]$MachineId,
+        [Parameter(Mandatory)]$ChairPeer
+    )
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid -or -not $ChairPeer) { return }
+    $p = Get-BobIrcChairDigestPeersPath
+    $map = @{}
+    if (Test-Path -LiteralPath $p) {
+        try {
+            $j = Read-JsonFile $p
+            foreach ($prop in @($j.PSObject.Properties)) {
+                $map[[string]$prop.Name] = $prop.Value
+            }
+        }
+        catch { }
+    }
+    $map[$mid] = $ChairPeer
+    try { Write-JsonFile $p ([pscustomobject]$map) } catch { }
+}
+
 function Get-BobIrcChairDigestPeerForMachine {
     param([string]$MachineId)
     $mid = Resolve-BobiverseMachineId $MachineId
     if (-not $mid) { return $null }
-    $rp = Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_report-digest.json')
-    if (-not (Test-Path -LiteralPath $rp)) { return $null }
+    $p = Get-BobIrcChairDigestPeersPath
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
     try {
-        $r = Read-JsonFile $rp
-        if (-not $r -or -not $r.machines) { return $null }
-        $ent = $r.machines.$mid
-        if (-not $ent) { return $null }
-        return ConvertTo-BobIrcPeerFromDigestMachine -MachineId $mid -Ent $ent
+        $j = Read-JsonFile $p
+        if (-not $j) { return $null }
+        $peer = $j.$mid
+        if (-not $peer) { return $null }
+        return $peer
     }
     catch { return $null }
 }
