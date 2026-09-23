@@ -568,7 +568,7 @@ function New-BobTrayAgentBadgeImage {
     $brush = New-Object System.Drawing.SolidBrush $bgCol
     $g.FillEllipse($brush, 1, 1, 30, 30)
     $brush.Dispose()
-    $font = New-Object System.Drawing.Font 'Segoe UI Semibold', 14, [System.Drawing.FontStyle]::Bold
+    $font = New-Object System.Drawing.Font('Segoe UI', 14.0, [System.Drawing.FontStyle]::Bold)
     $sf = New-Object System.Drawing.StringFormat
     $sf.Alignment = [System.Drawing.StringAlignment]::Center
     $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
