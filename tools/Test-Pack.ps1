@@ -1849,6 +1849,8 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
     if ($traySrc -notmatch 'function Set-BobTrayHelpTip') { throw 'TipForm ? must use Set-BobTrayHelpTip (MouseHover Show)' }
     if ($traySrc -notmatch 'RightText') { throw 'Cursor overspend must sit on section header RightText' }
+    if ($traySrc -notmatch 'TextRenderer::MeasureText|TextRenderer\]::MeasureText') { throw 'overspend must MeasureText for right-align inside tile host' }
+    if ($traySrc -notmatch '\$indent = 18') { throw 'Cursor pools and machines must share indent 18' }
     if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
@@ -1857,6 +1859,14 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     }
     $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
     if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
+
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'is operational') { throw 'first IRC peer write must announce machine is operational' }
+    if ($ircSrc -notmatch "status\s*=\s*'operational'") { throw 'digest webhook status must be operational' }
+
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
+    if ($hoverSrc -notmatch 'sand_period_end') { throw 'grok chat reset must prefer sand_period_end' }
 }
 
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---

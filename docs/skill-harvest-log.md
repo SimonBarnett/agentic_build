@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-23 — tipform indent/reset + IRC operational
+
+Simon: systray overspend right-align inside tile host; Cursor spending rows
+indented like machines; reset on grok chat + high cost (not only low cost);
+machine announces `{id} is operational` on first IRC peer write. Homes:
+`bob-fleet-tray`, `box-usage`.
+
 ## 2026-09-23 — intake must run validate-vision-pack
 
 skills-visionary #6 / PR #7 (`2c98dfd`) shipped

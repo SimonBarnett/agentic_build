@@ -78,13 +78,15 @@ Do not substitute overage GBP or Sand remaining for Cursor Models remaining.
 | Sand remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent`. Live confirm: `GrokBotApi.py post --service aiserver.v1.DashboardService --method GetSandUsageStatus`. This is **not** Cursor Models fuel. |
 | Empty / 100% Sand | `usagePercent: 100` / Sand `remaining_pct` null. Grok Bot turns then `ACCEPTED_TEMPORAL` with **no** assistant `send-message` and **no** "limit reached" banner (Cursor bug). `hasAvailableUsage: true` + on-demand `enabled` does not mean they generate. Confirm Stripe: `GrokBotApi.py post --method ListGrokBotStripeLinkPaymentMethods`. `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` = on-demand cannot charge (box send 503). Cursor dashboard banner **You may have an unpaid invoice** + invoice Status **Open** is the same block (ionos 2026-09-20: Open mid-month 16 Sep cycle and Open 14 Sep cycle). Human pays Open invoices / finishes Stripe Link in billing settings. Not a RecreateSandBox fix — see `unstick-grok-bot`. |
 | Empty / overspent | `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). Show as overage, **not** as Cursor Models remaining. Not tip_cursor.json fakes |
-| Reset date | Cursor Models / Sand `period_end` → `reset DD Mon` |
+| Reset date | **Every** spending group row: `reset DD Mon`. `grok chat` → Sand `sand_period_end` / `nextResetTimestampUtc`; high/low cost → Spending `billingCycleEnd` / `period_end`. Do not leave reset only on low cost models. |
 | Cache | `~\.grok\bob-bridge\cursor-agent-usage.json` (~15 min); delete to force refresh |
 
 ## TipForm wiring
 
-`Get-BobTrayHover` sets `account_reset_label` and each machine's `reset_label`.
-`Watch-BobTray` appends them on the cursor row and every seat tile.
+`Get-BobTrayHover` sets `reset_label` on **each** of the three `cursor_pools`
+rows, plus each machine tile. Cursor pool rows are indented like machines.
+Overspend is right-aligned inside the tile host. First IRC connect announces
+`{machine} is operational.`
 
 ## Other signals
 

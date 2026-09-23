@@ -87,9 +87,10 @@ remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 
 Show weekly reset next to the meter, not only in digests:
 
-- **Cursor Models** row: `reset DD Mon` from the Cursor Models period
-  (`period_end` → `account_reset_label`). Do not use Grok Bot Sand reset
-  as a stand-in when the Cursor Models bar is what the fuel gate reads.
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `low cost
+  models`): `reset DD Mon` on that row. `grok chat` uses Sand
+  `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor
+  Spending billing cycle end. Do not leave reset only on low cost models.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from
   `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
   Same-seat machines share one reset date (and one remaining %).
@@ -99,9 +100,21 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`low cost models  9%  reset 23 Sep`
+`grok chat  0%  reset 23 Sep`
+
+`high cost models  0%  reset 16 Oct`
+
+`low cost models  9%  reset 16 Oct`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
+
+TipForm layout (Simon 2026-09-23):
+
+- Cursor spending rows are **indented** like machine tiles under Grok accounts.
+- Overspend (`overspend £N.NN`) is **right-aligned inside the tile host**
+  (not past the tip edge).
+- First IRC peer write after connect announces `{machine} is operational.`
+  Digest webhook `status` is `operational`.
 
 Job lines under a machine (local jobs or `!report` digest):
 

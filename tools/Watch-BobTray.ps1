@@ -1028,9 +1028,16 @@ function Add-BobTraySectionHeader {
         else { $rt.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73) }
         $rt.BackColor = [System.Drawing.Color]::Transparent
         $rt.Text = $RightText
-        # Right-align within tip card (~420 usable width)
-        $rightEdge = 410
-        $rt.Location = New-Object System.Drawing.Point ([Math]::Max(($X + $iconW + 40), ($rightEdge - $rt.PreferredWidth)), $Y)
+        # Right-align inside tileHost (392px), not tip width — PreferredWidth before handle is wrong.
+        $hostW = 392
+        if ($script:tileHost -and $script:tileHost.Width -gt 40) { $hostW = [int]$script:tileHost.Width }
+        $padRight = 6
+        $tw = [System.Windows.Forms.TextRenderer]::MeasureText($RightText, $rt.Font).Width
+        $minLeft = $X + $iconW + 48
+        $xRight = $hostW - $tw - $padRight
+        if ($xRight -lt $minLeft) { $xRight = $minLeft }
+        if (($xRight + $tw) -gt ($hostW - 2)) { $xRight = [Math]::Max(0, $hostW - $tw - $padRight) }
+        $rt.Location = New-Object System.Drawing.Point $xRight, $Y
         $script:tileHost.Controls.Add($rt)
     }
     return ($Y + 22)
@@ -1200,6 +1207,8 @@ function Rebuild-BobTrayTiles {
             $y += 6
         }
         else {
+            # Indent Cursor spending groups like machine tiles under Grok accounts.
+            $indent = 18
             # Always show every pool (incl. 0%). When low-cost is 0 but another pool still has %,
             # keep that bar visible so operators see what still allows spend.
             foreach ($pool in $pools) {
@@ -1218,8 +1227,8 @@ function Rebuild-BobTrayTiles {
                     if (-not $gid -and $pool.id) { $gid = [string]$pool.id }
                     $help = Get-BobTrayCursorGroupHelpTooltip -GroupId $gid
                 } catch { $help = Get-BobTrayCursorHelpTooltip }
-                $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $heading `
-                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor -HelpText $help
+                $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading $heading `
+                    -RemainingPct $poolPct -BarWidth 354 -Icon $null -HeadingColor $poolColor -HelpText $help
                 $y += 4
             }
             $y += 2

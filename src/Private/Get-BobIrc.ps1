@@ -854,7 +854,11 @@ function Format-BobIrcPeerTalkLine {
 function Get-BobIrcChangeTalkLine {
     param($Before, $After)
     if (-not $After) { return $null }
-    if (-not $Before) { return $null }
+    # First peer write after connect / fresh deploy — announce operational (Simon 2026-09-23).
+    if (-not $Before) {
+        $mid = Get-BobIrcDisplayMachineId ([string]$After.id)
+        return "$mid is operational."
+    }
     if ((Get-BobIrcTalkSignature $Before) -eq (Get-BobIrcTalkSignature $After)) { return $null }
     return (Format-BobIrcPeerTalkLine $After)
 }
@@ -1826,7 +1830,7 @@ function Build-BobDigestWebhookMergePayload {
         op      = 'merge'
         machine = $id
         online  = $true
-        status  = 'I am online'
+        status  = 'operational'
     }
     if ($null -ne $Doc.weekly -and [string]$Doc.weekly -ne '') { $payload.weekly = [int]$Doc.weekly }
     if ($Doc.cursor_label) { $payload.cursor_label = [string]$Doc.cursor_label }
@@ -2015,6 +2019,8 @@ function Write-BobIrcStatus {
     $doc = [pscustomobject]@{
         ok                     = $true
         id                     = $id
+        online                 = $true
+        status                 = 'operational'
         weekly                 = $week
         period_end             = $periodEnd
         cursor_label           = $cursorLabel

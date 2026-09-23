@@ -1038,7 +1038,10 @@ function Get-BobCursorPoolsForTray {
         $periodEnd = [string]$LocalCursorDoc.period_end
     }
     if ($ce -and $ce.period_end -and -not $periodEnd) { $periodEnd = [string]$ce.period_end }
-    $resetLabel = Format-BobResetLabel $periodEnd
+    $sandPeriodEnd = $null
+    if ($LocalCursorDoc -and $LocalCursorDoc.sand_period_end) {
+        $sandPeriodEnd = [string]$LocalCursorDoc.sand_period_end
+    }
     $pools = @()
     foreach ($grp in $catalog) {
         $gid = [string]$grp.id
@@ -1048,16 +1051,20 @@ function Get-BobCursorPoolsForTray {
         # 0% is a real value (#179) — only missing/null is n/a.
         $pctLabel = 'n/a'
         if ($null -ne $remain -and [string]$remain -ne '') { $pctLabel = ('{0}%' -f [int]$remain) }
+        # Per-group reset: grok chat uses Sand nextReset; spending groups use billingCycleEnd.
+        $pe = $periodEnd
+        if ($gid -eq 'grok-chat' -and $sandPeriodEnd) { $pe = $sandPeriodEnd }
+        $resetLabel = Format-BobResetLabel $pe
         $heading = ('{0}  {1}' -f $glabel, $pctLabel)
-        if ($resetLabel -and $gid -eq 'low-cost-models') { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
+        if ($resetLabel) { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
         $pools += ,[pscustomobject]@{
             seat_id         = $localSeatId
             seat_label      = $localSeatLabel
             group_id        = $gid
             group_label     = $glabel
             remaining_pct   = $remain
-            period_end      = $periodEnd
-            reset_label     = $(if ($gid -eq 'low-cost-models') { $resetLabel } else { $null })
+            period_end      = $pe
+            reset_label     = $resetLabel
             pct_label       = $pctLabel
             overage_label   = $null
             heading         = $heading
