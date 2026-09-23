@@ -372,3 +372,20 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
 - Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.
 - Import-BobIrcPeerTranscript keeps prior period_end when POINT lacks reset=.
 
+## 2026-09-23 -- tray Agents menu + agent-monitor-setup
+
+- New skill `agent-monitor-setup`: the two watch-seat agents (Cursor, Grok)
+  collapse into one tray context-menu item **Agents**; select which to launch.
+- Each entry's icon is `Icon.ExtractAssociatedIcon` of the agent app exe, so it
+  matches the AgentMonitor Desktop shortcut (`shortcuts/*.lnk` IconLocation),
+  not the tray robot glyph.
+- Not installed -> greyed icon (`ConvertTo-BobTrayGrayImage`), click initialises
+  setup via new `tools/Install-AgentMonitor.ps1` (clones AgentMonitor into
+  `Desktop\Watch-AgentHealth`, copies its watch-seat skills into `~\.grok\skills`).
+- Setup ships with the skill harvest (Copy-BobProjectSkills / Install-BobFleet);
+  `harvest-agent-skills` now points at it. Watch-seat runtime contract stays in
+  the AgentMonitor repo (`agent-monitor`, `watch-seat`).
+- Test-Pack BT0 skills + BT0l traySrc assert the Agents menu, icon parity, grey
+  state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
+  commit to main.
+

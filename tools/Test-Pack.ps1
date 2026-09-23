@@ -127,7 +127,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -698,6 +698,19 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'fill_r') { throw 'Watch-BobTray must use gradient fill_r/fill_g/fill_b' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray must paint weekly bars via Get-BobTrayBarPaint' }
+
+    # Agents submenu: two watch-seat agents as one menu, desktop-parity icons,
+    # grey when not installed, click initialises setup (agent-monitor-setup).
+    if ($traySrc -notmatch "Text = 'Agents'") { throw 'Watch-BobTray must add an Agents context-menu item' }
+    if ($traySrc -notmatch 'Build-BobTrayAgentsMenu') { throw 'Watch-BobTray must build the Agents submenu (Cursor/Grok)' }
+    if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'Agents menu icons must match the Desktop shortcut app exe' }
+    if ($traySrc -notmatch 'ConvertTo-BobTrayGrayImage') { throw 'not-installed agent must be greyed' }
+    if ($traySrc -notmatch 'Install-AgentMonitor') { throw 'clicking a not-installed agent must initialise setup' }
+    if ($traySrc -notmatch 'Watch-AgentHealth\.cmd') { throw 'installed agent must launch the AgentMonitor watch seat' }
+    $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
+    if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
+    if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'))) { throw 'missing tools/Install-AgentMonitor.ps1 setup' }
 
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
