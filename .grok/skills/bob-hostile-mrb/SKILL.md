@@ -124,6 +124,9 @@ voided issue. If you then see the **same PR already MERGED** (another
 worker scored a later head, or `gh pr view` is MERGED), close that
 leftover FAIL with the merged PR URL. Do **not** start FIX. Pull
 main. Do not claim you merged unless your `gh pr merge` succeeded.
+`gh pr merge` can print `already merged` and still exit 0. That is
+not this worker's merge. Parse stdout. Do not write `Merged <url>`
+unless this process created the merge commit.
 
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.

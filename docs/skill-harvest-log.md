@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-23 - gh pr merge already-merged can exit 0
+
+AgentMonitor #34 PASS-nits on `b9ade5da`: `gh pr merge --merge` printed
+already-merged and exited 0. That is not this worker's merge. Parse
+stdout. Do not write `Merged <url>` unless this process created the
+merge commit. Home: `bob-hostile-mrb`.
+
 ## 2026-09-23 — leftover FAIL after another worker merged
 
 AgentMonitor #22: MRB of `7d49dd0` posted PASS-nits, then `gh pr merge`
