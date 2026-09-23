@@ -20,6 +20,8 @@ remote: Permission to SimonBarnett/<repo>.git denied to cursor[bot].
 ```
 
 Your user can still `gh pr create`. That does not fix Cursor Web.
+A TUI / talk seat logged in as SimonBarnett also cannot replay that
+push. The test is a Cursor Web / Cloud Agent push.
 
 ## All existing repos (once)
 
@@ -27,22 +29,29 @@ A user account has no org-wide default. Set the Cursor app to
 **All repositories** so every current and **future** public repo is
 included. Do not leave "Only select repositories" (new repos 403).
 
-1. Open https://github.com/apps/cursor (Configure on **SimonBarnett**).
+1. https://github.com/apps/cursor/installations/new?target_id=2916380
+   (Configure on **SimonBarnett**, id 2916380).
 2. Repository access: **All repositories**.
 3. Permissions must include Contents **Read and write** and
    Pull requests **Read and write**.
-4. Reconnect GitHub at https://cursor.com/dashboard (Integrations).
+4. Confirm the install at https://github.com/settings/installations
+5. Reconnect GitHub at https://cursor.com/dashboard/integrations
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Grant-CursorGitHubApp.ps1
 ```
 
-That script opens the install page. A user OAuth `gh` token **cannot**
-add a GitHub App installation. Simon must click All repositories.
+That script opens those pages. A user OAuth `gh` token **cannot**
+add a GitHub App installation (`user/installations` is 403; repo
+`/installation` needs an app JWT). Simon must click All repositories.
 
 Leave `oBank-democust` (and any other private) private. All-repos still
 covers it for the app; do not `gh repo edit --visibility public` on
 private customer trees.
+
+Human fork-PRs are a different gate. Public SimonBarnett repos already
+allow them (forking on, no rulesets, no interaction limits; 47 public
+as of 2026-09-23). Do not flip visibility to "fix" Cursor Web.
 
 ## New repo (same turn as create)
 
@@ -57,14 +66,26 @@ After `gh repo create --public` and the git webhook
 
 Home for the create checklist: `bob-spec-intake` **New GitHub repo**.
 
-## Check
+## Check (and false checks)
 
-- `gh` as SimonBarnett can read the repo (not the test).
-- Cursor Web push no longer 403s as `cursor[bot]`.
-- Human fork PRs still work (public + forking on).
+**Real test:** Cursor Web push no longer 403s as `cursor[bot]`.
+
+These do **not** prove the app grant:
+
+- `gh` as SimonBarnett can read the repo or `gh pr create` (user token).
+- `GET repos/.../collaborators/cursor[bot]/permission` returning
+  `permission: none` (GitHub Apps are not collaborators; 2026-09-23
+  this was `none` / push false on every SimonBarnett repo).
+- `PUT repos/.../collaborators/cursor[bot]` (404: `cursor[bot] is not
+  a user`). Do not invite a human `cursor` account instead.
+- `GET user/installations` (403: needs a GitHub App user-to-server
+  token, not a classic `gho_` with `repo`).
+
+Human fork PRs still work when the repo is public and forking is on.
 
 ## Do not
 
 - Put a PAT or installation token in git, issues, or channel.
 - Stamp UAT.
 - Treat a working local `gh` as proof Cursor Web can push.
+- Add `cursor[bot]` as a collaborator (not a user).

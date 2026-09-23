@@ -13,6 +13,7 @@ Two homes. Do not put the playbook here.
 | Job | Skill |
 | Set up GitHub webhooks | `setup-github-webhooks` |
 | Set up SSL certs on IIS | `setup-ssl-certs` |
+| Cursor Web / cursor[bot] PR grant | `setup-github-cursor` |
 
 Jeeves `GIT ...` announce: agentic_irc `jeeves-git-webhook`.
 Digest `reportUrl`: `config/bobiverse.json` + `bob-irc`.

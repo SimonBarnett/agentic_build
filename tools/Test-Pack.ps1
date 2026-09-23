@@ -138,7 +138,10 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'cursor\[bot\]') { throw 'setup-github-cursor must name cursor[bot]' }
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'All repositories') { throw 'setup-github-cursor must require All repositories' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'not a user') { throw 'setup-github-cursor must say cursor[bot] is not a collaborator user' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'user/installations') { throw 'setup-github-cursor must document user/installations 403' }
         if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
+        if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-cursor') { throw 'github-irc-webhooks must point at setup-github-cursor' }
     }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }

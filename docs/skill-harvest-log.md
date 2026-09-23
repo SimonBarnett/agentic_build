@@ -1,5 +1,16 @@
 # Skill harvest log
 
+## 2026-09-23 — cursor[bot] is not a collaborator; gh cannot prove the grant
+
+Simon: try-now after the Cursor app page. A TUI `gh` seat cannot replay
+`git-receive-pack` as `cursor[bot]`. `PUT collaborators/cursor[bot]` is
+404 (not a user). `GET collaborators/cursor[bot]/permission` is `none`
+on every repo (apps are not collaborators). `user/installations` is 403
+on a classic user token. Real test is Cursor Web push. Pages:
+`apps/cursor/installations/new?target_id=2916380`,
+`settings/installations`, `cursor.com/dashboard/integrations`. Home:
+`setup-github-cursor` + `tools/Grant-CursorGitHubApp.ps1`.
+
 ## 2026-09-23 — Cursor GitHub App on every git (All repositories)
 
 Simon: Cursor Web 403 on PRs was `cursor[bot]` denied
