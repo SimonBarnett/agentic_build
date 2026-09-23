@@ -1844,6 +1844,9 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'Get-BobTrayAgentImage') { throw 'section icons must reuse Get-BobTrayAgentImage (Agents menu parity)' }
     if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'section icons must use ExtractAssociatedIcon on agent exes' }
     if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
+    if ($traySrc -notmatch 'function Set-BobTrayHelpTip') { throw 'TipForm ? must use Set-BobTrayHelpTip (MouseHover Show)' }
+    if ($traySrc -notmatch 'RightText') { throw 'Cursor overspend must sit on section header RightText' }
+    if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
         # formatter must omit zero — contract checked via source branch on $v -le 0
