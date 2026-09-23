@@ -346,6 +346,9 @@ function Select-BobBuildLoopPr {
 function Select-BobBuildLoopMrbIssue {
     param($State, $Issues)
     foreach ($i in @($Issues)) {
+        $issueState = $null
+        if ($i.PSObject.Properties['state']) { $issueState = [string]$i.state }
+        if ($issueState -and ($issueState -ne 'OPEN')) { continue }
         if (Test-BobMrbTitleMatch -Title ([string]$i.title) -Sha ([string]$State.currentSha)) {
             return $i
         }
@@ -443,6 +446,99 @@ function New-BobLeftoverFailMergedCloseComment {
         [Parameter(Mandatory)][string]$PrUrl
     )
     return "PR already merged. Merged PR: $PrUrl"
+}
+
+function Test-BobBuildLoopFrFinished {
+    param(
+        [Parameter(Mandatory)]$State
+    )
+    $fr = 0
+    if ($State.issue) {
+        try { $fr = [int]$State.issue } catch { $fr = 0 }
+    }
+    if ($fr -le 0) { return $false }
+    $repo = [string]$State.repo
+    if (-not $repo) { return $false }
+    $gh = Get-BobGhExe
+    if (-not $gh) { return $false }
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $json = & $gh issue view $fr --repo $repo --json state,comments 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0 -or -not $json.Trim()) { return $false }
+        $o = $json | ConvertFrom-Json
+        if ([string]$o.state -eq 'CLOSED') { return $true }
+        $needle = 'PASS-nits finished. Merged PR:'
+        foreach ($c in @($o.comments)) {
+            $body = [string]$c.body
+            if ($body -and ($body.Contains($needle))) { return $true }
+        }
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
+}
+
+function Get-BobBuildLoopPassDoneStdout {
+    param(
+        [Parameter(Mandatory)]$State
+    )
+    $passMrb = $null
+    if ($State.passes) {
+        $lastPn = @($State.passes) | Where-Object { [string]$_.verdict -eq 'PASS-nits' } | Select-Object -Last 1
+        if ($lastPn) {
+            $passMrb = [pscustomobject]@{
+                number = $lastPn.issue
+                url    = [string]$lastPn.mrb
+            }
+        }
+    }
+    if (-not $passMrb -and $State.issue) {
+        $n = [int]$State.issue
+        $passMrb = [pscustomobject]@{
+            number = $n
+            url    = "https://github.com/$($State.repo)/issues/$n"
+        }
+    }
+    return Get-BobBuildLoopPassStdout -State $State -Mrb $passMrb
+}
+
+function Invoke-BobBuildLoopPullProductMain {
+    param(
+        [Parameter(Mandatory)]$State,
+        [string]$Git = 'git'
+    )
+    $cwd = [string]$State.cwd
+    if (-not $cwd) {
+        return [pscustomobject]@{ ok = $false; message = 'FAILED: pull main: loop state missing cwd' }
+    }
+    $gitDir = Join-Path $cwd '.git'
+    if (-not (Test-Path -LiteralPath $gitDir)) {
+        return [pscustomobject]@{ ok = $false; message = 'FAILED: pull main: cwd is not a git checkout' }
+    }
+    $savedEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $fetchOut = & $Git -C $cwd fetch origin main 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{
+                ok      = $false
+                message = ("FAILED: pull main: git fetch origin main failed: {0}" -f $fetchOut.Trim())
+            }
+        }
+        $mergeOut = & $Git -C $cwd merge --ff-only origin/main 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            return [pscustomobject]@{
+                ok      = $false
+                message = ("FAILED: pull main: git merge --ff-only origin/main failed: {0}" -f $mergeOut.Trim())
+            }
+        }
+        return [pscustomobject]@{ ok = $true; message = $null }
+    }
+    finally {
+        $ErrorActionPreference = $savedEap
+    }
 }
 
 function Test-BobBuildLoopPrMerged {

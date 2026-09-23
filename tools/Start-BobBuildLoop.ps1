@@ -24,6 +24,7 @@ param(
     [scriptblock]$TestComment,
     [scriptblock]$TestClose,
     [scriptblock]$TestPassNitsFinish,
+    [scriptblock]$TestPullProductMain,
     [string]$StatePath,
     [string]$LogPath
 )
@@ -97,7 +98,7 @@ function Get-LoopWorld {
             elseif ($LASTEXITCODE -ne 0) {
                 Write-BobBuildLoopLog -Path $LogPath -Message ("gh pr list exit {0}" -f $LASTEXITCODE)
             }
-            $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt 2>$null | Out-String
+            $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt,state 2>$null | Out-String
             if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
                 foreach ($i in @(ConvertFrom-BobGhJsonList $isJson)) {
                     if ($null -eq $i.number -or ($i.number -is [System.Array])) { continue }
@@ -107,6 +108,7 @@ function Get-LoopWorld {
                         url       = [string]$i.url
                         body      = [string]$i.body
                         createdAt = [string]$i.createdAt
+                        state     = [string]$i.state
                     }
                 }
             }
@@ -370,6 +372,61 @@ function Apply-StartResult {
     return $State
 }
 
+function Invoke-LoopPassFinishAndPull {
+    param(
+        $State,
+        [int]$PassIssueNum,
+        [string]$DoneStdout,
+        [string]$AuditJobId
+    )
+    $finish = $null
+    if ($TestPassNitsFinish) {
+        $finish = & $TestPassNitsFinish $State $PassIssueNum
+    }
+    elseif ($live) {
+        $finish = Close-BobBuildLoopFinished -State $State -PassIssue $PassIssueNum
+    }
+    else {
+        $finish = [pscustomobject]@{ ok = $true }
+    }
+    if (-not $finish -or $finish.ok -eq $false) {
+        $msg = [string]$finish.message
+        if (-not $msg) { $msg = 'FAILED: PASS-nits finish' }
+        return [pscustomobject]@{ ok = $false; stdout = $msg; exitCode = 1; phase = [string]$State.phase }
+    }
+    $pull = $null
+    if ($TestPullProductMain) {
+        $pull = & $TestPullProductMain $State
+    }
+    elseif ($live) {
+        $pull = Invoke-BobBuildLoopPullProductMain -State $State
+    }
+    else {
+        $pull = [pscustomobject]@{ ok = $true }
+    }
+    if (-not $pull -or $pull.ok -eq $false) {
+        $msg = [string]$pull.message
+        if (-not $msg) { $msg = 'FAILED: pull main' }
+        return [pscustomobject]@{ ok = $false; stdout = $msg; exitCode = 1; phase = 'pass' }
+    }
+    if ($live) {
+        try {
+            Write-BobJobAuditLine -JobId $AuditJobId -Machine '' -Fuel ([string]$State.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$State.currentPr) -MrbIssue ([string]$State.lastMrb) -Sha ([string]$State.currentSha) -Status 'pass-nits'
+        }
+        catch {
+            $auditErr = $_.Exception.Message
+            if (-not $auditErr) { $auditErr = $_.ToString() }
+            Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
+        }
+    }
+    return [pscustomobject]@{
+        ok       = $true
+        stdout   = $DoneStdout
+        exitCode = 0
+        phase    = 'pass'
+    }
+}
+
 $result = $null
 $terminal = $false
 $stdout = $null
@@ -432,39 +489,15 @@ while ($true) {
             if ($decision.pass -and $decision.pass.issue) {
                 try { $passIssueNum = [int]$decision.pass.issue } catch { }
             }
-            $finish = $null
-            if ($TestPassNitsFinish) {
-                $finish = & $TestPassNitsFinish $state $passIssueNum
-            }
-            elseif ($live) {
-                $finish = Close-BobBuildLoopFinished -State $state -PassIssue $passIssueNum
-            }
-            else {
-                $finish = [pscustomobject]@{ ok = $true }
-            }
-            if (-not $finish -or $finish.ok -eq $false) {
-                $terminal = $true
-                $stdout = [string]$finish.message
-                if (-not $stdout) { $stdout = 'FAILED: PASS-nits finish' }
-                $exitCode = 1
+            $auditJob = [string]$state.currentJobId
+            if (-not $auditJob) { $auditJob = "loop-$Issue" }
+            $done = Invoke-LoopPassFinishAndPull -State $state -PassIssueNum $passIssueNum -DoneStdout ([string]$decision.stdout) -AuditJobId $auditJob
+            $terminal = $true
+            $stdout = [string]$done.stdout
+            $exitCode = [int]$done.exitCode
+            if ($done.phase) { $state | Add-Member -NotePropertyName phase -NotePropertyValue ([string]$done.phase) -Force }
+            if ($exitCode -ne 0) {
                 Write-BobBuildLoopLog -Path $LogPath -Message $stdout
-            }
-            else {
-                $terminal = $true
-                $stdout = [string]$decision.stdout
-                $exitCode = 0
-                if ($live) {
-                    $auditJob = [string]$state.currentJobId
-                    if (-not $auditJob) { $auditJob = "loop-$Issue" }
-                    try {
-                        Write-BobJobAuditLine -JobId $auditJob -Machine '' -Fuel ([string]$state.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$state.currentPr) -MrbIssue ([string]$state.lastMrb) -Sha ([string]$state.currentSha) -Status 'pass-nits'
-                    }
-                    catch {
-                        $auditErr = $_.Exception.Message
-                        if (-not $auditErr) { $auditErr = $_.ToString() }
-                        Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
-                    }
-                }
             }
         }
         'fail' {
@@ -472,7 +505,25 @@ while ($true) {
             $stdout = [string]$decision.stdout
             $exitCode = 1
         }
-        'close_leftover_fail' { }
+        'close_leftover_fail' {
+            if (Test-BobBuildLoopFrFinished -State $state) {
+                $passIssueNum = 0
+                if ($decision.pass -and $decision.pass.issue) {
+                    try { $passIssueNum = [int]$decision.pass.issue } catch { }
+                }
+                $auditJob = [string]$state.currentJobId
+                if (-not $auditJob) { $auditJob = "loop-$Issue" }
+                $doneStdout = Get-BobBuildLoopPassDoneStdout -State $state
+                $done = Invoke-LoopPassFinishAndPull -State $state -PassIssueNum $passIssueNum -DoneStdout $doneStdout -AuditJobId $auditJob
+                $terminal = $true
+                $stdout = [string]$done.stdout
+                $exitCode = [int]$done.exitCode
+                if ($done.phase) { $state | Add-Member -NotePropertyName phase -NotePropertyValue ([string]$done.phase) -Force }
+                if ($exitCode -ne 0) {
+                    Write-BobBuildLoopLog -Path $LogPath -Message $stdout
+                }
+            }
+        }
         'sleep' { }
         default {
             $terminal = $true

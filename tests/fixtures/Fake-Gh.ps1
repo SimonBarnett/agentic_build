@@ -99,6 +99,14 @@ if ($joined -match '(?i)\bissue\s+list\b') {
     Exit-Mode 0
 }
 
+if ($joined -match '(?i)\bissue\s+view\b') {
+    Write-FakeGhLog 'issue view'
+    $json = $env:BOB_FAKE_GH_ISSUE_VIEW_JSON
+    if (-not $json) { $json = '{"state":"OPEN","comments":[]}' }
+    Write-Output $json
+    Exit-Mode 0
+}
+
 function Get-FakeGhPrViewJson {
     $next = $env:BOB_FAKE_GH_PR_VIEW_NEXT
     if ($next -and (Test-Path -LiteralPath $next)) {
