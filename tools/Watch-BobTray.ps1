@@ -427,7 +427,7 @@ function Resolve-BobTrayAgentMonitorDir {
 $script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
 $script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
 
-function Resolve-BobTrayAgentExe {
+function Get-BobTrayAgentExeCandidates {
     param([string]$Kind)
     $kind = ([string]$Kind).ToLowerInvariant()
     $cands = @()
@@ -441,10 +441,13 @@ function Resolve-BobTrayAgentExe {
         )
         try {
             $cmd = Get-Command cursor.cmd, cursor.exe, Cursor.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($cmd -and $cmd.Source) { $cands = @([string]$cmd.Source) + $cands }
+            if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+                $cands = @([string]$cmd.Source) + $cands
+            }
         } catch { }
     }
     elseif ($kind -eq 'grok') {
+        # Prefer Grok Bot desktop app before CLI grok.exe (better tray icon).
         $cands = @(
             (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
@@ -452,14 +455,37 @@ function Resolve-BobTrayAgentExe {
             (Join-Path $env:USERPROFILE '.grok\bin\grok.exe')
         )
         try {
-            $cmd = Get-Command 'Grok Bot.exe', grok.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($cmd -and $cmd.Source) { $cands = @([string]$cmd.Source) + $cands }
+            $cmd = Get-Command 'Grok Bot.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+                $cands = @([string]$cmd.Source) + $cands
+            }
         } catch { }
     }
-    foreach ($p in $cands) {
+    return @($cands | Where-Object { $_ })
+}
+
+function Resolve-BobTrayAgentExe {
+    param([string]$Kind)
+    foreach ($p in Get-BobTrayAgentExeCandidates $Kind) {
         if ($p -and (Test-Path -LiteralPath $p)) { return $p }
     }
-    return $cands[0]
+    return $null
+}
+
+function Resolve-BobTrayAgentIconExe {
+    param([string]$Kind)
+    # Icon path may differ from "installed" exe: always prefer branded desktop apps.
+    $kind = ([string]$Kind).ToLowerInvariant()
+    if ($kind -eq 'grok') {
+        foreach ($p in @(
+                (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe')
+            )) {
+            if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+        }
+    }
+    return (Resolve-BobTrayAgentExe $Kind)
 }
 
 function Get-BobTrayAgentDefs {
@@ -494,7 +520,7 @@ function ConvertTo-BobTrayGrayImage {
     $cm.Matrix00 = 0.30; $cm.Matrix01 = 0.30; $cm.Matrix02 = 0.30
     $cm.Matrix10 = 0.59; $cm.Matrix11 = 0.59; $cm.Matrix12 = 0.59
     $cm.Matrix20 = 0.11; $cm.Matrix21 = 0.11; $cm.Matrix22 = 0.11
-    $cm.Matrix33 = 0.60
+    $cm.Matrix33 = 0.92
     $ia = New-Object System.Drawing.Imaging.ImageAttributes
     $ia.SetColorMatrix($cm)
     $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $h
@@ -503,18 +529,86 @@ function ConvertTo-BobTrayGrayImage {
     return $out
 }
 
+function Test-BobTrayImageMostlyEmpty {
+    param([System.Drawing.Bitmap]$Bitmap)
+    if (-not $Bitmap) { return $true }
+    try {
+        $w = [Math]::Min(8, $Bitmap.Width)
+        $h = [Math]::Min(8, $Bitmap.Height)
+        if ($w -le 0 -or $h -le 0) { return $true }
+        $opaque = 0
+        for ($y = 0; $y -lt $h; $y++) {
+            for ($x = 0; $x -lt $w; $x++) {
+                $c = $Bitmap.GetPixel($x, $y)
+                if ($c.A -gt 32 -and ($c.R + $c.G + $c.B) -gt 24) { $opaque++ }
+            }
+        }
+        return ($opaque -lt 2)
+    }
+    catch { return $false }
+}
+
+function New-BobTrayAgentBadgeImage {
+    param([string]$Kind)
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $letter = 'A'
+    $bgCol = [System.Drawing.Color]::FromArgb(88, 166, 255)
+    if ($kind -eq 'cursor') {
+        $letter = 'C'
+        $bgCol = [System.Drawing.Color]::FromArgb(0, 0, 0)
+    }
+    elseif ($kind -eq 'grok') {
+        $letter = 'G'
+        $bgCol = [System.Drawing.Color]::FromArgb(26, 26, 26)
+    }
+    $bmp = New-Object System.Drawing.Bitmap 32, 32
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $brush = New-Object System.Drawing.SolidBrush $bgCol
+    $g.FillEllipse($brush, 1, 1, 30, 30)
+    $brush.Dispose()
+    $font = New-Object System.Drawing.Font 'Segoe UI Semibold', 14, [System.Drawing.FontStyle]::Bold
+    $sf = New-Object System.Drawing.StringFormat
+    $sf.Alignment = [System.Drawing.StringAlignment]::Center
+    $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+    $fgBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+    $g.DrawString($letter, $font, $fgBrush, (New-Object System.Drawing.RectangleF 0, 0, 32, 32), $sf)
+    $fgBrush.Dispose(); $font.Dispose(); $sf.Dispose(); $g.Dispose()
+    return $bmp
+}
+
 function Get-BobTrayAgentImage {
     param($Agent, [bool]$Installed)
     $img = $null
+    $kind = ''
+    if ($Agent -and $Agent.kind) { $kind = [string]$Agent.kind }
+    $iconExe = $null
+    if ($kind) { $iconExe = Resolve-BobTrayAgentIconExe $kind }
+    if (-not $iconExe -and $Agent -and $Agent.exe) { $iconExe = [string]$Agent.exe }
     try {
-        if (Test-Path $Agent.exe) {
-            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($Agent.exe)
+        if ($iconExe -and (Test-Path -LiteralPath $iconExe)) {
+            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($iconExe)
             if ($ico) { $img = $ico.ToBitmap() }
+            if ($img -and (Test-BobTrayImageMostlyEmpty $img)) {
+                $img.Dispose()
+                $img = $null
+            }
         }
     }
-    catch { }
-    if (-not $img) { $img = $iconIdle.ToBitmap() }
-    if (-not $Installed) { $img = ConvertTo-BobTrayGrayImage $img }
+    catch { $img = $null }
+    if (-not $img) {
+        if ($kind) { $img = New-BobTrayAgentBadgeImage $kind }
+        else {
+            try { $img = $iconIdle.ToBitmap() } catch { $img = New-BobTrayAgentBadgeImage 'cursor' }
+        }
+    }
+    # Soft greyscale when not installed — keep alpha high enough to stay visible on dark tip.
+    if (-not $Installed -and $img) {
+        $gray = ConvertTo-BobTrayGrayImage $img
+        if ($img -ne $gray) { try { $img.Dispose() } catch { } }
+        $img = $gray
+    }
     return $img
 }
 

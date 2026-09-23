@@ -729,6 +729,11 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Build-BobTrayAgentsMenu') { throw 'Watch-BobTray must build the Agents submenu (Cursor/Grok)' }
     if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'Agents menu icons must match the Desktop shortcut app exe' }
     if ($traySrc -notmatch 'ConvertTo-BobTrayGrayImage') { throw 'not-installed agent must be greyed' }
+    if ($traySrc -notmatch 'New-BobTrayAgentBadgeImage') { throw 'missing agent must fall back to branded C/G badge icon' }
+    if ($traySrc -notmatch 'Resolve-BobTrayAgentIconExe') { throw 'Grok icon must prefer Grok Bot.exe via Resolve-BobTrayAgentIconExe' }
+    if ($traySrc -notmatch 'Get-BobTrayAgentExeCandidates') { throw 'Resolve-BobTrayAgentExe must use candidates helper' }
+    if ($traySrc -match 'return \$cands\[0\]') { throw 'Resolve must not return a missing candidate path' }
+    if ($traySrc -notmatch 'Matrix33 = 0\.92') { throw 'grey icons must stay visible on dark tip (Matrix33 0.92)' }
     if ($traySrc -notmatch 'Install-AgentMonitor') { throw 'clicking a not-installed agent must initialise setup' }
     if ($traySrc -notmatch 'Watch-AgentHealth\.cmd') { throw 'AgentMonitor readiness still resolves Watch-AgentHealth.cmd' }
     if ($traySrc -notmatch 'Start-BobTrayAgentWatch') { throw 'Agents click must call Start-BobTrayAgentWatch' }
