@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-23 — Cursor GitHub App on every git (All repositories)
+
+Simon: Cursor Web 403 on PRs was `cursor[bot]` denied
+`git-receive-pack` on agentic_build. Public repos already allow human
+fork PRs. Fix is the Cursor GitHub App = **All repositories** (Contents
++ Pull requests write). User `gh` cannot grant an app install. New repo
+checklist: public + webhook + this app. Homes: `setup-github-cursor`,
+`bob-spec-intake` New GitHub repo, `tools/Grant-CursorGitHubApp.ps1`.
+
 ## 2026-09-23 — leftover FAIL after another worker merged
 
 AgentMonitor #22: MRB of `7d49dd0` posted PASS-nits, then `gh pr merge`

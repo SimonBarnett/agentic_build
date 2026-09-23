@@ -127,7 +127,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'setup-github-cursor')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -136,6 +136,9 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }
         if ($n -eq 'setup-github-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'setup-github-webhooks must document git URL' }
         if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'cursor\[bot\]') { throw 'setup-github-cursor must name cursor[bot]' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'All repositories') { throw 'setup-github-cursor must require All repositories' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
     }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
