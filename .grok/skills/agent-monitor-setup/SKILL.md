@@ -27,8 +27,11 @@ having two separate desktop/tray icons.
   with `Icon.ExtractAssociatedIcon`, so it matches the AgentMonitor Desktop
   shortcut (`shortcuts/*.lnk` IconLocation), not the tray robot glyph.
 - **Installed** = `Desktop\Watch-AgentHealth\Watch-AgentHealth.cmd` exists AND
-  the agent `.exe` exists. Installed -> click launches the watch seat
-  (`Watch-AgentHealth.cmd <cursor|grok>`).
+  the agent `.exe` exists. Installed -> click launches a **hidden** watch
+  worker (`powershell -WindowStyle Hidden -File Watch-AgentHealth.ps1
+  -WatchWorker -Cursor|-Grok`) so the watch console stays hidden but the
+  agent TUI stays visible (do **not** pass `-Windows off`). Desktop shortcut
+  `*-New`/`*-Resume` `.cmd` files stay fully hidden via `Run-Hidden.vbs`.
 - **Not installed** = icon is greyed (desaturated). The entry stays clickable;
   clicking **initialises the setup** (`tools/Install-AgentMonitor.ps1 -Agent
   <cursor|grok>`), which deploys AgentMonitor and re-enables the entry.

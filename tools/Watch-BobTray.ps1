@@ -537,9 +537,19 @@ function Start-BobTrayAgentWatch {
         Initialize-BobTrayAgentSetup $Agent
         return
     }
-    Write-TrayLog ('agents: launch {0} watch seat from {1}' -f $Agent.kind, $script:agentMonitorCmd)
-    Start-Process -FilePath $script:agentMonitorCmd -ArgumentList @($Agent.kind) `
-        -WorkingDirectory $script:agentMonitorDir | Out-Null
+    # #285: hide the watch console; keep agent TUI visible (do NOT pass Windows=off).
+    # Direct -WatchWorker avoids the outer ps1 re-spawn that forces Windows=off.
+    $ps1 = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.ps1'
+    if (-not (Test-Path -LiteralPath $ps1)) {
+        Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
+        return
+    }
+    $ps = (Get-Command powershell.exe).Source
+    $kindFlag = if (([string]$Agent.kind).ToLowerInvariant() -eq 'grok') { '-Grok' } else { '-Cursor' }
+    Write-TrayLog ('agents: launch {0} watch seat hidden+TUI from {1}' -f $Agent.kind, $ps1)
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag) `
+        -WorkingDirectory $script:agentMonitorDir -WindowStyle Hidden | Out-Null
 }
 
 function Invoke-BobTrayAgent {
