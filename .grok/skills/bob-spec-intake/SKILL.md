@@ -55,7 +55,8 @@ Every new repo under `SimonBarnett` (this intake or any other create):
    this new repo 403s (`git-receive-pack` denied to cursor[bot]). Keep
    **All repositories** (Contents + Pull requests Read and write).
    `tools\Grant-CursorGitHubApp.ps1` opens the install page. A `gh`
-   user token cannot grant the app.
+   user token cannot grant the app. Do not
+   `PUT collaborators/cursor[bot]` (not a user).
 
 Write `hook.json` UTF-8 **without BOM** (PowerShell `ConvertTo-Json` adds a
 BOM and GitHub returns 400):
