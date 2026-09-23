@@ -3,7 +3,7 @@
 **GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/214
 **MRB board (FAIL):** https://github.com/SimonBarnett/agentic_build/issues/217
 (scored SHA `6d567f661c4c060009fab36c6e7f93fc59e4b263`; FIX head
-`97f5e5c42c57b96c9561c2a568eaa76c62c7c917`)
+`09721f3675b457a051228deb45b612ad5023e5e3`)
 
 **Ask (Simon `#bobiverse` 2026-09-23):**
 update builder skills - send skills harvest as a PR, NOT a commit to main.
