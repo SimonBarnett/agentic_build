@@ -399,6 +399,102 @@ $iconAlertB = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180,
 $iconContext = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(210, 153, 34))
 Write-TrayLog 'tray icon Font Awesome robot'
 
+# --- Agents submenu (AgentMonitor watch seats) -----------------------------
+# The two watch-seat agents (Cursor, Grok) become ONE "Agents" tray menu; you
+# then select which. Each entry uses the SAME icon as its Desktop shortcut (the
+# agent app .exe, matching AgentMonitor shortcuts/*.lnk IconLocation). If an
+# agent is not installed the icon is greyed and clicking it initialises the
+# setup (tools/Install-AgentMonitor.ps1). Skill: agent-monitor-setup.
+$script:agentMonitorDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Watch-AgentHealth'
+$script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+$script:installAgentMonitor = Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'
+
+function Get-BobTrayAgentDefs {
+    # kind = Watch-AgentHealth.cmd argument; exe = Desktop shortcut icon source.
+    @(
+        [ordered]@{ name = 'Cursor'; kind = 'cursor'; exe = (Join-Path $env:LOCALAPPDATA 'Programs\cursor\Cursor.exe') }
+        [ordered]@{ name = 'Grok'; kind = 'grok'; exe = (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe') }
+    )
+}
+
+function Test-BobTrayAgentInstalled {
+    param($Agent)
+    return ((Test-Path $script:agentMonitorCmd) -and (Test-Path $Agent.exe))
+}
+
+function ConvertTo-BobTrayGrayImage {
+    param([System.Drawing.Image]$Image)
+    $w = $Image.Width; $h = $Image.Height
+    $out = New-Object System.Drawing.Bitmap $w, $h
+    $g = [System.Drawing.Graphics]::FromImage($out)
+    $cm = New-Object System.Drawing.Imaging.ColorMatrix
+    $cm.Matrix00 = 0.30; $cm.Matrix01 = 0.30; $cm.Matrix02 = 0.30
+    $cm.Matrix10 = 0.59; $cm.Matrix11 = 0.59; $cm.Matrix12 = 0.59
+    $cm.Matrix20 = 0.11; $cm.Matrix21 = 0.11; $cm.Matrix22 = 0.11
+    $cm.Matrix33 = 0.60
+    $ia = New-Object System.Drawing.Imaging.ImageAttributes
+    $ia.SetColorMatrix($cm)
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $h
+    $g.DrawImage($Image, $rect, 0, 0, $w, $h, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+    $g.Dispose()
+    return $out
+}
+
+function Get-BobTrayAgentImage {
+    param($Agent, [bool]$Installed)
+    $img = $null
+    try {
+        if (Test-Path $Agent.exe) {
+            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($Agent.exe)
+            if ($ico) { $img = $ico.ToBitmap() }
+        }
+    }
+    catch { }
+    if (-not $img) { $img = $iconIdle.ToBitmap() }
+    if (-not $Installed) { $img = ConvertTo-BobTrayGrayImage $img }
+    return $img
+}
+
+function Initialize-BobTrayAgentSetup {
+    param($Agent)
+    if (-not (Test-Path $script:installAgentMonitor)) {
+        Write-TrayLog ('agents: setup script missing ' + $script:installAgentMonitor)
+        return
+    }
+    Write-TrayLog ('agents: initialise setup for {0}' -f $Agent.kind)
+    $ps = (Get-Command powershell.exe).Source
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:installAgentMonitor, '-Agent', $Agent.kind) `
+        -WorkingDirectory $RepoRoot | Out-Null
+}
+
+function Start-BobTrayAgentWatch {
+    param($Agent)
+    Write-TrayLog ('agents: launch {0} watch seat' -f $Agent.kind)
+    Start-Process -FilePath $script:agentMonitorCmd -ArgumentList @($Agent.kind) `
+        -WorkingDirectory $script:agentMonitorDir | Out-Null
+}
+
+function Invoke-BobTrayAgent {
+    param($Agent)
+    if (Test-BobTrayAgentInstalled $Agent) { Start-BobTrayAgentWatch $Agent }
+    else { Initialize-BobTrayAgentSetup $Agent }
+}
+
+function Build-BobTrayAgentsMenu {
+    param([System.Windows.Forms.ToolStripMenuItem]$Parent)
+    $Parent.DropDownItems.Clear()
+    foreach ($a in Get-BobTrayAgentDefs) {
+        $installed = Test-BobTrayAgentInstalled $a
+        $item = New-Object System.Windows.Forms.ToolStripMenuItem
+        $item.Text = $(if ($installed) { $a.name } else { ('{0} (set up)' -f $a.name) })
+        try { $item.Image = Get-BobTrayAgentImage -Agent $a -Installed $installed } catch { }
+        $item.Tag = $a
+        $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+        [void]$Parent.DropDownItems.Add($item)
+    }
+}
+
 $script:attention = $false
 $script:flashOn = $false
 $script:lastAlerts = @()
@@ -998,6 +1094,11 @@ $notify.Visible = $false
 $notify.Text = ''
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
+$miAgents = New-Object System.Windows.Forms.ToolStripMenuItem
+$miAgents.Text = 'Agents'
+[void]$menu.Items.Add($miAgents)
+Build-BobTrayAgentsMenu -Parent $miAgents
+$miAgents.Add_DropDownOpening({ Build-BobTrayAgentsMenu -Parent $miAgents })
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')

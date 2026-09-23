@@ -60,6 +60,11 @@ Follow `skill-design-principles` (one home per fact, no sprawl). Frontmatter `na
 
 Add the name to `tools/Test-Pack.ps1` BT0 skills list. Run `tools\Test-Pack.ps1`. `Install-BobFleet` already copies every project skill into `~\.grok\skills`.
 
+Setup skills ship here too: e.g. `agent-monitor-setup` carries the tray
+**Agents** menu + `tools/Install-AgentMonitor.ps1` watch-seat setup, so the
+harvest installs it. The watch-seat runtime contract stays in the AgentMonitor
+repo (`agent-monitor`, `watch-seat`).
+
 Append a short dated section to `docs/skill-harvest-log.md` (create if missing).
 
 ## Do not
