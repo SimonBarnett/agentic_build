@@ -29,13 +29,22 @@ A user account has no org-wide default. Set the Cursor app to
 **All repositories** so every current and **future** public repo is
 included. Do not leave "Only select repositories" (new repos 403).
 
-1. https://github.com/apps/cursor/installations/new?target_id=2916380
-   (Configure on **SimonBarnett**, id 2916380).
-2. Repository access: **All repositories**.
+1. Open **Configure** on the existing Cursor install:
+   https://github.com/settings/installations
+   (SimonBarnett user, id 2916380 — not org MedatechUK).
+2. Repository access: **All repositories**. Do not save
+   "Only select repositories" unless `agentic_build` is in the list.
 3. Permissions must include Contents **Read and write** and
    Pull requests **Read and write**.
-4. Confirm the install at https://github.com/settings/installations
-5. Reconnect GitHub at https://cursor.com/dashboard/integrations
+4. Reconnect GitHub at https://cursor.com/dashboard/integrations
+
+Do **not** prefer https://github.com/apps/cursor/installations/new
+when Cursor is already installed. That flow can replace a working
+Selected-repos list and drop `agentic_build`. Then
+`git-receive-pack` 403s as `cursor[bot]` on that repo only.
+`cursoragent` is the git *author* on `cursor/*` branches (worked on
+agentic_build 2026-09-20). The pusher is `cursor[bot]`. Adding
+`cursoragent` as a collaborator does not fix the 403.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Grant-CursorGitHubApp.ps1

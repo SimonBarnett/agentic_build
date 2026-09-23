@@ -1,5 +1,15 @@
 # Skill harvest log
 
+## 2026-09-23 — Configure existing Cursor install; do not /installations/new
+
+Simon: Cursor Web still 403 on PRs after the grant pages. `cursor[bot]`
+receive-pack is the pusher; `cursoragent` is only the git author
+(`cursor/*` on agentic_build worked 2026-09-20).
+`/apps/cursor/installations/new` can replace a Selected-repos list and
+drop agentic_build. Use https://github.com/settings/installations
+Configure -> All repositories, then dashboard Integrations reconnect.
+Do not add cursoragent as a collaborator. Home: `setup-github-cursor`.
+
 ## 2026-09-23 — cursor[bot] is not a collaborator; gh cannot prove the grant
 
 Simon: try-now after the Cursor app page. A TUI `gh` seat cannot replay
