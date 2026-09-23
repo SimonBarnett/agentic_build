@@ -1,5 +1,15 @@
 # Skill harvest log
 
+## 2026-09-23 — GitHub webhooks + IIS HTTPS on irc.ntsa.uk
+
+Ionos IIS `irc-ntsa` has Let's Encrypt (win-acme renewal
+`IIS irc-ntsa webhook`). Default GitHub hook on every SimonBarnett
+repo: `https://irc.ntsa.uk/bob/v1/git` (push/PR/issues). Fleet
+`reportUrl` is `https://irc.ntsa.uk/bob/v1/report`. New repos need
+the hook added (no user-account default). Do not replace the Ergo
+PEM renewal. Home: `github-irc-webhooks`. Jeeves announce stays
+agentic_irc `jeeves-git-webhook`.
+
 ## 2026-09-23 — harvest as a PR, not main
 
 Simon `#bobiverse`: update builder skills — send skills harvest as a

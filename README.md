@@ -23,6 +23,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` |
+| github-irc-webhooks | Default GitHub hook + IIS HTTPS `irc.ntsa.uk` |
 
 When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. Both the PR and the MRB are handed to a worker agent.
 
