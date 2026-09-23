@@ -730,7 +730,16 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'Agents menu icons must match the Desktop shortcut app exe' }
     if ($traySrc -notmatch 'ConvertTo-BobTrayGrayImage') { throw 'not-installed agent must be greyed' }
     if ($traySrc -notmatch 'Install-AgentMonitor') { throw 'clicking a not-installed agent must initialise setup' }
-    if ($traySrc -notmatch 'Watch-AgentHealth\.cmd') { throw 'installed agent must launch the AgentMonitor watch seat' }
+    if ($traySrc -notmatch 'Watch-AgentHealth\.cmd') { throw 'AgentMonitor readiness still resolves Watch-AgentHealth.cmd' }
+    if ($traySrc -notmatch 'Start-BobTrayAgentWatch') { throw 'Agents click must call Start-BobTrayAgentWatch' }
+    $watchFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayAgentWatch\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $watchFn.Success) { throw 'Start-BobTrayAgentWatch function not found' }
+    $watchBody = $watchFn.Value
+    if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
+    if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
+    if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
+    if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
+    if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
     $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
     if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
     if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }
