@@ -675,7 +675,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
+            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label -AccountOverageGbp $h.account_overage_gbp
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -737,6 +737,70 @@ function Hide-BobTrayCard {
         Write-TrayLog ('tip hide error: ' + $_.Exception.Message)
     }
     Clear-BobNativeTip
+}
+
+function Get-BobTrayCursorHelpTooltip {
+    return @'
+grok chat: Grok Bot / Sand pool (grok-bot fuel; not Cursor build).
+high cost models: API-tier Cursor spending.
+low cost models: Cursor build fuel gate (cursor-models for MRB and PR jobs).
+'@.Trim()
+}
+
+function Format-BobTrayCursorOverspendLine {
+    param($OverageGbp)
+    if ($null -eq $OverageGbp -or [string]$OverageGbp -eq '') { return $null }
+    $v = [double]$OverageGbp
+    if ($v -le 0) { return $null }
+    return ('overspend {0}{1:N2}' -f [char]0x00A3, $v)
+}
+
+function Add-BobTraySectionHeader {
+    param(
+        [int]$X,
+        [int]$Y,
+        [string]$Title,
+        [System.Drawing.Image]$Icon,
+        [switch]$WithHelp
+    )
+    $iconW = 0
+    if ($Icon) {
+        $pic = New-Object System.Windows.Forms.PictureBox
+        $pic.Image = $Icon
+        $pic.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::CenterImage
+        $pic.Size = New-Object System.Drawing.Size 16, 16
+        $pic.BackColor = [System.Drawing.Color]::Transparent
+        $pic.Location = New-Object System.Drawing.Point $X, ($Y + 1)
+        $script:tileHost.Controls.Add($pic)
+        $iconW = 20
+    }
+    $nm = New-Object System.Windows.Forms.Label
+    $nm.AutoSize = $true
+    $nm.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9.5
+    $nm.ForeColor = $fg
+    $nm.BackColor = [System.Drawing.Color]::Transparent
+    $nm.Text = $Title
+    $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
+    $script:tileHost.Controls.Add($nm)
+    if ($WithHelp) {
+        $helpX = ($X + $iconW) + $nm.PreferredWidth + 6
+        $help = New-Object System.Windows.Forms.Label
+        $help.AutoSize = $true
+        $help.Text = '?'
+        $help.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        $help.ForeColor = $muted
+        $help.BackColor = [System.Drawing.Color]::Transparent
+        $help.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
+        $script:tileHost.Controls.Add($help)
+        if (-not $script:bobTrayHelpTip) {
+            $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
+            $script:bobTrayHelpTip.ShowAlways = $true
+            $script:bobTrayHelpTip.AutoPopDelay = 20000
+        }
+        $script:bobTrayHelpTip.SetToolTip($help, (Get-BobTrayCursorHelpTooltip))
+    }
+    return ($Y + 22)
 }
 
 function Add-BobTrayUsageRow {
@@ -802,12 +866,26 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
+    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset, $AccountOverageGbp)
     if (-not $script:tileHost) { return }
 
     # Format everything first so a throw never leaves a cleared host.
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
+    $cursorAgent = $null
+    $grokAgent = $null
+    foreach ($a in Get-BobTrayAgentDefs) {
+        if ($a.kind -eq 'cursor') { $cursorAgent = $a }
+        if ($a.kind -eq 'grok') { $grokAgent = $a }
+    }
+    $cursorIcon = $null
+    $grokIcon = $null
+    if ($cursorAgent) {
+        try { $cursorIcon = Get-BobTrayAgentImage -Agent $cursorAgent -Installed (Test-BobTrayAgentInstalled $cursorAgent) } catch { }
+    }
+    if ($grokAgent) {
+        try { $grokIcon = Get-BobTrayAgentImage -Agent $grokAgent -Installed (Test-BobTrayAgentInstalled $grokAgent) } catch { }
+    }
 
     # Build into a staging panel, then swap — never Controls.Clear on the live host
     # while the TipForm is visible (that flashed a blank "new" dialog on poll).
@@ -820,6 +898,7 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp
         $pools = @($CursorPools)
         if ($pools.Count -eq 0) {
             $acctName = 'cursor'
@@ -857,6 +936,20 @@ function Rebuild-BobTrayTiles {
             }
             $y += 2
         }
+        $overLine = Format-BobTrayCursorOverspendLine -OverageGbp $AccountOverageGbp
+        if ($overLine) {
+            $ol = New-Object System.Windows.Forms.Label
+            $ol.AutoSize = $true
+            $ol.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+            $ol.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+            $ol.BackColor = [System.Drawing.Color]::Transparent
+            $ol.Text = $overLine
+            $ol.Location = New-Object System.Drawing.Point 20, $y
+            $script:tileHost.Controls.Add($ol)
+            $y += ($ol.PreferredHeight + 6)
+        }
+        $y += 4
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Grok accounts' -Icon $grokIcon
         $indent = 18
         foreach ($m in @($Machines)) {
             if (-not $m) { continue }
