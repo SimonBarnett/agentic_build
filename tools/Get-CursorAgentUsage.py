@@ -240,7 +240,7 @@ def _group_row(
 
 
 def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
-    """Cursor Spending: grok chat, high/low cost, on-demand (post-included pay-as-you-go)."""
+    """Cursor Spending: grok chat (Sand), high cost (api%), auto (autoPercentUsed / Auto model)."""
     groups: list[dict] = []
     sand_used = sand_remain = None
     if sand:
@@ -279,28 +279,16 @@ def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
             "GetCurrentPeriodUsage.planUsage.apiPercentUsed",
         )
     )
+    # Auto model selection / Cursor Models bucket (autoBucketModels: default, composer, grok, …).
+    # Docs: Auto bills at the routed model rate and draws from Cursor Models (and Other Models
+    # if the router picks third-party). Meter field: planUsage.autoPercentUsed.
     groups.append(
         _group_row(
-            "low-cost-models",
-            "low cost models",
+            "auto",
+            "auto",
             auto_used,
             auto_remain,
             "GetCurrentPeriodUsage.planUsage.autoPercentUsed",
-        )
-    )
-
-    # After included (and any provider bonus) is gone, spend draws on-demand against
-    # the monthly spend limit — https://cursor.com/help/models-and-usage/usage-limits
-    used_cents, _ = _on_demand_usd_cents(period)
-    limit_cents = _on_demand_limit_cents(period)
-    od_used, od_remain = _on_demand_remain_pct(used_cents, limit_cents)
-    groups.append(
-        _group_row(
-            "on-demand",
-            "on-demand",
-            od_used,
-            od_remain,
-            "GetCurrentPeriodUsage.spendLimitUsage.individualUsed/individualLimit",
         )
     )
     return groups
