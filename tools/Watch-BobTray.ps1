@@ -936,14 +936,16 @@ function Add-BobTraySectionHeader {
         [string]$Title,
         [System.Drawing.Image]$Icon,
         [switch]$WithHelp,
-        $Agent
+        $Agent,
+        [string]$RightText,
+        [System.Drawing.Color]$RightColor
     )
     $iconW = 0
     if ($Icon) {
         $pic = New-Object System.Windows.Forms.PictureBox
         $pic.Image = $Icon
-        $pic.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::CenterImage
-        $pic.Size = New-Object System.Drawing.Size 16, 16
+        $pic.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+        $pic.Size = New-Object System.Drawing.Size 18, 18
         $pic.BackColor = [System.Drawing.Color]::Transparent
         $pic.Location = New-Object System.Drawing.Point $X, ($Y + 1)
         if ($Agent) {
@@ -952,7 +954,7 @@ function Add-BobTraySectionHeader {
             $pic.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
         }
         $script:tileHost.Controls.Add($pic)
-        $iconW = 20
+        $iconW = 22
     }
     $nm = New-Object System.Windows.Forms.Label
     $nm.AutoSize = $true
@@ -978,14 +980,52 @@ function Add-BobTraySectionHeader {
         $help.Cursor = [System.Windows.Forms.Cursors]::Hand
         $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
         $script:tileHost.Controls.Add($help)
-        if (-not $script:bobTrayHelpTip) {
-            $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
-            $script:bobTrayHelpTip.ShowAlways = $true
-            $script:bobTrayHelpTip.AutoPopDelay = 20000
-        }
-        $script:bobTrayHelpTip.SetToolTip($help, (Get-BobTrayCursorHelpTooltip))
+        Set-BobTrayHelpTip -Control $help -Text (Get-BobTrayCursorHelpTooltip)
+    }
+    if ($RightText) {
+        $rt = New-Object System.Windows.Forms.Label
+        $rt.AutoSize = $true
+        $rt.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        if ($null -ne $RightColor -and $RightColor.A -gt 0) { $rt.ForeColor = $RightColor }
+        else { $rt.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73) }
+        $rt.BackColor = [System.Drawing.Color]::Transparent
+        $rt.Text = $RightText
+        # Right-align within tip card (~420 usable width)
+        $rightEdge = 410
+        $rt.Location = New-Object System.Drawing.Point ([Math]::Max(($X + $iconW + 40), ($rightEdge - $rt.PreferredWidth)), $Y)
+        $script:tileHost.Controls.Add($rt)
     }
     return ($Y + 22)
+}
+
+function Set-BobTrayHelpTip {
+    param($Control, [string]$Text)
+    if (-not $Control -or -not $Text) { return }
+    if (-not $script:bobTrayHelpTip) {
+        $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
+        $script:bobTrayHelpTip.ShowAlways = $true
+        $script:bobTrayHelpTip.UseAnimation = $false
+        $script:bobTrayHelpTip.UseFading = $false
+        $script:bobTrayHelpTip.InitialDelay = 200
+        $script:bobTrayHelpTip.ReshowDelay = 100
+        $script:bobTrayHelpTip.AutoPopDelay = 30000
+        $script:bobTrayHelpTip.IsBalloon = $false
+    }
+    $script:bobTrayHelpTip.SetToolTip($Control, $Text)
+    $Control.Tag = $Text
+    $Control.Add_MouseHover({
+            param($s, $e)
+            try {
+                $tip = [string]$s.Tag
+                if ($tip -and $script:bobTrayHelpTip) {
+                    $script:bobTrayHelpTip.Show($tip, $s, 0, $s.Height, 30000)
+                }
+            } catch { }
+        })
+    $Control.Add_MouseLeave({
+            param($s, $e)
+            try { if ($script:bobTrayHelpTip) { $script:bobTrayHelpTip.Hide($s) } } catch { }
+        })
 }
 
 function Add-BobTrayUsageRow {
@@ -1031,12 +1071,7 @@ function Add-BobTrayUsageRow {
         $help.Cursor = [System.Windows.Forms.Cursors]::Hand
         $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
         $script:tileHost.Controls.Add($help)
-        if (-not $script:bobTrayHelpTip) {
-            $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
-            $script:bobTrayHelpTip.ShowAlways = $true
-            $script:bobTrayHelpTip.AutoPopDelay = 20000
-        }
-        $script:bobTrayHelpTip.SetToolTip($help, $HelpText)
+        Set-BobTrayHelpTip -Control $help -Text $HelpText
     }
     $barY = $Y + 20
     $barX = $X + $iconW
@@ -1102,7 +1137,10 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
-        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp -Agent $cursorAgent
+        $overLine = Format-BobTrayCursorOverspendLine -OverageGbp $AccountOverageGbp
+        $overColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp -Agent $cursorAgent `
+            -RightText $overLine -RightColor $overColor
         $pools = @($CursorPools)
         if ($pools.Count -eq 0) {
             $acctName = 'cursor'
@@ -1124,6 +1162,8 @@ function Rebuild-BobTrayTiles {
             $y += 6
         }
         else {
+            # Always show every pool (incl. 0%). When low-cost is 0 but another pool still has %,
+            # keep that bar visible so operators see what still allows spend.
             foreach ($pool in $pools) {
                 if (-not $pool) { continue }
                 $heading = [string]$pool.heading
@@ -1146,18 +1186,6 @@ function Rebuild-BobTrayTiles {
             }
             $y += 2
         }
-        $overLine = Format-BobTrayCursorOverspendLine -OverageGbp $AccountOverageGbp
-        if ($overLine) {
-            $ol = New-Object System.Windows.Forms.Label
-            $ol.AutoSize = $true
-            $ol.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
-            $ol.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
-            $ol.BackColor = [System.Drawing.Color]::Transparent
-            $ol.Text = $overLine
-            $ol.Location = New-Object System.Drawing.Point 20, $y
-            $script:tileHost.Controls.Add($ol)
-            $y += ($ol.PreferredHeight + 6)
-        }
         $y += 4
         $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Grok accounts' -Icon $grokIcon -Agent $grokAgent
         $indent = 18
@@ -1167,7 +1195,7 @@ function Rebuild-BobTrayTiles {
             $resolved = $null
             try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
             if (-not $resolved) { continue }
-            $id = [string]$resolved
+            $id = ([string]$resolved).ToUpperInvariant()
             $pct = $m.remaining_pct
             # 0% is real (#179) — only missing/null is n/a.
             $pctLabel = 'n/a'
