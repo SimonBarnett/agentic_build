@@ -9,21 +9,30 @@ description: >
   (Simon 2026-09-23: if you get a FR, you bob job it). A new repo is
   public (anyone can open a PR), gets the irc.ntsa.uk git webhook, and
   the Cursor GitHub App (All repositories) so Cursor Web can push/PR.
+  A new product runs visionary first (measurable success, shape, stack,
+  architecture, HTML mocks) before park or dispatch.
 ---
 
 # Spec intake to /docs
 
 ## New product (fresh functional spec)
 
+0. **Visionary first.** Skill `visionary`. High-reasoning / plan-mode.
+   Fill `docs/templates/vision.md` in this session before `gh repo create`.
+   Refuse park/dispatch until shape and success metrics are LOCKED or
+   UNKNOWN. Feature requests on an existing repo skip this step.
 1. Choose a clear public repo name under `SimonBarnett` (kebab-case).
 2. Create the repo with **New GitHub repo** below if it does not exist.
 3. Commit under `/docs`:
-   - Markdown: `docs/functional-spec.md` (LOCKED constants, unknowns, Phase 0, acceptance).
+   - `docs/vision.md` (objective, success table, shape, stack, architecture).
+   - `docs/mocks/*.html` (key screens plus empty/error; no PNGs).
+   - `docs/functional-spec.md` (LOCKED pulled from vision, unknowns, Phase 0, acceptance).
    - Keep a source PDF **only if the sender provided one**. Do not invent a PDF.
    - If the product is a **skill pack**, LOCK a harvest skill as foundation
      (`.grok/skills/harvest-<repo>/SKILL.md` or equivalent). CAST IRON:
      learnings harvest back to that repo (`harvest-agent-skills`).
-4. Open a GitHub issue titled from the spec, body linking the md path, label `feature-request`.
+4. Open a GitHub issue titled from the spec, body linking `docs/vision.md`,
+   `docs/mocks/`, and `docs/functional-spec.md`, label `feature-request`.
 5. Push. Tell the human the issue URL and commit SHA.
 6. Next: run `bob-build-dispatch` (unless the human said park-only / later).
 

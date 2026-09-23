@@ -127,7 +127,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'setup-github-cursor')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'setup-github-cursor', 'visionary')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -145,8 +145,16 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'merge queues') { throw 'setup-github-cursor must record the GitHub UI permission list' }
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'Disconnect') { throw 'setup-github-cursor must document dashboard Disconnect when All repos is already set' }
         if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'visionary') { throw 'bob-spec-intake New product must call visionary first' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'measurable') { throw 'visionary must require measurable success' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'docs/mocks') { throw 'visionary must park HTML mocks in docs/mocks' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'bob-spec-intake') { throw 'visionary must hand park to bob-spec-intake' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-cursor') { throw 'github-irc-webhooks must point at setup-github-cursor' }
     }
+    $visionTpl = Join-Path $RepoRoot 'docs\templates\vision.md'
+    if (-not (Test-Path $visionTpl)) { throw 'missing docs/templates/vision.md' }
+    $visionTplRaw = Get-Content $visionTpl -Raw
+    if ($visionTplRaw -notmatch 'fail-when') { throw 'vision template must have a success fail-when column' }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
