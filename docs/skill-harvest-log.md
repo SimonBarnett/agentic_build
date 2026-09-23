@@ -1,5 +1,13 @@
 # Skill harvest log
 
+## 2026-09-23 — leftover FAIL after another worker merged
+
+AgentMonitor #22: MRB of `7d49dd0` posted PASS-nits, then `gh pr merge`
+failed because the PR head moved. Worker voided and opened FAIL. A
+second seat had already merged the later head. Leftover FAIL must
+close with the merged PR URL; do not FIX a MERGED PR. Home:
+`bob-hostile-mrb`.
+
 ## 2026-09-23 — new repo is public PRs plus the git webhook
 
 Simon: creating a new repo must leave it public so anyone can open a
