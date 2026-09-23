@@ -1,5 +1,11 @@
 # Skill harvest log
 
+## 2026-09-23 — bob-spec-intake: Grant script opens settings/installations
+
+`bob-spec-intake` New GitHub repo step 3: `Grant-CursorGitHubApp.ps1` opens
+Configure existing at https://github.com/settings/installations, not
+`/apps/cursor/installations/new`. Home: `bob-spec-intake`.
+
 ## 2026-09-23 — All repos already set: disconnect/reconnect, then local gh
 
 Simon: Cursor GitHub App already has All repositories plus the full

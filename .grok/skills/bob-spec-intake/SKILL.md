@@ -54,7 +54,10 @@ Every new repo under `SimonBarnett` (this intake or any other create):
    Web pushes as `cursor[bot]`. If the app is "Only select repositories"
    this new repo 403s (`git-receive-pack` denied to cursor[bot]). Keep
    **All repositories** (Contents + Pull requests Read and write).
-   `tools\Grant-CursorGitHubApp.ps1` opens the install page. A `gh`
+   `tools\Grant-CursorGitHubApp.ps1` opens **Configure existing** on the
+   Cursor GitHub App (`https://github.com/settings/installations`). Do not
+   open `/apps/cursor/installations/new` when Cursor is already installed
+   (that flow can replace Selected-repos and drop repos). A `gh`
    user token cannot grant the app. Do not
    `PUT collaborators/cursor[bot]` (not a user).
 
