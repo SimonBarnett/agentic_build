@@ -1,5 +1,10 @@
 # FR: skill harvest as a PR, not a commit to main
 
+**GitHub issue:** https://github.com/SimonBarnett/agentic_build/issues/214
+**MRB board (FAIL):** https://github.com/SimonBarnett/agentic_build/issues/217
+(scored SHA `6d567f661c4c060009fab36c6e7f93fc59e4b263`; FIX head
+`97f5e5c42c57b96c9561c2a568eaa76c62c7c917`)
+
 **Ask (Simon `#bobiverse` 2026-09-23):**
 update builder skills - send skills harvest as a PR, NOT a commit to main.
 
@@ -13,8 +18,8 @@ update builder skills - send skills harvest as a PR, NOT a commit to main.
 
 ## Gap
 
-`harvest-agent-skills` and `Harvest-AgentSkills.ps1` still say commit and
-push `origin/main`.
+Closed on FIX PR after MRB #217: `-Success` must not name `origin/main` as
+done (open PR or empty harvest log only).
 
 ## Acceptance
 

@@ -46,7 +46,7 @@ $job = Start-BobBuild `
         'No empty commits',
         'Do not claim ready for human UAT'
     ) `
-    -Success 'Either a skill commit is on origin/main with docs note, or the local harvest log says no candidates'
+    -Success 'Either an open pull request contains the skill commit and docs note, or the local harvest log says no candidates'
 
 $job | ConvertTo-Json -Compress -Depth 6
 if (-not $job.ok) { exit 1 }
