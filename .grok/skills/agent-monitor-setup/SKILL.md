@@ -20,21 +20,23 @@ having two separate desktop/tray icons.
 
 | Entry | Watch-AgentHealth arg | Icon source (same as Desktop shortcut) |
 |-------|-----------------------|-----------------------------------------|
-| Cursor | `cursor` | `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
-| Grok | `grok` | `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
+| Cursor | `cursor` **always `-New`** | `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
+| Grok | `grok` **always `-New`** | `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
 
-- **Icon parity.** Each entry's icon is extracted from the agent app `.exe`
-  with `Icon.ExtractAssociatedIcon`, so it matches the AgentMonitor Desktop
-  shortcut (`shortcuts/*.lnk` IconLocation), not the tray robot glyph.
+- **CAST IRON — always new (Simon 2026-09-23).** Tray Agents clicks, TipForm
+  Cursor/Grok section icons, and Desktop agent links **always** pass `-New`
+  (fresh session id + full skills + seed prompt). They must **never** resume
+  a stored session. Explicit CLI `resume` is opt-in only for rare recovery.
+- **Icon parity.** Icons come from `ExtractAssociatedIcon` on the agent `.exe`,
+  then plated on a light chip so dark glyphs stay visible on the dark TipForm /
+  menu (badge fallback is a bright C/G chip). Desktop `.lnk` IconLocation
+  points at the agent `.exe` (not a tiny broken `.ico`).
 - **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
-  real path). TipForm section headers and Agents menu always show a **branded**
-  Cursor / Grok icon (`ExtractAssociatedIcon` from the desktop app when
-  present, else a C/G badge). Missing apps are soft-greyed but still visible.
-  Click launches a **hidden** watch worker (`powershell -WindowStyle Hidden
-  -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok`) so the watch
-  console stays hidden but the agent TUI stays visible (do **not** pass
-  `-Windows off`). Desktop shortcut `*-New`/`*-Resume` `.cmd` files stay
-  fully hidden via `Run-Hidden.vbs`.
+  real path). Click launches a **hidden** watch worker (`powershell
+  -WindowStyle Hidden -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok
+  -New`) so the watch console stays hidden but the agent TUI stays visible
+  (do **not** pass `-Windows off`). Legacy `*-Resume` Desktop names still
+  launch `-New` via `Run-Hidden.vbs`.
 - **Not installed** = icon is greyed (desaturated, still visible). The entry
   stays clickable; clicking **initialises the setup**
   (`tools/Install-AgentMonitor.ps1 -Agent <cursor|grok>`), which deploys

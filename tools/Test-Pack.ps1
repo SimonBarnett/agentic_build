@@ -741,10 +741,12 @@ Invoke-Case 'BT0l tray hover' {
     if (-not $watchFn.Success) { throw 'Start-BobTrayAgentWatch function not found' }
     $watchBody = $watchFn.Value
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
+    if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
+    if ($traySrc -notmatch 'ConvertTo-BobTrayTipVisibleImage') { throw 'agent icons must plate dark exe glyphs for dark tip' }
     $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
     if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
     if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }

@@ -181,11 +181,13 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 ## Agents menu
 
 The context menu has an **Agents** submenu (the two watch-seat agents as one
-menu; select which). Each entry (Cursor, Grok) uses the **same icon as its
-Desktop shortcut** (`Icon.ExtractAssociatedIcon` on the agent `.exe`). Not
-installed -> greyed icon, click **initialises setup**
-(`tools/Install-AgentMonitor.ps1`); installed -> click launches
-`Watch-AgentHealth.cmd <cursor|grok>`. Owner skill: `agent-monitor-setup`.
+menu; select which). TipForm Cursor/Grok section headers are the same links.
+Each entry uses a **visible** agent icon (`ExtractAssociatedIcon` plated on a
+light chip, else a bright C/G badge). Not installed -> greyed icon, click
+**initialises setup** (`tools/Install-AgentMonitor.ps1`); installed -> click
+launches `Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok **-New**` (always a
+fresh session + skills + prompt — never resume). Owner skill:
+`agent-monitor-setup`.
 
 ## Hard rules
 
