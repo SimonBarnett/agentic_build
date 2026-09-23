@@ -34,8 +34,18 @@ included. Do not leave "Only select repositories" (new repos 403).
    (SimonBarnett user, id 2916380 — not org MedatechUK).
 2. Repository access: **All repositories**. Do not save
    "Only select repositories" unless `agentic_build` is in the list.
-3. Permissions must include Contents **Read and write** and
-   Pull requests **Read and write**.
+3. Permissions (GitHub UI wording). This list is **enough** — do not
+   change it if it already matches:
+
+   Read: administration, commit statuses, deployments, metadata,
+   packages, pages.
+
+   Read and write: actions, checks, **code**, discussions, issues,
+   merge queues, **pull requests**, workflows.
+
+   `code` write is Contents write (the `git-receive-pack` grant).
+   `pull requests` write is the PR API. A 403 denied to `cursor[bot]`
+   with this list is **Repository access**, not missing scopes.
 4. Reconnect GitHub at https://cursor.com/dashboard/integrations
 
 Do **not** prefer https://github.com/apps/cursor/installations/new

@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-23 — Cursor app permission list is enough; 403 is repo access
+
+Simon pasted the Cursor GitHub App permissions: Read on administration,
+commit statuses, deployments, metadata, packages, pages; Read and write
+on actions, checks, code, discussions, issues, merge queues, pull
+requests, workflows. That is the correct grant (`code` = Contents).
+A receive-pack 403 with that list is Repository access (All vs
+Selected), not missing scopes. Home: `setup-github-cursor`.
+
 ## 2026-09-23 — Configure existing Cursor install; do not /installations/new
 
 Simon: Cursor Web still 403 on PRs after the grant pages. `cursor[bot]`
