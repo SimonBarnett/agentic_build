@@ -44,9 +44,25 @@ included. Do not leave "Only select repositories" (new repos 403).
    merge queues, **pull requests**, workflows.
 
    `code` write is Contents write (the `git-receive-pack` grant).
-   `pull requests` write is the PR API. A 403 denied to `cursor[bot]`
-   with this list is **Repository access**, not missing scopes.
-4. Reconnect GitHub at https://cursor.com/dashboard/integrations
+   `pull requests` write is the PR API.
+4. If GitHub shows a **Review request** / new permissions banner,
+   accept it.
+
+## If All repositories is already set
+
+Do **not** change Repository access or the permission list again.
+GitHub is done. The 403 is Cursor still using a stale or
+scope-stripped installation token (known Cursor Cloud/Web bug:
+UI shows All repos + code write; the `x-access-token` still
+gets `denied to cursor[bot]`).
+
+1. https://cursor.com/dashboard/integrations — **Disconnect** GitHub,
+   then **Connect** as **SimonBarnett** (not MedatechUK).
+2. Retry the Cursor Web / Cloud Agent push.
+3. If it still 403s: that token bug has no repo-side fix. Push and
+   `gh pr create` from a box logged in as SimonBarnett (this TUI,
+   fleet `cursor-agent`, `Start-BobCursor`). Do not add
+   `cursoragent` or `cursor[bot]` as a collaborator.
 
 Do **not** prefer https://github.com/apps/cursor/installations/new
 when Cursor is already installed. That flow can replace a working

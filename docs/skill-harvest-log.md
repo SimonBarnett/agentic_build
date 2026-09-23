@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-23 — All repos already set: disconnect/reconnect, then local gh
+
+Simon: Cursor GitHub App already has All repositories plus the full
+permission list (code + pull requests write). receive-pack still
+denied to cursor[bot]. That is a stale/stripped Cursor installation
+token, not another GitHub click. Disconnect+Connect at
+cursor.com/dashboard/integrations as SimonBarnett. If still 403,
+use local gh / fleet cursor-agent. Home: `setup-github-cursor`.
+
 ## 2026-09-23 — Cursor app permission list is enough; 403 is repo access
 
 Simon pasted the Cursor GitHub App permissions: Read on administration,
