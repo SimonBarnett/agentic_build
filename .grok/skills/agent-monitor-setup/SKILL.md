@@ -26,15 +26,19 @@ having two separate desktop/tray icons.
 - **Icon parity.** Each entry's icon is extracted from the agent app `.exe`
   with `Icon.ExtractAssociatedIcon`, so it matches the AgentMonitor Desktop
   shortcut (`shortcuts/*.lnk` IconLocation), not the tray robot glyph.
-- **Installed** = `Desktop\Watch-AgentHealth\Watch-AgentHealth.cmd` exists AND
-  the agent `.exe` exists. Installed -> click launches a **hidden** watch
-  worker (`powershell -WindowStyle Hidden -File Watch-AgentHealth.ps1
-  -WatchWorker -Cursor|-Grok`) so the watch console stays hidden but the
-  agent TUI stays visible (do **not** pass `-Windows off`). Desktop shortcut
-  `*-New`/`*-Resume` `.cmd` files stay fully hidden via `Run-Hidden.vbs`.
-- **Not installed** = icon is greyed (desaturated). The entry stays clickable;
-  clicking **initialises the setup** (`tools/Install-AgentMonitor.ps1 -Agent
-  <cursor|grok>`), which deploys AgentMonitor and re-enables the entry.
+- **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
+  real path). TipForm section headers and Agents menu always show a **branded**
+  Cursor / Grok icon (`ExtractAssociatedIcon` from the desktop app when
+  present, else a C/G badge). Missing apps are soft-greyed but still visible.
+  Click launches a **hidden** watch worker (`powershell -WindowStyle Hidden
+  -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok`) so the watch
+  console stays hidden but the agent TUI stays visible (do **not** pass
+  `-Windows off`). Desktop shortcut `*-New`/`*-Resume` `.cmd` files stay
+  fully hidden via `Run-Hidden.vbs`.
+- **Not installed** = icon is greyed (desaturated, still visible). The entry
+  stays clickable; clicking **initialises the setup**
+  (`tools/Install-AgentMonitor.ps1 -Agent <cursor|grok>`), which deploys
+  AgentMonitor and re-enables the entry.
 - The dropdown rebuilds on open (`DropDownOpening`) so grey/enabled state and
   icons reflect the current install.
 
