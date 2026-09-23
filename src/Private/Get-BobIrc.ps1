@@ -1456,8 +1456,73 @@ function Import-BobIrcDigestWhisperBody {
     return @(Import-BobIrcDigestJson -DigestObj $obj)
 }
 
+function Test-BobIrcBobiversePullSeat {
+    # bob-* builders on Watch-Bobiverse only (#196). Talk seats and shop workers never pull.
+    if ($env:BOB_IRC_SKIP_BOBIVERSE_PULL -eq '1') { return $false }
+    $cfg = Get-BobiverseConfig
+    if ($cfg -and $cfg.chairNick) {
+        $cn = [string]$cfg.chairNick
+        if ($cn.Trim()) {
+            $active = $null
+            if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $active = $env:BOB_IRC_NICK.Trim() }
+            else {
+                $id = Get-ThisMachineId
+                if ($id) { $active = Get-BobIrcNick $cfg $id }
+            }
+            if ($active -and $active -eq $cn.Trim()) { return $false }
+        }
+    }
+    $id = Get-ThisMachineId
+    $nick = $null
+    if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $nick = $env:BOB_IRC_NICK.Trim() }
+    elseif ($cfg -and $id) { $nick = Get-BobIrcNick $cfg $id }
+    if (-not $nick) { return $false }
+    $nl = $nick.ToLowerInvariant()
+    if ($nl -match '^w-[a-z0-9]+-\d+$') { return $false }
+    foreach ($mid in @(Get-BobiverseMachineIds)) {
+        $ml = $mid.ToLowerInvariant()
+        if ($nl -eq $ml -or $nl -match ('^' + [regex]::Escape($ml) + '-\d+$')) { return $false }
+    }
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            if ([string]$p.Value -eq $nick) { return $true }
+        }
+    }
+    if ($nl -match '^bob-') {
+        $tail = $nl.Substring(4)
+        if (Resolve-BobiverseMachineId $tail) { return $true }
+    }
+    return $false
+}
+
+function Get-BobIrcChairDigestPeerForMachine {
+    param([string]$MachineId)
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { return $null }
+    $rp = Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_report-digest.json')
+    if (-not (Test-Path -LiteralPath $rp)) { return $null }
+    try {
+        $r = Read-JsonFile $rp
+        if (-not $r -or -not $r.machines) { return $null }
+        $ent = $r.machines.$mid
+        if (-not $ent) { return $null }
+        return ConvertTo-BobIrcPeerFromDigestMachine -MachineId $mid -Ent $ent
+    }
+    catch { return $null }
+}
+
+function Sync-BobDigestWebhookAfterBobiversePull {
+    param([Parameter(Mandatory)]$LocalDoc)
+    if (-not $LocalDoc) { return }
+    $mid = [string]$LocalDoc.id
+    if (-not $mid) { return }
+    $chair = Get-BobIrcChairDigestPeerForMachine -MachineId $mid
+    Send-BobDigestWebhookIfChanged -Doc $LocalDoc -Before $chair | Out-Null
+}
+
 function Request-BobIrcBobiversePull {
     param([int]$MinIntervalSec = 120)
+    if (-not (Test-BobIrcBobiversePullSeat)) { return $false }
     $home = Get-BobIrcHome
     $stampPath = Get-BobIrcBobiverseLastPath
     $now = [DateTime]::UtcNow
@@ -1467,13 +1532,6 @@ function Request-BobIrcBobiversePull {
             if (($now - $prev.ToUniversalTime()).TotalSeconds -lt $MinIntervalSec) { return $false }
         }
         catch { }
-    }
-    # Simon 2026-09-22: !bobiverse answer is Jeeves-only. Watch must not enqueue
-    # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
-    # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
-    if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
-        Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-        return $false
     }
     Add-BobIrcOutboxChannelLine '!bobiverse'
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
@@ -1728,6 +1786,10 @@ function Send-BobDigestWebhookIfChanged {
 }
 
 function Write-BobIrcStatus {
+    param(
+        [switch]$SkipDigestWebhook,
+        [switch]$PassThru
+    )
     $id = Get-ThisMachineId
     if (-not $id) { return }
     $cfg = Get-BobiverseConfig
@@ -1847,7 +1909,10 @@ function Write-BobIrcStatus {
     if ($talk) { Add-BobIrcOutboxChannelLine $talk }
     $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
     if ($warn) { Add-BobIrcOutboxChannelLine $warn }
-    Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
+    if (-not $SkipDigestWebhook) {
+        Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
+    }
+    if ($PassThru) { return $doc }
 }
 
 function Import-BobIrcPeerTranscript {

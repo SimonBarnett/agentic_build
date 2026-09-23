@@ -1059,6 +1059,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must refresh via Write-BobIrcStatus' }
     if ($watchBv -notmatch 'Request-BobIrcBobiversePull') { throw 'Watch-Bobiverse must poll !bobiverse for tray pull' }
+    if ($watchBv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'Watch-Bobiverse must POST digest webhook after !bobiverse ingest (#196)' }
+    if ($watchBv -notmatch 'SkipDigestWebhook') { throw 'Watch-Bobiverse must defer webhook until after chair digest (#196)' }
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'Test-BobIrcBobiversePullSeat') { throw 'Get-BobIrc must gate !bobiverse to bob-* builders (#196)' }
     if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest !bobiverse tray/digest whispers' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse may still harvest MOOT POINT transcript' }
     if ($watchBv -notmatch 'BOB_IRC_HOST') { throw 'Watch-Bobiverse must honor BOB_IRC_HOST' }
@@ -1108,7 +1112,19 @@ Invoke-Case 'BT0o bobiverse irc' {
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     $stampBob = Join-Path $peerDir '_bobiverse-last.txt'
     if (Test-Path $stampBob) { Remove-Item -LiteralPath $stampBob -Force }
-    $env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL = '1'
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_NICK = 'bob-ionos'
+    $savedSkip = $env:BOB_IRC_SKIP_BOBIVERSE_PULL
+    $env:BOB_IRC_SKIP_BOBIVERSE_PULL = $null
+    $env:BOB_IRC_NICK = 'ionos-23624'
+    if (Request-BobIrcBobiversePull -MinIntervalSec 120) { throw 'talk seat ionos-23624 must not pull !bobiverse' }
+    if (Test-Path $ob) {
+        $obTalk = @(Get-Content $ob | Where-Object { $_ })
+        if ($obTalk.Count -gt 0) { throw "talk seat outbox=$($obTalk -join ' | ')" }
+    }
+    $env:BOB_IRC_NICK = 'w-io-4242'
+    if (Request-BobIrcBobiversePull -MinIntervalSec 120) { throw 'shop worker w-io-4242 must not pull !bobiverse' }
+    $env:BOB_IRC_NICK = 'bob-ionos'
     $p1 = Request-BobIrcBobiversePull -MinIntervalSec 120
     if (-not $p1) { throw 'first Request-BobIrcBobiversePull must enqueue !bobiverse' }
     $obLines1 = @(Get-Content $ob | Where-Object { $_ })
@@ -1117,8 +1133,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($p2) { throw 'second Request-BobIrcBobiversePull within 120s must be suppressed' }
     $obLines2 = @(Get-Content $ob | Where-Object { $_ })
     if ($obLines2.Count -ne 1) { throw "bobiverse pull duplicated outbox=$($obLines2 -join ' | ')" }
+    $env:BOB_IRC_SKIP_BOBIVERSE_PULL = $savedSkip
 
     $env:BOB_MACHINE_ID = 'testhost'
+    $env:BOB_IRC_NICK = $null
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     Write-BobIrcStatus | Out-Null
     Write-BobIrcStatus | Out-Null
