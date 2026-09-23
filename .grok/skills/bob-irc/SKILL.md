@@ -15,8 +15,8 @@ Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 else `C:\src\...`). Nicks/host/`reportUrl` live in this repo's
 `config/bobiverse.json` (`reportUrl` is HTTPS
 `https://irc.ntsa.uk/bob/v1/report`) and `docs/bobiverse.md`. GitHub
-hooks + IIS SSL: skill `github-irc-webhooks`. Do not duplicate
-join/recycle/firewall facts here.
+hooks: `setup-github-webhooks`. IIS SSL: `setup-ssl-certs`. Do not
+duplicate join/recycle/firewall facts here.
 
 Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
