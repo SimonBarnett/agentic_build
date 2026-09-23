@@ -7,7 +7,8 @@ description: >
   park in docs, or /bob-spec-intake, or create a new SimonBarnett repo.
   After park, run bob-job-loop unless Simon said park-only / later
   (Simon 2026-09-23: if you get a FR, you bob job it). A new repo is
-  public (anyone can open a PR) and gets the irc.ntsa.uk git webhook.
+  public (anyone can open a PR), gets the irc.ntsa.uk git webhook, and
+  the Cursor GitHub App (All repositories) so Cursor Web can push/PR.
 ---
 
 # Spec intake to /docs
@@ -49,6 +50,12 @@ Every new repo under `SimonBarnett` (this intake or any other create):
    `https://irc.ntsa.uk/bob/v1/git` is already on the repo. Do not point
    GitHub at `/bob/v1/report`. No hook secret in git, issues, or channel.
    Leave other hooks (Amplify and the rest) in place.
+3. **Cursor GitHub App, same turn.** Skill `setup-github-cursor`. Cursor
+   Web pushes as `cursor[bot]`. If the app is "Only select repositories"
+   this new repo 403s (`git-receive-pack` denied to cursor[bot]). Keep
+   **All repositories** (Contents + Pull requests Read and write).
+   `tools\Grant-CursorGitHubApp.ps1` opens the install page. A `gh`
+   user token cannot grant the app.
 
 Write `hook.json` UTF-8 **without BOM** (PowerShell `ConvertTo-Json` adds a
 BOM and GitHub returns 400):

@@ -4,7 +4,8 @@ description: >
   Set up GitHub repository webhooks. Use when the user says set up
   webhooks on git, GitHub hook, add hook to a repo or all repos, hook
   URL, /setup-github-webhooks, or a new SimonBarnett repo needs
-  https://irc.ntsa.uk/bob/v1/git. HTTPS on the receiver is
+  https://irc.ntsa.uk/bob/v1/git. Cursor Web PR/push grant is
+  setup-github-cursor. HTTPS on the receiver is
   setup-ssl-certs. Jeeves announce text is agentic_irc
   jeeves-git-webhook.
 ---
@@ -75,6 +76,9 @@ For each name, list hooks; POST `hook.json` only when the URL is
 missing. PowerShell 5.1 `ConvertFrom-Json` of a JSON array can wrap
 as one object so `$array.name` becomes every name joined. Iterate
 `--jq '.[].name'` lines, not `$repos.name`.
+
+Cursor Web / `cursor[bot]` push+PR is skill `setup-github-cursor`
+(All repositories). Do that in the same turn as this hook on a new repo.
 
 ## Check
 
