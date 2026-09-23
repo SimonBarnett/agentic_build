@@ -4,9 +4,10 @@ description: >
   Park a functional specification or feature request as git: GitHub issue plus
   /docs markdown. Keep a source PDF only if one was supplied; do not generate
   review PDFs. Use when another agent sends a spec or feature request, says
-  park in docs, or /bob-spec-intake. After park, run bob-job-loop unless
-  Simon said park-only / later (Simon 2026-09-23: if you get a FR, you
-  bob job it).
+  park in docs, or /bob-spec-intake, or create a new SimonBarnett repo.
+  After park, run bob-job-loop unless Simon said park-only / later
+  (Simon 2026-09-23: if you get a FR, you bob job it). A new repo is
+  public (anyone can open a PR) and gets the irc.ntsa.uk git webhook.
 ---
 
 # Spec intake to /docs
@@ -14,7 +15,7 @@ description: >
 ## New product (fresh functional spec)
 
 1. Choose a clear public repo name under `SimonBarnett` (kebab-case).
-2. Create the public GitHub repo if it does not exist.
+2. Create the repo with **New GitHub repo** below if it does not exist.
 3. Commit under `/docs`:
    - Markdown: `docs/functional-spec.md` (LOCKED constants, unknowns, Phase 0, acceptance).
    - Keep a source PDF **only if the sender provided one**. Do not invent a PDF.
@@ -35,6 +36,34 @@ description: >
 6. Next: `bob-job-loop` (isolated cwd + unique LogPath) unless Simon
    said **park-only** / later. Standing rule 2026-09-23: if you get a
    FR, you bob job it.
+
+## New GitHub repo
+
+Every new repo under `SimonBarnett` (this intake or any other create):
+
+1. **Public, and anyone can open a pull request.** `gh repo create` with
+   `--public`. Leave forking on. Do not set an interaction limit. Do not
+   protect `main` so that only collaborators can open PRs. A GitHub user
+   forks the repo and opens a PR. No extra permission step.
+2. **Git webhook, same turn.** Skill `setup-github-webhooks`. Skip if
+   `https://irc.ntsa.uk/bob/v1/git` is already on the repo. Do not point
+   GitHub at `/bob/v1/report`. No hook secret in git, issues, or channel.
+   Leave other hooks (Amplify and the rest) in place.
+
+Write `hook.json` UTF-8 **without BOM** (PowerShell `ConvertTo-Json` adds a
+BOM and GitHub returns 400):
+
+```json
+{"name":"web","active":true,"events":["push","pull_request","issues"],"config":{"url":"https://irc.ntsa.uk/bob/v1/git","content_type":"json","insecure_ssl":"0"}}
+```
+
+```powershell
+gh api repos/SimonBarnett/<name>/hooks --jq ".[].config.url"
+gh api repos/SimonBarnett/<name>/hooks -X POST --input hook.json
+```
+
+Create sends a `ping`. Jeeves announces `GIT ...` on `#bobiverse`. A
+delivery `status_code` of 204 is success. GET on that URL is 405.
 
 ## Docs quality bar
 
