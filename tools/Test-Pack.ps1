@@ -152,6 +152,10 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'visionary' -and $raw -notmatch 'docs/mocks') { throw 'visionary must park HTML mocks in docs/mocks' }
         if ($n -eq 'visionary' -and $raw -notmatch 'bob-spec-intake') { throw 'visionary must hand park to bob-spec-intake' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-cursor') { throw 'github-irc-webhooks must point at setup-github-cursor' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch 'recycle-after-merge') { throw 'bob-hostile-mrb must document recycle-after-merge after merge to main' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)ionos') { throw 'bob-hostile-mrb must document ionos IRC restart when required' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)restart') { throw 'bob-hostile-mrb must document ionos restart IRC when required' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)Implementer PR workers do not live-recycle') { throw 'bob-hostile-mrb must say Bob/ionos recycle, not implementer live-recycle' }
     }
     $visionTpl = Join-Path $RepoRoot 'docs\templates\vision.md'
     if (-not (Test-Path $visionTpl)) { throw 'missing docs/templates/vision.md' }
