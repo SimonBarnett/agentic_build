@@ -1,5 +1,12 @@
 # Skill harvest log
 
+## 2026-09-23 — split setup-github-webhooks + setup-ssl-certs
+
+Simon: one skill that shows how to set up webhooks on git, one on
+setting up SSL certs. Homes: `setup-github-webhooks` (gh hook JSON,
+all repos, 204) and `setup-ssl-certs` (win-acme IIS, do not touch
+Ergo PEM). `github-irc-webhooks` is a pointer only.
+
 ## 2026-09-23 — GitHub webhooks + IIS HTTPS on irc.ntsa.uk
 
 Ionos IIS `irc-ntsa` has Let's Encrypt (win-acme renewal
