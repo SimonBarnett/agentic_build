@@ -54,12 +54,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Install-AgentMo
 
 Idempotent: re-running updates the deploy in place.
 
+## Preferred IRC wake (Simon 2026-09-23)
+
+Watch-AgentHealth is the **preferred** way to receive IRC in a Cursor/Grok
+session. The monitor forwards `FROM` into the TUI so agents do **not** arm
+an in-session `listen.stdout.log` `^FROM ` TSR (that burns tokens on
+`#bobiverse` spam). Fleet create + wake playbook: skill `watch-agent-health`.
+IRC wire: `agentic-irc`. Seat behaviour: AgentMonitor `watch-seat`.
+
 ## Skill harvest
 
 This setup ships with the agentic_build skill harvest: `Copy-BobProjectSkills`
-/ `Install-BobFleet` copy this `SKILL.md` into `~\.grok\skills`, and
-`harvest-agent-skills` lists it. The watch-seat runtime contract stays in the
-AgentMonitor repo skills; this skill only owns tray wiring + install.
+/ `Install-BobFleet` copy this `SKILL.md` (and `watch-agent-health`) into
+`~\.grok\skills`, and `harvest-agent-skills` lists them. The watch-seat
+runtime contract stays in the AgentMonitor repo skills; this skill owns
+tray wiring + install.
 
 ## Hard rules
 
