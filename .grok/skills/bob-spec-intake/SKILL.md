@@ -9,8 +9,9 @@ description: >
   (Simon 2026-09-23: if you get a FR, you bob job it). A new repo is
   public (anyone can open a PR), gets the irc.ntsa.uk git webhook, and
   the Cursor GitHub App (All repositories) so Cursor Web can push/PR.
-  A new product runs visionary first (measurable success, shape, stack,
-  architecture, HTML mocks) before park or dispatch.
+  New products and feature requests run visionary first (measurable
+  success, shape, stack, architecture, HTML mocks when UI) before park
+  or dispatch.
 ---
 
 # Spec intake to /docs
@@ -20,7 +21,7 @@ description: >
 0. **Visionary first.** Skill `visionary`. High-reasoning / plan-mode.
    Fill `docs/templates/vision.md` in this session before `gh repo create`.
    Refuse park/dispatch until shape and success metrics are LOCKED or
-   UNKNOWN. Feature requests on an existing repo skip this step.
+   UNKNOWN.
 1. Choose a clear public repo name under `SimonBarnett` (kebab-case).
 2. Create the repo with **New GitHub repo** below if it does not exist.
 3. Commit under `/docs`:
@@ -38,6 +39,12 @@ description: >
 
 ## Feature request (extends existing repo)
 
+0. **Visionary first.** Skill `visionary` (home:
+   `SimonBarnett/skills-visionary`). High-reasoning / plan-mode. Confirm
+   target repo; do **not** `gh repo create`. Fill success metrics LOCKED
+   or UNKNOWN in the FR markdown (see visionary); add `docs/mocks/*.html`
+   when the FR has a UI. Refuse commit/issue/dispatch until the gate
+   passes.
 1. Confirm target repo. **Do not break** prior versions.
 2. Prefer new work in `v2/`, `v3/`, when the feature is a parallel product surface; keep root/`v1` frozen if the spec says so.
 3. Commit `docs/feature-request-<slug>-YYYY-MM-DD.md` with summary plus **gap vs current tree**. Keep a source PDF only if one was supplied.
