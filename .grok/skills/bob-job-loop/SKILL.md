@@ -127,8 +127,10 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    the implementer.
 4. Wait for `MRB FAIL|PASS-nits: ... <sha>`. Job crash without that issue:
    retry the MRB job.
-5. FAIL: do not merge. Read Required fixes. Start a FIX worker. Comment
-   the new PR / next board on the prior FAIL issue.
+5. FAIL: do not merge. Read Required fixes. Start a FIX worker unless
+   `gh pr view` on the loop PR is already MERGED (leftover FAIL after a
+   merge race): close that FAIL with the merged PR URL; do not spawn FIX.
+   Comment the new PR / next board on the prior FAIL issue when FIX runs.
 6. PASS-nits: the MRB worker already **merged the PR**, **closed** the
    finished FR, prior FAIL boards, and PASS board, and **pulled** the
    completed PR onto product main (see `Close-BobBuildLoopFinished` in
