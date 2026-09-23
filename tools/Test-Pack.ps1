@@ -2566,6 +2566,130 @@ FAIL
     if ($d.pass.verdict -ne 'FAIL') { throw "pass verdict=$($d.pass.verdict)" }
 }
 
+# --- BT228 dispatcher skip FIX on leftover FAIL when PR merged (issue #228) ---
+Invoke-Case 'BT228a leftover fail merged pr no fix' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state.phase = 'wait_mrb'
+        $state.currentKind = 'mrb'
+        $world = [pscustomobject]@{
+            Job          = $null
+            ProcessAlive = $true
+            Prs          = @()
+            Issues       = @(
+                [pscustomobject]@{
+                    number = 8
+                    title  = 'MRB FAIL: slug abc1234deadbeef'
+                    url    = 'https://github.com/fixture/repo/issues/8'
+                    body   = "## Verdict`nFAIL`n## Required fixes`n- Should not FIX"
+                }
+            )
+        }
+        $d = Get-BobBuildLoopDecision -State $state -World $world
+        if ($d.action -ne 'close_leftover_fail') { throw "action=$($d.action)" }
+        if ($d.goal) { throw 'must not spawn FIX goal' }
+        if (-not $d.close -or [int]$d.close.issue -ne 8) { throw 'close issue missing' }
+        if ($d.close.comment -notmatch [regex]::Escape('https://github.com/fixture/repo/pull/2')) { throw "close comment=$($d.close.comment)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT228b open pr fail still starts fix' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state.phase = 'wait_mrb'
+        $state.currentKind = 'mrb'
+        $body = @"
+## Verdict
+FAIL
+
+## Required fixes
+- Restore gate A
+"@
+        $world = [pscustomobject]@{
+            Job          = $null
+            ProcessAlive = $true
+            Prs          = @()
+            Issues       = @(
+                [pscustomobject]@{
+                    number = 8
+                    title  = 'MRB FAIL: slug abc1234deadbeef'
+                    url    = 'https://github.com/fixture/repo/issues/8'
+                    body   = $body
+                }
+            )
+        }
+        $d = Get-BobBuildLoopDecision -State $state -World $world
+        if ($d.action -ne 'start_fix') { throw "action=$($d.action)" }
+        if ($d.goal -notmatch 'Restore gate A') { throw "goal missing fixes" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT228c loop closes leftover fail via hook' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 228
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 8
+                title  = 'MRB FAIL: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = "## Verdict`nFAIL"
+            }
+        )
+    }
+    $fixStarts = New-Object System.Collections.Generic.List[string]
+    $closeCalls = New-Object System.Collections.Generic.List[string]
+    $r = & $loop -Issue 228 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestStartBuild {
+        param($st, $goal)
+        [void]$fixStarts.Add('build')
+        [pscustomobject]@{ ok = $true; started = $true; jobId = 'job-build'; pid = 1; fuel = 'cursor-models'; branch = 'work/job-build' }
+    } -TestClose {
+        param($c)
+        [void]$closeCalls.Add([string]$c.comment)
+        $c
+    }
+    if ($r.action -ne 'close_leftover_fail') { throw "action=$($r.action)" }
+    if ($fixStarts.Count -gt 0) { throw 'must not start FIX worker' }
+    if ($closeCalls.Count -ne 1) { throw "close hook calls=$($closeCalls.Count)" }
+    if ($closeCalls[0] -notmatch 'pull/2') { throw "close comment=$($closeCalls[0])" }
+    $env:BOB_GH_EXE = $savedGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+}
+
 Invoke-Case 'BT0loop6 pass-nits terminal' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')

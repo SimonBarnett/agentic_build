@@ -395,6 +395,7 @@ function New-BobBuildLoopDecision {
         [Parameter(Mandatory)][string]$Action,
         [hashtable]$Patch,
         $Backlink,
+        $Close,
         $Pass,
         [string]$Goal,
         [string]$Stdout,
@@ -402,14 +403,15 @@ function New-BobBuildLoopDecision {
         [string]$Kind
     )
     return [pscustomobject]@{
-        action  = $Action
-        patch   = $Patch
+        action   = $Action
+        patch    = $Patch
         backlink = $Backlink
-        pass    = $Pass
-        goal    = $Goal
-        stdout  = $Stdout
-        reason  = $Reason
-        kind    = $Kind
+        close    = $Close
+        pass     = $Pass
+        goal     = $Goal
+        stdout   = $Stdout
+        reason   = $Reason
+        kind     = $Kind
     }
 }
 
@@ -434,6 +436,27 @@ function New-BobPassNitsMergedCloseComment {
         [Parameter(Mandatory)][string]$PrUrl
     )
     return "PASS-nits finished. Merged PR: $PrUrl"
+}
+
+function New-BobLeftoverFailMergedCloseComment {
+    param(
+        [Parameter(Mandatory)][string]$PrUrl
+    )
+    return "PR already merged. Merged PR: $PrUrl"
+}
+
+function Test-BobBuildLoopPrMerged {
+    param(
+        [Parameter(Mandatory)]$State
+    )
+    $prUrl = [string]$State.currentPr
+    $prNum = Get-BobGhPrNumberFromUrl $prUrl
+    if ($prNum -le 0) { return $false }
+    $repo = [string]$State.repo
+    if (-not $repo) { return $false }
+    $gh = Get-BobGhExe
+    if (-not $gh) { return $false }
+    return Test-BobGhPrIsMerged -Gh $gh -Repo $repo -PrNumber $prNum
 }
 
 function Get-BobPassNitsClosePayload {
@@ -717,6 +740,17 @@ function Get-BobBuildLoopDecision {
                     } -Pass $passRow -Backlink $backlink -Stdout (Get-BobBuildLoopPassStdout -State $State -Mrb $mrb)
                 }
                 if ($verdict -eq 'FAIL') {
+                    if (Test-BobBuildLoopPrMerged -State $State) {
+                        $prUrl = [string]$State.currentPr
+                        $comment = New-BobLeftoverFailMergedCloseComment -PrUrl $prUrl
+                        return New-BobBuildLoopDecision -Action close_leftover_fail -Patch @{
+                            jobAttempts = 0
+                            lastMrb     = [string]$mrb.url
+                        } -Pass $passRow -Backlink $backlink -Close ([pscustomobject]@{
+                            issue   = [int]$mrb.number
+                            comment = $comment
+                        })
+                    }
                     $fails = 0
                     if ($State.mrbFails) { $fails = [int]$State.mrbFails }
                     $maxFails = 8

@@ -22,6 +22,7 @@ param(
     [scriptblock]$TestStartMrb,
     [scriptblock]$TestStartFix,
     [scriptblock]$TestComment,
+    [scriptblock]$TestClose,
     [scriptblock]$TestPassNitsFinish,
     [string]$StatePath,
     [string]$LogPath
@@ -200,6 +201,28 @@ function Invoke-LoopComment {
     return $Backlink
 }
 
+function Invoke-LoopClose {
+    param($Close, $State)
+    if (-not $Close) { return $null }
+    if ($TestClose) {
+        return & $TestClose $Close
+    }
+    if (-not $live) { return $Close }
+    $gh = Get-BobGhExe
+    if (-not $gh) {
+        Write-BobBuildLoopLog -Path $LogPath -Message "close skipped (no gh): issue $($Close.issue)"
+        return $Close
+    }
+    $r = Invoke-BobGhCloseIssueWithComment -Gh $gh -Repo ([string]$State.repo) -IssueNumber ([int]$Close.issue) -Comment ([string]$Close.comment)
+    if (-not $r.ok) {
+        Write-BobBuildLoopLog -Path $LogPath -Message "close failed issue $($Close.issue): $($r.message)"
+    }
+    else {
+        Write-BobBuildLoopLog -Path $LogPath -Message "closed issue $($Close.issue)"
+    }
+    return $Close
+}
+
 function Invoke-LoopStartBuild {
     param($State, [string]$GoalText, [switch]$Fix)
     if ($Fix -and $TestStartFix) { return & $TestStartFix $State $GoalText }
@@ -364,6 +387,8 @@ while ($true) {
     if ($decision.pass) { $state = Add-BobBuildLoopPass -State $state -Pass $decision.pass }
     $commented = $null
     if ($decision.backlink) { $commented = Invoke-LoopComment -Backlink $decision.backlink -State $state }
+    $closed = $null
+    if ($decision.close) { $closed = Invoke-LoopClose -Close $decision.close -State $state }
 
     $started = $null
     switch ([string]$decision.action) {
@@ -447,6 +472,7 @@ while ($true) {
             $stdout = [string]$decision.stdout
             $exitCode = 1
         }
+        'close_leftover_fail' { }
         'sleep' { }
         default {
             $terminal = $true
@@ -464,6 +490,7 @@ while ($true) {
         decision   = $decision
         started    = $started
         backlink   = $commented
+        close      = $closed
         statePath  = $StatePath
         logPath    = $LogPath
         stdout     = $stdout
