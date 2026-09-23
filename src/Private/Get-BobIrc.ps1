@@ -1415,6 +1415,7 @@ function Import-BobIrcDigestJson {
         $doc = ConvertTo-BobIrcPeerFromDigestMachine -MachineId ([string]$prop.Name) -Ent $prop.Value
         if (-not $doc) { continue }
         $resolved = [string]$doc.id
+        Save-BobIrcChairDigestPeer -MachineId $resolved -ChairPeer $doc
         $peerPath = Join-Path $dir ($resolved + '.json')
         $prev = $null
         if (Test-Path $peerPath) {
@@ -1456,8 +1457,99 @@ function Import-BobIrcDigestWhisperBody {
     return @(Import-BobIrcDigestJson -DigestObj $obj)
 }
 
+function Test-BobIrcBobiversePullSeat {
+    # bob-* builders on Watch-Bobiverse only (#196). Talk seats and shop workers never pull.
+    if ($env:BOB_IRC_SKIP_BOBIVERSE_PULL -eq '1') { return $false }
+    $cfg = Get-BobiverseConfig
+    if ($cfg -and $cfg.chairNick) {
+        $cn = [string]$cfg.chairNick
+        if ($cn.Trim()) {
+            $active = $null
+            if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $active = $env:BOB_IRC_NICK.Trim() }
+            else {
+                $id = Get-ThisMachineId
+                if ($id) { $active = Get-BobIrcNick $cfg $id }
+            }
+            if ($active -and $active -eq $cn.Trim()) { return $false }
+        }
+    }
+    $id = Get-ThisMachineId
+    $nick = $null
+    if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $nick = $env:BOB_IRC_NICK.Trim() }
+    elseif ($cfg -and $id) { $nick = Get-BobIrcNick $cfg $id }
+    if (-not $nick) { return $false }
+    $nl = $nick.ToLowerInvariant()
+    if ($nl -match '^w-[a-z0-9]+-\d+$') { return $false }
+    foreach ($mid in @(Get-BobiverseMachineIds)) {
+        $ml = $mid.ToLowerInvariant()
+        if ($nl -eq $ml -or $nl -match ('^' + [regex]::Escape($ml) + '-\d+$')) { return $false }
+    }
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            if ([string]$p.Value -eq $nick) { return $true }
+        }
+    }
+    if ($nl -match '^bob-') {
+        $tail = $nl.Substring(4)
+        if (Resolve-BobiverseMachineId $tail) { return $true }
+    }
+    return $false
+}
+
+function Get-BobIrcChairDigestPeersPath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_chair-digest-peers.json')
+}
+
+function Save-BobIrcChairDigestPeer {
+    param(
+        [string]$MachineId,
+        [Parameter(Mandatory)]$ChairPeer
+    )
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid -or -not $ChairPeer) { return }
+    $p = Get-BobIrcChairDigestPeersPath
+    $map = @{}
+    if (Test-Path -LiteralPath $p) {
+        try {
+            $j = Read-JsonFile $p
+            foreach ($prop in @($j.PSObject.Properties)) {
+                $map[[string]$prop.Name] = $prop.Value
+            }
+        }
+        catch { }
+    }
+    $map[$mid] = $ChairPeer
+    try { Write-JsonFile $p ([pscustomobject]$map) } catch { }
+}
+
+function Get-BobIrcChairDigestPeerForMachine {
+    param([string]$MachineId)
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { return $null }
+    $p = Get-BobIrcChairDigestPeersPath
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
+    try {
+        $j = Read-JsonFile $p
+        if (-not $j) { return $null }
+        $peer = $j.$mid
+        if (-not $peer) { return $null }
+        return $peer
+    }
+    catch { return $null }
+}
+
+function Sync-BobDigestWebhookAfterBobiversePull {
+    param([Parameter(Mandatory)]$LocalDoc)
+    if (-not $LocalDoc) { return }
+    $mid = [string]$LocalDoc.id
+    if (-not $mid) { return }
+    $chair = Get-BobIrcChairDigestPeerForMachine -MachineId $mid
+    Send-BobDigestWebhookIfChanged -Doc $LocalDoc -Before $chair | Out-Null
+}
+
 function Request-BobIrcBobiversePull {
     param([int]$MinIntervalSec = 120)
+    if (-not (Test-BobIrcBobiversePullSeat)) { return $false }
     $home = Get-BobIrcHome
     $stampPath = Get-BobIrcBobiverseLastPath
     $now = [DateTime]::UtcNow
@@ -1467,13 +1559,6 @@ function Request-BobIrcBobiversePull {
             if (($now - $prev.ToUniversalTime()).TotalSeconds -lt $MinIntervalSec) { return $false }
         }
         catch { }
-    }
-    # Simon 2026-09-22: !bobiverse answer is Jeeves-only. Watch must not enqueue
-    # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
-    # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
-    if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
-        Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-        return $false
     }
     Add-BobIrcOutboxChannelLine '!bobiverse'
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
@@ -1728,6 +1813,10 @@ function Send-BobDigestWebhookIfChanged {
 }
 
 function Write-BobIrcStatus {
+    param(
+        [switch]$SkipDigestWebhook,
+        [switch]$PassThru
+    )
     $id = Get-ThisMachineId
     if (-not $id) { return }
     $cfg = Get-BobiverseConfig
@@ -1847,7 +1936,10 @@ function Write-BobIrcStatus {
     if ($talk) { Add-BobIrcOutboxChannelLine $talk }
     $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
     if ($warn) { Add-BobIrcOutboxChannelLine $warn }
-    Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
+    if (-not $SkipDigestWebhook) {
+        Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
+    }
+    if ($PassThru) { return $doc }
 }
 
 function Import-BobIrcPeerTranscript {

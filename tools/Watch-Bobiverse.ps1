@@ -142,9 +142,15 @@ while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
-        Write-BobIrcStatus | Out-Null
+        $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
+        if ($localDoc) {
+            $syncMid = [string]$localDoc.id
+            if ($syncMid -and (Get-BobIrcChairDigestPeerForMachine -MachineId $syncMid)) {
+                Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+            }
+        }
         Import-BobIrcPeerTranscript | Out-Null
     }
     catch {
