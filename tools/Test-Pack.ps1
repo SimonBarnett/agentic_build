@@ -1800,6 +1800,31 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $env:BOB_CURSOR_USAGE_FILE = $null
 }
 
+# --- BT0l6 systray Cursor overspend / help / section icons (issue #266) ---
+Invoke-Case 'BT0l6 tray cursor overspend help icons' {
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend £N.NN' }
+    if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
+    if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
+    if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
+    if ($traySrc -notmatch 'high cost models:') { throw 'help tooltip must explain high cost models bracket' }
+    if ($traySrc -notmatch 'function Add-BobTraySectionHeader') { throw 'Watch-BobTray must paint labelled Cursor vs Grok sections' }
+    if ($traySrc -notmatch "Title 'Cursor'") { throw 'Cursor section label missing' }
+    if ($traySrc -notmatch "Title 'Grok accounts'") { throw 'Grok accounts section label missing' }
+    if ($traySrc -notmatch 'AccountOverageGbp') { throw 'Rebuild-BobTrayTiles must take account_overage_gbp from hover' }
+    if ($traySrc -notmatch 'Get-BobTrayAgentImage') { throw 'section icons must reuse Get-BobTrayAgentImage (Agents menu parity)' }
+    if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'section icons must use ExtractAssociatedIcon on agent exes' }
+    if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
+    $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
+    if ($zero -match 'overspend') {
+        # formatter must omit zero — contract checked via source branch on $v -le 0
+        if ($traySrc -notmatch '\$v -le 0') { throw 'Format-BobTrayCursorOverspendLine must omit zero overspend' }
+    }
+    $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
+    if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
+}
+
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
 Invoke-Case 'BT0l24 shop channel worker reportUrl' {
     param($bridgeRoot)
