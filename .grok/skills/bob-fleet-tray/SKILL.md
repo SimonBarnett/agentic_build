@@ -87,9 +87,10 @@ remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 
 Show weekly reset next to the meter, not only in digests:
 
-- **Cursor Models** row: `reset DD Mon` from the Cursor Models period
-  (`period_end` → `account_reset_label`). Do not use Grok Bot Sand reset
-  as a stand-in when the Cursor Models bar is what the fuel gate reads.
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `low cost
+  models`): `reset DD Mon` on that row. `grok chat` uses Sand
+  `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor
+  Spending billing cycle end. Do not leave reset only on low cost models.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from
   `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
   Same-seat machines share one reset date (and one remaining %).
@@ -99,9 +100,21 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`low cost models  9%  reset 23 Sep`
+`grok chat  0%  reset 23 Sep`
+
+`high cost models  0%  reset 16 Oct`
+
+`low cost models  9%  reset 16 Oct`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
+
+TipForm layout (Simon 2026-09-23):
+
+- Cursor spending rows are **indented** like machine tiles under Grok accounts.
+- Overspend (`overspend £N.NN`) is **right-aligned inside the tile host**
+  (not past the tip edge).
+- First IRC peer write after connect announces `{machine} is operational.`
+  Digest webhook `status` is `operational`.
 
 Job lines under a machine (local jobs or `!report` digest):
 
@@ -181,11 +194,38 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 ## Agents menu
 
 The context menu has an **Agents** submenu (the two watch-seat agents as one
-menu; select which). Each entry (Cursor, Grok) uses the **same icon as its
-Desktop shortcut** (`Icon.ExtractAssociatedIcon` on the agent `.exe`). Not
-installed -> greyed icon, click **initialises setup**
-(`tools/Install-AgentMonitor.ps1`); installed -> click launches
-`Watch-AgentHealth.cmd <cursor|grok>`. Owner skill: `agent-monitor-setup`.
+menu; select which). TipForm Cursor/Grok section headers are the same links.
+Each entry uses a **visible** agent icon (`ExtractAssociatedIcon` plated on a
+light chip, else a bright C/G badge). Not installed -> greyed icon, click
+**initialises setup** (`tools/Install-AgentMonitor.ps1`); installed -> click
+launches `Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok **-New**` (always a
+fresh session + skills + prompt — never resume). Cursor also gets
+`-Model auto`. Owner skill: `agent-monitor-setup`.
+
+### Agent shortcut icons (CAST IRON — Simon 2026-09-23)
+
+Tray Agents / TipForm icons must match the Desktop agent shortcuts. Resolver
+order in `Watch-BobTray.ps1` (`Resolve-BobTrayAgentIconExe` /
+`Resolve-BobTrayDesktopShortcutExe` / `Get-BobTrayAgentExeCandidates`):
+
+1. **Desktop / Public Desktop `.lnk`** — `Cursor.lnk`, `Grok Bot.lnk` (also
+   `Grok.lnk`). Prefer `IconLocation` (path before comma); if empty, use
+   `TargetPath`. Cursor Desktop `.lnk` often has empty IconLocation; TargetPath
+   to `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` is enough for
+   `ExtractAssociatedIcon`.
+2. **Grok Bot branded exe** (before CLI `grok.exe`):
+   - `%ProgramFiles%\Grok Bot\Grok Bot.exe` (common on ionos / fleet MSI)
+   - `%ProgramFiles(x86)%\Grok Bot\Grok Bot.exe`
+   - `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe`
+3. **Cursor exe**: `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` (and
+   `Programs\Cursor\`, `%ProgramFiles%\Cursor\`).
+4. Badge fallback only when no exe exists (bright C / G chip).
+
+Do **not** resolve Grok icons only under LocalAppData — that misses Program
+Files installs and leaves the Agents menu without a real icon. After changing
+resolver paths, recycle the tray (`Stop` Watch-BobTray + relaunch) so the menu
+rebuilds. `Install-AgentMonitor` refreshes Desktop `.lnk` IconLocation via
+AgentMonitor `Publish-DesktopShortcuts.ps1`.
 
 ## Hard rules
 

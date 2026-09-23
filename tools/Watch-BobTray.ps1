@@ -427,12 +427,49 @@ function Resolve-BobTrayAgentMonitorDir {
 $script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
 $script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
 
+function Resolve-BobTrayDesktopShortcutExe {
+    param([string]$Kind)
+    # Desktop / Public Desktop .lnk IconLocation or TargetPath (parity with agent shortcuts).
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $names = if ($kind -eq 'cursor') {
+        @('Cursor.lnk', 'cursor.lnk')
+    }
+    elseif ($kind -eq 'grok') {
+        @('Grok Bot.lnk', 'Grok.lnk', 'GrokBot.lnk')
+    }
+    else { @() }
+    $dirs = @(
+        [Environment]::GetFolderPath('Desktop')
+        (Join-Path $env:USERPROFILE 'Desktop')
+        (Join-Path $env:PUBLIC 'Desktop')
+    ) | Where-Object { $_ } | Select-Object -Unique
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        foreach ($d in $dirs) {
+            if (-not (Test-Path -LiteralPath $d)) { continue }
+            foreach ($n in $names) {
+                $lnkPath = Join-Path $d $n
+                if (-not (Test-Path -LiteralPath $lnkPath)) { continue }
+                $lnk = $sh.CreateShortcut($lnkPath)
+                $icon = ([string]$lnk.IconLocation).Split(',')[0].Trim().Trim('"')
+                if ($icon -and (Test-Path -LiteralPath $icon)) { return $icon }
+                $target = [string]$lnk.TargetPath
+                if ($target -and (Test-Path -LiteralPath $target)) { return $target }
+            }
+        }
+    }
+    catch { }
+    return $null
+}
+
 function Get-BobTrayAgentExeCandidates {
     param([string]$Kind)
     $kind = ([string]$Kind).ToLowerInvariant()
     $cands = @()
+    $fromLnk = Resolve-BobTrayDesktopShortcutExe $kind
+    if ($fromLnk) { $cands += $fromLnk }
     if ($kind -eq 'cursor') {
-        $cands = @(
+        $cands += @(
             (Join-Path $env:LOCALAPPDATA 'Programs\cursor\Cursor.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\Cursor.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\cursor.exe'),
@@ -448,7 +485,10 @@ function Get-BobTrayAgentExeCandidates {
     }
     elseif ($kind -eq 'grok') {
         # Prefer Grok Bot desktop app before CLI grok.exe (better tray icon).
-        $cands = @(
+        # Ionos / fleet often install under Program Files (Public Desktop Grok Bot.lnk).
+        $cands += @(
+            (Join-Path ${env:ProgramFiles} 'Grok Bot\Grok Bot.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Grok Bot\Grok Bot.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe'),
@@ -461,7 +501,7 @@ function Get-BobTrayAgentExeCandidates {
             }
         } catch { }
     }
-    return @($cands | Where-Object { $_ })
+    return @($cands | Where-Object { $_ } | Select-Object -Unique)
 }
 
 function Resolve-BobTrayAgentExe {
@@ -474,10 +514,14 @@ function Resolve-BobTrayAgentExe {
 
 function Resolve-BobTrayAgentIconExe {
     param([string]$Kind)
-    # Icon path may differ from "installed" exe: always prefer branded desktop apps.
+    # Icon path: Desktop shortcut first (same as agent .lnk), then branded desktop apps.
     $kind = ([string]$Kind).ToLowerInvariant()
+    $fromLnk = Resolve-BobTrayDesktopShortcutExe $kind
+    if ($fromLnk) { return $fromLnk }
     if ($kind -eq 'grok') {
         foreach ($p in @(
+                (Join-Path ${env:ProgramFiles} 'Grok Bot\Grok Bot.exe'),
+                (Join-Path ${env:ProgramFiles(x86)} 'Grok Bot\Grok Bot.exe'),
                 (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
                 (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
                 (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe')

@@ -479,3 +479,11 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
   state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
   commit to main.
 
+
+## 2026-09-23 — Agent shortcut icons (tray + skill book)
+
+- `Watch-BobTray.ps1`: resolve Agents/TipForm icons from Desktop/Public
+  Desktop `.lnk` (IconLocation or TargetPath), then `%ProgramFiles%\Grok Bot`,
+  then LocalAppData. Fixes missing Grok icon when MSI installs under Program Files.
+- Skills `bob-fleet-tray` (Agent shortcut icons CAST IRON) and
+  `agent-monitor-setup` (icon source table) document the resolver order.
