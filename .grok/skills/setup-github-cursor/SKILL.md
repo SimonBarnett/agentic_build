@@ -29,13 +29,48 @@ A user account has no org-wide default. Set the Cursor app to
 **All repositories** so every current and **future** public repo is
 included. Do not leave "Only select repositories" (new repos 403).
 
-1. https://github.com/apps/cursor/installations/new?target_id=2916380
-   (Configure on **SimonBarnett**, id 2916380).
-2. Repository access: **All repositories**.
-3. Permissions must include Contents **Read and write** and
-   Pull requests **Read and write**.
-4. Confirm the install at https://github.com/settings/installations
-5. Reconnect GitHub at https://cursor.com/dashboard/integrations
+1. Open **Configure** on the existing Cursor install:
+   https://github.com/settings/installations
+   (SimonBarnett user, id 2916380 — not org MedatechUK).
+2. Repository access: **All repositories**. Do not save
+   "Only select repositories" unless `agentic_build` is in the list.
+3. Permissions (GitHub UI wording). This list is **enough** — do not
+   change it if it already matches:
+
+   Read: administration, commit statuses, deployments, metadata,
+   packages, pages.
+
+   Read and write: actions, checks, **code**, discussions, issues,
+   merge queues, **pull requests**, workflows.
+
+   `code` write is Contents write (the `git-receive-pack` grant).
+   `pull requests` write is the PR API.
+4. If GitHub shows a **Review request** / new permissions banner,
+   accept it.
+
+## If All repositories is already set
+
+Do **not** change Repository access or the permission list again.
+GitHub is done. The 403 is Cursor still using a stale or
+scope-stripped installation token (known Cursor Cloud/Web bug:
+UI shows All repos + code write; the `x-access-token` still
+gets `denied to cursor[bot]`).
+
+1. https://cursor.com/dashboard/integrations — **Disconnect** GitHub,
+   then **Connect** as **SimonBarnett** (not MedatechUK).
+2. Retry the Cursor Web / Cloud Agent push.
+3. If it still 403s: that token bug has no repo-side fix. Push and
+   `gh pr create` from a box logged in as SimonBarnett (this TUI,
+   fleet `cursor-agent`, `Start-BobCursor`). Do not add
+   `cursoragent` or `cursor[bot]` as a collaborator.
+
+Do **not** prefer https://github.com/apps/cursor/installations/new
+when Cursor is already installed. That flow can replace a working
+Selected-repos list and drop `agentic_build`. Then
+`git-receive-pack` 403s as `cursor[bot]` on that repo only.
+`cursoragent` is the git *author* on `cursor/*` branches (worked on
+agentic_build 2026-09-20). The pusher is `cursor[bot]`. Adding
+`cursoragent` as a collaborator does not fix the 403.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Grant-CursorGitHubApp.ps1

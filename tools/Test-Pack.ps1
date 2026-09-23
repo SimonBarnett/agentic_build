@@ -140,6 +140,10 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'All repositories') { throw 'setup-github-cursor must require All repositories' }
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'not a user') { throw 'setup-github-cursor must say cursor[bot] is not a collaborator user' }
         if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'user/installations') { throw 'setup-github-cursor must document user/installations 403' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'settings/installations') { throw 'setup-github-cursor must Configure existing install' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'installations/new') { throw 'setup-github-cursor must warn against installations/new' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'merge queues') { throw 'setup-github-cursor must record the GitHub UI permission list' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'Disconnect') { throw 'setup-github-cursor must document dashboard Disconnect when All repos is already set' }
         if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-cursor') { throw 'github-irc-webhooks must point at setup-github-cursor' }
     }

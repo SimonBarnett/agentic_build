@@ -1,5 +1,33 @@
 # Skill harvest log
 
+## 2026-09-23 — All repos already set: disconnect/reconnect, then local gh
+
+Simon: Cursor GitHub App already has All repositories plus the full
+permission list (code + pull requests write). receive-pack still
+denied to cursor[bot]. That is a stale/stripped Cursor installation
+token, not another GitHub click. Disconnect+Connect at
+cursor.com/dashboard/integrations as SimonBarnett. If still 403,
+use local gh / fleet cursor-agent. Home: `setup-github-cursor`.
+
+## 2026-09-23 — Cursor app permission list is enough; 403 is repo access
+
+Simon pasted the Cursor GitHub App permissions: Read on administration,
+commit statuses, deployments, metadata, packages, pages; Read and write
+on actions, checks, code, discussions, issues, merge queues, pull
+requests, workflows. That is the correct grant (`code` = Contents).
+A receive-pack 403 with that list is Repository access (All vs
+Selected), not missing scopes. Home: `setup-github-cursor`.
+
+## 2026-09-23 — Configure existing Cursor install; do not /installations/new
+
+Simon: Cursor Web still 403 on PRs after the grant pages. `cursor[bot]`
+receive-pack is the pusher; `cursoragent` is only the git author
+(`cursor/*` on agentic_build worked 2026-09-20).
+`/apps/cursor/installations/new` can replace a Selected-repos list and
+drop agentic_build. Use https://github.com/settings/installations
+Configure -> All repositories, then dashboard Integrations reconnect.
+Do not add cursoragent as a collaborator. Home: `setup-github-cursor`.
+
 ## 2026-09-23 — cursor[bot] is not a collaborator; gh cannot prove the grant
 
 Simon: try-now after the Cursor app page. A TUI `gh` seat cannot replay
