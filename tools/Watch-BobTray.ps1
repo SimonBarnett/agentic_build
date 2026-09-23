@@ -403,23 +403,86 @@ Write-TrayLog 'tray icon Font Awesome robot'
 # The two watch-seat agents (Cursor, Grok) become ONE "Agents" tray menu; you
 # then select which. Each entry uses the SAME icon as its Desktop shortcut (the
 # agent app .exe, matching AgentMonitor shortcuts/*.lnk IconLocation). If an
-# agent is not installed the icon is greyed and clicking it initialises the
-# setup (tools/Install-AgentMonitor.ps1). Skill: agent-monitor-setup.
-$script:agentMonitorDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Watch-AgentHealth'
-$script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+# agent app is not installed the icon is greyed and clicking it initialises the
+# setup (tools/Install-AgentMonitor.ps1). App installed = exe on disk (#180);
+# Watch-AgentHealth.cmd is only needed to launch the watch seat.
+# Skill: agent-monitor-setup.
+$script:agentMonitorDirCandidates = @(
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Watch-AgentHealth'),
+    (Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth'),
+    'C:\ai\AgentMonitor',
+    'D:\ai\AgentMonitor'
+)
 $script:installAgentMonitor = Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'
 
+function Resolve-BobTrayAgentMonitorDir {
+    foreach ($d in $script:agentMonitorDirCandidates) {
+        if (-not $d) { continue }
+        $cmd = Join-Path $d 'Watch-AgentHealth.cmd'
+        if (Test-Path -LiteralPath $cmd) { return $d }
+    }
+    return $script:agentMonitorDirCandidates[0]
+}
+
+$script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
+$script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+
+function Resolve-BobTrayAgentExe {
+    param([string]$Kind)
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $cands = @()
+    if ($kind -eq 'cursor') {
+        $cands = @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\cursor\Cursor.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\Cursor.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\cursor.exe'),
+            (Join-Path ${env:ProgramFiles} 'Cursor\Cursor.exe'),
+            (Join-Path ${env:ProgramFiles} 'cursor\Cursor.exe')
+        )
+        try {
+            $cmd = Get-Command cursor.cmd, cursor.exe, Cursor.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cmd -and $cmd.Source) { $cands = @([string]$cmd.Source) + $cands }
+        } catch { }
+    }
+    elseif ($kind -eq 'grok') {
+        $cands = @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe'),
+            (Join-Path $env:USERPROFILE '.grok\bin\grok.exe')
+        )
+        try {
+            $cmd = Get-Command 'Grok Bot.exe', grok.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cmd -and $cmd.Source) { $cands = @([string]$cmd.Source) + $cands }
+        } catch { }
+    }
+    foreach ($p in $cands) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+    }
+    return $cands[0]
+}
+
 function Get-BobTrayAgentDefs {
-    # kind = Watch-AgentHealth.cmd argument; exe = Desktop shortcut icon source.
+    # kind = Watch-AgentHealth.cmd argument; exe = resolved agent app path (#180).
     @(
-        [ordered]@{ name = 'Cursor'; kind = 'cursor'; exe = (Join-Path $env:LOCALAPPDATA 'Programs\cursor\Cursor.exe') }
-        [ordered]@{ name = 'Grok'; kind = 'grok'; exe = (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe') }
+        [ordered]@{ name = 'Cursor'; kind = 'cursor'; exe = (Resolve-BobTrayAgentExe 'cursor') }
+        [ordered]@{ name = 'Grok'; kind = 'grok'; exe = (Resolve-BobTrayAgentExe 'grok') }
     )
 }
 
 function Test-BobTrayAgentInstalled {
     param($Agent)
-    return ((Test-Path $script:agentMonitorCmd) -and (Test-Path $Agent.exe))
+    # Grey only when the agent *app* is missing. Watch-AgentHealth deploy is separate (#180).
+    if (-not $Agent) { return $false }
+    $exe = [string]$Agent.exe
+    if (-not $exe) { $exe = Resolve-BobTrayAgentExe $Agent.kind }
+    return [bool]($exe -and (Test-Path -LiteralPath $exe))
+}
+
+function Test-BobTrayAgentMonitorReady {
+    $script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
+    $script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+    return (Test-Path -LiteralPath $script:agentMonitorCmd)
 }
 
 function ConvertTo-BobTrayGrayImage {
@@ -470,15 +533,26 @@ function Initialize-BobTrayAgentSetup {
 
 function Start-BobTrayAgentWatch {
     param($Agent)
-    Write-TrayLog ('agents: launch {0} watch seat' -f $Agent.kind)
+    if (-not (Test-BobTrayAgentMonitorReady)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    Write-TrayLog ('agents: launch {0} watch seat from {1}' -f $Agent.kind, $script:agentMonitorCmd)
     Start-Process -FilePath $script:agentMonitorCmd -ArgumentList @($Agent.kind) `
         -WorkingDirectory $script:agentMonitorDir | Out-Null
 }
 
 function Invoke-BobTrayAgent {
     param($Agent)
-    if (Test-BobTrayAgentInstalled $Agent) { Start-BobTrayAgentWatch $Agent }
-    else { Initialize-BobTrayAgentSetup $Agent }
+    if (-not (Test-BobTrayAgentInstalled $Agent)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    if (-not (Test-BobTrayAgentMonitorReady)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    Start-BobTrayAgentWatch $Agent
 }
 
 function Build-BobTrayAgentsMenu {
@@ -757,7 +831,8 @@ function Add-BobTraySectionHeader {
         [int]$Y,
         [string]$Title,
         [System.Drawing.Image]$Icon,
-        [switch]$WithHelp
+        [switch]$WithHelp,
+        $Agent
     )
     $iconW = 0
     if ($Icon) {
@@ -767,6 +842,11 @@ function Add-BobTraySectionHeader {
         $pic.Size = New-Object System.Drawing.Size 16, 16
         $pic.BackColor = [System.Drawing.Color]::Transparent
         $pic.Location = New-Object System.Drawing.Point $X, ($Y + 1)
+        if ($Agent) {
+            $pic.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $pic.Tag = $Agent
+            $pic.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+        }
         $script:tileHost.Controls.Add($pic)
         $iconW = 20
     }
@@ -777,6 +857,11 @@ function Add-BobTraySectionHeader {
     $nm.BackColor = [System.Drawing.Color]::Transparent
     $nm.Text = $Title
     $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
+    if ($Agent) {
+        $nm.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $nm.Tag = $Agent
+        $nm.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+    }
     $script:tileHost.Controls.Add($nm)
     if ($WithHelp) {
         $helpX = ($X + $iconW) + $nm.PreferredWidth + 6
@@ -913,7 +998,7 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
-        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp -Agent $cursorAgent
         $pools = @($CursorPools)
         if ($pools.Count -eq 0) {
             $acctName = 'cursor'
@@ -970,7 +1055,7 @@ function Rebuild-BobTrayTiles {
             $y += ($ol.PreferredHeight + 6)
         }
         $y += 4
-        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Grok accounts' -Icon $grokIcon
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Grok accounts' -Icon $grokIcon -Agent $grokAgent
         $indent = 18
         foreach ($m in @($Machines)) {
             if (-not $m) { continue }
