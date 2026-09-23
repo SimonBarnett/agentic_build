@@ -46,6 +46,7 @@ Export-ModuleMember -Function @(
     'Get-BobTrayBarFillRgb',
     'Get-BobTrayAlertKind',
     'Get-BobTrayTitle',
+    'Get-BobTrayCursorGroupHelpTooltip',
     'Get-BobWeeklyRemaining',
     'Get-BobCursorAgentWeeklyRemaining',
     'Get-BobCursorSpendingFromApiFixture',

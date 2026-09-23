@@ -350,7 +350,45 @@ function Save-BobCursorPoolForSeat {
     try { Write-JsonFile $p $out } catch { }
 }
 
+function Get-BobDigestUrl {
+    foreach ($cand in @($env:AGENTIC_IRC_DIGEST_URL, $env:BOB_DIGEST_URL)) {
+        if ($cand -and [string]$cand.Trim()) { return [string]$cand.Trim() }
+    }
+    return 'http://bob.ntsa.uk/bob/v1/digest'
+}
+
+function Read-BobReportDigestHttp {
+    <#
+      Public GET digest (#174 / agentic_irc#179). Cache 60s so tray can poll
+      every minute without hammering the callback host.
+    #>
+    $now = [datetime]::UtcNow
+    if ($script:BobDigestHttpCache -and $script:BobDigestHttpCacheAt) {
+        $age = ($now - [datetime]$script:BobDigestHttpCacheAt).TotalSeconds
+        if ($age -ge 0 -and $age -lt 60 -and $script:BobDigestHttpCache) {
+            return $script:BobDigestHttpCache
+        }
+    }
+    $url = Get-BobDigestUrl
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Method GET -UseBasicParsing -TimeoutSec 15 -Headers @{ Accept = 'application/json' }
+        if (-not $resp -or [int]$resp.StatusCode -lt 200 -or [int]$resp.StatusCode -ge 300) { return $null }
+        $j = $resp.Content | ConvertFrom-Json
+        if (-not $j) { return $null }
+        $script:BobDigestHttpCache = $j
+        $script:BobDigestHttpCacheAt = $now
+        return $j
+    }
+    catch {
+        return $null
+    }
+}
+
 function Read-BobReportDigest {
+    # Prefer live HTTP digest (agentic_irc #174/#179); fall back to local peer file.
+    $http = $null
+    try { $http = Read-BobReportDigestHttp } catch { $http = $null }
+    if ($http) { return $http }
     $home = $null
     try { $home = Get-BobIrcHome } catch { }
     if (-not $home) { return $null }
@@ -1548,9 +1586,8 @@ function Sync-BobDigestWebhookAfterBobiversePull {
 }
 
 function Request-BobIrcBobiversePull {
-    param([int]$MinIntervalSec = 120)
+    param([int]$MinIntervalSec = 60)
     if (-not (Test-BobIrcBobiversePullSeat)) { return $false }
-    $home = Get-BobIrcHome
     $stampPath = Get-BobIrcBobiverseLastPath
     $now = [DateTime]::UtcNow
     if (Test-Path $stampPath) {
@@ -1560,9 +1597,21 @@ function Request-BobIrcBobiversePull {
         }
         catch { }
     }
-    Add-BobIrcOutboxChannelLine '!bobiverse'
+    # Prefer HTTP digest GET (#174/#179). Do not PRIVMSG !bobiverse.
+    $doc = $null
+    try { $doc = Read-BobReportDigestHttp } catch { $doc = $null }
+    if (-not $doc) {
+        try { $doc = Read-BobReportDigest } catch { $doc = $null }
+    }
+    if ($doc) {
+        try {
+            Import-BobIrcDigestJson -DigestObj $doc | Out-Null
+        } catch {
+            # Best-effort ingest; still stamp so we do not spam.
+        }
+    }
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-    return $true
+    return [bool]$doc
 }
 
 
