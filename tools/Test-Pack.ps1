@@ -4865,7 +4865,7 @@ Invoke-Case 'BT0install bobfleet idempotent' {
     function Get-BobInstallProcesses([string]$Pattern) { $h = @($st.procs | Where-Object { $_.CommandLine -match $Pattern }); return $h }
     function Stop-Process { param([int]$Id, [switch]$Force, [string]$ErrorAction) $st.stop += $Id }
     function Start-ScheduledTask { param([string]$TaskName) $st.start += $TaskName }
-    function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force) $st.reg += $TaskName }
+    function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force, [string]$ErrorAction) if ($st.regFail) { throw 'Access is denied.' }; $st.reg += $TaskName }
     function New-ScheduledTaskAction { param($Execute, $Argument, $WorkingDirectory) return 'action' }
     function Get-ScheduledTask { param($TaskName, $ErrorAction) return $null }
     function Reset-Bt0Install { $st.start = @(); $st.stop = @(); $st.reg = @() }
@@ -4917,6 +4917,13 @@ Invoke-Case 'BT0install bobfleet idempotent' {
     $w = Install-BobWatcherTask -Name 'Bobiverse' -TaskName '_Watch-Bobiverse-testbox' -AllMachines @ta
     if ($w.Started -or $st.start.Count -ne 0 -or $st.stop.Count -ne 0) { throw 'running ear must be reused, not started again' }
     if ($w.Status -notmatch 'already running pid=400') { throw "ear status: $($w.Status)" }
+    # non-elevated shell: Register-ScheduledTask Access is denied -> say NOT registered, still no second ear
+    Reset-Bt0Install
+    $st.regFail = $true
+    $w = Install-BobWatcherTask -Name 'Bobiverse' -TaskName '_Watch-Bobiverse-testbox' -AllMachines @ta
+    $st.regFail = $false
+    if ($w.Registered -or $w.Status -notmatch 'task NOT registered \(Access is denied\.\)') { throw "register failure must be reported: $($w.Status)" }
+    if ($w.Status -notmatch 'already running pid=400' -or $st.start.Count -ne 0) { throw 'register failure must not start a second ear' }
 
     # --- User env: set when unset, keep existing, overwrite only with -Update, never secrets
     function Get-BobUserEnv([string]$Name) { return $st.env[$Name] }
@@ -4953,6 +4960,7 @@ Invoke-Case 'BT0install bobfleet idempotent' {
     }
     if ($fleetSrc -match 'Start-ScheduledTask') { throw 'Install-BobFleet must start tasks only via Start-BobInstallTray / Install-BobWatcherTask' }
     if ($fleetSrc -notmatch '\$tray = Start-BobInstallTray -TaskName \$taskName') { throw 'Install-BobFleet must start the tray via Start-BobInstallTray' }
+    if ($fleetSrc -notmatch 'Register-ScheduledTask -TaskName \$taskName [^\r\n]*-ErrorAction Stop' -or $fleetSrc -notmatch 'task NOT registered') { throw 'Install-BobFleet must report a failed tray task registration' }
     foreach ($n in @('GrokTalk', 'IrcTsr', 'CursorIrc')) {
         if ($fleetSrc -notmatch "-Name '$n' -TaskName \S+ -OptIn:\(\`$Watchers -contains '$n'\)") { throw "$n task must be opt-in (-Watchers $n) unless a machine wrapper exists" }
     }

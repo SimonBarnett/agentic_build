@@ -142,7 +142,16 @@ function Install-BobWatcherTask {
     }
     $arg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$file`""
     $action = New-ScheduledTaskAction -Execute $PsExe -Argument $arg -WorkingDirectory $RepoRoot
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force | Out-Null
+    $registered = $true
+    $regNote = ''
+    try {
+        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $Trigger -Settings $Settings -Principal $Principal -Force -ErrorAction Stop | Out-Null
+    }
+    catch {
+        # e.g. Access is denied from a non-elevated shell: say so instead of reporting success.
+        $registered = $false
+        $regNote = ('task NOT registered ({0}); ' -f ([string]$_.Exception.Message).Trim())
+    }
     $started = $false
     $hits = @(Get-BobInstallProcesses (Get-BobInstallPattern $Name))
     if ($hits.Count -gt 0) {
@@ -162,5 +171,5 @@ function Install-BobWatcherTask {
             $status = "register-only (start failed: $($_.Exception.Message))"
         }
     }
-    return [pscustomobject]@{ Task = $TaskName; File = $file; Registered = $true; Started = $started; Status = $status }
+    return [pscustomobject]@{ Task = $TaskName; File = $file; Registered = $registered; Started = $started; Status = ($regNote + $status) }
 }

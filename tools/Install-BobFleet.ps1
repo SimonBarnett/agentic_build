@@ -76,10 +76,17 @@ $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $taskName = "BobFleet-$($rec.id)"
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+$trayRegNote = ''
+try {
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force -ErrorAction Stop | Out-Null
+}
+catch {
+    # e.g. Access is denied from a non-elevated shell: report it, do not pretend the task exists.
+    $trayRegNote = ('task NOT registered ({0}); ' -f ([string]$_.Exception.Message).Trim())
+}
 # ONE tray: a running tray (task, wrapper or hand-started) is reused, never doubled.
 $tray = Start-BobInstallTray -TaskName $taskName
-$started = $tray.Status
+$started = $trayRegNote + $tray.Status
 
 $taskArgs = @{ MachineId = $rec.id; RepoRoot = $RepoRoot; Trigger = $trigger; Settings = $settings; Principal = $principal; PsExe = $ps }
 
