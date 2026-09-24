@@ -2,11 +2,16 @@
 name: bob-build-loop
 description: >
   Pointer skill only: use bob-spec-intake, bob-build-dispatch, bob-job-loop,
-  bob-hostile-mrb / cursor-mrb-dev, and grok-build-fleet for the PR/MRB loop.
-  Do not load this skill expecting a separate orchestration ritual.
+  bob-hostile-mrb / cursor-mrb-dev / bob-mrb-worker, and grok-build-fleet for
+  the PR/MRB loop. Do not load this skill expecting a separate orchestration
+  ritual.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # Bob build loop (pointer)
+
+Foundation: `harvest-agent-skills` (honesty box) -> report back to
+https://github.com/SimonBarnett/agentic_build.
 
 This skill does **not** define its own workflow. Use the map in `README.md`:
 

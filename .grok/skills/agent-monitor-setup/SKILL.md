@@ -7,6 +7,7 @@ description: >
   Cursor/Grok agent, agent not installed grey, initialise agent setup,
   Install-AgentMonitor, or /agent-monitor-setup. The watch-seat behaviour
   itself lives in the AgentMonitor repo skills (agent-monitor, watch-seat).
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # Agent monitor setup (tray Agents menu)
@@ -20,8 +21,8 @@ having two separate desktop/tray icons.
 
 | Entry | Watch-AgentHealth arg | Icon source (same as Desktop shortcut) |
 |-------|-----------------------|-----------------------------------------|
-| Cursor | `cursor` **always `-New`** | Desktop `Cursor.lnk` IconLocation/TargetPath, else `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
-| Grok | `grok` **always `-New`** | Desktop `Grok Bot.lnk`, else `%ProgramFiles%\Grok Bot\Grok Bot.exe`, else `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
+| Cursor | `cursor` **always `-New`** | Desktop `Cursor.lnk` IconLocation/TargetPath, else `%LOCALAPPDATA%\\Programs\\cursor\\Cursor.exe` |
+| Grok | `grok` **always `-New`** | Desktop `Grok Bot.lnk`, else `%ProgramFiles%\\Grok Bot\\Grok Bot.exe`, else `%LOCALAPPDATA%\\Programs\\Grok Bot\\Grok Bot.exe` |
 
 - **CAST IRON — always new (Simon 2026-09-23).** Tray Agents clicks, TipForm
   Cursor/Grok section icons, and Desktop agent links **always** pass `-New`
@@ -34,7 +35,7 @@ having two separate desktop/tray icons.
   then plated on a light chip so dark glyphs stay visible on the dark TipForm /
   menu (badge fallback is a bright C/G chip). Desktop `.lnk` IconLocation
   points at the agent `.exe` (not a tiny broken `.ico`). Tray resolver must
-  include **Program Files\Grok Bot** and read Desktop `.lnk` first — see
+  include **Program Files\\Grok Bot** and read Desktop `.lnk` first — see
   `bob-fleet-tray` § Agent shortcut icons.
 - **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
   real path). Click launches a **hidden** watch worker (`powershell
@@ -52,23 +53,23 @@ having two separate desktop/tray icons.
 ## Setup / initialise
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\tools\Install-AgentMonitor.ps1" -Agent both
+powershell -NoProfile -ExecutionPolicy Bypass -File "$repo\\tools\\Install-AgentMonitor.ps1" -Agent both
 ```
 
 `Install-AgentMonitor.ps1`:
 
 1. Clones (or `fetch` + `reset --hard`) `https://github.com/SimonBarnett/AgentMonitor`
-   into `Desktop\Watch-AgentHealth` (the Desktop shortcut target).
+   into `Desktop\\Watch-AgentHealth` (the Desktop shortcut target).
 2. Copies the AgentMonitor watch-seat skills (`agent-monitor`, `watch-seat`)
-   into `~\.grok\skills`.
-3. Logs to `~\.grok\long-running-background-tasks\install_agent_monitor.log`.
+   into `~\\.grok\\skills`.
+3. Logs to `~\\.grok\\long-running-background-tasks\\install_agent_monitor.log`.
 
 Idempotent: re-running updates the deploy in place.
 
 ## Skill harvest
 
 This setup ships with the agentic_build skill harvest: `Copy-BobProjectSkills`
-/ `Install-BobFleet` copy this `SKILL.md` into `~\.grok\skills`, and
+/ `Install-BobFleet` copy this `SKILL.md` into `~\\.grok\\skills`, and
 `harvest-agent-skills` lists it. The watch-seat runtime contract stays in the
 AgentMonitor repo skills; this skill only owns tray wiring + install.
 
@@ -80,6 +81,12 @@ which binds the **next free** `.agentic-irc-watch-*` / `-2` / `-3` … slot,
 `#{machine}`, `#agentic_irc`), and prunes orphan python/nodes for **that slot
 only**. Opening seat 3/4 must not kill seat 1. The TUI agent receives IRC only
 via monitor `FROM` forwards (skill `watch-seat`) — not by probing logs.
+
+## CAST IRON — harvest MRB process when seating free agents (Simon 2026-09-24)
+
+When tray Agents / Install-AgentMonitor sets up a free agent that may do MRB,
+seed its instruction/context with skill `bob-mrb-worker` (STANDARD tests-first
+PASS merge / FAIL one fix PR). Do not leave MRB process only in chat memory.
 
 ## Hard rules
 
