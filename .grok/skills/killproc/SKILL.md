@@ -67,8 +67,9 @@ agent restarts the other one.
 2. Hung other on *this* box: Stop-HungAgent -IrcHome <other home> -Roll.
    Typical other home ~\.agentic-irc-cursor-2.
 3. If that home is missing (marchhare often seat-1 only), do not invent
-   a kill. Say so. Second window must Start-TalkSeat -IrcHome cursor-2
-   in THAT TUI (skill agentic-irc).
+   a kill. Say so. A new **build worker** is Watch-AgentHealth only
+   (skill `watch-agent-health` / `Start-BobWatchWorker.ps1`). Do not
+   Start-TalkSeat a worker.
 4. Do not WinRM other boxes. Ask their working nick on #bobiverse to
    killproc their hung home.
 5. -Roll is not listening until a Cursor/Grok session wakes on that
@@ -81,24 +82,15 @@ Simon: hung window gone / start a new cursor agent / irc and build /
 try again.
 
 1. Leave this TUI's cursor-agent (node under agent.cmd) alone.
-2. If leftover irc_agent on cursor-2 is still JOIN, keep it. Else a *new*
-   PowerShell -NoExit runs Start-TalkSeat.ps1 -MachineId <id> -IrcHome
-   ~\.agentic-irc-cursor-2 (nick = that $PID, not the dead 2224).
-3. Visible agent: powershell -NoExit -File a launch.ps1 that reads a
-   prompt *file* and runs
-   %LOCALAPPDATA%\cursor-agent\cursor-agent.ps1 --trust --force
-   --workspace C:\ai --model grok-4.6 -- $prompt
-   Do not put the prompt on cmd.exe /c (spaces truncate). Do not use -p
-   (one-shot exits).
-4. Prompt: you are <nick> from coordinator.pid; home cursor-2 only;
-   arm FROM; pong; agentic_irc + agentic_build; do not touch cursor.
-5. SendKeys only if GetForegroundWindow title is exactly
-   Agentic Build IRC or Flamingo Talk Seat. Never Halloy
-   (#bobiverse - Halloy).
-6. Ping the new nick until pong.
+2. Create the replacement **build worker** with Watch-AgentHealth only
+   (`Start-BobWatchWorker.ps1 -Kind cursor` or the hidden Desktop
+   shortcut). Next free `.agentic-irc-watch-cursor-N`. Own `irc_listen`.
+   Do not Start-TalkSeat / cursor-2 for a worker. Do not raw TUI + irc.
+3. Shortcuts start hidden (`-Windows off`). Log:
+   `%USERPROFILE%\Desktop\Watch-AgentHealth\Watch-AgentHealth.log`.
+4. Ping the new watch nick until pong.
 
-Scripts on agentic_irc: Start-SecondSeatTui.ps1, _Run-SecondSeatTui.ps1,
-bootstrap-second-seat.txt. Nick/home facts stay in skill agentic-irc.
+Seat create: skill `watch-agent-health`. Talk-seat nick/home facts stay in skill `agentic-irc`.
 
 ## After
 

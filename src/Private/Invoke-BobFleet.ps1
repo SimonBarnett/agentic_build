@@ -169,7 +169,8 @@ function Complete-FleetJob {
 }
 
 function Invoke-BobFleetTick {
-    Invoke-BobFleetOnce
+    try { Invoke-BobRepoPairChairTick | Out-Null } catch { }
+    return Invoke-BobFleetOnce
 }
 
 function Invoke-BobFleetOnce {

@@ -25,8 +25,10 @@ in git, issues, or channel. Do not point GitHub at
 `/bob/v1/report` (that is digest `X-Bob-Secret`, skill `bob-irc`).
 
 Jeeves announces accepted events as `GIT ...` on `#bobiverse`.
-`bob-*` and talk seats do not narrate. Skill `jeeves-git-webhook`
-in **agentic_irc**.
+`bob-*` and talk seats do not narrate, and `bob-*` does not
+auto-claim those lines. Skill `jeeves-git-webhook` in
+**agentic_irc** (chair queue). Idle shop workers: skill
+`bob-git-accept` (`!BORED` only; Jeeves `!TASK` marks accepted).
 
 ## One repo
 
