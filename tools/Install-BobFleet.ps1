@@ -207,10 +207,25 @@ if ($ciFile) {
 $watchSrc = Join-Path $RepoRoot 'tools\Watch-AgentHealth'
 $watchDst = Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth'
 $watchDeployed = 'skipped (no tools/Watch-AgentHealth)'
-if (Test-Path -LiteralPath $watchSrc) {
+# Canonical watch seat = SimonBarnett/AgentMonitor clone (Install-AgentMonitor: fetch + reset).
+# Never copy the fleet copy over that git clone: it pinned Desktop\Watch-AgentHealth to a stale
+# fork without Ensure-WatchIrcSeat, so tray Agents > Grok/Cursor seats never joined IRC.
+$amInstaller = Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'
+$amDeployed = $false
+if (Test-Path -LiteralPath $amInstaller) {
+    try {
+        & $amInstaller -Agent both -DesktopDir (Split-Path -Parent $watchDst) | Out-Null
+        $amDeployed = $true
+        $watchDeployed = "$watchDst (AgentMonitor clone)"
+    }
+    catch {
+        Write-Host "AgentMonitor: install failed ($($_.Exception.Message)); trying fleet copy"
+    }
+}
+if (-not $amDeployed -and (Test-Path -LiteralPath $watchSrc) -and -not (Test-Path -LiteralPath (Join-Path $watchDst '.git'))) {
     New-Item -ItemType Directory -Force -Path $watchDst | Out-Null
     Copy-Item -Path (Join-Path $watchSrc '*') -Destination $watchDst -Recurse -Force
-    $watchDeployed = $watchDst
+    $watchDeployed = "$watchDst (fleet copy)"
 }
 
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"

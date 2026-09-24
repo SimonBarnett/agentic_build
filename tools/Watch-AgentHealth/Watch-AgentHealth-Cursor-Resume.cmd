@@ -1,2 +1,3 @@
 @echo off
-start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0Watch-AgentHealth.ps1" -WatchWorker -Cursor -Windows off
+REM Legacy name "Resume" — CAST IRON always -New (skills + prompt). Use CLI "resume" only for rare recovery.
+wscript.exe //nologo "%~dp0Run-Hidden.vbs" "%~dp0Watch-AgentHealth.ps1" -WatchWorker -Cursor -New -Windows off

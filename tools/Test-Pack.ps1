@@ -4730,6 +4730,118 @@ Invoke-Case 'BT0tray idempotent ear/jobs start' {
     if ($script:jobsPid -ne 100) { throw "jobsPid must adopt existing pid 100, got $($script:jobsPid)" }
 }
 
+Invoke-Case 'BT0agent watch seat joins IRC' {
+    param($bridgeRoot)
+    # Tray Agents > Grok opened the TUI but no seat nick joined #<machine>: Install-BobFleet copied a
+    # stale fleet fork (no Ensure-WatchIrcSeat) over the Desktop AgentMonitor clone. Also: a reused
+    # home kept agent.quit.request (irc_agent QUITs on connect) and coordinator.pid seat=<dead pid>
+    # (irc_agent seat liveness QUITs "seat ended").
+    $wah = Join-Path $RepoRoot 'tools\Watch-AgentHealth\Watch-AgentHealth.ps1'
+    $wahSrc = Get-Content $wah -Raw
+    if ($wahSrc -notmatch 'function Ensure-WatchIrcSeat') { throw 'fleet Watch-AgentHealth must define Ensure-WatchIrcSeat (monitor starts irc_agent + irc_listen)' }
+    if (([regex]::Matches($wahSrc, '\$state = Ensure-WatchIrcSeat -State \$state')).Count -lt 2) { throw 'Ensure-WatchIrcSeat must run at watch start and in the watch loop' }
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($wah, [ref]$tok, [ref]$err)
+    foreach ($name in @('Resolve-WatchSeatPid', 'Clear-WatchStaleQuitRequest', 'Ensure-WatchIrcSeat', 'ConvertTo-WatchProcessArgumentString')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "fleet Watch-AgentHealth must define $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    $root = Join-Path $bridgeRoot 'wah-irc'
+    $seatHome = Join-Path $root '.agentic-irc-watch-grok'
+    $scripts = Join-Path $root 'scripts'
+    New-Item -ItemType Directory -Force -Path $seatHome, $scripts, (Join-Path $root '.grok\ergo') | Out-Null
+    Set-Content -LiteralPath (Join-Path $root '.grok\ergo\connect.password') -Value 'bt0-fake-not-a-password'
+    Set-Content -LiteralPath (Join-Path $seatHome 'agent.quit.request') -Value '1790282899 watch stop'
+    Set-Content -LiteralPath (Join-Path $seatHome 'quit.req') -Value 'watch stop'
+    $dead = 999990
+    while (Get-Process -Id $dead -ErrorAction SilentlyContinue) { $dead-- }
+    Set-Content -LiteralPath (Join-Path $seatHome 'coordinator.pid') -Value @("nick=marchhare-$dead", "seat=$dead", 'listen=1', 'agent=', "home=$seatHome")
+    $started = New-Object System.Collections.ArrayList
+    function Write-WatchLog([string]$m) { }
+    function Test-ForbiddenIrcHome { param([string]$ResolvedHome) return $false }
+    function Get-WatchIrcAgentRows { param([string]$ResolvedHome) return @() }
+    function Get-WatchIrcListenRows { param([string]$ResolvedHome) return @() }
+    function Resolve-AgenticIrcScriptsDir { return $scripts }
+    function Get-WatchMachineId { return 'marchhare' }
+    function Get-Command { return [pscustomobject]@{ Source = 'python.exe' } }
+    function Start-Sleep { }
+    function Start-Process { param($FilePath, $ArgumentList, $WindowStyle, $RedirectStandardOutput, $RedirectStandardError) [void]$started.Add([string]$ArgumentList) }
+    $saved = @{ up = $env:USERPROFILE; pw = $env:AGENTIC_IRC_PASSWORD; dbg = $env:AGENTIC_IRC_DEBUG; seat = $env:AGENTIC_IRC_SEAT_PID }
+    try {
+        $env:USERPROFILE = $root
+        $state = Ensure-WatchIrcSeat -State ([pscustomobject]@{ ircHome = $seatHome })
+    }
+    finally {
+        $env:USERPROFILE = $saved.up
+        $env:AGENTIC_IRC_PASSWORD = $saved.pw
+        $env:AGENTIC_IRC_DEBUG = $saved.dbg
+        $env:AGENTIC_IRC_SEAT_PID = $saved.seat
+    }
+    if ($started.Count -ne 2) { throw "Ensure-WatchIrcSeat must start irc_agent + irc_listen (started=$($started.Count))" }
+    if ($started[0] -notmatch 'irc_agent\.py') { throw 'first start must be irc_agent.py' }
+    if ($started[0] -notmatch '--channel #bobiverse,#marchhare,#agentic_irc') { throw "seat must JOIN #bobiverse,#<machine>,#agentic_irc: $($started[0])" }
+    if ($started[0] -match "marchhare-$dead\b") { throw 'stale coordinator seat= (dead pid) must not become the nick (irc_agent QUITs: seat ended)' }
+    if ($started[0] -notmatch "--nick marchhare-$PID(\s|$)") { throw "nick must be <machine>-<live seat pid>: $($started[0])" }
+    if ($started[1] -notmatch 'irc_listen\.py') { throw 'second start must be irc_listen.py' }
+    foreach ($leaf in @('agent.quit.request', 'quit.req')) {
+        if (Test-Path -LiteralPath (Join-Path $seatHome $leaf)) { throw "stale $leaf must be cleared before starting irc_agent (else it QUITs on connect)" }
+    }
+    if ([string]$state.ircNick -ne "marchhare-$PID") { throw "state.ircNick=$($state.ircNick)" }
+    if ((Get-Content -LiteralPath (Join-Path $seatHome 'coordinator.pid') -Raw) -notmatch "(?m)^seat=$PID\s*$") { throw 'coordinator.pid must be rewritten with the live seat pid' }
+    $live = Join-Path $seatHome 'live.pid'
+    Set-Content -LiteralPath $live -Value "seat=$PID"
+    if ((Resolve-WatchSeatPid -CoordPath $live -Default 1) -ne $PID) { throw 'a running coordinator seat= must be honoured' }
+    $fleet = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($fleet -notmatch 'Install-AgentMonitor\.ps1') { throw 'Install-BobFleet must deploy the watch seat via Install-AgentMonitor (canonical AgentMonitor clone)' }
+    if ($fleet -notmatch "-not \(Test-Path -LiteralPath \(Join-Path \`$watchDst '\.git'\)\)") { throw 'Install-BobFleet must not copy the fleet fork over the AgentMonitor git clone' }
+}
+
+Invoke-Case 'BT0tray grok session key overrides OAuth' {
+    param($bridgeRoot)
+    # grok 1.0.41 prefers ~/.grok/auth.json (OAuth) over XAI_API_KEY; the #314 session key was
+    # ignored. Session env must isolate GROK_AUTH_PATH to a fresh temp path, child-env only.
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $traySrc = Get-Content $trayPath -Raw
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('Get-BobTrayGrokSessionRoot', 'New-BobTrayGrokSessionEnv', 'Register-BobTrayGrokSession', 'Clear-BobTrayGrokSessionDirs')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "Watch-BobTray must define $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function Write-TrayLog([string]$m) { }
+    $script:bobTrayGrokSessions = @()
+    $beforeAuth = $env:GROK_AUTH_PATH
+    $beforeKey = $env:XAI_API_KEY
+    $dummy = 'xai-bt0-dummy-not-a-key'
+    $e1 = New-BobTrayGrokSessionEnv -ApiKey $dummy
+    $e2 = New-BobTrayGrokSessionEnv -ApiKey $dummy
+    if ($e1.XAI_API_KEY -ne $dummy) { throw 'session env must carry XAI_API_KEY' }
+    $ap = [string]$e1.GROK_AUTH_PATH
+    if (-not $ap) { throw 'session env must set GROK_AUTH_PATH (else OAuth auth.json wins over XAI_API_KEY)' }
+    $tmp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if (-not ([IO.Path]::GetFullPath($ap)).StartsWith($tmp, [StringComparison]::OrdinalIgnoreCase)) { throw "GROK_AUTH_PATH must live under TEMP: $ap" }
+    if ((Split-Path -Leaf $ap) -ne 'auth.json') { throw 'GROK_AUTH_PATH must point at an auth.json file path' }
+    if (Test-Path -LiteralPath $ap) { throw 'session auth.json must not exist (no OAuth creds for the child)' }
+    if (-not (Test-Path -LiteralPath (Split-Path -Parent $ap))) { throw 'session dir must exist' }
+    if ($ap -eq $e2.GROK_AUTH_PATH) { throw 'each start needs its own session dir' }
+    if ($ap -like "*\.grok\auth.json") { throw 'must not reuse ~/.grok/auth.json' }
+    if ($env:GROK_AUTH_PATH -ne $beforeAuth -or $env:XAI_API_KEY -ne $beforeKey) { throw 'tray process env must not be modified' }
+    # exited child -> session dir removed; running child -> kept
+    Register-BobTrayGrokSession -Process ([pscustomobject]@{ HasExited = $true }) -SessionEnv $e1
+    Register-BobTrayGrokSession -Process ([pscustomobject]@{ HasExited = $false }) -SessionEnv $e2
+    Clear-BobTrayGrokSessionDirs
+    if (Test-Path -LiteralPath (Split-Path -Parent $e1.GROK_AUTH_PATH)) { throw 'exited session dir must be removed' }
+    if (-not (Test-Path -LiteralPath (Split-Path -Parent $e2.GROK_AUTH_PATH))) { throw 'running session dir must be kept' }
+    Remove-Item -LiteralPath (Split-Path -Parent $e2.GROK_AUTH_PATH) -Recurse -Force
+    # contracts: Agents->Grok and Plan->Grok both use it; child-env only; tracked for cleanup
+    if (([regex]::Matches($traySrc, '\$sessionEnv = New-BobTrayGrokSessionEnv -ApiKey \$key')).Count -ne 2) { throw 'Agents->Grok and Plan->Grok must both build env via New-BobTrayGrokSessionEnv' }
+    if ($traySrc -match '\$sessionEnv = @\{ XAI_API_KEY') { throw 'bare XAI_API_KEY session env is ignored when OAuth auth.json exists' }
+    if ($traySrc -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:GROK_AUTH_PATH\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session key/auth path must not touch tray/User/Machine env' }
+    if (([regex]::Matches($traySrc, 'Register-BobTrayGrokSession -Process \$proc -SessionEnv \$SessionEnv')).Count -ne 2) { throw 'both session launch helpers must register the child for session-dir cleanup' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
