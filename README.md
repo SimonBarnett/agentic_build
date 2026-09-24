@@ -65,45 +65,53 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 
 ### Flow
 
+Proposed pair model (`#175` — Simon check this logic before more impl):
+
 ```mermaid
 flowchart TB
-  subgraph IN["Inputs"]
-    A1["Other agent cannot complete"]
-    A2["Writes functional spec"]
-    A3["Sends spec to Bob"]
-    F1["Feature-request issue + /docs md"]
+  IN["FR or functional spec for a new repo\nusually turns up"]
+  IN --> PARK["bob-machine parks issue + /docs"]
+  PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
+  TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
+  TIX --> ASSIGN
+  CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
+  CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
+  CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
+  CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
+  RT --> PAIR
+  CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> PING15["Every 15 min Bob pings own shop\ncheck connections / online\nintervene if workers stalled"]
+  CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
+  USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
+  CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
+  CHAIR --> OPS["bob-machine is ops in own shop channel\nJeeves is ops in #bobiverse"]
+  MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
+
+  subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
+    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
-  A1 --> A2 --> A3
-  A3 --> PARK
-  F1 --> PARK["Bob parks issue + markdown"]
-  PARK --> PLAN["Write build-and-test plan"]
+  PAIR --> WA
+  PAIR --> WB
+  ASSIGN --> WA
+  ASSIGN --> WB
+  MON -.-> PAIRBOX
+  WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
+  FIX --> WA
+  WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
+  NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
+  SWAP --> WA
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
 
-  PLAN --> FUEL{"Cursor Models remaining > 0?"}
-  FUEL -->|yes| CUR["Fuel cursor-models\nMRB: Cursor Grok grok-4.6\nPR: Composer composer-2.5"]
-  FUEL -->|no| GROK["Fuel grok-build\nMRB: grok.exe grok-4.6\nPR: build0.1 else grok-4.5"]
-
-  CUR --> BUILD
-  GROK --> BUILD
-
-  subgraph BUILD["Worker"]
-    D1["Implement on work/job"]
-    D2["Open PR. Never push main. Never merge."]
-  end
-
-  BUILD --> MRB
-
-  subgraph MRB["Hostile MRB (handed off)"]
-    M1["Start-BobMrbHandoff.ps1"]
-    M2["New GitHub issue per PR head: FAIL or PASS-nits"]
-    M3["Missing features: park new FRs"]
-  end
-
-  MRB --> VER{"Verdict"}
-  VER -->|FAIL| FIX["Do not merge\nspawn FIX worker now"]
-  FIX --> FUEL
-  VER -->|PASS-nits| MERGE["MRB agent merges the PR"]
-  MERGE --> UAT["Bob stamps ready for human UAT"]
+  WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
+  WB --> POST
+  POST --> DIG["Digest updates"]
+  DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nUAT model: MORE\nworkers never stamp UAT"]
 ```
 
 ### Talking to build agents

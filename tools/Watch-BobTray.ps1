@@ -596,14 +596,18 @@ function New-BobTrayAgentBadgeImage {
     param([string]$Kind)
     $kind = ([string]$Kind).ToLowerInvariant()
     $letter = 'A'
+    # Bright chips — black/near-black badges vanish on the dark TipForm / menu.
     $bgCol = [System.Drawing.Color]::FromArgb(88, 166, 255)
+    $fgCol = [System.Drawing.Color]::White
     if ($kind -eq 'cursor') {
         $letter = 'C'
-        $bgCol = [System.Drawing.Color]::FromArgb(0, 0, 0)
+        $bgCol = [System.Drawing.Color]::FromArgb(232, 236, 241)
+        $fgCol = [System.Drawing.Color]::FromArgb(28, 33, 40)
     }
     elseif ($kind -eq 'grok') {
         $letter = 'G'
-        $bgCol = [System.Drawing.Color]::FromArgb(26, 26, 26)
+        $bgCol = [System.Drawing.Color]::FromArgb(255, 180, 0)
+        $fgCol = [System.Drawing.Color]::FromArgb(28, 33, 40)
     }
     $bmp = New-Object System.Drawing.Bitmap 32, 32
     $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -616,10 +620,30 @@ function New-BobTrayAgentBadgeImage {
     $sf = New-Object System.Drawing.StringFormat
     $sf.Alignment = [System.Drawing.StringAlignment]::Center
     $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $fgBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+    $fgBrush = New-Object System.Drawing.SolidBrush $fgCol
     $g.DrawString($letter, $font, $fgBrush, (New-Object System.Drawing.RectangleF 0, 0, 32, 32), $sf)
     $fgBrush.Dispose(); $font.Dispose(); $sf.Dispose(); $g.Dispose()
     return $bmp
+}
+
+function ConvertTo-BobTrayTipVisibleImage {
+    param([System.Drawing.Image]$Image)
+    # Dark app glyphs (Cursor/Grok) disappear on the dark tip — plate them on a light chip.
+    if (-not $Image) { return $null }
+    $size = 32
+    $out = New-Object System.Drawing.Bitmap $size, $size
+    $g = [System.Drawing.Graphics]::FromImage($out)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $plate = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(232, 236, 241))
+    $g.FillEllipse($plate, 0, 0, $size - 1, $size - 1)
+    $plate.Dispose()
+    $pad = 4
+    $dest = New-Object System.Drawing.Rectangle $pad, $pad, ($size - 2 * $pad), ($size - 2 * $pad)
+    $g.DrawImage($Image, $dest)
+    $g.Dispose()
+    return $out
 }
 
 function Get-BobTrayAgentImage {
@@ -645,6 +669,14 @@ function Get-BobTrayAgentImage {
         if ($kind) { $img = New-BobTrayAgentBadgeImage $kind }
         else {
             try { $img = $iconIdle.ToBitmap() } catch { $img = New-BobTrayAgentBadgeImage 'cursor' }
+        }
+    }
+    else {
+        # Extracted exe icons are often black-on-transparent; plate for dark tip/menu.
+        $plated = ConvertTo-BobTrayTipVisibleImage $img
+        if ($plated) {
+            try { $img.Dispose() } catch { }
+            $img = $plated
         }
     }
     # Soft greyscale when not installed — keep alpha high enough to stay visible on dark tip.
@@ -684,9 +716,15 @@ function Start-BobTrayAgentWatch {
     }
     $ps = (Get-Command powershell.exe).Source
     $kindFlag = if (([string]$Agent.kind).ToLowerInvariant() -eq 'grok') { '-Grok' } else { '-Cursor' }
-    Write-TrayLog ('agents: launch {0} watch seat hidden+TUI from {1}' -f $Agent.kind, $ps1)
+    # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
+    # Cursor always --model auto (Simon 2026-09-23).
+    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New')
+    if (([string]$Agent.kind).ToLowerInvariant() -eq 'cursor') {
+        $launchArgs += @('-Model', 'auto')
+    }
+    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} model={2}' -f $Agent.kind, $ps1, $(if ($Agent.kind -eq 'cursor') { 'auto' } else { 'n/a' }))
     Start-Process -FilePath $ps `
-        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag) `
+        -ArgumentList $launchArgs `
         -WorkingDirectory $script:agentMonitorDir -WindowStyle Hidden | Out-Null
 }
 
@@ -1216,6 +1254,8 @@ function Rebuild-BobTrayTiles {
             $y += 6
         }
         else {
+            # Indent Cursor spending groups like machine tiles under Grok accounts.
+            $indent = 18
             # Always show every pool (incl. 0%). When low-cost is 0 but another pool still has %,
             # keep that bar visible so operators see what still allows spend.
             foreach ($pool in $pools) {
@@ -1234,8 +1274,8 @@ function Rebuild-BobTrayTiles {
                     if (-not $gid -and $pool.id) { $gid = [string]$pool.id }
                     $help = Get-BobTrayCursorGroupHelpTooltip -GroupId $gid
                 } catch { $help = Get-BobTrayCursorHelpTooltip }
-                $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $heading `
-                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor -HelpText $help
+                $y = Add-BobTrayUsageRow -X $indent -Y $y -Heading $heading `
+                    -RemainingPct $poolPct -BarWidth 354 -Icon $null -HeadingColor $poolColor -HelpText $help
                 $y += 4
             }
             $y += 2

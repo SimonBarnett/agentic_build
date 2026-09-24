@@ -65,6 +65,7 @@
         'Sync-BobDigestWebhookAfterBobiversePull',
         'ConvertFrom-BobIrcTrayLine',
         'Get-BobJobRepoStamp',
+        'Resolve-BobiverseMachineId',
         'Get-BobIrcShopChannel',
         'Get-BobIrcBuilderChannels',
         'Get-BobWorkerIrcNick',
@@ -75,7 +76,27 @@
         'Test-BobGrokTalkFuelAllowed',
         'Select-BobGrokTalkFuel',
         'Add-BobGrokTalkCompletion',
-        'ConvertTo-BobGrokTalkOutLines'
+        'ConvertTo-BobGrokTalkOutLines',
+        'Get-BobRepoPair',
+        'Start-BobRepoPair',
+        'Invoke-BobRepoPairTick',
+        'Invoke-BobRepoPairChairTick',
+        'Assign-BobRepoPairTask',
+        'Invoke-BobRepoPairOutstandingTickets',
+        'Invoke-BobRepoPairBobiverseSay',
+        'Update-BobRepoWorkerWorkingOn',
+        'Test-BobRepoPairSelfMrb',
+        'Test-BobRepoPairSeatAlive',
+        'Test-BobRepoPairMayEnqueueBuild',
+        'Set-BobRepoPairDevActiveSha',
+        'Register-BobRepoPairDevComplete',
+        'Register-BobRepoPairMrbComplete',
+        'Get-BobRepoPairBobiverseReport',
+        'Set-BobShopChannelRepoDescription',
+        'Invoke-BobDigestWebhookPost',
+        'Invoke-BobRepoPairChairUsageWebhookIfChanged',
+        'Start-BobRepoPairMrbReview',
+        'Test-BobRepoPairTicketCadenceDue'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
