@@ -1,16 +1,26 @@
 # Register this Windows logon as a fleet machine. No SCM service.
 # Copies .grok/skills/*/SKILL.md into ~/.grok/skills so Grok Bot / grok.exe on this box can load them.
+# Safe to re-run on a live box (see tools\BobInstallHelpers.ps1):
+# - never starts a second tray or ear (single-instance rule from #318: keep oldest)
+# - GrokTalk / IrcTsr / CursorIrc watcher tasks only when meant for this machine
+#   (tools\_Watch-<Name>-<machine>.ps1 exists) or opted in with -Watchers <Name>
+# - non-secret User env only; an existing different value is kept unless -UpdateUserEnv;
+#   secrets are never persisted (session-only rule). Prints each env var before/after.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$MachineId,
     [string]$RepoRoot,
     [string[]]$CwdRoots,
-    [string]$BridgeHome
+    [string]$BridgeHome,
+    [ValidateSet('GrokTalk', 'IrcTsr', 'CursorIrc')]
+    [string[]]$Watchers = @(),
+    [switch]$UpdateUserEnv
 )
 
 $ErrorActionPreference = 'Stop'
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+. (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1')
 
 if (-not $BridgeHome) {
     if ($env:BOB_BRIDGE_HOME) { $BridgeHome = $env:BOB_BRIDGE_HOME }
@@ -27,20 +37,19 @@ $rec = Register-BobMachine -Id $MachineId -CwdRoots $CwdRoots
 
 $grok = Join-Path $env:USERPROFILE '.grok\bin\grok.exe'
 if (-not $env:BOB_GROK_EXE -and (Test-Path $grok)) {
-    [Environment]::SetEnvironmentVariable('BOB_GROK_EXE', $grok, 'User')
-    $env:BOB_GROK_EXE = $grok
+    [void](Set-BobInstallUserEnv -Name 'BOB_GROK_EXE' -Value $grok -Update:$UpdateUserEnv)
 }
-[Environment]::SetEnvironmentVariable('BOB_BRIDGE_HOME', $BridgeHome, 'User')
-[Environment]::SetEnvironmentVariable('BOB_MACHINE_ID', $rec.id, 'User')
+[void](Set-BobInstallUserEnv -Name 'BOB_BRIDGE_HOME' -Value $BridgeHome -Update:$UpdateUserEnv)
+[void](Set-BobInstallUserEnv -Name 'BOB_MACHINE_ID' -Value $rec.id -Update:$UpdateUserEnv)
 
 $copied = @()
+$skillDstRoot = Join-Path $env:USERPROFILE '.grok\skills'
 try {
     Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
     $copied = @(Copy-BobProjectSkills)
 }
 catch {
     $skillRoot = Join-Path $RepoRoot '.grok\skills'
-    $skillDstRoot = Join-Path $env:USERPROFILE '.grok\skills'
     if (Test-Path $skillRoot) {
         foreach ($dir in @(Get-ChildItem $skillRoot -Directory)) {
             $src = Join-Path $dir.FullName 'SKILL.md'
@@ -68,141 +77,24 @@ $settings = New-ScheduledTaskSettingsSet `
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $taskName = "BobFleet-$($rec.id)"
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-try {
-    Start-ScheduledTask -TaskName $taskName
-    $started = 'started now'
-}
-catch {
-    $started = "register-only (start failed: $($_.Exception.Message))"
-}
+# ONE tray: a running tray (task, wrapper or hand-started) is reused, never doubled.
+$tray = Start-BobInstallTray -TaskName $taskName
+$started = $tray.Status
 
-$bvWrapId = Join-Path $RepoRoot ("tools\_Watch-Bobiverse-{0}.ps1" -f $rec.id)
-$bvWrap = Join-Path $RepoRoot 'tools\_Watch-Bobiverse.ps1'
-$bvInner = Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1'
-$bvFile = $null
-if (Test-Path $bvWrapId) { $bvFile = $bvWrapId }
-elseif (Test-Path $bvWrap) { $bvFile = $bvWrap }
-elseif (Test-Path $bvInner) { $bvFile = $bvInner }
+$taskArgs = @{ MachineId = $rec.id; RepoRoot = $RepoRoot; Trigger = $trigger; Settings = $settings; Principal = $principal; PsExe = $ps }
+
+# Ear: every fleet machine (generic wrapper is fine). If the tray was just started it starts / reuses
+# the ear itself (#318), so only register the logon task here (starting both raced into two ears).
 $bvTask = "_Watch-Bobiverse-$($rec.id)"
-$bvStarted = 'skipped (no wrapper script)'
-if ($bvFile) {
-    $bvArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$bvFile`""
-    $bvAction = New-ScheduledTaskAction -Execute $ps -Argument $bvArg -WorkingDirectory $RepoRoot
-    Register-ScheduledTask -TaskName $bvTask -Action $bvAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-    $ircAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            ($_.CommandLine -match 'Watch-Bobiverse\.ps1' -or $_.CommandLine -match '_Watch-Bobiverse')
-        })
-    if ($ircAlready.Count -gt 0) {
-        $bvStarted = 'already running (not started again)'
-    }
-    else {
-        try {
-            Start-ScheduledTask -TaskName $bvTask
-            $bvStarted = 'started now'
-        }
-        catch {
-            $bvStarted = "register-only (start failed: $($_.Exception.Message))"
-        }
-    }
-}
+$bv = Install-BobWatcherTask -Name 'Bobiverse' -TaskName $bvTask -AllMachines -NoStart:($tray.Started) @taskArgs
 
-$gtWrapId = Join-Path $RepoRoot ("tools\_Watch-GrokTalk-{0}.ps1" -f $rec.id)
-$gtWrap = Join-Path $RepoRoot 'tools\_Watch-GrokTalk.ps1'
-$gtInner = Join-Path $RepoRoot 'tools\Watch-GrokTalk.ps1'
-$gtFile = $null
-if (Test-Path $gtWrapId) { $gtFile = $gtWrapId }
-elseif (Test-Path $gtWrap) { $gtFile = $gtWrap }
-elseif (Test-Path $gtInner) { $gtFile = $gtInner }
+# Opt-in watchers: only with a machine wrapper tools\_Watch-<Name>-<id>.ps1 or -Watchers <Name>.
 $gtTask = "_Watch-GrokTalk-$($rec.id)"
-$gtStarted = 'skipped (no wrapper script)'
-if ($gtFile) {
-    $gtArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$gtFile`""
-    $gtAction = New-ScheduledTaskAction -Execute $ps -Argument $gtArg -WorkingDirectory $RepoRoot
-    Register-ScheduledTask -TaskName $gtTask -Action $gtAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-    $gtAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            ($_.CommandLine -match 'Watch-GrokTalk\.ps1' -or $_.CommandLine -match '_Watch-GrokTalk')
-        })
-    if ($gtAlready.Count -gt 0) {
-        $gtStarted = 'already running (not started again)'
-    }
-    else {
-        try {
-            Start-ScheduledTask -TaskName $gtTask
-            $gtStarted = 'started now'
-        }
-        catch {
-            $gtStarted = "register-only (start failed: $($_.Exception.Message))"
-        }
-    }
-}
-
-$tsWrapId = Join-Path $RepoRoot ("tools\_Watch-IrcTsr-{0}.ps1" -f $rec.id)
-$tsWrap = Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1'
-$tsInner = Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1'
-$tsFile = $null
-if (Test-Path $tsWrapId) { $tsFile = $tsWrapId }
-elseif (Test-Path $tsWrap) { $tsFile = $tsWrap }
-elseif (Test-Path $tsInner) { $tsFile = $tsInner }
+$gt = Install-BobWatcherTask -Name 'GrokTalk' -TaskName $gtTask -OptIn:($Watchers -contains 'GrokTalk') @taskArgs
 $tsTask = "_Watch-IrcTsr-$($rec.id)"
-$tsStarted = 'skipped (no wrapper script)'
-if ($tsFile) {
-    $tsArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$tsFile`""
-    $tsAction = New-ScheduledTaskAction -Execute $ps -Argument $tsArg -WorkingDirectory $RepoRoot
-    Register-ScheduledTask -TaskName $tsTask -Action $tsAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-    $tsAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            ($_.CommandLine -match 'Watch-IrcTsr\.ps1' -or $_.CommandLine -match '_Watch-IrcTsr')
-        })
-    if ($tsAlready.Count -gt 0) {
-        $tsStarted = 'already running (not started again)'
-    }
-    else {
-        try {
-            Start-ScheduledTask -TaskName $tsTask
-            $tsStarted = 'started now'
-        }
-        catch {
-            $tsStarted = "register-only (start failed: $($_.Exception.Message))"
-        }
-    }
-}
-
-$ciWrapId = Join-Path $RepoRoot ("tools\_Watch-CursorIrc-{0}.ps1" -f $rec.id)
-$ciWrap = Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1'
-$ciInner = Join-Path $RepoRoot 'tools\Watch-CursorIrc.ps1'
-$ciFile = $null
-if (Test-Path $ciWrapId) { $ciFile = $ciWrapId }
-elseif (Test-Path $ciWrap) { $ciFile = $ciWrap }
-elseif (Test-Path $ciInner) { $ciFile = $ciInner }
+$ts = Install-BobWatcherTask -Name 'IrcTsr' -TaskName $tsTask -OptIn:($Watchers -contains 'IrcTsr') @taskArgs
 $ciTask = "_Watch-CursorIrc-$($rec.id)"
-$ciStarted = 'skipped (no wrapper script)'
-if ($ciFile) {
-    $ciArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ciFile`""
-    $ciAction = New-ScheduledTaskAction -Execute $ps -Argument $ciArg -WorkingDirectory $RepoRoot
-    Register-ScheduledTask -TaskName $ciTask -Action $ciAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-    $ciAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            ($_.CommandLine -match 'Watch-CursorIrc\.ps1' -or $_.CommandLine -match '_Watch-CursorIrc')
-        })
-    if ($ciAlready.Count -gt 0) {
-        $ciStarted = 'already running (not started again)'
-    }
-    else {
-        try {
-            Start-ScheduledTask -TaskName $ciTask
-            $ciStarted = 'started now'
-        }
-        catch {
-            $ciStarted = "register-only (start failed: $($_.Exception.Message))"
-        }
-    }
-}
+$ci = Install-BobWatcherTask -Name 'CursorIrc' -TaskName $ciTask -OptIn:($Watchers -contains 'CursorIrc') @taskArgs
 
 $watchSrc = Join-Path $RepoRoot 'tools\Watch-AgentHealth'
 $watchDst = Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth'
@@ -233,17 +125,18 @@ Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
 Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
-Write-Host "Bobiverse:   $bvTask -> $bvFile ($bvStarted)"
-Write-Host "Grok-talk:   $gtTask -> $gtFile ($gtStarted)"
-Write-Host "IRC TSR:     $tsTask -> $tsFile ($tsStarted)"
-Write-Host "Cursor IRC:  $ciTask -> $ciFile ($ciStarted)"
+Write-Host "Bobiverse:   $bvTask -> $($bv.File) ($($bv.Status))"
+Write-Host "Grok-talk:   $gtTask -> $($gt.File) ($($gt.Status))"
+Write-Host "IRC TSR:     $tsTask -> $($ts.File) ($($ts.Status))"
+Write-Host "Cursor IRC:  $ciTask -> $($ci.File) ($($ci.Status))"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
 Write-Host "Watch seat:  $watchDeployed (only way to create a build-worker seat)"
+Write-BobInstallEnvReport 'Install-BobFleet'
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
 if (Test-Path $ircInst) {
     try {
-        & $ircInst -MachineId $MachineId -RepoRoot $RepoRoot
+        & $ircInst -MachineId $MachineId -RepoRoot $RepoRoot -UpdateUserEnv:$UpdateUserEnv
     }
     catch {
         Write-Host "Bobiverse:  skipped ($($_.Exception.Message))"
