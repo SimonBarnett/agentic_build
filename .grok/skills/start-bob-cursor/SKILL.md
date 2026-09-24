@@ -50,6 +50,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\St
 
 Call the script **in-process** (`& Start-BobCursor.ps1 -Goal $goal -Kind build`). Nested `powershell -File ... -Goal $unquoted` splits the goal on spaces and on tokens that look like flags.
 
+This script is a one-shot **job** (`cursor-agent -p`). It is **not** how you create a persistent build-worker seat. New seats: skill `watch-agent-health` / `Start-BobWatchWorker.ps1` / Watch-AgentHealth shortcuts only.
+
 Writes a packet JSON. Starts **cursor-agent** (`-p --model`) via `launch.ps1` that reads the prompt file. Pass the prompt **after `--`** so node does not eat tokens (`unknown option '-join'`). Goal text must not contain CLI-looking tokens (`-join`, `-p`, `-File`) or raw `"` that split node argv.
 
 Do not put the prompt on `Start-Process -ArgumentList` (Windows splits quotes). Do not `Start-Process -RedirectStandardOutput` (PS 5.1 waits for the agent). Start with `Win32_Process.Create` so the agent outlives the grok.exe Job Object. Redirect inside `launch.ps1`. Skip empty Docs/Plan so the prompt is not `Read  and .`.

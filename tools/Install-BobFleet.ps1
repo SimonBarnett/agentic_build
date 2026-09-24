@@ -204,6 +204,15 @@ if ($ciFile) {
     }
 }
 
+$watchSrc = Join-Path $RepoRoot 'tools\Watch-AgentHealth'
+$watchDst = Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth'
+$watchDeployed = 'skipped (no tools/Watch-AgentHealth)'
+if (Test-Path -LiteralPath $watchSrc) {
+    New-Item -ItemType Directory -Force -Path $watchDst | Out-Null
+    Copy-Item -Path (Join-Path $watchSrc '*') -Destination $watchDst -Recurse -Force
+    $watchDeployed = $watchDst
+}
+
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
@@ -215,6 +224,7 @@ Write-Host "IRC TSR:     $tsTask -> $tsFile ($tsStarted)"
 Write-Host "Cursor IRC:  $ciTask -> $ciFile ($ciStarted)"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
+Write-Host "Watch seat:  $watchDeployed (only way to create a build-worker seat)"
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
 if (Test-Path $ircInst) {
     try {
