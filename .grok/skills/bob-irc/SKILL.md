@@ -3,12 +3,13 @@ name: bob-irc
 description: >
   Private Ergo for #bobiverse on ionos (irc.ntsa.uk:6697 TLS). Use when the user
   says join Ergo, irc.ntsa.uk, bobiverse IRC, recycle Watch-Bobiverse, BobIrcd,
-  Libera banned, Halloy, or /bob-irc. Canonical skill is agentic_irc
-  .grok/skills/bob-irc. Job queue is grok-build-fleet. Named-bot hangs are
-  unstick-grok-bot.
+  Halloy, shop channel, !bobiverse, or /bob-irc. Canonical protocol skill is
+  agentic_irc .grok/skills/bob-irc. Job queue is grok-build-fleet.
 ---
 
 # Bobiverse IRC
+
+Foundation: harvest-agent-skills (honesty box) -> report back to https://github.com/SimonBarnett/agentic_build.
 
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
@@ -25,3 +26,8 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
+
+**Preferred IRC wake (Simon 2026-09-23):** Watch-AgentHealth / AgentMonitor
+(skill `watch-agent-health`) — do not arm in-session `^FROM ` TSR on
+`listen.stdout.log` (burns tokens on chat spam). Legacy talk-seat TSR only
+when no watcher (`agentic-irc` Listener + wake).

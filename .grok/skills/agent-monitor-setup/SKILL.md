@@ -20,8 +20,8 @@ having two separate desktop/tray icons.
 
 | Entry | Watch-AgentHealth arg | Icon source (same as Desktop shortcut) |
 |-------|-----------------------|-----------------------------------------|
-| Cursor | `cursor` **always `-New`** | `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
-| Grok | `grok` **always `-New`** | `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
+| Cursor | `cursor` **always `-New`** | Desktop `Cursor.lnk` IconLocation/TargetPath, else `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` |
+| Grok | `grok` **always `-New`** | Desktop `Grok Bot.lnk`, else `%ProgramFiles%\Grok Bot\Grok Bot.exe`, else `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe` |
 
 - **CAST IRON — always new (Simon 2026-09-23).** Tray Agents clicks, TipForm
   Cursor/Grok section icons, and Desktop agent links **always** pass `-New`
@@ -33,7 +33,9 @@ having two separate desktop/tray icons.
 - **Icon parity.** Icons come from `ExtractAssociatedIcon` on the agent `.exe`,
   then plated on a light chip so dark glyphs stay visible on the dark TipForm /
   menu (badge fallback is a bright C/G chip). Desktop `.lnk` IconLocation
-  points at the agent `.exe` (not a tiny broken `.ico`).
+  points at the agent `.exe` (not a tiny broken `.ico`). Tray resolver must
+  include **Program Files\Grok Bot** and read Desktop `.lnk` first — see
+  `bob-fleet-tray` § Agent shortcut icons.
 - **Installed** = the agent `.exe` exists (`Resolve-BobTrayAgentExe` returns a
   real path). Click launches a **hidden** watch worker (`powershell
   -WindowStyle Hidden -File Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok

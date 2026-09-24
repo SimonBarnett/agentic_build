@@ -1,11 +1,24 @@
 # Skill harvest log
 
-## 2026-09-23 — tipform indent/reset + IRC operational
+## 2026-09-23 — cleanup-orphans
 
-Simon: systray overspend right-align inside tile host; Cursor spending rows
-indented like machines; reset on grok chat + high cost (not only low cost);
-machine announces `{id} is operational` on first IRC peer write. Homes:
-`bob-fleet-tray`, `box-usage`.
+Simon: close orphan python/node/powershell after agent/IRC churn.
+Harvested `cleanup-orphans` + `tools/Cleanup-OrphanAgents.ps1`. Keeps
+newest fleet watchers, tray, bob-*, Jeeves, live session; kills stale
+irc_listen/TSR, duplicate Watch-*, old cursor-agent, bare powershell.
+Related: `killproc` (named hung seat), `bob-fleet-tray` (tray recycle).
+
+## 2026-09-23 — land quiet-talk park doc (#36 FIX)
+
+Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.
+
+## 2026-09-23 — preferred IRC wake = Watch-AgentHealth
+
+Simon: do not arm in-session `listen.stdout.log` `^FROM ` TSR (burns
+tokens on `#bobiverse` spam). Preferred: Watch-AgentHealth /
+AgentMonitor forwards FROM. Harvested `watch-agent-health` into this
+repo; updated `agent-monitor-setup`, `bob-irc` stub. Sister
+`agentic_irc` skills `agentic-irc` + `bob-irc` Listener + wake CAST IRON.
 
 ## 2026-09-23 — intake must run validate-vision-pack
 
@@ -219,6 +232,32 @@ Simon: create a new killproc skill to end hung (jung) agents.
 Do not spray Stop-Process. Named Grok Bot remains `unstick-grok-bot`.
 Skill `killproc`.
 
+## 2026-09-21 — IRC TSR: Start-IrcTsr.ps1 + Watch-CursorIrc
+
+`tools/Start-IrcTsr.ps1`, `_Start-IrcTsr-ionos.ps1`; wake
+`^AGENT_LOOP_WAKE_irc-tsr`; `Watch-CursorIrc` starts TSR not bare listen.
+Skills `agentic-irc`, `bob-irc`.
+
+## 2026-09-21 — IRC: ALWAYS listen + Watch-CursorIrc
+
+`agentic-irc` / `bob-irc`: `irc_listen.py` must stay up on fleet Cursor seats
+(`cursor-<machine-id>`, `~/.agentic-irc-cursor`). `tools/Watch-CursorIrc.ps1`,
+`_Watch-CursorIrc-ionos.ps1`. Still MUST reply via outbox same turn.
+
+## 2026-09-21 — FR queue: receive order until PASS-nits
+
+One FR at a time per repo: user-stated sequence or lowest open
+`feature-request` #; do not start the next loop until the current board is
+`phase=pass` (MRB PASS-nits). Replaces “fan out all open FRs after DONE”.
+Skills: `bob-job-loop`, `bob-build-loop`, `bob-hostile-mrb`, `cursor-mrb-dev`.
+
+## 2026-09-21 — GitHub hygiene scripts + PASS-nits merge gate
+
+`Start-BobMrb.ps1` requires `-PrUrl`; merges with `gh pr merge --merge`
+before posting PASS-nits. Operator: `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1`. Skills:
+`bob-job-loop`, `bob-hostile-mrb`, `bob-build-loop`.
+
 ## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
 
 `bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
@@ -241,12 +280,11 @@ Harvest from live bob-job loops:
 - `tools/run-bob-build-loop.ps1` and `tools/start-bob-build-loop-issue.ps1`:
   GCM / credential-manager for `GH_TOKEN` (do not rely on interactive
   `git credential fill` when `gh` is the helper).
-- `bob-job-loop`: unique LogPath, recover missed PR, after DONE hand
-  remaining open `feature-request` issues to new workers.
-- **New MRB rule:** pass to a **new** worker on MRB FAIL **or** when any
-  open feature-request / Missing-features issues remain. Homes:
-  `bob-hostile-mrb`, `bob-job-loop`, pointer `bob-build-loop`,
-  `cursor-mrb-dev`.
+- `bob-job-loop`: unique LogPath, recover missed PR; after DONE start **next**
+  queued FR only (see 2026-09-21 FR queue harvest).
+- **MRB rule:** new worker on MRB FAIL (FIX). After PASS-nits, **one** next FR
+  in receive order — not parallel FR loops. Homes: `bob-hostile-mrb`,
+  `bob-job-loop`, `bob-build-loop`, `cursor-mrb-dev`.
 - FIX #112: `ConvertFrom-BobGhJsonList` keeps issue `body`; restore `-Pr`
   to `Start-BobMrbHandoff`; Test-Pack BT0loop10/11. Audit write must not
   abort DONE.
@@ -474,15 +512,15 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
   state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
   commit to main.
 
+## 2026-09-24 -- honesty box foundation (harvest-agent-skills)
 
-## 2026-09-23 � watch seat IRC from watcher + ensure on launch
+Replaced `.grok/skills/harvest-agent-skills/SKILL.md` with the CAST IRON
+honesty box. Frontmatter `github:` is
+`https://github.com/SimonBarnett/agentic_build`. Report order stays PR, else
+a `harvest:` / `FR:` issue; never push harvest to main. Short addenda keep
+`tools/Harvest-AgentSkills.ps1`, `tools/Install-SkillHarvest.ps1`, the
+Test-Pack BT0 list, no product dispatch (`grok-build-fleet` /
+`bob-build-dispatch`), and skip `tools/_Watch-*.ps1`. One-line foundation
+pointer on `bob-irc` and `visionary` only.
 
-Simon: seat is not on IRC by probing logs; AgentMonitor forwards FROM.
-Systray Agents launch must Ensure-WatchIrcSeat (agent+listen, all channels).
-Homes: AgentMonitor watch-seat / agent-monitor; tray skill agent-monitor-setup.
 
-## 2026-09-23 � next-free watch slots + scoped orphan prune
-
-Simon: seats 3/4 must open; orphan python/nodes terminated on start without
-killing other seats. Home: AgentMonitor Watch-AgentHealth Bind-WatchSlot;
-tray skill agent-monitor-setup.

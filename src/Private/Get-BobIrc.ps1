@@ -354,7 +354,7 @@ function Get-BobDigestUrl {
     foreach ($cand in @($env:AGENTIC_IRC_DIGEST_URL, $env:BOB_DIGEST_URL)) {
         if ($cand -and [string]$cand.Trim()) { return [string]$cand.Trim() }
     }
-    return 'http://bob.ntsa.uk/bob/v1/digest'
+    return 'https://irc.ntsa.uk/bob/v1/report'
 }
 
 function Read-BobReportDigestHttp {
@@ -922,6 +922,71 @@ function Add-BobIrcOutboxChannelLine {
     Add-Content -Path $outbox -Value ([string]$Line).Trim() -Encoding utf8
 }
 
+function Add-BobIrcBobiversePrivmsg {
+    param([Parameter(Mandatory)][string]$Text)
+    $chan = '#bobiverse'
+    $safe = ([string]$Text).Trim()
+    if (-not $safe) { return }
+    Add-BobIrcOutboxChannelLine ("PRIVMSG $chan :$safe")
+}
+
+function Invoke-BobIrcDrainOutboxLines {
+    param(
+        [string[]]$MatchPrefix,
+        [string]$SentLogName = 'outbox-drained.txt'
+    )
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home'; drained = @() } }
+    $outbox = Join-Path $home 'outbox.txt'
+    if (-not (Test-Path -LiteralPath $outbox)) {
+        return [pscustomobject]@{ ok = $true; drained = @() }
+    }
+    $lines = @(Get-Content -LiteralPath $outbox -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return [pscustomobject]@{ ok = $true; drained = @() } }
+    $keep = New-Object System.Collections.Generic.List[string]
+    $drained = @()
+    foreach ($line in $lines) {
+        $t = ([string]$line).Trim()
+        if (-not $t) { continue }
+        $hit = $false
+        foreach ($pfx in @($MatchPrefix)) {
+            if ($pfx -and $t.StartsWith([string]$pfx)) { $hit = $true; break }
+        }
+        if ($hit) {
+            $drained += $t
+        }
+        else {
+            [void]$keep.Add($t)
+        }
+    }
+    if ($drained.Count -gt 0) {
+        Set-Content -LiteralPath $outbox -Value @($keep) -Encoding utf8
+        $sentPath = Join-Path $home $SentLogName
+        foreach ($d in $drained) { Add-Content -LiteralPath $sentPath -Value $d -Encoding utf8 }
+    }
+    return [pscustomobject]@{ ok = $true; drained = @($drained) }
+}
+
+function Sync-BobIrcChannelOpsWire {
+    [CmdletBinding()]
+    param()
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    $path = Join-Path $home 'channel-ops.json'
+    $map = Read-JsonFile $path
+    if (-not $map) { return [pscustomobject]@{ ok = $false; error = 'no_manifest' } }
+    $queued = @()
+    foreach ($prop in @($map.PSObject.Properties)) {
+        $chan = [string]$prop.Name
+        $nick = [string]$prop.Value
+        if (-not $chan -or -not $nick) { continue }
+        $line = "MODE $chan +o $nick"
+        Add-BobIrcOutboxChannelLine $line
+        $queued += $line
+    }
+    return [pscustomobject]@{ ok = $true; lines = @($queued) }
+}
+
 function ConvertFrom-BobIrcTrayLine {
     param([string]$Text)
     $prefix = Get-BobIrcTrayPrefix
@@ -1098,21 +1163,30 @@ function Resolve-BobCursorPoolSeatId {
 
 function Normalize-BobCursorSpendingGroupId {
     param([string]$Raw)
-    if (-not $Raw) { return 'low-cost-models' }
+    if (-not $Raw) { return 'auto' }
     $s = [string]$Raw.Trim().ToLowerInvariant()
     switch ($s) {
         'grok-chat' { return 'grok-chat' }
         'grok_chat' { return 'grok-chat' }
+        'grok-weekly' { return 'grok-chat' }
+        'grok_weekly' { return 'grok-chat' }
+        'sand' { return 'grok-chat' }
         'high-cost-models' { return 'high-cost-models' }
         'high_cost_models' { return 'high-cost-models' }
-        'low-cost-models' { return 'low-cost-models' }
-        'low_cost_models' { return 'low-cost-models' }
-        'cursor-models' { return 'low-cost-models' }
+        'other-models' { return 'high-cost-models' }
+        'other_models' { return 'high-cost-models' }
+        'auto' { return 'auto' }
+        'low-cost-models' { return 'auto' }
+        'low_cost_models' { return 'auto' }
+        'cursor-models' { return 'auto' }
+        'on-demand' { return 'auto' }
+        'ondemand' { return 'auto' }
+        'overage' { return 'auto' }
         default {
-            if ($s -match 'grok\s*chat') { return 'grok-chat' }
-            if ($s -match 'high') { return 'high-cost-models' }
-            if ($s -match 'low') { return 'low-cost-models' }
-            return 'low-cost-models'
+            if ($s -match 'grok') { return 'grok-chat' }
+            if ($s -match 'high|other') { return 'high-cost-models' }
+            if ($s -match 'auto|low|cursor|on[- ]?demand|overage|spend') { return 'auto' }
+            return 'auto'
         }
     }
 }
@@ -1147,11 +1221,26 @@ function Apply-BobIrcDigestCursorPools {
         if ($pool.group) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group) }
         elseif ($pool.group_id) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group_id) }
         elseif ($label) { $groupId = Normalize-BobCursorSpendingGroupId $label }
-        if ($groupId) {
-            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
+        # Cursor spending groups are fleet-shared (MarchHare has no local Cursor login).
+        # Digest pool ids are cursor-models/other-models/grok-weekly - fan out to every seat.
+        $seatTargets = @()
+        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            $seatTargets += ,$seatId
         }
-        if (-not $groupId -or $groupId -eq 'low-cost-models') {
-            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $rem -PeriodEnd $period -Label $label
+        else {
+            foreach ($seat in @(Get-BobSeatConfig)) {
+                if ($seat -and $seat.id) { $seatTargets += ,[string]$seat.id }
+            }
+            if ($seatTargets.Count -eq 0 -and $seatId) { $seatTargets += ,$seatId }
+        }
+        foreach ($sid in $seatTargets) {
+            if (-not $sid) { continue }
+            if ($groupId) {
+                Save-BobCursorPoolGroupForSeat -SeatId $sid -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
+            }
+            if (-not $groupId -or $groupId -eq 'low-cost-models' -or $groupId -eq 'auto') {
+                Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $rem -PeriodEnd $period -Label $label
+            }
         }
     }
 }
@@ -1817,6 +1906,7 @@ function Get-BobDigestWebhookFingerprint {
         [string]$Doc.status
         [string]$Doc.responding
         [string]$Doc.remaining_pct
+        $(if ($Doc.pcent) { ($Doc.pcent | ConvertTo-Json -Compress -Depth 5) } else { '' })
         $jobsJson
     )
     return ($parts -join '|')
@@ -1845,6 +1935,7 @@ function Build-BobDigestWebhookMergePayload {
     if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
     if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
     if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
+    if ($Doc.pcent) { $payload.pcent = $Doc.pcent }
     return [pscustomobject]$payload
 }
 
@@ -2016,6 +2107,31 @@ function Write-BobIrcStatus {
         if ($primary.claimedAt) { $startedAt = [string]$primary.claimedAt }
         elseif ($primary.createdAt) { $startedAt = [string]$primary.createdAt }
     }
+    $pcent = $null
+    try {
+        if ($cw -and $cw.cursor_spending_groups) {
+            $pcentMap = [ordered]@{}
+            foreach ($g in @($cw.cursor_spending_groups)) {
+                if (-not $g) { continue }
+                $gid = [string]$g.id
+                if (-not $gid) { continue }
+                $key = $gid
+                if ($gid -eq 'auto' -or $gid -eq 'low-cost-models') { $key = 'cursor-models' }
+                elseif ($gid -eq 'high-cost-models') { $key = 'high-cost-models' }
+                elseif ($gid -eq 'grok-chat') { $key = 'grok-chat' }
+                if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+                    $pcentMap[$key] = [int]$g.remaining_pct
+                }
+            }
+            if ($null -ne $cw.sand_remaining_pct -and [string]$cw.sand_remaining_pct -ne '') {
+                $pcentMap['grok-chat'] = [int]$cw.sand_remaining_pct
+            }
+            if ($null -ne $cw.on_demand_remaining_pct -and [string]$cw.on_demand_remaining_pct -ne '') {
+                $pcentMap['on-demand'] = [int]$cw.on_demand_remaining_pct
+            }
+            if ($pcentMap.Count -gt 0) { $pcent = [pscustomobject]$pcentMap }
+        }
+    } catch { $pcent = $null }
     $doc = [pscustomobject]@{
         ok                     = $true
         id                     = $id
@@ -2028,6 +2144,7 @@ function Write-BobIrcStatus {
         remaining_pct          = $cursorRemainingPct
         account_remaining_pct  = $cursorRemainingPct
         cursor_remaining_pct   = $cursorRemainingPct
+        pcent                  = $pcent
         running                = @($running).Count + $liveN
         queued                 = @($inbox).Count
         lastSeen               = $seen
@@ -2040,6 +2157,14 @@ function Write-BobIrcStatus {
         responding             = $responding
         source                 = 'irc'
     }
+    try {
+        $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @())
+        if ($poolRows.Count -gt 0) {
+            $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($poolRows) -Force
+            Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($poolRows)
+        }
+    }
+    catch { }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $peerPath = Join-Path $dir ($id + '.json')

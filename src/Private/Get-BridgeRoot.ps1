@@ -52,7 +52,17 @@ function Get-WorkerDir {
 function Read-JsonFile {
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path $Path)) { return $null }
-    $raw = [IO.File]::ReadAllText($Path)
+    $raw = $null
+    for ($i = 0; $i -lt 8; $i++) {
+        try {
+            $raw = [IO.File]::ReadAllText($Path)
+            break
+        }
+        catch {
+            if ($i -ge 7) { throw }
+            Start-Sleep -Milliseconds 60
+        }
+    }
     if (-not $raw.Trim()) { return $null }
     return $raw | ConvertFrom-Json
 }

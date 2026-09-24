@@ -37,6 +37,7 @@ $prompt = $null
 $sessionId = $null
 $resumeId = $null
 $cwd = $null
+$persistent = $false
 $i = 0
 $positional = New-Object System.Collections.Generic.List[string]
 
@@ -67,6 +68,10 @@ while ($i -lt $argv.Count) {
         '--cwd' { $cwd = Take-Value $i; $i++; continue }
         '--output-format' { $i++; continue }
         '--rules' { $i++; continue }
+        '--persistent' {
+            [Console]::Error.WriteLine('fake-grok: --persistent is not a real grok flag')
+            exit 2
+        }
         '--max-turns' { $i++; continue }
         '--version' { Write-Output 'fake-0.0.1'; exit 0 }
         '--no-auto-update' { continue }
@@ -77,6 +82,13 @@ while ($i -lt $argv.Count) {
         default {
             if ($a -notmatch '^-') { [void]$positional.Add($a) }
         }
+    }
+}
+
+if (-not $prompt -and $positional.Count -ge 1) {
+    $knownCmd = @('version', 'sessions', 'export', 'agent', 'inspect')
+    if ($knownCmd -notcontains [string]$positional[0]) {
+        $prompt = ($positional -join ' ')
     }
 }
 
@@ -118,6 +130,64 @@ if ($positional.Count -ge 1) {
             Write-Output ((@{ ok = $true; fake = $true; cwd = $cwd; version = 'fake-0.0.1' } | ConvertTo-Json -Compress))
             exit 0
         }
+    }
+}
+
+$singleTurn = $false
+if ($argv -contains '-p' -or $argv -contains '--single') { $singleTurn = $true }
+
+if (-not $singleTurn -and $prompt -and ($sessionId -or $env:BOB_REPO_PAIR_WORKER_DIR)) {
+    $persistent = $true
+}
+
+if ($persistent) {
+    if (-not $sessionId) { $sessionId = [guid]::NewGuid().ToString() }
+    if ($prompt) { Save-Session -Id $sessionId -Prompt $prompt }
+    $hbPath = $env:BOB_REPO_PAIR_HEARTBEAT_PATH
+    $manifestPath = $env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH
+    $workerDir = $env:BOB_REPO_PAIR_WORKER_DIR
+    $role = $env:BOB_REPO_PAIR_ROLE
+    if (-not $role) { $role = 'dev' }
+    $shopNick = $env:BOB_REPO_PAIR_SHOP_NICK
+    $shopChan = $env:BOB_REPO_PAIR_SHOP_CHANNEL
+    if ($manifestPath -and $shopNick -and $shopChan) {
+        $manifest = @{
+            channel       = $shopChan
+            nick          = $shopNick
+            sessionId     = $sessionId
+            joinedAt      = [DateTime]::UtcNow.ToString('o')
+            policy        = 'shop_only_no_bobiverse'
+            joinKind      = 'irc_agent_worker'
+            shopNickLive  = $true
+            ircAgentPid   = $PID
+        }
+        $manifestDir = Split-Path -Parent $manifestPath
+        if ($manifestDir -and -not (Test-Path -LiteralPath $manifestDir)) {
+            New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+        }
+        [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Compress))
+    }
+    $lastTask = $null
+    while ($true) {
+        if ($hbPath) {
+            $hb = @{ seat = $role; sessionId = $sessionId; at = [DateTime]::UtcNow.ToString('o'); agentPid = $PID }
+            [IO.File]::WriteAllText($hbPath, ($hb | ConvertTo-Json -Compress))
+        }
+        if ($workerDir) {
+            $inbox = Join-Path $workerDir 'inbox\chair-task.txt'
+            if (Test-Path -LiteralPath $inbox) {
+                try {
+                    $task = ([IO.File]::ReadAllText($inbox)).Trim()
+                    if ($task -and $task -ne $lastTask) {
+                        $lastTask = $task
+                        $touch = Join-Path $workerDir 'inbox\chair-touched.txt'
+                        [IO.File]::WriteAllText($touch, $task)
+                    }
+                }
+                catch { }
+            }
+        }
+        Start-Sleep -Seconds 15
     }
 }
 
