@@ -16,6 +16,14 @@ Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`.
 
+## Shop IRC (every MRB worker)
+
+Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
+JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
+title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
+Conversation stdout → shop. Thinking/tool traces → open Query only.
+On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
+
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
