@@ -479,3 +479,15 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
   state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
   commit to main.
 
+## 2026-09-24 -- honesty box foundation (harvest-agent-skills)
+
+Replaced `.grok/skills/harvest-agent-skills/SKILL.md` with the CAST IRON
+honesty box. Frontmatter `github:` is
+`https://github.com/SimonBarnett/agentic_build`. Report order stays PR, else
+a `harvest:` / `FR:` issue; never push harvest to main. Short addenda keep
+`tools/Harvest-AgentSkills.ps1`, `tools/Install-SkillHarvest.ps1`, the
+Test-Pack BT0 list, no product dispatch (`grok-build-fleet` /
+`bob-build-dispatch`), and skip `tools/_Watch-*.ps1`. One-line foundation
+pointer on `bob-irc` and `visionary` only.
+
+
