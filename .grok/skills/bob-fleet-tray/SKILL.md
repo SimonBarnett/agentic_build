@@ -104,7 +104,7 @@ Show weekly reset next to the meter, not only in digests:
 - Durable cache: `~\\.grok\\bob-bridge\\seat-period-end.json` (by_machine + by_seat) so TipForm keeps peer reset dates when IRC peer JSON is wiped. Import must **not** wipe
   an existing peer `period_end` when an older POINT lacks `reset=`.
 
-Example headings:
+Example control headings:
 
 `grok chat  0%  reset 23 Sep`
 

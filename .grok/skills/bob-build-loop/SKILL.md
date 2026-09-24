@@ -16,7 +16,8 @@ This skill does **not** define its own workflow. Use the map in `README.md`:
 | Build-and-test plan + enqueue worker | `bob-build-dispatch` |
 | Run until MRB PASS-nits (`Start-BobBuildLoop.ps1`) | `bob-job-loop` |
 | Hand off hostile MRB / FIX | `bob-hostile-mrb` or `cursor-mrb-dev` |
-| Start/monitor fleet jobs, heal watcher | `grok-build-fleet` |
+| `grok-build-fleet` | Start/monitor fleet jobs, heal watcher | `grok-build-fleet` |
+| Two persistent dev+MRB per repo (#175) | `bob-repo-pair` / `Start-BobRepoPair` |
 
 Hard rules (unchanged): workers open PRs; never push `main`; never merge your
 own PR; PASS-nits merge is enforced by `Start-BobMrb.ps1 -PrUrl` (and the loop

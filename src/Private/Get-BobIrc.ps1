@@ -918,6 +918,71 @@ function Add-BobIrcOutboxChannelLine {
     Add-Content -Path $outbox -Value ([string]$Line).Trim() -Encoding utf8
 }
 
+function Add-BobIrcBobiversePrivmsg {
+    param([Parameter(Mandatory)][string]$Text)
+    $chan = '#bobiverse'
+    $safe = ([string]$Text).Trim()
+    if (-not $safe) { return }
+    Add-BobIrcOutboxChannelLine ("PRIVMSG $chan :$safe")
+}
+
+function Invoke-BobIrcDrainOutboxLines {
+    param(
+        [string[]]$MatchPrefix,
+        [string]$SentLogName = 'outbox-drained.txt'
+    )
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home'; drained = @() } }
+    $outbox = Join-Path $home 'outbox.txt'
+    if (-not (Test-Path -LiteralPath $outbox)) {
+        return [pscustomobject]@{ ok = $true; drained = @() }
+    }
+    $lines = @(Get-Content -LiteralPath $outbox -ErrorAction SilentlyContinue)
+    if ($lines.Count -eq 0) { return [pscustomobject]@{ ok = $true; drained = @() } }
+    $keep = New-Object System.Collections.Generic.List[string]
+    $drained = @()
+    foreach ($line in $lines) {
+        $t = ([string]$line).Trim()
+        if (-not $t) { continue }
+        $hit = $false
+        foreach ($pfx in @($MatchPrefix)) {
+            if ($pfx -and $t.StartsWith([string]$pfx)) { $hit = $true; break }
+        }
+        if ($hit) {
+            $drained += $t
+        }
+        else {
+            [void]$keep.Add($t)
+        }
+    }
+    if ($drained.Count -gt 0) {
+        Set-Content -LiteralPath $outbox -Value @($keep) -Encoding utf8
+        $sentPath = Join-Path $home $SentLogName
+        foreach ($d in $drained) { Add-Content -LiteralPath $sentPath -Value $d -Encoding utf8 }
+    }
+    return [pscustomobject]@{ ok = $true; drained = @($drained) }
+}
+
+function Sync-BobIrcChannelOpsWire {
+    [CmdletBinding()]
+    param()
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    $path = Join-Path $home 'channel-ops.json'
+    $map = Read-JsonFile $path
+    if (-not $map) { return [pscustomobject]@{ ok = $false; error = 'no_manifest' } }
+    $queued = @()
+    foreach ($prop in @($map.PSObject.Properties)) {
+        $chan = [string]$prop.Name
+        $nick = [string]$prop.Value
+        if (-not $chan -or -not $nick) { continue }
+        $line = "MODE $chan +o $nick"
+        Add-BobIrcOutboxChannelLine $line
+        $queued += $line
+    }
+    return [pscustomobject]@{ ok = $true; lines = @($queued) }
+}
+
 function ConvertFrom-BobIrcTrayLine {
     param([string]$Text)
     $prefix = Get-BobIrcTrayPrefix

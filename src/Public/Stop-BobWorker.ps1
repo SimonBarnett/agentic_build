@@ -21,8 +21,14 @@ function Stop-BobWorker {
     if ($agent -and (Test-GrokBotAvailable)) {
         try { Invoke-GrokBotApi -Action interrupt -Agent $agent | Out-Null } catch { }
     }
+    if ($status -and $status.shopJoinPid) {
+        try { Stop-ProcessTree -ProcessId ([int]$status.shopJoinPid) } catch { }
+    }
     if ($status -and $status.pid) {
         try { Stop-ProcessTree -ProcessId ([int]$status.pid) } catch { }
+    }
+    if ($status -and $status.agentPid -and $status.agentPid -ne $status.pid) {
+        try { Stop-ProcessTree -ProcessId ([int]$status.agentPid) } catch { }
     }
     if ($status) {
         $status.state = 'stopped'

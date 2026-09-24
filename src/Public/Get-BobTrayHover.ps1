@@ -1064,6 +1064,105 @@ function ConvertFrom-BobReportDigestTask {
     }
 }
 
+function Format-BobCursorControlPoolPctLabel {
+    param($RemainingPct)
+    if ($null -eq $RemainingPct) { return 'n/a' }
+    return ('{0}%' -f [int]$RemainingPct)
+}
+
+function Format-BobCursorControlPoolHeading {
+    param(
+        [string]$GroupLabel,
+        [string]$PctLabel,
+        [string]$ResetLabel
+    )
+    $heading = ('{0}  {1}' -f $GroupLabel, $PctLabel)
+    if ($ResetLabel) { $heading = ('{0}  {1}' -f $heading, $ResetLabel) }
+    return $heading
+}
+
+function Select-BobCursorGroupRemainMinimum {
+    param([AllowNull()]$Values)
+    $known = @()
+    foreach ($v in @($Values)) {
+        if ($null -eq $v) { continue }
+        try { $known += ,[int]$v } catch { }
+    }
+    if ($known.Count -eq 0) { return $null }
+    return ($known | Measure-Object -Minimum).Minimum
+}
+
+function Get-BobCursorGroupPeriodEndForTray {
+    param(
+        $LocalCursorDoc,
+        $SeatCacheEntry,
+        [string]$GroupId,
+        [switch]$OnSeat
+    )
+    $gid = [string]$GroupId
+    if ($OnSeat -and $LocalCursorDoc) {
+        if ($gid -eq 'grok-chat') {
+            if ($LocalCursorDoc.sand_period_end) { return [string]$LocalCursorDoc.sand_period_end }
+            if ($LocalCursorDoc.period_end) { return [string]$LocalCursorDoc.period_end }
+        }
+        elseif ($LocalCursorDoc.period_end) {
+            return [string]$LocalCursorDoc.period_end
+        }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.groups) {
+        $g = $SeatCacheEntry.groups.$gid
+        if ($g -and $g.period_end) { return [string]$g.period_end }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.period_end -and $gid -ne 'grok-chat') {
+        return [string]$SeatCacheEntry.period_end
+    }
+    return $null
+}
+
+function Resolve-BobCursorPcentRowMapping {
+    param($Pc, [string]$MachineId)
+    if (-not $Pc) { return $null }
+    $src = [string]$Pc.source
+    if (-not $src) { return $null }
+    $pct = ConvertTo-BobTrayIntOrNull $Pc.pct
+    if ($null -eq $pct) { return $null }
+    $reportMac = [string]$Pc.machine
+    if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
+    $seatId = $src
+    $groupId = $null
+    if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
+        $groupId = 'low-cost-models'
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
+        $groupId = $src
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
+        $seatId = $src
+        $groupId = 'low-cost-models'
+    }
+    if (-not $groupId) { return $null }
+    return [pscustomobject]@{ seat_id = $seatId; group_id = $groupId; pct = $pct }
+}
+
+function Set-BobCursorControlPoolRow {
+    param($Pool, $RemainingPct, [string]$PeriodEnd)
+    $resetLabel = Format-BobResetLabel $PeriodEnd
+    $pctLabel = Format-BobCursorControlPoolPctLabel $RemainingPct
+    $Pool.remaining_pct = $RemainingPct
+    $Pool.period_end = $PeriodEnd
+    $Pool.reset_label = $resetLabel
+    $Pool.pct_label = $pctLabel
+    $Pool.heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
+}
+
 function Get-BobCursorPoolsForTray {
     param(
         [string]$MachineId,
@@ -1192,6 +1291,8 @@ function Get-BobCursorPoolsForTray {
                 Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $pct
             }
         }
+        Set-BobCursorControlPoolRow -Pool $row -RemainingPct $remain -PeriodEnd $periodEnd
+        $pools += ,$row
     }
     return $pools
 }
