@@ -1,7 +1,8 @@
 # Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 [CmdletBinding()]
 param(
-    [string]$RepoRoot
+    [string]$RepoRoot,
+    [string]$OnlyCase
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,6 +48,10 @@ function Import-Bridge {
     }
     $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
+    # Default digest URL is the live report endpoint. Keep the pack on local
+    # bob-peers fixtures; a refused port fails fast and falls back to the file.
+    Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+    $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/bob/v1/digest'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
@@ -84,6 +89,7 @@ $script:Results = @()
 
 function Invoke-Case {
     param([string]$Id, [scriptblock]$Body)
+    if ($OnlyCase -and $Id -ne $OnlyCase) { return }
     $bridgeRoot = $null
     try {
         $bridgeRoot = New-TestRoot
@@ -119,20 +125,28 @@ function Invoke-Case {
         $env:BOB_FAKE_GH_LOG = $null
         $env:BOB_FAKE_GH_QUIET = $null
         $env:BOB_MACHINE_ID = $null
+        $env:BOB_DIGEST_URL = $null
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
         $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
         $env:BOB_GROK_TALK_TEST_THROW = $null
         $env:AGENTIC_IRC_HOME = $null
+        $env:BOB_REPORT_CAPTURE_DIR = $null
+        $env:BOB_REPO_PAIR_IDLE_SEC = $null
+        $env:BOB_REPORT_URL = $null
     }
 }
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'watch-agent-health', 'setup-github-cursor', 'visionary')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'cleanup-orphans', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'watch-agent-health', 'setup-github-cursor', 'visionary')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'https://github\.com/SimonBarnett/agentic_build') { throw 'harvest-agent-skills must name home GitHub' }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'honesty box') { throw 'harvest-agent-skills must keep the honesty box' }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
+        if ($n -eq 'cleanup-orphans' -and $raw -notmatch 'Cleanup-OrphanAgents') { throw 'cleanup-orphans skill must document Cleanup-OrphanAgents.ps1' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }
         if ($n -eq 'setup-github-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'setup-github-webhooks must document git URL' }
         if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
@@ -741,10 +755,13 @@ Invoke-Case 'BT0l tray hover' {
     if (-not $watchFn.Success) { throw 'Start-BobTrayAgentWatch function not found' }
     $watchBody = $watchFn.Value
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
+    if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
+    if ($watchBody -notmatch "'-Model',\s*'auto'|\"-Model\",\s*\"auto\"|-Model.*auto") { throw 'systray Cursor Agents must pass -Model auto' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
+    if ($traySrc -notmatch 'ConvertTo-BobTrayTipVisibleImage') { throw 'agent icons must plate dark exe glyphs for dark tip' }
     $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
     if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
     if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }
@@ -1522,10 +1539,24 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     $env:BOB_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_HOME = $ircHome
 
+    $ircPools = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircPools -notmatch 'https://irc\.ntsa\.uk/bob/v1/report') {
+        throw 'Get-BobDigestUrl default must be the report endpoint'
+    }
+
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools=$(@($h.cursor_pools).Count) expected 3 groups" }
-    if ($txt -notmatch '(?m)^[ ]+low cost models  9%') { throw "ionos digest pcent must paint local low cost models bar: $txt" }
+    # Fleet-shared Cursor groups: peer pcent is not dropped when machine != local.
+    # Fixture order ends on ce-priority-dev1 cursor-models 0, so the auto bar is 0%.
+    if ($txt -notmatch '(?m)^[ ]+auto  0%') { throw "fleet digest pcent must paint auto bar: $txt" }
+    Remove-Item -LiteralPath (Join-Path $bridgeRoot 'cursor-pools.json') -ErrorAction SilentlyContinue
+    $env:BOB_MACHINE_ID = 'marchhare'
+    $hMh = Get-BobTrayHover
+    $txtMh = [string]$hMh.jobs_text
+    if ($txtMh -notmatch '(?m)^[ ]+auto  0%') { throw "marchhare must consume peer cursor-models pcent: $txtMh" }
+    if ($txtMh -match '(?m)^[ ]+auto  n/a') { throw "marchhare auto bar still n/a: $txtMh" }
+    $env:BOB_MACHINE_ID = 'ionos'
     if ($txt -match '(?m)^[ ]+Club Madeira  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
     if ($txt -match '(?m)^[ ]+ntsa  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
     if ($txt -notmatch 'deadbee') { throw "ionos digest sha missing: $txt" }
@@ -1773,6 +1804,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
   "used_pct": 5,
   "remaining_pct": 95,
   "period_end": "2026-10-16T00:00:00Z",
+  "sand_period_end": "2026-09-23T00:00:00Z",
   "sand_used_pct": 25,
   "sand_remaining_pct": 75,
   "cursor_spending_groups": [
@@ -1846,6 +1878,8 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
     if ($traySrc -notmatch 'function Set-BobTrayHelpTip') { throw 'TipForm ? must use Set-BobTrayHelpTip (MouseHover Show)' }
     if ($traySrc -notmatch 'RightText') { throw 'Cursor overspend must sit on section header RightText' }
+    if ($traySrc -notmatch 'TextRenderer::MeasureText|TextRenderer\]::MeasureText') { throw 'overspend must MeasureText for right-align inside tile host' }
+    if ($traySrc -notmatch '\$indent = 18') { throw 'Cursor pools and machines must share indent 18' }
     if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
@@ -1854,6 +1888,14 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     }
     $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
     if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
+
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'is operational') { throw 'first IRC peer write must announce machine is operational' }
+    if ($ircSrc -notmatch "status\s*=\s*'operational'") { throw 'digest webhook status must be operational' }
+
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
+    if ($hoverSrc -notmatch 'sand_period_end') { throw 'grok chat reset must prefer sand_period_end' }
 }
 
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
@@ -3290,6 +3332,55 @@ Invoke-Case 'BT118c pass-nits merge fail leaves boards open' {
     }
 }
 
+Invoke-Case 'BT119a Start-BobMrb PASS-nits requires PrUrl' {
+    param($bridgeRoot)
+    $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+    try {
+        & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' 2>&1 | Out-Null
+        throw 'PASS-nits without PrUrl must throw'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'requires -PrUrl') { throw $_.Exception.Message }
+    }
+}
+
+Invoke-Case 'BT119b Start-BobMrb PASS-nits merges before issue create' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-pass-merge.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","merged":false}'
+    try {
+        $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+        $r = & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' -PrUrl 'https://github.com/fixture/repo/pull/2'
+        if (-not $r.ok) { throw 'Start-BobMrb failed' }
+        $sawMerge = $false
+        $sawCreateAfterMerge = $false
+        foreach ($line in @(Get-Content $log)) {
+            $row = $line | ConvertFrom-Json
+            $a = [string]$row.argv
+            if ($a -match '(?i)\bpr\s+merge\b') { $sawMerge = $true }
+            if ($a -match '(?i)\bissue\s+create\b') {
+                if (-not $sawMerge) { throw 'issue create before pr merge' }
+                $sawCreateAfterMerge = $true
+            }
+        }
+        if (-not $sawCreateAfterMerge) { throw 'expected pr merge then issue create in fake gh log' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
 Invoke-Case 'BT118d pass-nits finish without gh' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -3834,6 +3925,221 @@ Invoke-Case 'BT0house agent export list' {
     if ($agent -notmatch 'Select-BobGitWorker') { throw 'agent_readme missing agent export list' }
     if ($agent -notmatch 'Get-BobTrayHover') { throw 'agent_readme must classify tray exports' }
     if ($agent -notmatch 'job-audit') { throw 'agent_readme must document job-audit.jsonl' }
+}
+
+# --- BT0p21 control systray Cursor meters (issue #175 P21) ---
+Invoke-Case 'BT0p21 control systray cursor meters' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ce-priority-dev1'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ce-priority-dev1 -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-p21-control'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    @'
+{
+  "machines": {
+    "ce-priority-dev1": {
+      "pcent": { "cursor-models": 0 },
+      "running": 0,
+      "jobs": []
+    }
+  }
+}
+'@ | Set-Content -Path (Join-Path $ircHome 'bob-peers\_report-digest.json') -Encoding utf8
+
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools count=$(@($h.cursor_pools).Count) want 3 control groups" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  0%') { throw "ntsa box must show 0% not n/a: $txt" }
+    if ($txt -match '(?m)low cost models  n/a') { throw "zero remaining must not render n/a: $txt" }
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -notmatch 'Format-BobCursorControlPoolHeading') { throw 'hover must format control Cursor pool headings' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
+}
+
+# --- BT0pair175 bob two persistent workers (issue #175 / FIX #177) ---
+Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'flamingo'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    $cap = Join-Path $bridgeRoot 'webhook-cap'
+    $env:BOB_REPORT_CAPTURE_DIR = $cap
+    $env:BOB_REPO_PAIR_IDLE_SEC = '120'
+
+    $pairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobRepoPair.ps1') -Raw
+    $pairWorkerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobRepoPairWorker.ps1') -Raw
+    if ($pairSrc -match '(?<!Stop-)Start-BobWorker' -or $pairWorkerSrc -match '(?<!Stop-)Start-BobWorker') {
+        throw 'repo pair must not spawn oneshot Start-BobWorker'
+    }
+    if ($pairWorkerSrc -match 'shop-joined-[^\s''"]+\.flag') { throw 'JOIN must not use shop-joined flag files' }
+    if ($pairWorkerSrc -notmatch 'irc_agent') { throw 'shop JOIN must start irc_agent' }
+    if ($pairWorkerSrc -match 'seat-supervisor\.ps1') { throw 'repo pair must not use heartbeat supervisor instead of agent' }
+    if ($pairWorkerSrc -match "seat-cursor[^`n]*'-p'") { throw 'repo pair cursor seat must not use -p oneshot launch' }
+    if ($pairWorkerSrc -match 'Get-BobArgv' -and $pairWorkerSrc -notmatch 'Get-BobRepoPairArgv') { throw 'repo pair must use Get-BobRepoPairArgv not oneshot Get-BobArgv' }
+    if ($pairWorkerSrc -match 'irc_agent_stub|shop-irc-loop') { throw 'repo pair must not use IRC JOIN stub/sidecar' }
+    if ($pairWorkerSrc -notmatch 'bob-build-dispatch') { throw 'dev seat must bind build skills' }
+    if ($pairWorkerSrc -notmatch '--rules') { throw 'cursor persistent seat must pass --rules' }
+    if ($pairWorkerSrc -notmatch 'grokbot') { throw 'seat agent must implement grokbot path' }
+    $grokPairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-Grok.ps1') -Raw
+    if ($grokPairSrc -match "Add\('--persistent'\)") { throw 'Get-BobRepoPairArgv must not emit invented grok --persistent' }
+    $fakeGrokSrc = Get-Content (Join-Path $RepoRoot 'tools\Fake-Grok.ps1') -Raw
+    if ($fakeGrokSrc -match '--persistent' -and $fakeGrokSrc -notmatch 'not a real grok flag') { throw 'Fake-Grok must reject invented --persistent' }
+    if ($pairWorkerSrc -notmatch "cursor-agent', 'persist'|cursor-agent', `"persist`"" -and $pairWorkerSrc -notmatch "'persist'") { throw 'cursor seat must launch cursor-agent persist subcommand' }
+    if ($pairSrc -notmatch 'Get-BobBobiverseAgentsIdleOverSec') { throw 'chair must wire idle-over-20s bobiverse agents' }
+    if ($pairSrc -notmatch 'Invoke-BobIrcDrainOutboxLines') { throw 'bobiverse digest must drain PRIVMSG from outbox' }
+    if ($pairSrc -notmatch 'TOPIC \$chan') { throw 'shop channel description must queue IRC TOPIC' }
+    if ($pairSrc -notmatch 'Sync-BobIrcChannelOpsWire') { throw 'channel ops must MODE on wire not JSON copy only' }
+    if ($pairWorkerSrc -match '--hello') { throw 'workers must not use irc_agent --hello shop PRIVMSG' }
+    if ($pairSrc -match 'Add-BobIrcOutboxChannelLine \$line' -and $pairSrc -notmatch 'Add-BobIrcBobiversePrivmsg') { throw 'bobiverse digest must PRIVMSG #bobiverse not channel say()' }
+    if ($pairSrc -match 'PRIVMSG \$chan.*TOPIC') { throw 'shop description must not fake TOPIC as PRIVMSG text' }
+    if ($pairSrc -notmatch 'Sync-BobChannelOpsManifest') { throw 'repo pair must write channel ops manifest (A23)' }
+    if ($pairSrc -notmatch 'Test-BobRepoPairTicketCadenceDue') { throw 'chair must gate outstanding tickets on cadence' }
+    $digestSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobDigestWebhook.ps1') -Raw
+    if ($digestSrc -notmatch 'Merge-BobFleetCursorPoolsLesser') { throw 'usage webhook must lesser-merge fleet cursor pools' }
+    if ($digestSrc -notmatch 'Invoke-BobRepoPairChairUsageWebhookIfChanged') { throw 'chair must post usage webhook on change' }
+    if ($digestSrc -notmatch 'cursor_pools') { throw 'usage webhook must include cursor_pools' }
+    if ($digestSrc -notmatch 'local_weekly') { throw 'usage webhook must include local_weekly grok pool' }
+    if ($pairSrc -match 'bob-job-loop|cursor-mrb-dev') { throw 'repo pair prompts must not reference nested handoff skills' }
+    $fleetSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
+    if ($fleetSrc -notmatch 'Invoke-BobRepoPairChairTick') { throw 'Invoke-BobFleetTick must tick repo pair chair' }
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -notmatch 'Sync-BobShopChannelRepoDescriptions') { throw 'Watch-Bobiverse must apply shop channel descriptions' }
+
+    $pairSkill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-repo-pair\SKILL.md') -Raw
+    if ($pairSkill -notmatch 'Start-BobRepoPair') { throw 'bob-repo-pair skill missing Start-BobRepoPair' }
+    if ($pairSkill -notmatch 'no self-MRB|self-MRB') { throw 'bob-repo-pair skill must document self-MRB rule' }
+    if ($pairSkill -notmatch 'working_on') { throw 'bob-repo-pair skill must document working_on webhook' }
+    if ($pairSkill -notmatch '5 min') { throw 'bob-repo-pair skill must document idle default' }
+    if ($pairSkill -match 'pending-shop-topic\.txt.*only') { throw 'skill must not claim pending-shop-topic alone is enough' }
+    $bv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($bv -notmatch 'Start-BobRepoPair') { throw 'bobiverse.md must document repo pair' }
+
+    $live = Start-BobRepoPair -Repo 'SimonBarnett/agentic_build' -Cwd $cwd -MachineId flamingo
+    if (-not $live.ok) { throw "Start-BobRepoPair live: $($live | ConvertTo-Json -Compress)" }
+    $workers = @(Get-BobWorkers)
+    if ($workers.Count -ne 2) { throw "expected 2 overlay workers got $($workers.Count)" }
+    foreach ($w in $workers) {
+        if ([string]$w.kind -ne 'persistent') { throw "worker $($w.sessionId) kind=$($w.kind) must be persistent" }
+        if (-not $w.shopNick) { throw 'worker missing shopNick (JOIN policy)' }
+    }
+    Start-Sleep -Seconds 1
+    if (-not (Test-BobRepoPairSeatAlive -Seat $live.dev)) { throw 'dev seat not alive (process/shop)' }
+    if (-not (Test-BobRepoPairSeatAlive -Seat $live.mrb)) { throw 'mrb seat not alive (process/shop)' }
+
+    $fakeSeat = [pscustomobject]@{ sessionId = [guid]::NewGuid().ToString() }
+    $overlayPath = Join-Path $bridgeRoot 'overlay.json'
+    $ov = Get-Content $overlayPath -Raw | ConvertFrom-Json
+    $ov.workers += ,[pscustomobject]@{
+        sessionId = [string]$fakeSeat.sessionId
+        title     = 'w-fl-fake'
+        cwd       = $cwd
+        kind      = 'oneshot'
+        profile   = 'generic'
+        shopNick  = 'w-fl-fake'
+        createdAt = [DateTime]::UtcNow.ToString('o')
+    }
+    ($ov | ConvertTo-Json -Depth 8) | Set-Content -Path $overlayPath -Encoding utf8
+    if (Test-BobRepoPairSeatAlive -Seat $fakeSeat) { throw 'oneshot overlay row must not count as alive seat' }
+
+    $pr = 'https://github.com/SimonBarnett/agentic_build/issues/175'
+    $regCheck = Register-BobRepoPairDevComplete -PrUrl $pr
+    if (-not $regCheck.ok) { throw "Register-BobRepoPairDevComplete: $($regCheck.error)" }
+    $deny = Test-BobRepoPairSelfMrb -Seat dev -PrUrl $pr
+    if ($deny.allowed) { throw 'dev must not MRB own PR' }
+    $allow = Test-BobRepoPairSelfMrb -Seat mrb -PrUrl $pr
+    if (-not $allow.allowed) { throw 'mrb seat must be allowed to review implementer PR' }
+    $mrbEmpty = Test-BobRepoPairSelfMrb -Seat mrb -PrUrl 'https://github.com/SimonBarnett/agentic_build/pull/999'
+    if ($mrbEmpty.allowed) { throw 'mrb must not default-allow with no implementer PR' }
+
+    $sha = 'dead175beef'
+    $a = Set-BobRepoPairDevActiveSha -Sha $sha
+    if (-not $a.ok) { throw 'first active sha should ok' }
+    $dup = Test-BobRepoPairMayEnqueueBuild -Sha $sha
+    if ($dup.allowed) { throw 'second job same sha must be blocked' }
+
+    $u1 = Update-BobRepoWorkerWorkingOn -Seat dev -Description 'implement #175 pair module'
+    if (-not $u1.ok) { throw 'working_on update failed' }
+    if (-not $u1.webhook.posted) { throw 'first working_on must POST' }
+    $posts1 = @(Get-ChildItem $cap -Filter 'post-*.json').Count
+    if ($posts1 -lt 1) { throw 'capture dir missing post json' }
+    $u2 = Update-BobRepoWorkerWorkingOn -Seat dev -Description 'implement #175 pair module'
+    if ($u2.webhook.posted) { throw 'unchanged working_on must not POST again' }
+
+    $assign = Assign-BobRepoPairTask -Seat mrb -Task 'hostile MRB issue #175' -PrUrl $pr
+    if (-not $assign.ok) { throw "chair assign mrb: $($assign.error)" }
+    $badAssign = Assign-BobRepoPairTask -Seat dev -Task 'self review' -PrUrl $pr
+    if ($badAssign.ok) { throw 'dev must not be assigned MRB on own PR' }
+
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    [IO.File]::WriteAllText(
+        (Join-Path $bridgeRoot 'fake-gh-open-issues.json'),
+        '[{"number":177,"title":"MRB FAIL pair","labels":[{"name":"mrb"}]},{"number":175,"title":"FR pair","labels":[{"name":"feature-request"}]}]'
+    )
+    $tix = Invoke-BobRepoPairOutstandingTickets
+    if (-not $tix.ok -or $tix.ticketCount -lt 1) { throw "ticket assign: $($tix | ConvertTo-Json -Compress)" }
+
+    Register-BobRepoPairMrbComplete -PrUrl $pr -Verdict PASS-nits | Out-Null
+    $say = Invoke-BobRepoPairBobiverseSay
+    if (@($say.said).Count -lt 1) { throw 'bobiverse say must post digest lines' }
+    $outbox = Join-Path $env:BOB_IRC_HOME 'outbox.txt'
+    if (-not (Test-Path $outbox)) { throw 'missing IRC outbox after bobiverse say' }
+    $drainedPath = Join-Path $env:BOB_IRC_HOME 'outbox-drained.txt'
+    if (-not (Test-Path $drainedPath)) { throw 'bobiverse PRIVMSG must be drained from outbox (not only queued)' }
+    $drained = Get-Content $drainedPath -Raw
+    if ($drained -notmatch 'dev complete') { throw "drained outbox missing dev complete: $drained" }
+    if ($drained -notmatch 'MRB complete') { throw "drained outbox missing MRB complete: $drained" }
+    if ((Get-Content $outbox -Raw) -match 'PRIVMSG #bobiverse') { throw 'bobiverse lines must not remain in outbox after drain' }
+
+    $topic = Set-BobShopChannelRepoDescription -Repo 'SimonBarnett/agentic_build' -MachineId flamingo
+    if (-not $topic.ok) { throw 'shop topic failed' }
+    $descPath = Join-Path $env:BOB_IRC_HOME 'shop-channel-descriptions.json'
+    if (-not (Test-Path $descPath)) { throw 'shop-channel-descriptions.json missing' }
+    $desc = Get-Content $descPath -Raw
+    if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
+    if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
+    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'SHOPDESC') { throw 'outbox must carry SHOPDESC for shop channel description' }
+    if ($drained -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse' }
+    if ((Get-Content $outbox -Raw) -notmatch 'TOPIC #flamingo') { throw 'shop topic must use IRC TOPIC command' }
+
+    $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
+    if (-not $usage.posted) { throw 'usage webhook must POST with pools' }
+    $usageCap = Get-ChildItem $cap -Filter 'usage-post-*.json' | Select-Object -First 1
+    if (-not $usageCap) { throw 'missing usage-post capture json' }
+    $usageJson = Get-Content $usageCap.FullName -Raw | ConvertFrom-Json
+    if (-not $usageJson.cursor_pools -or @($usageJson.cursor_pools).Count -lt 3) { throw 'usage webhook missing cursor_pools' }
+    if (-not $usageJson.local_weekly) { throw 'usage webhook missing local_weekly' }
+
+    $chair = Invoke-BobRepoPairChairTick
+    if (-not $chair.ok) { throw 'chair tick failed' }
+    if ($chair.tickets -and $chair.tickets.skipped -ne 'cadence' -and $chair.tickets.ticketCount -gt 0) {
+        throw 'chair tick must not assign tickets every fleet poll (cadence gate)'
+    }
+
+    $pairPath = Join-Path $bridgeRoot 'repo-pair.json'
+    $st = Get-Content $pairPath -Raw | ConvertFrom-Json
+    $st.seats.dev.lastActiveAt = [DateTime]::UtcNow.AddMinutes(-10).ToString('o')
+    ($st | ConvertTo-Json -Depth 8) | Set-Content -Path $pairPath -Encoding utf8
+    $tick = Invoke-BobRepoPairTick
+    if (@($tick.idleStop) -notcontains 'dev') { throw "idle tick must stop dev seat: $($tick.idleStop -join ',')" }
+
+    $st2 = Get-Content $pairPath -Raw | ConvertFrom-Json
+    $devSid = [string]$st2.seats.dev.sessionId
+    if ($devSid) {
+        $statusPath = Join-Path $bridgeRoot "workers\$devSid\status.json"
+        if (Test-Path $statusPath) {
+            $status = Get-Content $statusPath -Raw | ConvertFrom-Json
+            if ($status.pid) {
+                try { Stop-Process -Id ([int]$status.pid) -Force -ErrorAction SilentlyContinue } catch { }
+            }
+        }
+    }
+    $tick2 = Invoke-BobRepoPairTick
+    if (@($tick2.restarted) -notcontains 'dev') { throw "deaf tick must restart dev: $($tick2.restarted -join ',')" }
 }
 
 Write-Host ''

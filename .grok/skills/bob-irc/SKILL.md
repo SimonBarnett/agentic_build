@@ -3,12 +3,13 @@ name: bob-irc
 description: >
   Private Ergo for #bobiverse on ionos (irc.ntsa.uk:6697 TLS). Use when the user
   says join Ergo, irc.ntsa.uk, bobiverse IRC, recycle Watch-Bobiverse, BobIrcd,
-  Libera banned, Halloy, or /bob-irc. Canonical skill is agentic_irc
-  .grok/skills/bob-irc. Job queue is grok-build-fleet. Named-bot hangs are
-  unstick-grok-bot.
+  Halloy, shop channel, !bobiverse, or /bob-irc. Canonical protocol skill is
+  agentic_irc .grok/skills/bob-irc. Job queue is grok-build-fleet.
 ---
 
 # Bobiverse IRC
+
+Foundation: harvest-agent-skills (honesty box) -> report back to https://github.com/SimonBarnett/agentic_build.
 
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`

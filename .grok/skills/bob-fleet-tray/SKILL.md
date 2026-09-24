@@ -45,19 +45,25 @@ Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 
 ## Cursor spending groups (this host's Cursor account)
 
-**Three RTFM groups** on the card (not xAI seat names — Smart Catalogue /
+**Three groups** on the card (not xAI seat names — Smart Catalogue /
 Club Madeira / ntsa are Grok Build seats only; issue #151):
 
 1. `grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
-2. `high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
-3. `low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset on this
-   row). MRB/PR fuel gate reads **low cost models** only.
+2. `high cost models  {N%|n/a}` — `planUsage.apiPercentUsed` (named / Other Models)
+3. `auto  {N%|n/a}` — `planUsage.autoPercentUsed` (**Auto** model picker /
+   Cursor Models / `autoBucketModels`). MRB/PR fuel gate. Reset + `?` help
+   on every row.
+
+Do **not** paint an **on-demand** bar. On-demand is spend-limit pay-as-you-go
+after included; header **overspend £…** (right-aligned in the tile host) is
+enough for that signal. When the model is Auto, the meter is **auto**, not
+on-demand.
 
 Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
 those rows with xAI seat labels. Local
 `Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
 host; digest `pcent` / `cursor_pools` update `cursor-pools.json` cache but
-the tray paints **one trio of bars for this machine's Cursor login**.
+the tray paints **one set of bars for this machine's Cursor login**.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 
@@ -66,18 +72,18 @@ whispers **`BOB DIGEST v1`** JSON (`i/n` chunks when large); `Import-BobIrcTrayP
 writes tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
 cache — not POINT, not a presence-only digest.
 
-`account_remaining_pct` on `Get-BobTrayHover` is this host's **low cost models**
+`account_remaining_pct` on `Get-BobTrayHover` is this host's **auto**
 remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 (`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
 
 - Known remaining: each group bar shows N% from Spending (see `box-usage`), not
-  Sand overage mislabelled as low cost models.
+  Sand overage mislabelled as auto.
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage
   GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents
   → GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overage,
   not as the fuel remaining figure.
-- Empty Cursor Models remaining (0%): then fuel falls through to grok.exe.
-  Sand 100% does not by itself mean Cursor Models is empty.
+- Empty auto remaining (0%): then fuel falls through to grok.exe.
+  Sand 100% does not by itself mean auto is empty.
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining
   (`creditUsagePercent` on `billing: fetched credits config`).
 - Numbers: `box-usage`.
@@ -87,10 +93,10 @@ remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
 
 Show weekly reset next to the meter, not only in digests:
 
-- **Each Cursor spending group** (`grok chat`, `high cost models`, `low cost
-  models`): `reset DD Mon` on that row. `grok chat` uses Sand
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `auto`):
+  `reset DD Mon` on that row. `grok chat` uses Sand
   `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor
-  Spending billing cycle end. Do not leave reset only on low cost models.
+  Spending billing cycle end. Do not leave reset only on auto.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from
   `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
   Same-seat machines share one reset date (and one remaining %).
@@ -98,13 +104,13 @@ Show weekly reset next to the meter, not only in digests:
 - Durable cache: `~\\.grok\\bob-bridge\\seat-period-end.json` (by_machine + by_seat) so TipForm keeps peer reset dates when IRC peer JSON is wiped. Import must **not** wipe
   an existing peer `period_end` when an older POINT lacks `reset=`.
 
-Example headings:
+Example control headings:
 
 `grok chat  0%  reset 23 Sep`
 
 `high cost models  0%  reset 16 Oct`
 
-`low cost models  9%  reset 16 Oct`
+`auto  9%  reset 16 Oct`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
 
