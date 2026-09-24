@@ -108,7 +108,15 @@ else {
     $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
 }
 if ($sel.wait) {
-    throw "MRB handoff preflight: no eligible $enqueueFuel worker ($($sel.reason)). Fix capacity before spending Grok on the review."
+    $why = "no eligible $enqueueFuel worker ($($sel.reason))"
+    return [pscustomobject]@{
+        ok         = $false
+        started    = $false
+        startError = $why
+        jobId      = $null
+        pid        = $null
+        handed     = $enqueueFuel
+    }
 }
 Assert-BobMrbWorkerCanPost -WorkerMachine ([string]$sel.machine)
 
