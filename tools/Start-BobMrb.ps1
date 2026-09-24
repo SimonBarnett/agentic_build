@@ -7,11 +7,14 @@ param(
     [Parameter(Mandatory)][string]$Body,
     [string]$Sha,
     [string]$FeatureIssue,
+    [string]$PrUrl,
     [switch]$AllowPassUat
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'Bob-Gh.ps1')
+$here = $PSScriptRoot
+. (Join-Path $here 'Bob-Gh.ps1')
+. (Join-Path $here 'Bob-BuildLoop.ps1')
 
 if ($Verdict -eq 'PASS-UAT' -and -not $AllowPassUat) {
     throw 'PASS-UAT is Bob chair only. Pass -AllowPassUat when stamping ready for human UAT.'
@@ -19,6 +22,18 @@ if ($Verdict -eq 'PASS-UAT' -and -not $AllowPassUat) {
 
 $gh = Get-BobGhExe
 if (-not $gh) { throw 'gh.exe not found. winget install GitHub.cli ; gh auth login' }
+
+if ($Verdict -eq 'PASS-nits') {
+    if (-not $PrUrl) {
+        throw 'PASS-nits requires -PrUrl. The script merges that PR before posting the mrb-pass board. Do not use gh issue create for PASS-nits.'
+    }
+    $prNum = Get-BobGhPrNumberFromUrl $PrUrl
+    if ($prNum -le 0) { throw "PASS-nits -PrUrl is not a pull request URL: $PrUrl" }
+    $merge = Invoke-BobGhMergePrIfOpen -Gh $gh -Repo $Repo -PrNumber $prNum
+    if (-not $merge.ok) {
+        throw ('PASS-nits blocked: gh pr merge failed for PR #{0}; post MRB FAIL instead. {1}' -f $prNum, $merge.message)
+    }
+}
 
 $wantedLabels = @('mrb')
 if ($Verdict -eq 'FAIL') { $wantedLabels += 'mrb-fail' }
@@ -44,6 +59,9 @@ $fullTitle = "MRB ${Verdict}: $Title"
 if ($Sha) { $fullTitle = "$fullTitle $Sha" }
 
 $bodyText = $Body
+if ($Verdict -eq 'PASS-nits' -and $PrUrl) {
+    $bodyText = "**PR merged:** $PrUrl`n`n" + $bodyText
+}
 if ($FeatureIssue) {
     $bodyText = "**Feature request:** $FeatureIssue`n`n" + $bodyText
 }

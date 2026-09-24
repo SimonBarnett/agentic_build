@@ -91,6 +91,8 @@ Bot weekly usage. Formprep / MSSQL stays `-Fuel grok-build` on `ce-priority-dev1
 
 `Start-BobWorker` copies `https://github.com/SimonBarnett/agentic_build` `.grok/skills` into `~/.grok/skills` and puts that path on `--rules`, so the build agent has those skills even when `--cwd` is another repo.
 
+**Create a persistent build-worker seat only via Watch-AgentHealth** (`watch-agent-health`, `tools/Start-BobWatchWorker.ps1`, Desktop shortcuts). Do not `Start-TalkSeat` / extra Composer TUI / `start_worker_irc_agent.py` to add a worker. `Start-BobWorker` / `Start-BobCursor` remain **job** launchers (one-shot `-p`), not seat create.
+
 `Start-BobBuild` packet: `goal`, `constraints`, `success`, `cwd`, `profile`, `reply_channel`, and for git tasks `task`, `machine`, `fuel`, `repo`, `branch`, `docs`, `plan`, `mrb`.
 
 Profiles: `formprep` (`--rules`, no yolo, no SQL-flip UPD, no AllUnprepared, Windows MSSQL only), `teams`, `mud`, `generic`.

@@ -1,0 +1,10 @@
+{
+  "channels": {
+    "#bobiverse": "Jeeves",
+    "#flamingo": "bob-flamingo",
+    "#ionos": "bob-ionos",
+    "#marchhare": "bob-marchhare",
+    "#ce-priority-dev1": "bob-dev1"
+  },
+  "docs": "bob-{machine} is ops on #{machine} shop; Jeeves is ops on #bobiverse (A23)."
+}
