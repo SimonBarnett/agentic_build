@@ -5,9 +5,13 @@ description: >
   Use when Select-BobGitWorker / Start-BobBuild -Task git picked cursor-models,
   the operator passed -Fuel cursor-models, /start-bob-cursor, or a
   cursor-mrb-dev FIX/MRB launch.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # Start Bob Cursor
+
+Foundation: `harvest-agent-skills` (honesty box) -> report back to
+https://github.com/SimonBarnett/agentic_build.
 
 Peer of `start-bob-copilot`. Reached via the same capacity picker (`Select-BobGitWorker`), not a separate human ritual.
 
@@ -21,7 +25,7 @@ Picker selected `cursor-models`, `Start-BobBuild -Task git -Fuel cursor-models`,
 
 ## Login
 
-Binary is `%LOCALAPPDATA%\cursor-agent\cursor-agent.cmd` (or `.ps1`). Never `~\.grok\bin\agent.exe` (grok). `cursor-agent status` must show logged in. Login: `agent login` with `NO_OPEN_BROWSER=1` (prints a cursor.com URL). A Grok Bot Cursor token is **not** CLI auth.
+Binary is `%LOCALAPPDATA%\\cursor-agent\\cursor-agent.cmd` (or `.ps1`). Never `~\\.grok\\bin\\agent.exe` (grok). `cursor-agent status` must show logged in. Login: `agent login` with `NO_OPEN_BROWSER=1` (prints a cursor.com URL). A Grok Bot Cursor token is **not** CLI auth.
 
 ## Kind / model
 
@@ -32,7 +36,7 @@ command line `--model`. Never Other Models.
 ## Command
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobCursor.ps1 `
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\\ai\\agentic_build\\tools\\Start-BobCursor.ps1 `
   -Repo https://github.com/SimonBarnett/agentic_build `
   -Branch work/<job-id> `
   -Docs docs/feature-request-....md `
@@ -48,8 +52,8 @@ Writes a packet JSON. Starts **cursor-agent** (`-p --model`) via `launch.ps1` th
 Do not put the prompt on `Start-Process -ArgumentList` (Windows splits quotes). Do not `Start-Process -RedirectStandardOutput` (PS 5.1 waits for the agent). Start with `Win32_Process.Create` so the agent outlives the grok.exe Job Object. Redirect inside `launch.ps1`. Skip empty Docs/Plan so the prompt is not `Read  and .`.
 
 Watch **GitHub** (PR + MRB issue), not the redirected `.log` (stdout is
-often empty until exit). Build kind: open a PR, do not merge. MRB kind:
-PASS-nits merge that PR; FAIL do not merge. Does not scrape Cursor cookies.
+often empty until exit). Build kind: open a PR, do not merge. MRB kind: follow `bob-mrb-worker` — PASS merge that PR; FAIL open exactly
+one fix PR then merge both. Does not scrape Cursor cookies.
 Does not mark ready for human UAT.
 
 ## Packet
@@ -58,7 +62,7 @@ Does not mark ready for human UAT.
 task: git
 fuel: cursor-models
 repo / branch / docs / plan / mrb
-return: PR URL (build) or MRB issue + merge-or-not (mrb)
+return: PR URL (build) or MRB issue + merge / one-fix+merge both (mrb; bob-mrb-worker)
 ```
 
 No vendor name required in IRC verbs (`SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`).
