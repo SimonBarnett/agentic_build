@@ -4678,6 +4678,58 @@ public static class BobTestArgv {
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
 }
 
+Invoke-Case 'BT0tray idempotent ear/jobs start' {
+    param($bridgeRoot)
+    # Tray restart spawned a second Watch-Bobiverse ear (and Watch-BobJobs): PS 5.1 unrolls a
+    # one-element @() returned from Test-*WatcherUp to a bare object whose .Count is $null.
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('Select-BobTraySingleWatcher', 'Start-IrcWatcher', 'Start-JobsWatcher')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "Watch-BobTray must define $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    $calls = @{ wrap = 0; jobs = 0; stopped = @() }
+    $ears = @()
+    $jobsUp = @()
+    function Write-TrayLog([string]$m) { }
+    function Start-BobiverseMootWrapper { $calls.wrap++ }
+    function Test-BobiverseWatcherUp { $h = @($ears); return $h }
+    function Test-JobsWatcherUp { $h = @($jobsUp); return $h }
+    function Stop-Process { param([int]$Id, [switch]$Force, [string]$ErrorAction) $calls.stopped += $Id }
+    function Start-Process { $calls.jobs++; return [pscustomobject]@{ Id = 999 } }
+    $watchJobs = 'x'
+    $old = [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; CreationDate = [datetime]'2026-09-24T20:00:00' }
+    $new = [pscustomobject]@{ ProcessId = 200; ParentProcessId = 1; CreationDate = [datetime]'2026-09-24T21:00:00' }
+    $child = [pscustomobject]@{ ProcessId = 300; ParentProcessId = 100; CreationDate = [datetime]'2026-09-24T20:00:01' }
+    # one existing ear -> reuse (the bug: started a second one)
+    $ears = @($old)
+    Start-IrcWatcher
+    if ($calls.wrap -ne 0) { throw "tray start with one existing ear spawned another (wrap=$($calls.wrap))" }
+    if ($calls.stopped.Count -ne 0) { throw 'single ear must not be stopped' }
+    # no ear -> start exactly one
+    $ears = @()
+    Start-IrcWatcher
+    if ($calls.wrap -ne 1) { throw "no ear must start exactly one (wrap=$($calls.wrap))" }
+    # two ears -> keep oldest, stop newer, start none
+    $calls.wrap = 0
+    $ears = @($new, $old)
+    Start-IrcWatcher
+    if ($calls.wrap -ne 0) { throw 'duplicate ears must not start a third' }
+    if (($calls.stopped -join ',') -ne '200') { throw "must stop newer duplicate only, stopped=$($calls.stopped -join ',')" }
+    # wrapper + in-process child tree is one watcher, not a duplicate
+    $calls.stopped = @()
+    $ears = @($old, $child)
+    Start-IrcWatcher
+    if ($calls.stopped.Count -ne 0) { throw 'wrapper->child tree must not be treated as duplicate' }
+    # jobs watcher: one existing -> reuse, no Start-Process
+    $jobsUp = @($old)
+    Start-JobsWatcher
+    if ($calls.jobs -ne 0) { throw 'tray start with one Watch-BobJobs spawned another' }
+    if ($script:jobsPid -ne 100) { throw "jobsPid must adopt existing pid 100, got $($script:jobsPid)" }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
