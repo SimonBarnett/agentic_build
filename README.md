@@ -23,6 +23,8 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` |
+| setup-github-webhooks | How to add GitHub repo hooks (`/bob/v1/git`) |
+| setup-ssl-certs | How to issue IIS Let's Encrypt with win-acme |
 
 When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. Both the PR and the MRB are handed to a worker agent.
 
@@ -75,6 +77,7 @@ flowchart TB
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
   CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
@@ -101,7 +104,8 @@ flowchart TB
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
   SWAP --> WA
-  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
 
   WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST

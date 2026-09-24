@@ -69,10 +69,8 @@ while ($i -lt $argv.Count) {
         '--output-format' { $i++; continue }
         '--rules' { $i++; continue }
         '--persistent' {
-            $persistent = $true
-            $n = Take-Value $i
-            if ($n -and $n -notmatch '^-') { $prompt = $n; $i++ }
-            continue
+            [Console]::Error.WriteLine('fake-grok: --persistent is not a real grok flag')
+            exit 2
         }
         '--max-turns' { $i++; continue }
         '--version' { Write-Output 'fake-0.0.1'; exit 0 }
@@ -84,6 +82,13 @@ while ($i -lt $argv.Count) {
         default {
             if ($a -notmatch '^-') { [void]$positional.Add($a) }
         }
+    }
+}
+
+if (-not $prompt -and $positional.Count -ge 1) {
+    $knownCmd = @('version', 'sessions', 'export', 'agent', 'inspect')
+    if ($knownCmd -notcontains [string]$positional[0]) {
+        $prompt = ($positional -join ' ')
     }
 }
 
@@ -126,6 +131,13 @@ if ($positional.Count -ge 1) {
             exit 0
         }
     }
+}
+
+$singleTurn = $false
+if ($argv -contains '-p' -or $argv -contains '--single') { $singleTurn = $true }
+
+if (-not $singleTurn -and $prompt -and ($sessionId -or $env:BOB_REPO_PAIR_WORKER_DIR)) {
+    $persistent = $true
 }
 
 if ($persistent) {

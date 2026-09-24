@@ -98,6 +98,40 @@ function Merge-BobFleetCursorPoolsLesser {
     }
     $path = Get-BobFleetCursorPoolsSnapshotPath
     $snap = Read-JsonFile $path
+    $ircHome = $null
+    try { $ircHome = Get-BobIrcHome } catch { }
+    if ($ircHome) {
+        $peersDir = Join-Path $ircHome 'bob-peers'
+        if (Test-Path -LiteralPath $peersDir) {
+            foreach ($pf in @(Get-ChildItem -LiteralPath $peersDir -Filter '*.json' -ErrorAction SilentlyContinue)) {
+                $peer = Read-JsonFile $pf.FullName
+                if (-not $peer) { continue }
+                $peerPools = @()
+                if ($peer.cursor_pools) { $peerPools = @($peer.cursor_pools) }
+                elseif ($peer.pools) { $peerPools = @($peer.pools) }
+                foreach ($row in @($peerPools)) {
+                    if (-not $row) { continue }
+                    $gid = [string]$row.group_id
+                    if (-not $gid -and $row.id) { $gid = [string]$row.id }
+                    if (-not $gid -and $row.group) { $gid = Normalize-BobCursorSpendingGroupId ([string]$row.group) }
+                    if (-not $gid) { continue }
+                    $rem = $row.remaining_pct
+                    if ($null -eq $rem -and $null -ne $row.remaining) { $rem = $row.remaining }
+                    if ($null -eq $rem) { continue }
+                    try { $rem = [int]$rem } catch { continue }
+                    if (-not $byGroup.ContainsKey($gid) -or $rem -lt $byGroup[$gid].remaining_pct) {
+                        $byGroup[$gid] = [pscustomobject]@{
+                            group_id       = $gid
+                            group_label    = $(if ($row.group_label) { [string]$row.group_label } else { $gid })
+                            remaining_pct  = $rem
+                            period_end     = $(if ($row.period_end) { [string]$row.period_end } else { $null })
+                            pct_label      = ('{0}%' -f $rem)
+                        }
+                    }
+                }
+            }
+        }
+    }
     if ($snap) {
         foreach ($prop in @($snap.PSObject.Properties)) {
             $ent = $prop.Value
@@ -163,10 +197,10 @@ function Build-BobChairUsageWebhookPayload {
         }
     }
     if ($poolRows.Count -eq 0) {
-        foreach ($gid in @('grok-chat', 'high-cost-models', 'low-cost-models')) {
+        foreach ($grp in @(Get-BobCursorSpendingGroupCatalog)) {
             $poolRows += ,[pscustomobject]@{
-                group_id      = $gid
-                group_label   = $gid
+                group_id      = [string]$grp.id
+                group_label   = [string]$grp.label
                 remaining_pct = $null
                 period_end    = $null
                 pct_label     = 'n/a'

@@ -89,6 +89,16 @@ function Select-BobRepoPairInvokeMode {
     return 'grok-cli'
 }
 
+function Get-BobRepoPairGrokBotAgent {
+    if ($env:BOB_REPO_PAIR_GROK_BOT_AGENT -and $env:BOB_REPO_PAIR_GROK_BOT_AGENT.Trim()) {
+        return $env:BOB_REPO_PAIR_GROK_BOT_AGENT.Trim()
+    }
+    $mid = $null
+    try { $mid = Get-ThisMachineId } catch { }
+    if ($mid) { return ($mid + '-builder') }
+    return 'Bob'
+}
+
 function Get-BobRepoPairWorkerModel {
     param(
         [Parameter(Mandatory)][ValidateSet('dev', 'mrb')][string]$Role,
@@ -257,6 +267,7 @@ function Start-BobRepoPairSeatAgent {
     $argvJsonPath = Join-Path $dir 'outbox\argv.json'
     Write-JsonFile $argvJsonPath $argvFlat
     $grokLaunch = Join-Path $dir 'seat-grok.launch.ps1'
+    $grokSessionId = $SessionId
     if ($InvokeMode -eq 'grok-cli' -and $grokExe) {
         $grokLaunchBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
@@ -269,11 +280,49 @@ function Start-BobRepoPairSeatAgent {
 `$parsed = Get-Content -LiteralPath '$($argvJsonPath.Replace("'","''"))' -Raw | ConvertFrom-Json
 `$argvRaw = @(`$parsed | ForEach-Object { [string]`$_ })
 `$grok = '$($grokExe.Replace("'","''"))'
-if (`$grok -match '\.ps1`$') {
-    & (Get-Command powershell.exe).Source -NoProfile -ExecutionPolicy Bypass -File `$grok @argvRaw
+`$sessionId = '$($grokSessionId.Replace("'","''"))'
+`$workerDir = '$($dir.Replace("'","''"))'
+`$lastChair = `$null
+`$agentPid = `$null
+function Start-GrokSeatProcess {
+    param([string[]]`$Argv)
+    if (`$grok -match '\.ps1`$') {
+        `$argList = @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',`$grok) + `$Argv
+        return Start-Process -FilePath (Get-Command powershell.exe).Source -ArgumentList `$argList -WorkingDirectory '$($cwdFull.Replace("'","''"))' -PassThru
+    }
+    return Start-Process -FilePath `$grok -ArgumentList `$Argv -WorkingDirectory '$($cwdFull.Replace("'","''"))' -WindowStyle Hidden -PassThru
 }
-else {
-    & `$grok @argvRaw
+`$cp = Start-GrokSeatProcess -Argv `$argvRaw
+`$agentPid = `$cp.Id
+while (`$true) {
+    if (`$agentPid) {
+        `$live = Get-Process -Id `$agentPid -ErrorAction SilentlyContinue
+        if (-not `$live) { break }
+        @{ seat = '$Role'; sessionId = '$SessionId'; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$agentPid } | ConvertTo-Json -Compress | Set-Content -LiteralPath '$($heartbeatPath.Replace("'","''"))' -Encoding utf8
+    }
+    `$inbox = Join-Path `$workerDir 'inbox\chair-task.txt'
+    if (Test-Path -LiteralPath `$inbox) {
+        try {
+            `$chair = ([IO.File]::ReadAllText(`$inbox)).Trim()
+            if (`$chair -and `$chair -ne `$lastChair) {
+                `$lastChair = `$chair
+                `$touch = Join-Path `$workerDir 'inbox\chair-touched.txt'
+                [IO.File]::WriteAllText(`$touch, `$chair)
+                `$turn = @('--no-auto-update','--no-alt-screen','--output-format','json','-r',`$sessionId,'-p',`$chair)
+                `$tp = Start-GrokSeatProcess -Argv `$turn
+                while (`$tp -and (Get-Process -Id `$tp.Id -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 2 }
+            }
+        }
+        catch { }
+    }
+    if ('$Role' -eq 'mrb') {
+        try {
+            Import-Module '$($psd1.Replace("'","''"))' -Force -ErrorAction SilentlyContinue
+            Invoke-BobRepoPairMrbSeatHygiene -Seat '$Role' -WorkerDir `$workerDir | Out-Null
+        }
+        catch { }
+    }
+    Start-Sleep -Seconds 5
 }
 "@
         [IO.File]::WriteAllText($grokLaunch, $grokLaunchBody)
@@ -308,6 +357,7 @@ Set-Location -LiteralPath '$($cwdFull.Replace("'","''"))'
 `$ps1 = '$($ps1.Replace("'","''"))'
 `$workerDir = '$($dir.Replace("'","''"))'
 `$lastTask = `$null
+`$cp = `$null
 while (`$true) {
     `$inbox = Join-Path `$workerDir 'inbox\chair-task.txt'
     `$task = `$null
@@ -318,23 +368,34 @@ while (`$true) {
         try { `$task = ([IO.File]::ReadAllText('$($promptFile.Replace("'","''"))')).Trim() } catch { }
     }
     if (`$task -and `$task -ne `$lastTask) {
-        `$lastTask = `$task
-        `$cp = Start-Process -FilePath (Get-Command powershell.exe).Source -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',`$ps1,'--force','--trust','--output-format','text','--model',`$model,'--rules',`$rules,'--',`$task) -WorkingDirectory '$($cwdFull.Replace("'","''"))' -PassThru
-        while (`$cp -and (Get-Process -Id `$cp.Id -ErrorAction SilentlyContinue)) {
-            @{ seat = '$Role'; sessionId = '$SessionId'; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$cp.Id } | ConvertTo-Json -Compress | Set-Content -LiteralPath `$hb -Encoding utf8
-            Start-Sleep -Seconds 5
+        if (`$cp) {
+            try { Stop-Process -Id `$cp.Id -Force -ErrorAction SilentlyContinue } catch { }
+            `$cp = `$null
         }
+        `$lastTask = `$task
+        `$cp = Start-Process -FilePath (Get-Command powershell.exe).Source -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',`$ps1,'persist','--force','--trust','--output-format','text','--model',`$model,'--rules',`$rules,'--',`$task) -WorkingDirectory '$($cwdFull.Replace("'","''"))' -PassThru
     }
-    @{ seat = '$Role'; sessionId = '$SessionId'; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$PID } | ConvertTo-Json -Compress | Set-Content -LiteralPath `$hb -Encoding utf8
-    Start-Sleep -Seconds 15
+    if (`$cp -and (Get-Process -Id `$cp.Id -ErrorAction SilentlyContinue)) {
+        @{ seat = '$Role'; sessionId = '$SessionId'; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$cp.Id } | ConvertTo-Json -Compress | Set-Content -LiteralPath `$hb -Encoding utf8
+    }
+    if ('$Role' -eq 'mrb') {
+        try {
+            Import-Module '$($psd1.Replace("'","''"))' -Force -ErrorAction SilentlyContinue
+            Invoke-BobRepoPairMrbSeatHygiene -Seat '$Role' -WorkerDir `$workerDir | Out-Null
+        }
+        catch { }
+    }
+    Start-Sleep -Seconds 5
 }
 "@
         [IO.File]::WriteAllText($launch, $launchBody)
     }
 
+    $grokBotAgent = Get-BobRepoPairGrokBotAgent
     $agentBody = @"
 `$ErrorActionPreference = 'SilentlyContinue'
 `$env:BOB_BRIDGE_HOME = '$((Get-BridgeRoot).Replace("'","''"))'
+`$env:BOB_REPO_PAIR_INTEGRATED_IRC = '1'
 `$sessionId = '$SessionId'
 `$role = '$Role'
 `$mode = '$InvokeMode'
@@ -348,6 +409,12 @@ while (`$true) {
 `$env:BOB_REPO_PAIR_SHOP_NICK = '$($ShopNick.Replace("'","''"))'
 `$env:BOB_REPO_PAIR_SHOP_CHANNEL = '$($ShopChannel.Replace("'","''"))'
 `$env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH = '$($shopManifest.Replace("'","''"))'
+Import-Module '$($psd1.Replace("'","''"))' -Force
+if (`$env:BOB_REPO_PAIR_SHOP_CHANNEL -and `$env:BOB_REPO_PAIR_SHOP_NICK -and `$env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH) {
+    if (-not (Test-Path -LiteralPath `$env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH)) {
+        Start-BobRepoPairShopIrc -ShopChannel `$env:BOB_REPO_PAIR_SHOP_CHANNEL -ShopNick `$env:BOB_REPO_PAIR_SHOP_NICK -SessionId `$sessionId | Out-Null
+    }
+}
 
 if (`$mode -eq 'grok-cli') {
     `$launch = Join-Path `$workerDir 'seat-grok.launch.ps1'
@@ -378,8 +445,7 @@ if (`$mode -eq 'grok-cli') {
 }
 
 if (`$mode -eq 'grokbot') {
-    Import-Module '$($psd1.Replace("'","''"))' -Force
-    `$agentNick = '$($ShopNick.Replace("'","''"))'
+    `$agentNick = '$($grokBotAgent.Replace("'","''"))'
     `$lastTask = `$null
     while (`$true) {
         `$inbox = Join-Path `$workerDir 'inbox\chair-task.txt'
@@ -390,7 +456,7 @@ if (`$mode -eq 'grokbot') {
         if (`$task -and `$task -ne `$lastTask) {
             `$lastTask = `$task
             try {
-                `$run = Invoke-GrokBotApi -Action SendGrokBotUserMessage -Agent `$agentNick -Text `$task -Wait -TimeoutSec 600
+                `$run = Invoke-GrokBotApi -Action send -Agent `$agentNick -Text `$task -Wait -TimeoutSec 600
                 if (`$run.Parsed -and `$run.Parsed.text) {
                     [IO.File]::WriteAllText((Join-Path `$workerDir 'outbox\last-grokbot.txt'), [string]`$run.Parsed.text)
                 }
@@ -399,12 +465,14 @@ if (`$mode -eq 'grokbot') {
             catch { }
         }
         @{ seat = `$role; sessionId = `$sessionId; at = [DateTime]::UtcNow.ToString('o'); agentPid = `$PID } | ConvertTo-Json -Compress | Set-Content -LiteralPath `$hb -Encoding utf8
+        if (`$role -eq 'mrb') {
+            try { Invoke-BobRepoPairMrbSeatHygiene -Seat `$role -WorkerDir `$workerDir | Out-Null } catch { }
+        }
         Start-Sleep -Seconds 15
     }
 }
 
 if (`$mode -eq 'cursor-cli') {
-    Import-Module '$($psd1.Replace("'","''"))' -Force
     function Sync-ChairTouch {
         `$touched = Join-Path `$workerDir 'inbox\chair-touched.txt'
         if (Test-Path -LiteralPath `$touched) {
@@ -478,30 +546,28 @@ function Start-BobRepoPairWorker {
     New-Item -ItemType Directory -Force -Path (Join-Path $dir 'outbox') | Out-Null
     New-Item -ItemType Directory -Force -Path (Join-Path $dir 'inbox') | Out-Null
 
-    $integratedShop = Test-BobUsesFakeGrok
+    $integratedShop = $true
     $join = $null
-    if (-not $integratedShop) {
-        $join = Start-BobRepoPairShopIrc -ShopChannel $ShopChannel -ShopNick $ShopNick -SessionId $SessionId
-        if (-not $join.ok) {
-            return [pscustomobject]@{ ok = $false; error = 'shop_join_failed'; reason = $join.error }
-        }
-    }
 
     $argv = @()
     if ($invokeMode -eq 'grok-cli') {
         $argv = Normalize-BobRepoPairArgvList -Argv (Get-BobRepoPairArgv -Prompt $prompt -Cwd $cwdFull -SessionId $SessionId -Profile $prof -Model $model -Role $Role)
     }
     elseif ($invokeMode -eq 'cursor-cli') {
-        $argv = @('cursor-agent', '--persistent', '--rules', (Get-BobRepoPairRulesText -Role $Role), '--model', $model)
+        $argv = @('cursor-agent', 'persist', '--rules', (Get-BobRepoPairRulesText -Role $Role), '--model', $model)
     }
     elseif ($invokeMode -eq 'grokbot') {
-        $argv = @('grokbot', 'persistent', $ShopNick)
+        $grokBotAgent = Get-BobRepoPairGrokBotAgent
+        $argv = @('grokbot', 'agent.com', $grokBotAgent)
     }
     else {
         return [pscustomobject]@{ ok = $false; error = 'spawn_failed'; reason = 'no_invoke_mode' }
     }
     if (@($argv | Where-Object { [string]$_ -eq '-p' }).Count -gt 0) {
         return [pscustomobject]@{ ok = $false; error = 'spawn_failed'; reason = 'oneshot_argv' }
+    }
+    if (@($argv | Where-Object { [string]$_ -eq '--persistent' }).Count -gt 0) {
+        return [pscustomobject]@{ ok = $false; error = 'spawn_failed'; reason = 'invented_persistent_flag' }
     }
     [IO.File]::WriteAllText((Join-Path $dir 'outbox\argv.txt'), (($argv | ForEach-Object { $_ }) -join "`n"))
 
