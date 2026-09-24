@@ -7,6 +7,32 @@
                    "buildGrokFallback":  "grok-4.5",
                    "buildCursor":  "composer-2.5"
                },
+    "fuelModelFamilies":  {
+                              "cursor-models":  "cursor",
+                              "grok-build":  "grok",
+                              "grok-bot":  "grok",
+                              "on-demand":  "grok",
+                              "copilot":  "none"
+                          },
+    "modelFamilies":  {
+                            "cursor":  [
+                                           "^composer-",
+                                           "^claude-",
+                                           "^gpt-",
+                                           "^cursor-",
+                                           "^muse-",
+                                           "^grok-4\\."
+                                       ],
+                            "grok":  [
+                                         "^grok-",
+                                         "^build0\\.1$",
+                                         "(?i)^grok-build-",
+                                         "^build-0\\.1$"
+                                     ],
+                            "none":  [
+
+                                     ]
+                        },
     "profiles":  {
                      "formprep":  {
                                       "yolo":  false,
@@ -31,7 +57,13 @@
                                      "timeoutSec":  7200,
                                      "maxPerCwd":  2,
                                      "rules":  "No production deploys. No force-push."
-                                 }
+                                 },
+                     "grok-talk":  {
+                                       "yolo":  false,
+                                       "timeoutSec":  600,
+                                       "maxPerCwd":  1,
+                                       "rules":  "IRC listen-talk only. One English fact per line. No secrets on the wire."
+                                   }
                  },
     "agents":  {
                    "bob":  {

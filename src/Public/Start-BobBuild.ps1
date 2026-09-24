@@ -17,9 +17,10 @@ function Start-BobBuild {
         [string]$Docs,
         [string]$Plan,
         [string]$Mrb,
+        [string]$PrUrl,
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
-        [ValidateSet('mrb', 'build')][string]$Kind = 'build',
+        [string]$Kind = 'build',
         [string]$Model,
         [switch]$Fix,
         [switch]$PinGitWorker
@@ -109,7 +110,35 @@ function Start-BobBuild {
         }
     }
     if (-not $Task) { $Task = 'fleet' }
-    if (-not $Model) { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
+    if ($isGit) {
+        if (-not $Kind) { $Kind = 'build' }
+        $kindErr = Get-BobGitKindValidationError -Kind ([string]$Kind)
+        if ($kindErr) {
+            return [pscustomobject]@{ ok = $false; error = 'invalid_kind'; reason = $kindErr }
+        }
+    }
+    if (-not $Model) {
+        if ($pickFuel -eq 'copilot') { $Model = $null }
+        else { $Model = Get-BobJobModel -Kind $Kind -Fuel $pickFuel }
+    }
+    if (-not $PSBoundParameters.ContainsKey('Fuel') -and -not [string]::IsNullOrWhiteSpace([string]$Model) -and -not $pickFuel) {
+        $pickFuel = 'grok-build'
+    }
+    if ($pickFuel) {
+        $fuelModel = Test-BobFuelModelCompatible -Fuel $pickFuel -Model $Model
+    }
+    else {
+        $fuelModel = [pscustomobject]@{ ok = $true; summary = $null }
+    }
+    if (-not $fuelModel.ok) {
+        return [pscustomobject]@{
+            ok     = $false
+            error  = 'fuel_model_mismatch'
+            reason = $fuelModel.summary
+            fuel   = $pickFuel
+            model  = $Model
+        }
+    }
     $packet = [pscustomobject]@{
         id             = $JobId
         from           = $From
@@ -131,6 +160,7 @@ function Start-BobBuild {
         docs           = $Docs
         plan           = $Plan
         mrb            = $Mrb
+        prUrl          = $(if ($PrUrl) { [string]$PrUrl } else { '' })
         kind           = $Kind
         model          = $Model
     }

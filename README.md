@@ -1,8 +1,8 @@
-# agentic_build
+﻿# agentic_build
 
 Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build-fleet`. Grok Bot desktop runs on every build box; `grok.exe` is the Windows logon user (MSSQL integrated auth).
 
-- Git task: `Start-BobBuild -Task git` (optional `-Machine` / `-Fuel`). `Select-BobGitWorker` picks a `(machine, fuel)` pair. Fuels: `cursor-models` (shared Cursor Models pool, not a machine named cursor), `grok-build`, `copilot`, `grok-bot`, `on-demand`.
+- Git task: `Start-BobBuild -Task git` (optional `-Machine` / `-Fuel`). `Select-BobGitWorker` picks a `(machine, fuel)` pair. Fuels: `cursor-models` (shared Cursor Models top-bar pool), `grok-build`, `copilot`, `grok-bot`, `on-demand`.
 - Pull worker `tools/Watch-BobJobs.ps1` (logon task, not a Windows service). Tray: `tools/Watch-BobTray.ps1`.
 - Named bots (`-Agent Bob`) still use the Grok Bot API. Form Prep stays `--rules`, never `--always-approve`, pin `-Fuel grok-build`.
 - Off-DEV Fake-Grok never touches live bots or GitHub. DUMB / 2012 is not a git-task worker.
@@ -11,25 +11,39 @@ Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build
 
 Skills (copied by Install-BobFleet into `~\.grok\skills`):
 
-| Skill | Role |
+| Skill | Only job |
 |---|---|
-| grok-build-fleet | Start/monitor/stop jobs; heal Watch-BobJobs; git-task picker |
+| bob-spec-intake | Park FR issue + `/docs` md |
+| bob-build-dispatch | Write plan + `Start-BobBuild -Task git` |
+| bob-job-loop | `Start-BobBuildLoop.ps1` retry + PASS-nits notify |
+| bob-hostile-mrb / cursor-mrb-dev | Hand off MRB; FAIL â†’ FIX; PASS-nits merges |
+| grok-build-fleet | Start/monitor/stop; picker; heal `Watch-BobJobs` |
+| bob-build-loop | Pointer to the five rows above (no separate ritual) |
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
-| cursor-mrb-dev | Hand off MRB then FIX until PASS-nits; PASS-nits merges; FAIL spawns a worker |
-| bob-job-loop | Run `Start-BobBuildLoop.ps1`; retry failed cursor/grok jobs; notify on PASS-nits |
-| bob-build-loop | Orchestrator: park, PR worker, MRB, merge or FIX, UAT stamp |
-| bob-spec-intake | Park FR as GitHub issue + `/docs` markdown |
-| bob-build-dispatch | Write build-and-test plan + `Start-BobBuild -Task git` |
-| bob-hostile-mrb | Bob **hands off** MRB of a PR; PASS-nits merges; FAIL spawns FIX; no PDF |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
-| bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` (not Libera) |
+| bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` |
+| setup-github-webhooks | How to add GitHub repo hooks (`/bob/v1/git`) |
+| setup-ssl-certs | How to issue IIS Let's Encrypt with win-acme |
 
 When another agent cannot complete a task, they write a **functional specification** and send it to **Bob**. Feature work arrives as a **GitHub issue** plus `/docs` markdown. Bob orchestrates; he does **not** implement and does **not** write the hostile MRB in-session. Both the PR and the MRB are handed to a worker agent.
 
 **Fuel (no judgment):** if Cursor Models remaining > 0, use Cursor Models (Cursor Grok + Composer). If remaining is 0, use grok.exe. Never Other Models. Copilot only with `-AllowCopilot`. Tray top bar must show that Cursor Models remaining %.
 
-**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Machines: `ionos`, `flamingo`, `marchhare`, `ce-priority-dev1`. Every worker opens a **PR**. PASS-nits: the MRB agent **merges**. Every FAIL: spawn a FIX worker. Only Bob stamps UAT.
+**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Every worker opens a **PR**. PASS-nits: the MRB agent **merges**. Every FAIL: spawn a FIX worker. Only Bob stamps UAT.
+
+### Fleet machines (registry ids)
+
+Canonical list: `config/fleet-registry.json`. Clone paths on this legion:
+
+| id | Role | Clone path |
+|---|---|---|
+| `ionos` | VPS; Ergo host; pull worker | `C:\ai\agentic_build` |
+| `marchhare` | Dual-homed build box | `D:\ai\agentic_build` |
+| `flamingo` | Club Madeira seat | `C:\src\agentic_build` |
+| `ce-priority-dev1` | Form Prep / Priority Azure | `C:\src\agentic_build` |
+
+IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/job-audit-line.md`. GitHub protection intent: `docs/github-main-protection-checklist.md`.
 
 ### New product (fresh functional spec)
 
@@ -47,7 +61,7 @@ When another agent cannot complete a task, they write a **functional specificati
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
 4. `Start-BobBuildLoop.ps1` (or `Start-BobBuild -Task git`) to implement and **open a PR**.
-5. Same PR/MRB transaction as above (new issue per PR head; FAIL → FIX worker → new PR → re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
+5. Same PR/MRB transaction as above (new issue per PR head; FAIL â†’ FIX worker â†’ new PR â†’ re-MRB until PASS-nits merge; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
 
@@ -96,17 +110,17 @@ flowchart TB
 
 Use **BobBridge** for job lifecycle (`Start-BobBuild -Task git`, `Send-BobBuildSpec`, `Get-BobBuild`, `Stop-BobBuild`).
 
-Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** on private Ergo `irc.ntsa.uk:6697` (`#bobiverse`, skill `bob-irc`). Not Libera.
+Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** on private Ergo `irc.ntsa.uk:6697` (`#bobiverse`, skill `bob-irc`).
 
-- `scripts/irc_agent.py` — TLS join, PASS from env / connect file, announce AGPK.
-- `scripts/seal.py` — SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump `inbox/*.bin` into chat.
+- `scripts/irc_agent.py` â€” TLS join, PASS from env / connect file, announce AGPK.
+- `scripts/seal.py` â€” SEAL v2 for secrets (TOFU-pinned DH-AAD). Never send secrets in cleartext; never dump `inbox/*.bin` into chat.
 - IRC verbs (no vendor names): `SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`. Pass the MRB issue URL on `FIX`.
 - Two agents on one box need different `--home` / `AGENTIC_IRC_HOME` directories.
 
 ### Guardrails
 
-- Bob orchestrates and stamps UAT. Workers open PRs. Bob **hands off** hostile MRB; the MRB agent merges on PASS-nits. Every FAIL spawns a FIX worker. No in-session MRB or implementation.
-- Cursor Models remaining % is the tray top bar and the fuel gate, not a machine named `cursor`, not Grok Bot Sand, not Other Models.
+- Bob orchestrates and stamps UAT. Workers open PRs. The dispatcher hands each PR to a **different** worker for MRB (`Start-BobMrbHandoff`, new job, `-Kind mrb`). The implementer never reviews or merges their own PR. PASS-nits: that MRB agent merges. FAIL: spawn a FIX worker. No in-session MRB or implementation.
+- Cursor Models remaining % is the tray top bar and the fuel gate, not a fleet machine id, not Grok Bot Sand, not Other Models.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
 
@@ -153,6 +167,7 @@ docs/            feature requests, plans, harvest log
 schemas/         health overlay status completion prompt-packet
 src/             BobBridge module (Public/Private)
 config/          default.json, bobiverse.json, bob-seats.json
-tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, Start-BobMrbHandoff, Test-Pack
+tools/           Watch-BobJobs, Watch-BobTray, Start-BobBuildLoop, run-bob-build-loop, Start-BobMrbHandoff, Test-Pack
 tests/           last-dev-run.md template
 ```
+

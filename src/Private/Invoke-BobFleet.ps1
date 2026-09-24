@@ -120,6 +120,25 @@ function Test-FleetCancel {
     Test-Path (Get-FleetJobPath -Lane cancel -Machine $Machine -JobId $JobId)
 }
 
+function Set-BobFleetPacketPrUrlIfKnown {
+    param(
+        $Packet,
+        $Completion
+    )
+    if (-not $Packet) { return }
+    if ($Packet.prUrl) { return }
+    $pr = $null
+    if ($Completion -and $Completion.evidence -and $Completion.evidence.prUrl) {
+        $pr = [string]$Completion.evidence.prUrl
+    }
+    elseif ($Completion -and $Completion.summary -match '(https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)') {
+        $pr = $Matches[1]
+    }
+    if ($pr) {
+        $Packet | Add-Member -NotePropertyName prUrl -NotePropertyValue $pr -Force
+    }
+}
+
 function Complete-FleetJob {
     param(
         $Packet,
@@ -142,6 +161,10 @@ function Complete-FleetJob {
     $follow = Join-Path (Initialize-FleetRoot) (Join-Path 'followup' (Join-Path $packet.machine ($packet.id + '.json')))
     if (Test-Path $follow) { Remove-Item -Force $follow -ErrorAction SilentlyContinue }
     Send-FleetReply -ReplyChannel $packet.reply_channel -Text "$($packet.machine) $State $($packet.id): $(if ($Completion) { $Completion.summary } else { $State })"
+    Set-BobFleetPacketPrUrlIfKnown -Packet $packet -Completion $Completion
+    $auditStatus = $State
+    if ($Completion -and $Completion.status) { $auditStatus = [string]$Completion.status }
+    Write-BobJobAuditFromPacket -Packet $packet -Status $auditStatus
     return $packet
 }
 
@@ -178,6 +201,21 @@ function Invoke-BobFleetOnce {
         return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
     }
 
+    $missingFuel = Test-BobPacketMissingFuel -Fuel $packet.fuel -Model $packet.model
+    if (-not $missingFuel.ok) {
+        $comp = [pscustomobject]@{ status = 'failed'; summary = $missingFuel.summary; needs_human = $true }
+        return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
+    }
+
+    $fuelModel = [pscustomobject]@{ ok = $true; summary = $null }
+    if ($packet.fuel) {
+        $fuelModel = Test-BobFuelModelCompatible -Fuel $packet.fuel -Model $packet.model
+    }
+    if (-not $fuelModel.ok) {
+        $comp = [pscustomobject]@{ status = 'failed'; summary = $fuelModel.summary; needs_human = $true }
+        return Complete-FleetJob -Packet $packet -FromPath $file.FullName -State 'failed' -Completion $comp
+    }
+
     $runningPath = Get-FleetJobPath -Lane running -Machine $thisId -JobId $packet.id
     Move-Item -Force $file.FullName $runningPath
     $packet | Add-Member -NotePropertyName state -NotePropertyValue 'running' -Force
@@ -197,6 +235,7 @@ function Invoke-BobFleetOnce {
                 try {
                     $cursorArgs = @{ Job = $packet }
                     if ($packet.kind) { $cursorArgs['Kind'] = [string]$packet.kind }
+                    if (Test-BobUsesFakeGrok) { $cursorArgs['NoLaunch'] = $true }
                     $hand = & $cursorScript @cursorArgs
                     if ($hand -and $hand.packetPath) { $summary = "handed cursor-models $($hand.packetPath)" }
                 }

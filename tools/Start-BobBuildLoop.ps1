@@ -1,4 +1,4 @@
-# Dispatcher loop: start a git job, MRB it until PASS-nits, retry failed
+﻿# Dispatcher loop: start a git job, MRB it until PASS-nits, retry failed
 # cursor/grok jobs. Stdout is DONE/FAILED only (monitor-safe). Does not stamp UAT.
 # Test-Pack: -Once -TestWorld (no live GitHub, no live cursor-agent, no live bridge).
 [CmdletBinding()]
@@ -22,6 +22,9 @@ param(
     [scriptblock]$TestStartMrb,
     [scriptblock]$TestStartFix,
     [scriptblock]$TestComment,
+    [scriptblock]$TestClose,
+    [scriptblock]$TestPassNitsFinish,
+    [scriptblock]$TestPullProductMain,
     [string]$StatePath,
     [string]$LogPath
 )
@@ -31,6 +34,7 @@ $here = $PSScriptRoot
 if (-not $here) { $here = Split-Path $MyInvocation.MyCommand.Path }
 . (Join-Path $here 'Bob-BuildLoop.ps1')
 . (Join-Path $here 'Bob-Gh.ps1')
+. (Join-Path (Split-Path $here -Parent) 'src\Private\Write-BobJobAudit.ps1')
 
 if ($PSBoundParameters.ContainsKey('TestWorld') -and -not $Once) {
     throw 'TestWorld is Test-Pack only and requires -Once.'
@@ -74,30 +78,49 @@ function Get-LoopWorld {
     $issues = @()
     $gh = Get-BobGhExe
     if ($gh) {
-        $prJson = & $gh pr list --repo $State.repo --state open --limit 30 --json number,url,title,headRefName,headRefOid,createdAt 2>&1 | Out-String
-        if ($LASTEXITCODE -eq 0 -and $prJson.Trim()) {
-            foreach ($p in @($prJson | ConvertFrom-Json)) {
-                $prs += [pscustomobject]@{
-                    number    = $p.number
-                    url       = [string]$p.url
-                    title     = [string]$p.title
-                    branch    = [string]$p.headRefName
-                    sha       = [string]$p.headRefOid
-                    createdAt = [string]$p.createdAt
+        $savedEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $prJson = & $gh pr list --repo $State.repo --state open --limit 30 --json number,url,title,headRefName,headRefOid,createdAt 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $prJson.Trim()) {
+                foreach ($p in @(ConvertFrom-BobGhJsonList $prJson)) {
+                    if ($null -eq $p.number -or ($p.number -is [System.Array])) { continue }
+                    $prs += [pscustomobject]@{
+                        number    = [int]$p.number
+                        url       = [string]$p.url
+                        title     = [string]$p.title
+                        branch    = [string]$p.headRefName
+                        sha       = [string]$p.headRefOid
+                        createdAt = [string]$p.createdAt
+                    }
                 }
+            }
+            elseif ($LASTEXITCODE -ne 0) {
+                Write-BobBuildLoopLog -Path $LogPath -Message ("gh pr list exit {0}" -f $LASTEXITCODE)
+            }
+            $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt,state 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
+                foreach ($i in @(ConvertFrom-BobGhJsonList $isJson)) {
+                    if ($null -eq $i.number -or ($i.number -is [System.Array])) { continue }
+                    $issues += [pscustomobject]@{
+                        number    = [int]$i.number
+                        title     = [string]$i.title
+                        url       = [string]$i.url
+                        body      = [string]$i.body
+                        createdAt = [string]$i.createdAt
+                        state     = [string]$i.state
+                    }
+                }
+            }
+            elseif ($LASTEXITCODE -ne 0) {
+                Write-BobBuildLoopLog -Path $LogPath -Message ("gh issue list exit {0}" -f $LASTEXITCODE)
             }
         }
-        $isJson = & $gh issue list --repo $State.repo --state all --label mrb --limit 40 --json number,title,url,body,labels,createdAt 2>&1 | Out-String
-        if ($LASTEXITCODE -eq 0 -and $isJson.Trim()) {
-            foreach ($i in @($isJson | ConvertFrom-Json)) {
-                $issues += [pscustomobject]@{
-                    number    = $i.number
-                    title     = [string]$i.title
-                    url       = [string]$i.url
-                    body      = [string]$i.body
-                    createdAt = [string]$i.createdAt
-                }
-            }
+        catch {
+            Write-BobBuildLoopLog -Path $LogPath -Message ("gh poll failed: {0}" -f $_.Exception.Message)
+        }
+        finally {
+            $ErrorActionPreference = $savedEap
         }
     }
     $job = $null
@@ -120,6 +143,26 @@ function Get-LoopWorld {
             }
         }
         catch { }
+    }
+    if (-not $job) {
+        if ($State.startError -or $State.currentJobId -or $State.currentPid) {
+            $started = $null
+            if ($State.startError) { $started = $false }
+            $job = [pscustomobject]@{
+                id               = $(if ($State.currentJobId) { [string]$State.currentJobId } else { $null })
+                lane             = $null
+                state            = $null
+                completionStatus = $null
+                fuel             = [string]$State.fuel
+                pid              = $State.currentPid
+                startError       = $(if ($State.startError) { [string]$State.startError } else { $null })
+                started          = $started
+            }
+        }
+    }
+    elseif ($State.startError) {
+        $job | Add-Member -NotePropertyName startError -NotePropertyValue ([string]$State.startError) -Force
+        $job | Add-Member -NotePropertyName started -NotePropertyValue $false -Force
     }
     $alive = $null
     if ($State.currentPid) { $alive = Test-BobBuildLoopPidAlive -ProcessId $State.currentPid }
@@ -158,6 +201,28 @@ function Invoke-LoopComment {
         if (Test-Path -LiteralPath $bodyPath) { Remove-Item -LiteralPath $bodyPath -Force -ErrorAction SilentlyContinue }
     }
     return $Backlink
+}
+
+function Invoke-LoopClose {
+    param($Close, $State)
+    if (-not $Close) { return $null }
+    if ($TestClose) {
+        return & $TestClose $Close
+    }
+    if (-not $live) { return $Close }
+    $gh = Get-BobGhExe
+    if (-not $gh) {
+        Write-BobBuildLoopLog -Path $LogPath -Message "close skipped (no gh): issue $($Close.issue)"
+        return $Close
+    }
+    $r = Invoke-BobGhCloseIssueWithComment -Gh $gh -Repo ([string]$State.repo) -IssueNumber ([int]$Close.issue) -Comment ([string]$Close.comment)
+    if (-not $r.ok) {
+        Write-BobBuildLoopLog -Path $LogPath -Message "close failed issue $($Close.issue): $($r.message)"
+    }
+    else {
+        Write-BobBuildLoopLog -Path $LogPath -Message "closed issue $($Close.issue)"
+    }
+    return $Close
 }
 
 function Invoke-LoopStartBuild {
@@ -246,12 +311,27 @@ function Invoke-LoopStartMrb {
         Fuel  = $(if ($State.fuel) { [string]$State.fuel } else { 'cursor-models' })
     }
     if ($State.currentSha) { $hArgs['Sha'] = [string]$State.currentSha }
+    if ($State.currentPr) { $hArgs['Pr'] = [string]$State.currentPr }
     if ($State.docs) { $hArgs['Docs'] = [string]$State.docs }
     if ($State.plan) { $hArgs['Plan'] = [string]$State.plan }
     if ($AllowCopilot) { $hArgs['AllowCopilot'] = $true }
-    $r = & $handoff @hArgs
-    $pid = $null
-    if ($r.pid) { $pid = $r.pid }
+    try {
+        $r = & $handoff @hArgs
+    }
+    catch {
+        $why = $_.Exception.Message
+        if (-not $why) { $why = 'MRB handoff refused' }
+        return [pscustomobject]@{
+            ok         = $false
+            started    = $false
+            jobId      = $null
+            pid        = $null
+            fuel       = [string]$State.fuel
+            startError = $why
+        }
+    }
+    $procId = $null
+    if ($r.pid) { $procId = $r.pid }
     $jobId = $null
     if ($r.jobId) { $jobId = [string]$r.jobId }
     $started = $true
@@ -266,7 +346,7 @@ function Invoke-LoopStartMrb {
         ok         = [bool]$started
         started    = $started
         jobId      = $jobId
-        pid        = $pid
+        pid        = $procId
         fuel       = $(if ($r.handed) { [string]$r.handed } else { [string]$State.fuel })
         startError = $err
     }
@@ -292,6 +372,61 @@ function Apply-StartResult {
     return $State
 }
 
+function Invoke-LoopPassFinishAndPull {
+    param(
+        $State,
+        [int]$PassIssueNum,
+        [string]$DoneStdout,
+        [string]$AuditJobId
+    )
+    $finish = $null
+    if ($TestPassNitsFinish) {
+        $finish = & $TestPassNitsFinish $State $PassIssueNum
+    }
+    elseif ($live) {
+        $finish = Close-BobBuildLoopFinished -State $State -PassIssue $PassIssueNum
+    }
+    else {
+        $finish = [pscustomobject]@{ ok = $true }
+    }
+    if (-not $finish -or $finish.ok -eq $false) {
+        $msg = [string]$finish.message
+        if (-not $msg) { $msg = 'FAILED: PASS-nits finish' }
+        return [pscustomobject]@{ ok = $false; stdout = $msg; exitCode = 1; phase = [string]$State.phase }
+    }
+    $pull = $null
+    if ($TestPullProductMain) {
+        $pull = & $TestPullProductMain $State
+    }
+    elseif ($live) {
+        $pull = Invoke-BobBuildLoopPullProductMain -State $State
+    }
+    else {
+        $pull = [pscustomobject]@{ ok = $true }
+    }
+    if (-not $pull -or $pull.ok -eq $false) {
+        $msg = [string]$pull.message
+        if (-not $msg) { $msg = 'FAILED: pull main' }
+        return [pscustomobject]@{ ok = $false; stdout = $msg; exitCode = 1; phase = 'pass' }
+    }
+    if ($live) {
+        try {
+            Write-BobJobAuditLine -JobId $AuditJobId -Machine '' -Fuel ([string]$State.fuel) -Model '' -Kind 'mrb-pass' -PrUrl ([string]$State.currentPr) -MrbIssue ([string]$State.lastMrb) -Sha ([string]$State.currentSha) -Status 'pass-nits'
+        }
+        catch {
+            $auditErr = $_.Exception.Message
+            if (-not $auditErr) { $auditErr = $_.ToString() }
+            Write-BobBuildLoopLog -Path $LogPath -Message "job-audit pass-nits failed: $auditErr"
+        }
+    }
+    return [pscustomobject]@{
+        ok       = $true
+        stdout   = $DoneStdout
+        exitCode = 0
+        phase    = 'pass'
+    }
+}
+
 $result = $null
 $terminal = $false
 $stdout = $null
@@ -309,6 +444,8 @@ while ($true) {
     if ($decision.pass) { $state = Add-BobBuildLoopPass -State $state -Pass $decision.pass }
     $commented = $null
     if ($decision.backlink) { $commented = Invoke-LoopComment -Backlink $decision.backlink -State $state }
+    $closed = $null
+    if ($decision.close) { $closed = Invoke-LoopClose -Close $decision.close -State $state }
 
     $started = $null
     switch ([string]$decision.action) {
@@ -337,21 +474,55 @@ while ($true) {
             }
             else {
                 $g = New-BobBuildGoal -State $state
-                if ($state.lastMrb) { $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes (Get-BobMrbRequiredFixes '') }
-                $fix = [bool]$state.lastMrb
+                $fix = $false
+                if ($state.lastMrb) {
+                    $fixes = Resolve-BobBuildLoopRequiredFixes -State $state -World $world
+                    $g = New-BobFixGoal -MrbUrl ([string]$state.lastMrb) -Fixes $fixes
+                    $fix = $true
+                }
                 $started = Invoke-LoopStartBuild -State $state -GoalText $g -Fix:$fix
                 $state = Apply-StartResult -State $state -Decision $decision -Started $started -WaitPhase 'wait_pr'
             }
         }
         'pass' {
+            $passIssueNum = 0
+            if ($decision.pass -and $decision.pass.issue) {
+                try { $passIssueNum = [int]$decision.pass.issue } catch { }
+            }
+            $auditJob = [string]$state.currentJobId
+            if (-not $auditJob) { $auditJob = "loop-$Issue" }
+            $done = Invoke-LoopPassFinishAndPull -State $state -PassIssueNum $passIssueNum -DoneStdout ([string]$decision.stdout) -AuditJobId $auditJob
             $terminal = $true
-            $stdout = [string]$decision.stdout
-            $exitCode = 0
+            $stdout = [string]$done.stdout
+            $exitCode = [int]$done.exitCode
+            if ($done.phase) { $state | Add-Member -NotePropertyName phase -NotePropertyValue ([string]$done.phase) -Force }
+            if ($exitCode -ne 0) {
+                Write-BobBuildLoopLog -Path $LogPath -Message $stdout
+            }
         }
         'fail' {
             $terminal = $true
             $stdout = [string]$decision.stdout
             $exitCode = 1
+        }
+        'close_leftover_fail' {
+            if (Test-BobBuildLoopFrFinished -State $state) {
+                $passIssueNum = 0
+                if ($decision.pass -and $decision.pass.issue) {
+                    try { $passIssueNum = [int]$decision.pass.issue } catch { }
+                }
+                $auditJob = [string]$state.currentJobId
+                if (-not $auditJob) { $auditJob = "loop-$Issue" }
+                $doneStdout = Get-BobBuildLoopPassDoneStdout -State $state
+                $done = Invoke-LoopPassFinishAndPull -State $state -PassIssueNum $passIssueNum -DoneStdout $doneStdout -AuditJobId $auditJob
+                $terminal = $true
+                $stdout = [string]$done.stdout
+                $exitCode = [int]$done.exitCode
+                if ($done.phase) { $state | Add-Member -NotePropertyName phase -NotePropertyValue ([string]$done.phase) -Force }
+                if ($exitCode -ne 0) {
+                    Write-BobBuildLoopLog -Path $LogPath -Message $stdout
+                }
+            }
         }
         'sleep' { }
         default {
@@ -370,6 +541,7 @@ while ($true) {
         decision   = $decision
         started    = $started
         backlink   = $commented
+        close      = $closed
         statePath  = $StatePath
         logPath    = $LogPath
         stdout     = $stdout
@@ -387,3 +559,4 @@ while ($true) {
     if ($Once) { return $result }
     Start-Sleep -Seconds $PollSec
 }
+

@@ -17,6 +17,8 @@
         'Start-BobBuild',
         'Get-BobCapacity',
         'Get-BobJobModel',
+        'Test-BobFuelModelCompatible',
+        'Test-BobPacketMissingFuel',
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Get-ThisMachineId',
@@ -38,8 +40,10 @@
         'Get-BobTrayBarFillRgb',
         'Get-BobTrayAlertKind',
         'Get-BobTrayTitle',
+        'Get-BobTrayCursorGroupHelpTooltip',
         'Get-BobWeeklyRemaining',
         'Get-BobCursorAgentWeeklyRemaining',
+        'Get-BobCursorSpendingFromApiFixture',
         'Get-BobTrayTipPlacement',
         'Get-BobFleetRegistry',
         'ConvertTo-BobIrcPoint',
@@ -47,7 +51,22 @@
         'Read-BobIrcPeer',
         'Write-BobIrcStatus',
         'Import-BobIrcPeerTranscript',
-        'Compact-BobIrcOutbox'
+        'Import-BobIrcTrayPull',
+        'Request-BobIrcBobiversePull',
+        'Sync-BobDigestWebhookAfterBobiversePull',
+        'ConvertFrom-BobIrcTrayLine',
+        'Get-BobJobRepoStamp',
+        'Get-BobIrcShopChannel',
+        'Get-BobIrcBuilderChannels',
+        'Get-BobWorkerIrcNick',
+        'Compact-BobIrcOutbox',
+        'Write-BobJobAuditLine',
+        'Write-BobJobAuditFromPacket',
+        'Invoke-BobGrokTalkTick',
+        'Test-BobGrokTalkFuelAllowed',
+        'Select-BobGrokTalkFuel',
+        'Add-BobGrokTalkCompletion',
+        'ConvertTo-BobGrokTalkOutLines'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

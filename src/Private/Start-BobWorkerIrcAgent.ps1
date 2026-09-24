@@ -1,0 +1,37 @@
+function Start-BobWorkerIrcAgent {
+    <#
+    .SYNOPSIS
+      Spawn shop-only worker irc_agent (agentic_irc #70 MUST 2).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][int]$WorkerPid,
+        [string]$MachineId = $(Get-ThisMachineId)
+    )
+    if (-not $MachineId) { $MachineId = $env:COMPUTERNAME.ToLowerInvariant() }
+    if ($WorkerPid -le 0) { return }
+    $spawn = $null
+    foreach ($root in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc')) {
+        $cand = Join-Path $root 'scripts\start_worker_irc_agent.py'
+        if (Test-Path -LiteralPath $cand) { $spawn = $cand; break }
+    }
+    if (-not $spawn) { return }
+    $py = $null
+    foreach ($c in @(
+            (Get-Command python.exe -ErrorAction SilentlyContinue).Source,
+            'C:\Python312\python.exe',
+            'C:\Python311\python.exe',
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe')
+        )) {
+        if ($c -and (Test-Path -LiteralPath $c)) { $py = $c; break }
+    }
+    if (-not $py) { return }
+    try {
+        Start-Process -FilePath $py -ArgumentList @(
+            '-u', $spawn,
+            '--machine-id', $MachineId,
+            '--pid', "$WorkerPid"
+        ) -WindowStyle Hidden | Out-Null
+    }
+    catch { }
+}
