@@ -144,9 +144,29 @@ if ($persistent) {
     if (-not $sessionId) { $sessionId = [guid]::NewGuid().ToString() }
     if ($prompt) { Save-Session -Id $sessionId -Prompt $prompt }
     $hbPath = $env:BOB_REPO_PAIR_HEARTBEAT_PATH
+    $manifestPath = $env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH
     $workerDir = $env:BOB_REPO_PAIR_WORKER_DIR
     $role = $env:BOB_REPO_PAIR_ROLE
     if (-not $role) { $role = 'dev' }
+    $shopNick = $env:BOB_REPO_PAIR_SHOP_NICK
+    $shopChan = $env:BOB_REPO_PAIR_SHOP_CHANNEL
+    if ($manifestPath -and $shopNick -and $shopChan) {
+        $manifest = @{
+            channel       = $shopChan
+            nick          = $shopNick
+            sessionId     = $sessionId
+            joinedAt      = [DateTime]::UtcNow.ToString('o')
+            policy        = 'shop_only_no_bobiverse'
+            joinKind      = 'irc_agent_worker'
+            shopNickLive  = $true
+            ircAgentPid   = $PID
+        }
+        $manifestDir = Split-Path -Parent $manifestPath
+        if ($manifestDir -and -not (Test-Path -LiteralPath $manifestDir)) {
+            New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+        }
+        [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Compress))
+    }
     $lastTask = $null
     while ($true) {
         if ($hbPath) {
@@ -162,22 +182,12 @@ if ($persistent) {
                         $lastTask = $task
                         $touch = Join-Path $workerDir 'inbox\chair-touched.txt'
                         [IO.File]::WriteAllText($touch, $task)
-                        $exec = Join-Path $workerDir 'outbox\chair-executed.txt'
-                        [IO.File]::WriteAllText($exec, $task)
-                        if ($task -match '(?i)HARVEST') {
-                            $skillsDir = Join-Path $workerDir '.grok\skills'
-                            New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null
-                            $stamp = Join-Path $skillsDir ('harvest-stamp-' + [guid]::NewGuid().ToString('n') + '.txt')
-                            [IO.File]::WriteAllText($stamp, ([DateTime]::UtcNow.ToString('o')))
-                            $harvestAck = Join-Path $workerDir 'inbox\harvest-ack.txt'
-                            [IO.File]::WriteAllText($harvestAck, ('harvested ' + $stamp))
-                        }
                     }
                 }
                 catch { }
             }
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 15
     }
 }
 

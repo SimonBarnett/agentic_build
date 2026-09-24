@@ -4,7 +4,7 @@ description: >
   Hand a git task to Cursor Agent (cursor-models fuel) on a live fleet box.
   Use when Select-BobGitWorker / Start-BobBuild -Task git picked cursor-models,
   the operator passed -Fuel cursor-models, /start-bob-cursor, or a
-  cursor-mrb-dev FIX/MRB launch.
+  cursor-mrb-dev FIX/MRB launch. Shop IRC: bob-shop-worker.
 ---
 
 # Start Bob Cursor
@@ -14,6 +14,13 @@ Peer of `start-bob-copilot`. Reached via the same capacity picker (`Select-BobGi
 Bills Cursor Models (shared account pool: Cursor Grok + Composer). Not Grok
 Build weekly. Not Other Models. Not Copilot credits. Bob still chairs UAT.
 Transaction: `bob-build-loop`.
+
+## Shop IRC
+
+The launched agent (and this dispatcher, if it stays up) follows
+`bob-shop-worker`: JOIN `#<machine-id>` as `w-<short>-<pid>`, set
+`working_on` from `-Goal` / FR title, POST `reportUrl`. No `!report`.
+No `#bobiverse` JOIN from the worker. Canon: agentic_build #124.
 
 ## When
 

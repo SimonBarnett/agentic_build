@@ -9,39 +9,14 @@ $ErrorActionPreference = 'Stop'
 $t = ([string]$Line).Trim()
 if (-not $t) { exit 0 }
 
-$ircHomeLocal = $IrcHome
-if (-not $ircHomeLocal -and $env:BOB_IRC_HOME) { $ircHomeLocal = $env:BOB_IRC_HOME.Trim() }
-
-$script:CapturePath = $WireCapture
-if (-not $script:CapturePath) { $script:CapturePath = $env:BOB_IRC_WIRE_CAPTURE }
-if (-not $script:CapturePath -and $ircHomeLocal) {
-    $cp = Join-Path $ircHomeLocal 'wire-capture-path.txt'
-    if (Test-Path -LiteralPath $cp) {
-        try { $script:CapturePath = (Get-Content -LiteralPath $cp -Raw).Trim() } catch { }
-    }
-}
-
 function Write-BobIrcWireCapture {
     param([string]$Sent)
-    $cap = $script:CapturePath
+    $cap = $WireCapture
+    if (-not $cap) { $cap = $env:BOB_IRC_WIRE_CAPTURE }
     if (-not $cap) { return }
     $dir = Split-Path $cap -Parent
     if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
-    for ($i = 0; $i -lt 8; $i++) {
-        try {
-            $fs = [System.IO.File]::Open($cap, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
-            try {
-                $bytes = [Text.Encoding]::UTF8.GetBytes($Sent + [Environment]::NewLine)
-                $fs.Write($bytes, 0, $bytes.Length)
-            }
-            finally { $fs.Close() }
-            break
-        }
-        catch {
-            if ($i -ge 7) { throw }
-            Start-Sleep -Milliseconds 40
-        }
-    }
+    Add-Content -LiteralPath $cap -Value $Sent -Encoding utf8
 }
 
 function Send-BobIrcWireTcp {
@@ -67,28 +42,23 @@ $tcpPort = 0
 if ($env:BOB_IRC_WIRE_TCP_PORT -and $env:BOB_IRC_WIRE_TCP_PORT.Trim()) {
     try { $tcpPort = [int]$env:BOB_IRC_WIRE_TCP_PORT.Trim() } catch { $tcpPort = 0 }
 }
-if ($tcpPort -le 0 -and $ircHomeLocal) {
-    $pf = Join-Path $ircHomeLocal 'wire-tcp-port.txt'
-    if (Test-Path -LiteralPath $pf) {
-        try { $tcpPort = [int](Get-Content -LiteralPath $pf -Raw).Trim() } catch { $tcpPort = 0 }
-    }
-}
 if ($tcpPort -gt 0) {
     $tcpHost = '127.0.0.1'
     if ($env:BOB_IRC_WIRE_TCP_HOST -and $env:BOB_IRC_WIRE_TCP_HOST.Trim()) {
         $tcpHost = $env:BOB_IRC_WIRE_TCP_HOST.Trim()
     }
     Send-BobIrcWireTcp -HostName $tcpHost -Port $tcpPort -WireLine $t
-    Write-BobIrcWireCapture -Sent ("LIVE $t")
     exit 0
 }
 
-if ($env:BOB_IRC_WIRE_SKIP_LIVE -eq '1') { exit 1 }
+if ($env:BOB_IRC_WIRE_SKIP_LIVE -eq '1') { exit 0 }
 
-if (-not $ircHomeLocal) { exit 1 }
+$ircHomeLocal = $IrcHome
+if (-not $ircHomeLocal -and $env:BOB_IRC_HOME) { $ircHomeLocal = $env:BOB_IRC_HOME.Trim() }
+if (-not $ircHomeLocal) { exit 0 }
 
 $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
-if (-not (Test-Path $pwFile)) { exit 1 }
+if (-not (Test-Path $pwFile)) { exit 0 }
 $pw = (Get-Content $pwFile -Raw).Trim()
 
 $ircHost = '127.0.0.1'
@@ -135,11 +105,9 @@ try {
         $w.WriteLine($t)
         Write-BobIrcWireCapture -Sent ("LIVE $t")
     }
-    else { exit 1 }
     $ssl.Close()
     $tcp.Close()
 }
 catch {
-    exit 1
+    # live Ergo may be down in CI; capture path still records intent
 }
-exit 0

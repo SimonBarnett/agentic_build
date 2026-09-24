@@ -13,7 +13,7 @@
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
 param(
-    [int]$PollSec = 30,
+    [int]$PollSec = 60,
     [int]$StallSec = 600,
     [int]$HeartbeatStaleSec = 90,
     [string]$RepoRoot
@@ -399,6 +399,324 @@ $iconAlertB = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(255, 180,
 $iconContext = New-FaRobotIcon -Badge ([System.Drawing.Color]::FromArgb(210, 153, 34))
 Write-TrayLog 'tray icon Font Awesome robot'
 
+# --- Agents submenu (AgentMonitor watch seats) -----------------------------
+# The two watch-seat agents (Cursor, Grok) become ONE "Agents" tray menu; you
+# then select which. Each entry uses the SAME icon as its Desktop shortcut (the
+# agent app .exe, matching AgentMonitor shortcuts/*.lnk IconLocation). If an
+# agent app is not installed the icon is greyed and clicking it initialises the
+# setup (tools/Install-AgentMonitor.ps1). App installed = exe on disk (#180);
+# Watch-AgentHealth.cmd is only needed to launch the watch seat.
+# Skill: agent-monitor-setup.
+$script:agentMonitorDirCandidates = @(
+    (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Watch-AgentHealth'),
+    (Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth'),
+    'C:\ai\AgentMonitor',
+    'D:\ai\AgentMonitor'
+)
+$script:installAgentMonitor = Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'
+
+function Resolve-BobTrayAgentMonitorDir {
+    foreach ($d in $script:agentMonitorDirCandidates) {
+        if (-not $d) { continue }
+        $cmd = Join-Path $d 'Watch-AgentHealth.cmd'
+        if (Test-Path -LiteralPath $cmd) { return $d }
+    }
+    return $script:agentMonitorDirCandidates[0]
+}
+
+$script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
+$script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+
+function Resolve-BobTrayDesktopShortcutExe {
+    param([string]$Kind)
+    # Desktop / Public Desktop .lnk IconLocation or TargetPath (parity with agent shortcuts).
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $names = if ($kind -eq 'cursor') {
+        @('Cursor.lnk', 'cursor.lnk')
+    }
+    elseif ($kind -eq 'grok') {
+        @('Grok Bot.lnk', 'Grok.lnk', 'GrokBot.lnk')
+    }
+    else { @() }
+    $dirs = @(
+        [Environment]::GetFolderPath('Desktop')
+        (Join-Path $env:USERPROFILE 'Desktop')
+        (Join-Path $env:PUBLIC 'Desktop')
+    ) | Where-Object { $_ } | Select-Object -Unique
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        foreach ($d in $dirs) {
+            if (-not (Test-Path -LiteralPath $d)) { continue }
+            foreach ($n in $names) {
+                $lnkPath = Join-Path $d $n
+                if (-not (Test-Path -LiteralPath $lnkPath)) { continue }
+                $lnk = $sh.CreateShortcut($lnkPath)
+                $icon = ([string]$lnk.IconLocation).Split(',')[0].Trim().Trim('"')
+                if ($icon -and (Test-Path -LiteralPath $icon)) { return $icon }
+                $target = [string]$lnk.TargetPath
+                if ($target -and (Test-Path -LiteralPath $target)) { return $target }
+            }
+        }
+    }
+    catch { }
+    return $null
+}
+
+function Get-BobTrayAgentExeCandidates {
+    param([string]$Kind)
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $cands = @()
+    $fromLnk = Resolve-BobTrayDesktopShortcutExe $kind
+    if ($fromLnk) { $cands += $fromLnk }
+    if ($kind -eq 'cursor') {
+        $cands += @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\cursor\Cursor.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\Cursor.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Cursor\cursor.exe'),
+            (Join-Path ${env:ProgramFiles} 'Cursor\Cursor.exe'),
+            (Join-Path ${env:ProgramFiles} 'cursor\Cursor.exe')
+        )
+        try {
+            $cmd = Get-Command cursor.cmd, cursor.exe, Cursor.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+                $cands = @([string]$cmd.Source) + $cands
+            }
+        } catch { }
+    }
+    elseif ($kind -eq 'grok') {
+        # Prefer Grok Bot desktop app before CLI grok.exe (better tray icon).
+        # Ionos / fleet often install under Program Files (Public Desktop Grok Bot.lnk).
+        $cands += @(
+            (Join-Path ${env:ProgramFiles} 'Grok Bot\Grok Bot.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Grok Bot\Grok Bot.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe'),
+            (Join-Path $env:USERPROFILE '.grok\bin\grok.exe')
+        )
+        try {
+            $cmd = Get-Command 'Grok Bot.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($cmd -and $cmd.Source -and (Test-Path -LiteralPath $cmd.Source)) {
+                $cands = @([string]$cmd.Source) + $cands
+            }
+        } catch { }
+    }
+    return @($cands | Where-Object { $_ } | Select-Object -Unique)
+}
+
+function Resolve-BobTrayAgentExe {
+    param([string]$Kind)
+    foreach ($p in Get-BobTrayAgentExeCandidates $Kind) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+    }
+    return $null
+}
+
+function Resolve-BobTrayAgentIconExe {
+    param([string]$Kind)
+    # Icon path: Desktop shortcut first (same as agent .lnk), then branded desktop apps.
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $fromLnk = Resolve-BobTrayDesktopShortcutExe $kind
+    if ($fromLnk) { return $fromLnk }
+    if ($kind -eq 'grok') {
+        foreach ($p in @(
+                (Join-Path ${env:ProgramFiles} 'Grok Bot\Grok Bot.exe'),
+                (Join-Path ${env:ProgramFiles(x86)} 'Grok Bot\Grok Bot.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\Grok Bot\Grok Bot.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\GrokBot\Grok Bot.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\grok-bot\Grok Bot.exe')
+            )) {
+            if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+        }
+    }
+    return (Resolve-BobTrayAgentExe $Kind)
+}
+
+function Get-BobTrayAgentDefs {
+    # kind = Watch-AgentHealth.cmd argument; exe = resolved agent app path (#180).
+    @(
+        [ordered]@{ name = 'Cursor'; kind = 'cursor'; exe = (Resolve-BobTrayAgentExe 'cursor') }
+        [ordered]@{ name = 'Grok'; kind = 'grok'; exe = (Resolve-BobTrayAgentExe 'grok') }
+    )
+}
+
+function Test-BobTrayAgentInstalled {
+    param($Agent)
+    # Grey only when the agent *app* is missing. Watch-AgentHealth deploy is separate (#180).
+    if (-not $Agent) { return $false }
+    $exe = [string]$Agent.exe
+    if (-not $exe) { $exe = Resolve-BobTrayAgentExe $Agent.kind }
+    return [bool]($exe -and (Test-Path -LiteralPath $exe))
+}
+
+function Test-BobTrayAgentMonitorReady {
+    $script:agentMonitorDir = Resolve-BobTrayAgentMonitorDir
+    $script:agentMonitorCmd = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.cmd'
+    return (Test-Path -LiteralPath $script:agentMonitorCmd)
+}
+
+function ConvertTo-BobTrayGrayImage {
+    param([System.Drawing.Image]$Image)
+    $w = $Image.Width; $h = $Image.Height
+    $out = New-Object System.Drawing.Bitmap $w, $h
+    $g = [System.Drawing.Graphics]::FromImage($out)
+    $cm = New-Object System.Drawing.Imaging.ColorMatrix
+    $cm.Matrix00 = 0.30; $cm.Matrix01 = 0.30; $cm.Matrix02 = 0.30
+    $cm.Matrix10 = 0.59; $cm.Matrix11 = 0.59; $cm.Matrix12 = 0.59
+    $cm.Matrix20 = 0.11; $cm.Matrix21 = 0.11; $cm.Matrix22 = 0.11
+    $cm.Matrix33 = 0.92
+    $ia = New-Object System.Drawing.Imaging.ImageAttributes
+    $ia.SetColorMatrix($cm)
+    $rect = New-Object System.Drawing.Rectangle 0, 0, $w, $h
+    $g.DrawImage($Image, $rect, 0, 0, $w, $h, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+    $g.Dispose()
+    return $out
+}
+
+function Test-BobTrayImageMostlyEmpty {
+    param([System.Drawing.Bitmap]$Bitmap)
+    if (-not $Bitmap) { return $true }
+    try {
+        $w = [Math]::Min(8, $Bitmap.Width)
+        $h = [Math]::Min(8, $Bitmap.Height)
+        if ($w -le 0 -or $h -le 0) { return $true }
+        $opaque = 0
+        for ($y = 0; $y -lt $h; $y++) {
+            for ($x = 0; $x -lt $w; $x++) {
+                $c = $Bitmap.GetPixel($x, $y)
+                if ($c.A -gt 32 -and ($c.R + $c.G + $c.B) -gt 24) { $opaque++ }
+            }
+        }
+        return ($opaque -lt 2)
+    }
+    catch { return $false }
+}
+
+function New-BobTrayAgentBadgeImage {
+    param([string]$Kind)
+    $kind = ([string]$Kind).ToLowerInvariant()
+    $letter = 'A'
+    $bgCol = [System.Drawing.Color]::FromArgb(88, 166, 255)
+    if ($kind -eq 'cursor') {
+        $letter = 'C'
+        $bgCol = [System.Drawing.Color]::FromArgb(0, 0, 0)
+    }
+    elseif ($kind -eq 'grok') {
+        $letter = 'G'
+        $bgCol = [System.Drawing.Color]::FromArgb(26, 26, 26)
+    }
+    $bmp = New-Object System.Drawing.Bitmap 32, 32
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $brush = New-Object System.Drawing.SolidBrush $bgCol
+    $g.FillEllipse($brush, 1, 1, 30, 30)
+    $brush.Dispose()
+    $font = New-Object System.Drawing.Font('Segoe UI', 14.0, [System.Drawing.FontStyle]::Bold)
+    $sf = New-Object System.Drawing.StringFormat
+    $sf.Alignment = [System.Drawing.StringAlignment]::Center
+    $sf.LineAlignment = [System.Drawing.StringAlignment]::Center
+    $fgBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+    $g.DrawString($letter, $font, $fgBrush, (New-Object System.Drawing.RectangleF 0, 0, 32, 32), $sf)
+    $fgBrush.Dispose(); $font.Dispose(); $sf.Dispose(); $g.Dispose()
+    return $bmp
+}
+
+function Get-BobTrayAgentImage {
+    param($Agent, [bool]$Installed)
+    $img = $null
+    $kind = ''
+    if ($Agent -and $Agent.kind) { $kind = [string]$Agent.kind }
+    $iconExe = $null
+    if ($kind) { $iconExe = Resolve-BobTrayAgentIconExe $kind }
+    if (-not $iconExe -and $Agent -and $Agent.exe) { $iconExe = [string]$Agent.exe }
+    try {
+        if ($iconExe -and (Test-Path -LiteralPath $iconExe)) {
+            $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($iconExe)
+            if ($ico) { $img = $ico.ToBitmap() }
+            if ($img -and (Test-BobTrayImageMostlyEmpty $img)) {
+                $img.Dispose()
+                $img = $null
+            }
+        }
+    }
+    catch { $img = $null }
+    if (-not $img) {
+        if ($kind) { $img = New-BobTrayAgentBadgeImage $kind }
+        else {
+            try { $img = $iconIdle.ToBitmap() } catch { $img = New-BobTrayAgentBadgeImage 'cursor' }
+        }
+    }
+    # Soft greyscale when not installed — keep alpha high enough to stay visible on dark tip.
+    if (-not $Installed -and $img) {
+        $gray = ConvertTo-BobTrayGrayImage $img
+        if ($img -ne $gray) { try { $img.Dispose() } catch { } }
+        $img = $gray
+    }
+    return $img
+}
+
+function Initialize-BobTrayAgentSetup {
+    param($Agent)
+    if (-not (Test-Path $script:installAgentMonitor)) {
+        Write-TrayLog ('agents: setup script missing ' + $script:installAgentMonitor)
+        return
+    }
+    Write-TrayLog ('agents: initialise setup for {0}' -f $Agent.kind)
+    $ps = (Get-Command powershell.exe).Source
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:installAgentMonitor, '-Agent', $Agent.kind) `
+        -WorkingDirectory $RepoRoot | Out-Null
+}
+
+function Start-BobTrayAgentWatch {
+    param($Agent)
+    if (-not (Test-BobTrayAgentMonitorReady)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    # #285: hide the watch console; keep agent TUI visible (do NOT pass Windows=off).
+    # Direct -WatchWorker avoids the outer ps1 re-spawn that forces Windows=off.
+    $ps1 = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.ps1'
+    if (-not (Test-Path -LiteralPath $ps1)) {
+        Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
+        return
+    }
+    $ps = (Get-Command powershell.exe).Source
+    $kindFlag = if (([string]$Agent.kind).ToLowerInvariant() -eq 'grok') { '-Grok' } else { '-Cursor' }
+    Write-TrayLog ('agents: launch {0} watch seat hidden+TUI from {1}' -f $Agent.kind, $ps1)
+    Start-Process -FilePath $ps `
+        -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag) `
+        -WorkingDirectory $script:agentMonitorDir -WindowStyle Hidden | Out-Null
+}
+
+function Invoke-BobTrayAgent {
+    param($Agent)
+    if (-not (Test-BobTrayAgentInstalled $Agent)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    if (-not (Test-BobTrayAgentMonitorReady)) {
+        Initialize-BobTrayAgentSetup $Agent
+        return
+    }
+    Start-BobTrayAgentWatch $Agent
+}
+
+function Build-BobTrayAgentsMenu {
+    param([System.Windows.Forms.ToolStripMenuItem]$Parent)
+    $Parent.DropDownItems.Clear()
+    foreach ($a in Get-BobTrayAgentDefs) {
+        $installed = Test-BobTrayAgentInstalled $a
+        $item = New-Object System.Windows.Forms.ToolStripMenuItem
+        $item.Text = $(if ($installed) { $a.name } else { ('{0} (set up)' -f $a.name) })
+        try { $item.Image = Get-BobTrayAgentImage -Agent $a -Installed $installed } catch { }
+        $item.Tag = $a
+        $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+        [void]$Parent.DropDownItems.Add($item)
+    }
+}
+
 $script:attention = $false
 $script:flashOn = $false
 $script:lastAlerts = @()
@@ -579,7 +897,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label
+            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label -AccountOverageGbp $h.account_overage_gbp
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -643,6 +961,127 @@ function Hide-BobTrayCard {
     Clear-BobNativeTip
 }
 
+function Get-BobTrayCursorHelpTooltip {
+    return (Get-BobTrayCursorGroupHelpTooltip -GroupId '')
+}
+
+function Format-BobTrayCursorOverspendLine {
+    param($OverageGbp)
+    if ($null -eq $OverageGbp -or [string]$OverageGbp -eq '') { return $null }
+    $v = [double]$OverageGbp
+    if ($v -le 0) { return $null }
+    return ('overspend {0}{1:N2}' -f [char]0x00A3, $v)
+}
+
+function Add-BobTraySectionHeader {
+    param(
+        [int]$X,
+        [int]$Y,
+        [string]$Title,
+        [System.Drawing.Image]$Icon,
+        [switch]$WithHelp,
+        $Agent,
+        [string]$RightText,
+        [System.Drawing.Color]$RightColor
+    )
+    $iconW = 0
+    if ($Icon) {
+        $pic = New-Object System.Windows.Forms.PictureBox
+        $pic.Image = $Icon
+        $pic.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+        $pic.Size = New-Object System.Drawing.Size 18, 18
+        $pic.BackColor = [System.Drawing.Color]::Transparent
+        $pic.Location = New-Object System.Drawing.Point $X, ($Y + 1)
+        if ($Agent) {
+            $pic.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $pic.Tag = $Agent
+            $pic.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+        }
+        $script:tileHost.Controls.Add($pic)
+        $iconW = 22
+    }
+    $nm = New-Object System.Windows.Forms.Label
+    $nm.AutoSize = $true
+    $nm.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9.5
+    $nm.ForeColor = $fg
+    $nm.BackColor = [System.Drawing.Color]::Transparent
+    $nm.Text = $Title
+    $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
+    if ($Agent) {
+        $nm.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $nm.Tag = $Agent
+        $nm.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
+    }
+    $script:tileHost.Controls.Add($nm)
+    if ($WithHelp) {
+        $helpX = ($X + $iconW) + $nm.PreferredWidth + 6
+        $help = New-Object System.Windows.Forms.Label
+        $help.AutoSize = $true
+        $help.Text = '?'
+        $help.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        $help.ForeColor = $muted
+        $help.BackColor = [System.Drawing.Color]::Transparent
+        $help.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
+        $script:tileHost.Controls.Add($help)
+        Set-BobTrayHelpTip -Control $help -Text (Get-BobTrayCursorHelpTooltip)
+    }
+    if ($RightText) {
+        $rt = New-Object System.Windows.Forms.Label
+        $rt.AutoSize = $true
+        $rt.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        if ($null -ne $RightColor -and $RightColor.A -gt 0) { $rt.ForeColor = $RightColor }
+        else { $rt.ForeColor = [System.Drawing.Color]::FromArgb(248, 81, 73) }
+        $rt.BackColor = [System.Drawing.Color]::Transparent
+        $rt.Text = $RightText
+        # Right-align inside the tile host (392px), not past the TipForm edge.
+        $hostW = 392
+        if ($script:tileHost -and $script:tileHost.ClientSize.Width -gt 40) {
+            $hostW = $script:tileHost.ClientSize.Width
+        }
+        $textW = [System.Windows.Forms.TextRenderer]::MeasureText(
+            $RightText,
+            $rt.Font,
+            [System.Drawing.Size]::Empty,
+            [System.Windows.Forms.TextFormatFlags]::NoPadding
+        ).Width
+        $x = [Math]::Max(0, $hostW - $textW - 2)
+        $rt.Location = New-Object System.Drawing.Point $x, $Y
+        $script:tileHost.Controls.Add($rt)
+    }
+    return ($Y + 22)
+}
+
+function Set-BobTrayHelpTip {
+    param($Control, [string]$Text)
+    if (-not $Control -or -not $Text) { return }
+    if (-not $script:bobTrayHelpTip) {
+        $script:bobTrayHelpTip = New-Object System.Windows.Forms.ToolTip
+        $script:bobTrayHelpTip.ShowAlways = $true
+        $script:bobTrayHelpTip.UseAnimation = $false
+        $script:bobTrayHelpTip.UseFading = $false
+        $script:bobTrayHelpTip.InitialDelay = 200
+        $script:bobTrayHelpTip.ReshowDelay = 100
+        $script:bobTrayHelpTip.AutoPopDelay = 30000
+        $script:bobTrayHelpTip.IsBalloon = $false
+    }
+    $script:bobTrayHelpTip.SetToolTip($Control, $Text)
+    $Control.Tag = $Text
+    $Control.Add_MouseHover({
+            param($s, $e)
+            try {
+                $tip = [string]$s.Tag
+                if ($tip -and $script:bobTrayHelpTip) {
+                    $script:bobTrayHelpTip.Show($tip, $s, 0, $s.Height, 30000)
+                }
+            } catch { }
+        })
+    $Control.Add_MouseLeave({
+            param($s, $e)
+            try { if ($script:bobTrayHelpTip) { $script:bobTrayHelpTip.Hide($s) } } catch { }
+        })
+}
+
 function Add-BobTrayUsageRow {
     param(
         [int]$X,
@@ -651,7 +1090,8 @@ function Add-BobTrayUsageRow {
         $RemainingPct,
         [int]$BarWidth,
         [System.Drawing.Image]$Icon,
-        $HeadingColor
+        $HeadingColor,
+        [string]$HelpText
     )
     $nameFont = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
     $iconW = 0
@@ -674,6 +1114,19 @@ function Add-BobTrayUsageRow {
     $nm.Text = $Heading
     $nm.Location = New-Object System.Drawing.Point ($X + $iconW), $Y
     $script:tileHost.Controls.Add($nm)
+    if ($HelpText) {
+        $helpX = ($X + $iconW) + $nm.PreferredWidth + 6
+        $help = New-Object System.Windows.Forms.Label
+        $help.AutoSize = $true
+        $help.Text = '?'
+        $help.Font = New-Object System.Drawing.Font 'Segoe UI Semibold', 9
+        $help.ForeColor = $muted
+        $help.BackColor = [System.Drawing.Color]::Transparent
+        $help.Cursor = [System.Windows.Forms.Cursors]::Hand
+        $help.Location = New-Object System.Drawing.Point $helpX, ($Y + 1)
+        $script:tileHost.Controls.Add($help)
+        Set-BobTrayHelpTip -Control $help -Text $HelpText
+    }
     $barY = $Y + 20
     $barX = $X + $iconW
     $bar = New-Object System.Windows.Forms.Panel
@@ -706,12 +1159,26 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset)
+    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset, $AccountOverageGbp)
     if (-not $script:tileHost) { return }
 
     # Format everything first so a throw never leaves a cleared host.
     $y = 0
     $jobFont = New-Object System.Drawing.Font 'Segoe UI', 9
+    $cursorAgent = $null
+    $grokAgent = $null
+    foreach ($a in Get-BobTrayAgentDefs) {
+        if ($a.kind -eq 'cursor') { $cursorAgent = $a }
+        if ($a.kind -eq 'grok') { $grokAgent = $a }
+    }
+    $cursorIcon = $null
+    $grokIcon = $null
+    if ($cursorAgent) {
+        try { $cursorIcon = Get-BobTrayAgentImage -Agent $cursorAgent -Installed (Test-BobTrayAgentInstalled $cursorAgent) } catch { }
+    }
+    if ($grokAgent) {
+        try { $grokIcon = Get-BobTrayAgentImage -Agent $grokAgent -Installed (Test-BobTrayAgentInstalled $grokAgent) } catch { }
+    }
 
     # Build into a staging panel, then swap — never Controls.Clear on the live host
     # while the TipForm is visible (that flashed a blank "new" dialog on poll).
@@ -724,6 +1191,10 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
+        $overLine = Format-BobTrayCursorOverspendLine -OverageGbp $AccountOverageGbp
+        $overColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp -Agent $cursorAgent `
+            -RightText $overLine -RightColor $overColor
         $pools = @($CursorPools)
         if ($pools.Count -eq 0) {
             $acctName = 'cursor'
@@ -745,6 +1216,8 @@ function Rebuild-BobTrayTiles {
             $y += 6
         }
         else {
+            # Always show every pool (incl. 0%). When low-cost is 0 but another pool still has %,
+            # keep that bar visible so operators see what still allows spend.
             foreach ($pool in $pools) {
                 if (-not $pool) { continue }
                 $heading = [string]$pool.heading
@@ -755,12 +1228,20 @@ function Rebuild-BobTrayTiles {
                     $poolColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
                 }
                 $poolPct = $pool.remaining_pct
+                $help = $null
+                try {
+                    $gid = [string]$pool.group_id
+                    if (-not $gid -and $pool.id) { $gid = [string]$pool.id }
+                    $help = Get-BobTrayCursorGroupHelpTooltip -GroupId $gid
+                } catch { $help = Get-BobTrayCursorHelpTooltip }
                 $y = Add-BobTrayUsageRow -X 0 -Y $y -Heading $heading `
-                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor
+                    -RemainingPct $poolPct -BarWidth 392 -Icon $null -HeadingColor $poolColor -HelpText $help
                 $y += 4
             }
             $y += 2
         }
+        $y += 4
+        $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Grok accounts' -Icon $grokIcon -Agent $grokAgent
         $indent = 18
         foreach ($m in @($Machines)) {
             if (-not $m) { continue }
@@ -768,8 +1249,9 @@ function Rebuild-BobTrayTiles {
             $resolved = $null
             try { $resolved = Resolve-BobiverseMachineId $id } catch { $resolved = $id }
             if (-not $resolved) { continue }
-            $id = [string]$resolved
+            $id = ([string]$resolved).ToUpperInvariant()
             $pct = $m.remaining_pct
+            # 0% is real (#179) — only missing/null is n/a.
             $pctLabel = 'n/a'
             if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
             $seat = [string]$m.seat_label
@@ -998,6 +1480,11 @@ $notify.Visible = $false
 $notify.Text = ''
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miStatus = $menu.Items.Add('Status')
+$miAgents = New-Object System.Windows.Forms.ToolStripMenuItem
+$miAgents.Text = 'Agents'
+[void]$menu.Items.Add($miAgents)
+Build-BobTrayAgentsMenu -Parent $miAgents
+$miAgents.Add_DropDownOpening({ Build-BobTrayAgentsMenu -Parent $miAgents })
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')

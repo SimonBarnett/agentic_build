@@ -1,16 +1,26 @@
-# Test-pack IRC agent double: drains chair outbox PRIVMSG and outbox-wire via TCP/live wire (not forged JOIN).
+# Test-pack shop/bobiverse IRC agent: drains outbox with wire semantics (TOPIC/MODE/SHOPDESC) and PRIVMSG.
 param(
     [Parameter(Mandatory)][string]$IrcHome,
     [Parameter(Mandatory)][string]$Nick,
     [Parameter(Mandatory)][string]$Channel,
-    [string]$SessionId
+    [string]$SessionId,
+    [string]$ManifestPath
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 New-Item -ItemType Directory -Force -Path $IrcHome | Out-Null
+$wireLog = Join-Path $IrcHome 'irc-wire.log'
+$sentLog = Join-Path $IrcHome 'irc-sent.log'
 $posPath = Join-Path $IrcHome 'outbox.pos'
 $outbox = Join-Path $IrcHome 'outbox.txt'
 $wirePath = Join-Path $IrcHome 'outbox-wire.txt'
+
+function Write-Wire {
+    param([string]$Line)
+    if (-not $Line) { return }
+    Add-Content -LiteralPath $wireLog -Value ([DateTime]::UtcNow.ToString('o') + ' ' + $Line) -Encoding utf8
+    Add-Content -LiteralPath $sentLog -Value $Line -Encoding utf8
+}
 
 function Get-OutboxPos {
     if (-not (Test-Path $posPath)) { return 0 }
@@ -22,15 +32,53 @@ function Set-OutboxPos {
     Set-Content -LiteralPath $posPath -Value $Pos -Encoding utf8 -NoNewline
 }
 
-function Send-WireLine {
+function Invoke-WireLine {
     param([string]$Line)
     $t = ([string]$Line).Trim()
-    if (-not $t) { return $false }
-    $client = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Bob-IrcWireClient.ps1'
-    if (-not (Test-Path -LiteralPath $client)) { return $false }
-    $exe = (Get-Command powershell.exe).Source
-    & $exe -NoProfile -ExecutionPolicy Bypass -File $client -Line $t -IrcHome $IrcHome | Out-Null
-    return ($LASTEXITCODE -eq 0)
+    if (-not $t) { return $true }
+    if ($t -match '^SHOPDESC\s+(\S+)\s+(.+)$') {
+        $chan = $Matches[1]
+        $repo = $Matches[2].Trim()
+        $descPath = Join-Path $IrcHome 'shop-channel-descriptions.json'
+        $map = @{}
+        if (Test-Path $descPath) {
+            try {
+                $existing = Get-Content $descPath -Raw | ConvertFrom-Json
+                foreach ($p in $existing.PSObject.Properties) { $map[[string]$p.Name] = [string]$p.Value }
+            }
+            catch { }
+        }
+        $map[$chan] = $repo
+        ($map | ConvertTo-Json -Compress) | Set-Content -LiteralPath $descPath -Encoding utf8
+        Write-Wire ("TOPIC $chan :$repo")
+        return $true
+    }
+    if ($t -match '^TOPIC\s+' -or $t -match '^MODE\s+') {
+        Write-Wire $t
+        return $true
+    }
+    return $false
+}
+
+if ($SessionId -and $ManifestPath) {
+    $manifestPath = $ManifestPath
+}
+elseif ($SessionId) {
+    $manifestPath = Join-Path $IrcHome ("shop-join-$SessionId.json")
+}
+if ($SessionId -and $manifestPath) {
+    $manifest = @{
+        channel      = $Channel
+        nick         = $Nick
+        sessionId    = $SessionId
+        joinedAt     = [DateTime]::UtcNow.ToString('o')
+        policy       = 'shop_only_no_bobiverse'
+        joinKind     = 'irc_agent'
+        shopNickLive = $true
+        ircAgentPid  = $PID
+        wireAgent    = $true
+    }
+    ($manifest | ConvertTo-Json -Compress) | Set-Content -LiteralPath $manifestPath -Encoding utf8
 }
 
 while ($true) {
@@ -39,7 +87,7 @@ while ($true) {
         if ($wireLines.Count -gt 0) {
             $keep = New-Object System.Collections.Generic.List[string]
             foreach ($wl in $wireLines) {
-                if (Send-WireLine -Line $wl) { continue }
+                if (Invoke-WireLine -Line $wl) { continue }
                 [void]$keep.Add([string]$wl)
             }
             if ($keep.Count -gt 0) {
@@ -51,16 +99,7 @@ while ($true) {
         }
     }
     if (Test-Path -LiteralPath $outbox) {
-        $bytes = $null
-        try {
-            $fs = [IO.File]::Open($outbox, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-            $bytes = New-Object byte[] $fs.Length
-            if ($fs.Length -gt 0) { $fs.Read($bytes, 0, $fs.Length) | Out-Null }
-            $fs.Close()
-        }
-        catch {
-            continue
-        }
+        $bytes = [IO.File]::ReadAllBytes($outbox)
         $pos = Get-OutboxPos
         if ($pos -gt $bytes.Length) { $pos = 0 }
         if ($pos -lt $bytes.Length) {
@@ -74,8 +113,8 @@ while ($true) {
                     $consumed += ([Text.Encoding]::UTF8.GetByteCount($line + "`n"))
                     continue
                 }
-                if ($t.StartsWith('PRIVMSG ') -or $t.StartsWith('TOPIC ') -or $t.StartsWith('MODE ')) {
-                    if (-not (Send-WireLine -Line $t)) { break }
+                if ($t.StartsWith('PRIVMSG ')) {
+                    Write-Wire $t
                     $consumed += ([Text.Encoding]::UTF8.GetByteCount($line + "`n"))
                     continue
                 }
