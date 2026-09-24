@@ -505,7 +505,7 @@ function Send-BobGitWorkActivity {
         if ($kind) { $payload.kind = $kind }
         if ($repo) { $payload.repo = $repo }
     }
-    return (Invoke-BobDigestWebhookPost -Payload ([pscustomobject]$payload))
+    return (Invoke-BobDigestWebhookMergePost -Payload ([pscustomobject]$payload))
 }
 
 function Invoke-BobWorkerShopTick {
