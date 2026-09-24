@@ -16,6 +16,14 @@ Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`.
 
+## Shop IRC (every MRB worker)
+
+Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
+JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
+title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
+Conversation stdout → shop. Thinking/tool traces → open Query only.
+On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
+
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
@@ -146,13 +154,17 @@ voided issue. If you then see the **same PR already MERGED** (another
 worker scored a later head, or `gh pr view` is MERGED), close that
 leftover FAIL with the merged PR URL. Do **not** start FIX. Pull
 main. Do not claim you merged unless your `gh pr merge` succeeded.
+`gh pr merge` can print `already merged` and still exit 0. That is
+not this worker's merge. Parse stdout. Do not write `Merged <url>`
+unless this process created the merge commit.
 
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
-4. Post with `tools/Start-BobMrb.ps1`:
-   - Title: `MRB FAIL|PASS-nits: <feature slug> <sha>`
-   - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
+4. Post **only** with `tools/Start-BobMrb.ps1` (never `gh issue create`):
+   - `-Verdict FAIL` or `PASS-nits`; title slug + `-Sha`; body sections as below.
+   - **PASS-nits requires `-PrUrl`** — the script **merges that PR before** creating the
+     `mrb-pass` issue. If merge fails, post **FAIL** instead.
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
 5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**

@@ -1,16 +1,15 @@
 ---
 name: bob-irc
 description: >
-  Private Ergo for #bobiverse on ionos (irc.ntsa.uk:6697 TLS) plus the
-  digest report URL every bob-* must POST. Use when the user says join Ergo,
-  irc.ntsa.uk, bobiverse IRC, recycle Watch-Bobiverse, BobIrcd, reportUrl,
-  pcent POST, fingerprint, BOB_DIGEST_HOME, chairNick Jeeves, Libera banned,
-  Halloy, or /bob-irc. Canonical wire skill is agentic_irc .grok/skills/bob-irc.
-  Digest shape: bob-digest-webhook. Chair service: bob-jeeves-chair. Job
-  queue is grok-build-fleet. Named-bot hangs are unstick-grok-bot.
+  Private Ergo for #bobiverse on ionos (irc.ntsa.uk:6697 TLS). Use when the user
+  says join Ergo, irc.ntsa.uk, bobiverse IRC, recycle Watch-Bobiverse, BobIrcd,
+  Halloy, shop channel, !bobiverse, or /bob-irc. Canonical protocol skill is
+  agentic_irc .grok/skills/bob-irc. Job queue is grok-build-fleet.
 ---
 
 # Bobiverse IRC
+
+Foundation: harvest-agent-skills (honesty box) -> report back to https://github.com/SimonBarnett/agentic_build.
 
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
@@ -70,6 +69,8 @@ read the `BobJeeves` service environment. Do not guess a path.
 ## Shop
 
 **Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, ...). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
+
+`Watch-Bobiverse` resolves that seat with exported `Resolve-BobiverseMachineId` (nick or raw name to a `config/bobiverse.json` machine id). BobBridge must export it. A private copy throws every watcher tick before `irc_agent` starts. `Get-ThisMachineId` does not do that map. See `docs/bobiverse.md`.
 
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
