@@ -900,7 +900,7 @@ function Expand-BobReportDigestView {
             if (-not $mid) { continue }
             $node = $mn.node
             if (-not $node) { continue }
-            if ($node.task) {
+            if ($node.task -and -not (Test-BobIrcDigestMachineReportsIdle $node)) {
                 $task = $node.task
                 if (-not $task.machine) {
                     $task = [pscustomobject]@{
@@ -1027,9 +1027,19 @@ function Expand-BobReportDigestView {
     }
 }
 
+function Test-BobTrayDigestCodingTask {
+    param($Task)
+    if (-not $Task) { return $false }
+    if ($Task.sha) { return $true }
+    $repo = $null
+    if ($Task.repo) { $repo = [string]$Task.repo }
+    return (Test-BobIrcRepoOk $repo)
+}
+
 function ConvertFrom-BobReportDigestTask {
     param($Task, [string]$DefaultMachine)
     if (-not $Task) { return $null }
+    if (-not (Test-BobTrayDigestCodingTask $Task)) { return $null }
     $mac = [string]$Task.machine
     if (-not $mac) { $mac = $DefaultMachine }
     $repo = $null
@@ -1545,6 +1555,7 @@ function Get-BobTrayHover {
             $digestRows = @()
             foreach ($dt in @($digestTasksByMachine[$mid])) {
                 if (-not $dt) { continue }
+                if (-not (Test-BobTrayDigestCodingTask $dt)) { continue }
                 $dr = ConvertTo-BobTrayJobRow -Job $dt -DefaultMachine $mid -State ([string]$dt.state) -SkipGit
                 if ($dr.line) { $digestRows += ,$dr }
             }

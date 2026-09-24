@@ -26,6 +26,13 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
 
+**Digest webhook (fleet tray jobs):** Each `bob-*` builder runs
+`Write-BobIrcStatus` via `Watch-Bobiverse`. Workers do not hand-edit tray
+state. On job start the publish includes `jobs` + `running`/`queued`; when
+idle or cancelled POST a **clear** merge (`jobs=[]`, zeros, clear
+`working_on`) to `reportUrl` so TipForm shows `no jobs`. Never publish bare
+`repo:irc` as a coding START.
+
 **Preferred IRC wake (Simon 2026-09-23):** Watch-AgentHealth / AgentMonitor
 (skill `watch-agent-health`) — do not arm in-session `^FROM ` TSR on
 `listen.stdout.log` (burns tokens on chat spam). Legacy talk-seat TSR only

@@ -126,9 +126,13 @@ Job lines under a machine (local jobs or `!report` digest):
 
 `START  SimonBarnett/agentic_irc  395c499  composer-2.5  report digest  1m52s`
 
-No `grok.exe ? running` when repo/sha exist on the packet. When digest
-`workers` / `working_on` or live `bob-*` / `{machine}-{seatPid}` nicks are on
-IRC, paint a **START** line (not `no jobs`). Idle machine with no IRC workers:
+No `grok.exe ? running` when repo/sha exist on the packet. **Coding jobs**
+(`SimonBarnett/...`, sha, fuel) come from the digest webhook
+(`config/bobiverse.json` `reportUrl` → `Write-BobIrcStatus` on each box).
+When that machine posts `jobs=[]`, `running=0`, `queued=0`, the tile is
+`no jobs` even if an old chair row had `repo:irc` / `irc agent` junk. Bare
+`repo: irc` is **not** a Copilot/git START line. IRC `bob-*` presence alone
+does not invent a fleet coding job. Idle seat with no live worker process:
 `no jobs`.
 
 Do not show `Cursor Models (-GBP x.xx)` as the remaining figure. That was

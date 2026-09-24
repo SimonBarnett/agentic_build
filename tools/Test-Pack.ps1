@@ -1329,6 +1329,75 @@ Invoke-Case 'BT0o bobiverse irc' {
         if (-not $stamp2 -or $stamp2 -eq '?') { throw "repo stamp still ?: $stamp2" }
     }
 
+    if (@(Normalize-BobPeerLaneJobsResult $null).Count -ne 0) {
+        throw 'Normalize-BobPeerLaneJobsResult($null) must be empty (not @($null).Count=1)'
+    }
+    $env:BOB_MACHINE_ID = 'testhost'
+    $staleDir = Join-Path $bridgeRoot (Join-Path 'fleet' (Join-Path 'running' 'testhost'))
+    New-Item -ItemType Directory -Force -Path $staleDir | Out-Null
+    $staleWhen = ([DateTime]::UtcNow.AddHours(-60)).ToString('o')
+    $staleJob = @{
+        id        = 'stale-orphan-job-0001'
+        machine   = 'testhost'
+        cwd       = $RepoRoot
+        repo      = 'SimonBarnett/agentic_build'
+        kind      = 'git'
+        fuel      = 'copilot'
+        claimedAt = $staleWhen
+        state     = 'START'
+    } | ConvertTo-Json -Compress
+    Set-Content -Path (Join-Path $staleDir 'stale.json') -Value $staleJob -Encoding utf8
+    $idleDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    if ([int]$idleDoc.running -ne 0) { throw "stale orphan must zero running: $($idleDoc.running)" }
+    if ([int]$idleDoc.queued -ne 0) { throw "stale orphan must zero queued: $($idleDoc.queued)" }
+    if (@($idleDoc.jobs).Count -ne 0) { throw 'stale orphan must publish jobs=[]' }
+    Remove-Item -LiteralPath (Join-Path $staleDir 'stale.json') -Force -ErrorAction SilentlyContinue
+
+    $capIdle = Join-Path $bridgeRoot 'digest-webhook-idle-clear.ndjson'
+    if (Test-Path $capIdle) { Remove-Item -LiteralPath $capIdle -Force }
+    if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $capIdle
+    $idlePost = Write-BobIrcStatus -PassThru
+    if ([int]$idlePost.running -ne 0 -or @($idlePost.jobs).Count -ne 0) { throw 'idle post doc not empty' }
+    $idleCap = @(Get-Content $capIdle | Where-Object { $_ })
+    if ($idleCap.Count -ne 1) { throw "idle webhook must POST once: count=$($idleCap.Count)" }
+    if ($idleCap[0] -notmatch '"jobs"\s*:\s*\[\]' -or $idleCap[0] -notmatch '"running"\s*:\s*0') {
+        throw "idle webhook must clear jobs/running: $($idleCap[0])"
+    }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+
+    $peerDirStale = Join-Path $peerDir 'ce-priority-dev1.json'
+    $prevPeer = @{
+        ok    = $true
+        id    = 'ce-priority-dev1'
+        jobs  = @(@{ repo = 'irc'; state = 'START'; description = 'irc agent'; model = 'running' })
+        repo  = 'irc'
+        model = 'running'
+        running = 1
+        queued  = 0
+        source  = 'irc-digest'
+    }
+    Write-JsonFile $peerDirStale $prevPeer
+    $clearDigest = @{
+        v        = 1
+        ts       = '2026-09-24T09:00:00Z'
+        machines = @{
+            'ce-priority-dev1' = @{
+                running = 0
+                queued  = 0
+                jobs    = @()
+                weekly  = 0
+            }
+        }
+    }
+    $ingClear = @(Import-BobIrcDigestJson -DigestObj $clearDigest)
+    if ($ingClear -notcontains 'ce-priority-dev1') { throw "idle digest ingest=$($ingClear -join ',')" }
+    $clearedPeer = Read-JsonFile $peerDirStale
+    if (@($clearedPeer.jobs).Count -gt 0) { throw 'chair idle digest must not merge stale irc START jobs' }
+    if ([int]$clearedPeer.running -ne 0) { throw "cleared peer running=$($clearedPeer.running)" }
+
+    $env:BOB_MACHINE_ID = $null
+
     $fatHome = Join-Path $bridgeRoot 'irc-fat'
     New-Item -ItemType Directory -Force -Path $fatHome | Out-Null
     $fatOut = Join-Path $fatHome 'outbox.txt'
@@ -1534,6 +1603,33 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     if ($txt -notmatch 'cafebad') { throw "flamingo digest sha missing: $txt" }
     if ($txt -notmatch 'up since 2026-09-21T08:00:00Z') { throw "ionos uptime_since missing: $txt" }
     if ($txt -notmatch '(?m)marchhare[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*?[ ]+no jobs') { throw "idle marchhare must say no jobs: $txt" }
+    @'
+{
+  "machines": {
+    "ce-priority-dev1": {
+      "task": {
+        "repo": "SimonBarnett/agentic_irc",
+        "model": "Copilot",
+        "kind": "git",
+        "description": "stale chair task",
+        "state": "START"
+      },
+      "running": 0,
+      "queued": 0,
+      "jobs": []
+    }
+  }
+}
+'@ | Set-Content -Path (Join-Path $ircHome 'bob-peers\_report-digest-stale.json') -Encoding utf8
+    Copy-Item -LiteralPath (Join-Path $ircHome 'bob-peers\_report-digest-stale.json') -Destination (Join-Path $ircHome 'bob-peers\_report-digest.json') -Force
+    $hStale = Get-BobTrayHover
+    $txtStale = [string]$hStale.jobs_text
+    if ($txtStale -match 'ce-priority-dev1[^\r\n]*\r?\n[ ]+START[^\r\n]*stale chair task') {
+        throw "zeroed digest must not paint stale START: $txtStale"
+    }
+    if ($txtStale -notmatch '(?m)ce-priority-dev1[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*?[ ]+no jobs') {
+        throw "ce-priority-dev1 must be no jobs when digest running=0: $txtStale"
+    }
     if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
     if ($txt -match '395c499|abcd123') { throw "must not rely on invented tasks[] fixture shas: $txt" }
 

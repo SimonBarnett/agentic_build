@@ -61,4 +61,9 @@ repo / branch / docs / plan / mrb
 return: PR URL (build) or MRB issue + merge-or-not (mrb)
 ```
 
+`Watch-Bobiverse` on this box publishes tray/digest activity via
+`Write-BobIrcStatus` → `reportUrl`. When the agent exits (PR opened, fail,
+cancel), the next status tick must POST a **clear** (`jobs=[]`,
+`running=0`, `queued=0`) so TipForm does not show a ghost START.
+
 No vendor name required in IRC verbs (`SPEC` `WAIT` `BUILD` `PUSH` `MRB` `FIX` `UAT`).

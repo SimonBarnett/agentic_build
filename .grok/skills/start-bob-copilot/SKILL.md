@@ -28,6 +28,11 @@ Requires `gh.exe` logged in as SimonBarnett (user token). Installation tokens fa
 
 See `docs/copilot-offload.md`.
 
+While a Copilot git packet is in `fleet\running`, `Write-BobIrcStatus` on
+that machine owns the digest row. When the handoff finishes or is stopped,
+the next publish must **clear** `jobs` and zero `running`/`queued` on
+`reportUrl` (same as cursor-models).
+
 ## When Grok starts a build agent
 
 `Start-BobWorker` copies this repo's `.grok/skills` (https://github.com/SimonBarnett/agentic_build) into `~/.grok/skills` and adds that path on grok.exe `--rules`. Fleet prompt also names `start-bob-copilot`. The build `grok.exe` should call `Start-BobCopilot.ps1` for GitHub repo work instead of Grok Bot.

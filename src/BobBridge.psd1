@@ -56,6 +56,7 @@
         'Sync-BobDigestWebhookAfterBobiversePull',
         'ConvertFrom-BobIrcTrayLine',
         'Get-BobJobRepoStamp',
+        'Normalize-BobPeerLaneJobsResult',
         'Get-BobIrcShopChannel',
         'Get-BobIrcBuilderChannels',
         'Get-BobWorkerIrcNick',

@@ -748,7 +748,7 @@ function Test-BobIrcRepoOk {
     param([string]$Repo)
     $s = [string]$Repo
     if (-not $s -or -not $s.Trim()) { return $false }
-    return ($s.Trim() -notin @('?', '-'))
+    return ($s.Trim() -notin @('?', '-', 'irc'))
 }
 
 function Get-BobIrcDisplayMachineId {
@@ -1186,9 +1186,51 @@ function Test-BobIrcDigestMachineHasJobPayload {
     return $false
 }
 
+function Test-BobIrcDigestMachineReportsIdle {
+    param($Ent)
+    if (-not $Ent) { return $false }
+    $names = Get-BobIrcDigestMachinePropertyNames $Ent
+    if ($names -contains 'jobs') {
+        foreach ($j in @($Ent.jobs)) {
+            if (-not $j) { continue }
+            if ($j.sha) { return $false }
+            if ($j.repo -and (Test-BobIrcRepoOk ([string]$j.repo))) { return $false }
+        }
+        return $true
+    }
+    $run = 0
+    $queued = 0
+    if ($names -contains 'running') {
+        try { $run = [int]$Ent.running } catch { $run = 0 }
+    }
+    if ($names -contains 'queued') {
+        try { $queued = [int]$Ent.queued } catch { $queued = 0 }
+    }
+    if ($run -le 0 -and $queued -le 0 -and ($names -contains 'running' -or $names -contains 'queued')) {
+        return $true
+    }
+    return $false
+}
+
 function Merge-BobIrcDigestPeerWithPrevious {
     param($Ent, $Doc, $Prev)
     if (-not $Doc -or -not $Prev) { return $Doc }
+    if (Test-BobIrcDigestMachineReportsIdle $Ent) {
+        $entNames = Get-BobIrcDigestMachinePropertyNames $Ent
+        $Doc | Add-Member -NotePropertyName jobs -NotePropertyValue @() -Force
+        foreach ($clr in @('repo', 'sha', 'model', 'kind', 'working_on')) {
+            if ($Doc.PSObject.Properties.Name -contains $clr) {
+                $Doc.$clr = $null
+            }
+        }
+        if ($entNames -contains 'running') {
+            try { $Doc | Add-Member -NotePropertyName running -NotePropertyValue ([int]$Ent.running) -Force } catch { }
+        }
+        if ($entNames -contains 'queued') {
+            try { $Doc | Add-Member -NotePropertyName queued -NotePropertyValue ([int]$Ent.queued) -Force } catch { }
+        }
+        return $Doc
+    }
     $names = Get-BobIrcDigestMachinePropertyNames $Ent
     if ($names -notcontains 'weekly' -and $null -ne $Prev.weekly) {
         $Doc | Add-Member -NotePropertyName weekly -NotePropertyValue $Prev.weekly -Force
@@ -1282,20 +1324,6 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
     }
     $runFlag = 0
     try { $runFlag = [int]$Ent.running } catch { }
-    if ($jobs.Count -eq 0 -and ($workerCount -gt 0 -or $runFlag -gt 0)) {
-        $syn = Get-BobIrcDigestSyntheticTaskFromMachine $Ent
-        if ($syn) {
-            $jobs += ,[pscustomobject]@{
-                repo        = 'irc'
-                state       = 'START'
-                machine     = $mid
-                sha         = $syn.sha
-                model       = $syn.model
-                description = $syn.description
-                run_time    = $syn.run_time
-            }
-        }
-    }
     return [pscustomobject]@{
         ok                = $true
         id                = $mid
@@ -1775,15 +1803,7 @@ function Test-BobIrcDigestWebhookChairInSync {
     if ($chairJobs.Count -gt 0 -or $localJobs.Count -gt 0) {
         $chairFp = Get-BobDigestWebhookJobsFingerprint $Chair
         $localFp = Get-BobDigestWebhookJobsFingerprint $Local
-        if ($chairFp -ne $localFp) {
-            if ($localFp -eq '[]' -and $chairJobs.Count -eq 1) {
-                $sj = $chairJobs[0]
-                if ([string]$sj.repo -eq 'irc' -and [string]$sj.state -match '^(?i)START$') {
-                    return $true
-                }
-            }
-            return $false
-        }
+        if ($chairFp -ne $localFp) { return $false }
     }
     return $true
 }
@@ -1842,9 +1862,38 @@ function Build-BobDigestWebhookMergePayload {
     if ($Doc.sha) { $payload.sha = [string]$Doc.sha }
     if ($Doc.fuel) { $payload.fuel = $Doc.fuel }
     if ($Doc.working_on) { $payload.working_on = [string]$Doc.working_on }
-    if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
-    if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
-    if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
+    $jobRows = @()
+    foreach ($j in @($Doc.jobs)) {
+        if (-not $j) { continue }
+        $repo = $null
+        if ($j.repo) { $repo = [string]$j.repo }
+        if (-not (Test-BobIrcRepoOk $repo)) { continue }
+        $jobRows += ,[pscustomobject]@{
+            repo  = $repo
+            state = $(if ($j.state) { [string]$j.state } else { 'running' })
+        }
+    }
+    $runN = 0
+    $queueN = 0
+    if ($null -ne $Doc.running) { try { $runN = [int]$Doc.running } catch { } }
+    if ($null -ne $Doc.queued) { try { $queueN = [int]$Doc.queued } catch { } }
+    if ($jobRows.Count -eq 0) {
+        $runN = 0
+        $queueN = 0
+        $payload.working_on = ''
+        $payload.model = $null
+        $payload.kind = $null
+        $payload.repo = $null
+        $payload.sha = $null
+        $payload.fuel = $null
+    }
+    else {
+        $queueN = @($jobRows | Where-Object { [string]$_.state -match '^(?i)queued$' }).Count
+        $runN = @($jobRows | Where-Object { [string]$_.state -notmatch '^(?i)queued$' }).Count
+    }
+    $payload.running = $runN
+    $payload.queued = $queueN
+    $payload.jobs = @($jobRows)
     return [pscustomobject]$payload
 }
 
@@ -1937,10 +1986,8 @@ function Write-BobIrcStatus {
     if (-not $cfg) { return }
     $home = Get-BobIrcHome
     $bridge = Get-BridgeRoot
-    $running = @(Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane running -StampRepo)
-    if ($null -eq $running) { $running = @() }
-    $inbox = @(Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane inbox -StampRepo)
-    if ($null -eq $inbox) { $inbox = @() }
+    $running = Filter-BobFleetLaneJobsLive -Jobs (Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane running -StampRepo)
+    $inbox = Filter-BobFleetLaneJobsLive -Jobs (Get-BobPeerLaneJobs -BridgeRoot $bridge -MachineId $id -Lane inbox -StampRepo)
     $jobs = @()
     foreach ($j in @($running)) {
         $repo = Get-BobJobRepoStamp $j
@@ -2026,8 +2073,8 @@ function Write-BobIrcStatus {
         remaining_pct          = $cursorRemainingPct
         account_remaining_pct  = $cursorRemainingPct
         cursor_remaining_pct   = $cursorRemainingPct
-        running                = @($running).Count + $liveN
-        queued                 = @($inbox).Count
+        running                = (@($jobs | Where-Object { [string]$_.state -notmatch '^(?i)queued$' }).Count) + $liveN
+        queued                 = @($jobs | Where-Object { [string]$_.state -match '^(?i)queued$' }).Count
         lastSeen               = $seen
         jobs                   = $jobs
         model                  = $model
@@ -2037,6 +2084,17 @@ function Write-BobIrcStatus {
         started_at             = $startedAt
         responding             = $responding
         source                 = 'irc'
+    }
+    if (@($doc.jobs).Count -eq 0) {
+        $doc.running = [int]$liveN
+        $doc.queued = 0
+        $doc.model = $null
+        $doc.kind = $null
+        $doc.repo = $null
+        $doc.sha = $null
+        $doc.started_at = $null
+        $doc.responding = $null
+        if ($doc.PSObject.Properties.Name -contains 'working_on') { $doc.working_on = $null }
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
