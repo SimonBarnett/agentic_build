@@ -47,6 +47,10 @@ function Import-Bridge {
     }
     $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
+    # Default digest URL is the live report endpoint. Keep the pack on local
+    # bob-peers fixtures; a refused port fails fast and falls back to the file.
+    Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+    $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/bob/v1/digest'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
@@ -119,6 +123,8 @@ function Invoke-Case {
         $env:BOB_FAKE_GH_LOG = $null
         $env:BOB_FAKE_GH_QUIET = $null
         $env:BOB_MACHINE_ID = $null
+        $env:BOB_DIGEST_URL = $null
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
         $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
         $env:BOB_GROK_TALK_TEST_THROW = $null
         $env:AGENTIC_IRC_HOME = $null
@@ -1522,10 +1528,24 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     $env:BOB_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_HOME = $ircHome
 
+    $ircPools = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircPools -notmatch 'https://irc\.ntsa\.uk/bob/v1/report') {
+        throw 'Get-BobDigestUrl default must be the report endpoint'
+    }
+
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools=$(@($h.cursor_pools).Count) expected 3 groups" }
-    if ($txt -notmatch '(?m)^[ ]+low cost models  9%') { throw "ionos digest pcent must paint local low cost models bar: $txt" }
+    # Fleet-shared Cursor groups: peer pcent is not dropped when machine != local.
+    # Fixture order ends on ce-priority-dev1 cursor-models 0, so the auto bar is 0%.
+    if ($txt -notmatch '(?m)^[ ]+auto  0%') { throw "fleet digest pcent must paint auto bar: $txt" }
+    Remove-Item -LiteralPath (Join-Path $bridgeRoot 'cursor-pools.json') -ErrorAction SilentlyContinue
+    $env:BOB_MACHINE_ID = 'marchhare'
+    $hMh = Get-BobTrayHover
+    $txtMh = [string]$hMh.jobs_text
+    if ($txtMh -notmatch '(?m)^[ ]+auto  0%') { throw "marchhare must consume peer cursor-models pcent: $txtMh" }
+    if ($txtMh -match '(?m)^[ ]+auto  n/a') { throw "marchhare auto bar still n/a: $txtMh" }
+    $env:BOB_MACHINE_ID = 'ionos'
     if ($txt -match '(?m)^[ ]+Club Madeira  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
     if ($txt -match '(?m)^[ ]+ntsa  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
     if ($txt -notmatch 'deadbee') { throw "ionos digest sha missing: $txt" }
