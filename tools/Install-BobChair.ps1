@@ -1,5 +1,6 @@
-# One-shot digest chair on ionos (briefer). Builder seats use Install-BobIrc.ps1 without -Chair.
-# Watch-Bobiverse must not become the chair.
+# Durable digest chair on ionos. Watch-Bobiverse must not start the chair.
+# IRC home is ~\.agentic-irc-jeeves. BOB_DIGEST_HOME is ~\.agentic-irc-bobiverse.
+# Registers service BobJeeves (depends on BobIrcd). Does not start a builder seat.
 [CmdletBinding()]
 param(
     [string]$RepoRoot
@@ -9,11 +10,14 @@ $ErrorActionPreference = 'Stop'
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
 $cfgPath = Join-Path $RepoRoot 'config\bobiverse.json'
-$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
-$chairHome = [string]$cfg.chairHome
-if (-not $chairHome.Trim()) { $chairHome = 'ionos' }
+$cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
 $chairNick = [string]$cfg.chairNick
-if ($chairNick.Trim()) {
-    $env:BOB_IRC_NICK = $chairNick.Trim()
+if (-not $chairNick.Trim()) { $chairNick = 'Jeeves' }
+$chairNick = $chairNick.Trim()
+$jeevesHome = Join-Path $env:USERPROFILE '.agentic-irc-jeeves'
+$digestHome = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
+if ($jeevesHome.TrimEnd('\') -eq $digestHome.TrimEnd('\')) {
+    throw 'Jeeves home must not be the bobiverse digest home'
 }
-& (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -MachineId $chairHome -RepoRoot $RepoRoot -Chair
+$env:BOB_DIGEST_HOME = $digestHome
+& (Join-Path $RepoRoot 'tools\Install-BobJeeves.ps1') -RepoRoot $RepoRoot -Nick $chairNick -JeevesHome $jeevesHome -DigestHome $digestHome

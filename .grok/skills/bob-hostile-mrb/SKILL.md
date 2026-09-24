@@ -20,6 +20,14 @@ source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`. **Worker process STANDARD:** `bob-mrb-worker` (mermaid +
 PASS merge / FAIL one-fix-PR).
 
+## Shop IRC (every MRB worker)
+
+Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
+JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
+title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
+Conversation stdout → shop. Thinking/tool traces → open Query only.
+On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
+
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
@@ -163,20 +171,20 @@ then fails, that PASS is void: open a **new** FAIL issue on the
 same SHA (do not reuse the pass board). Comment the FAIL URL on the
 voided issue. If you then see the **same PR already MERGED** (another
 worker scored a later head, or `gh pr view` is MERGED), close that
-leftover FAIL with the merged PR URL. Do **not** start another fix chain.
-Pull main. Do not claim you merged unless your `gh pr merge` succeeded.
-
-Follow `bob-mrb-worker` standing process, then:
+leftover FAIL with the merged PR URL. Do **not** start FIX. Pull
+main. Do not claim you merged unless your `gh pr merge` succeeded.
+`gh pr merge` can print `already merged` and still exit 0. That is
+not this worker's merge. Parse stdout. Do not write `Merged <url>`
+unless this process created the merge commit.
 
 1. Diff the PR against the parked feature request and plan.
-2. Add NEW tests appropriate to this PR **before** relying on existing ones.
-3. Run the missing-features check. File any new FRs before or with the MRB post.
-4. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
-5. Post with `tools/Start-BobMrb.ps1`:
-   - Title: `MRB FAIL|PASS-nits: <feature slug> <sha>` (PASS board still
-     uses `PASS-nits` label for tooling compatibility)
-   - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
-   - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**, **agent+model**
+2. Run the missing-features check. File any new FRs before or with the MRB post.
+3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
+4. Post **only** with `tools/Start-BobMrb.ps1` (never `gh issue create`):
+   - `-Verdict FAIL` or `PASS-nits`; title slug + `-Sha`; body sections as below.
+   - **PASS-nits requires `-PrUrl`** — the script **merges that PR before** creating the
+     `mrb-pass` issue. If merge fails, post **FAIL** instead.
+   - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
 6. **FAIL:** do not leave the original PR unfixed. Create **exactly one**
    fix branch/PR with the fix (+ new tests). Merge **original PR + that

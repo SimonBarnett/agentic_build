@@ -19,16 +19,23 @@ This skill does **not** define its own workflow. Use the map in `README.md`:
 |---|---|
 | Park FR + `/docs` | `bob-spec-intake` |
 | Build-and-test plan + enqueue worker | `bob-build-dispatch` |
-| Run until MRB PASS (`Start-BobBuildLoop.ps1`) | `bob-job-loop` |
-| Hand off hostile MRB / board posting | `bob-hostile-mrb` or `cursor-mrb-dev` |
-| **STANDARD MRB worker process** (tests-first, PASS merge, one fix PR) | `bob-mrb-worker` |
-| Start/monitor fleet jobs, heal watcher | `grok-build-fleet` |
+| Run until MRB PASS-nits (`Start-BobBuildLoop.ps1`) | `bob-job-loop` |
+| Hand off hostile MRB / FIX | `bob-hostile-mrb` or `cursor-mrb-dev` |
+| `grok-build-fleet` | Start/monitor fleet jobs, heal watcher | `grok-build-fleet` |
+| Two persistent dev+MRB per repo (#175) | `bob-repo-pair` / `Start-BobRepoPair` |
 
 Hard rules (unchanged): workers open PRs; never push `main`; never merge your
-own implementer PR; PASS merge is the MRB agent; FAIL → exactly one fix PR
-then merge both (`bob-mrb-worker`); only Bob stamps ready for human UAT.
+own PR; PASS-nits merge is enforced by `Start-BobMrb.ps1 -PrUrl` (and the loop
+finish merges again if the agent skipped it); only Bob stamps ready for human UAT.
 
-**New worker rule:** pass to a **new** worker when any open actionable /
-`feature-request` issues remain after PASS / Missing features park. Home:
-`bob-job-loop` / `bob-hostile-mrb`. FAIL fix is **not** a separate FIX-worker
-chain — it is one fix PR on the MRB seat (`bob-mrb-worker`).
+**FR order:** one FR until MRB **PASS-nits**; then the next in receive order
+(user sequence or lowest open `feature-request` #). No parallel FR loops on the
+same repo. Home: `bob-job-loop`.
+
+**New worker rule (MRB):** pass to a **new** worker on MRB **FAIL** (FIX).
+After PASS-nits, hand off **only the next** queued FR. Home: `bob-job-loop` /
+`bob-hostile-mrb`.
+
+**GitHub hygiene:** `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1` — see
+`bob-job-loop` (keep PR/issue lists current; protect active loop PRs).

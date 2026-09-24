@@ -348,9 +348,63 @@ function ConvertTo-BobPeekJob {
         repo      = $repo
         claimedAt = $Job.claimedAt
         createdAt = $Job.createdAt
+        sessionId = $(if ($Job.sessionId) { [string]$Job.sessionId } else { $null })
         state     = $st
         lane      = $Lane
     }
+}
+
+function Normalize-BobPeerLaneJobsResult {
+    param($LaneJobs)
+    # Get-BobPeerLaneJobs returns $null on I/O failure; @($null).Count is 1 in PowerShell.
+    if ($null -eq $LaneJobs) { return @() }
+    return @($LaneJobs)
+}
+
+function Test-BobFleetJobProcessLive {
+    param(
+        $Job,
+        [int]$OrphanSec = 600
+    )
+    if (-not $Job) { return $false }
+    $sid = $null
+    if ($Job.sessionId) { $sid = [string]$Job.sessionId }
+    elseif ($Job.id) { $sid = [string]$Job.id }
+    if ($sid) {
+        try {
+            if (Test-BobJobProcess -SessionId $sid) { return $true }
+        }
+        catch { }
+        return $false
+    }
+    $when = $null
+    if ($Job.claimedAt) { $when = [string]$Job.claimedAt }
+    elseif ($Job.createdAt) { $when = [string]$Job.createdAt }
+    if ($when) {
+        try {
+            $t = [datetime]::Parse($when, $null, [Globalization.DateTimeStyles]::RoundtripKind)
+            $age = [int]([datetime]::UtcNow - $t.ToUniversalTime()).TotalSeconds
+            if ($age -gt $OrphanSec) { return $false }
+            return $true
+        }
+        catch { }
+    }
+    return $true
+}
+
+function Filter-BobFleetLaneJobsLive {
+    param(
+        $Jobs,
+        [int]$OrphanSec = 600
+    )
+    $out = @()
+    foreach ($j in @(Normalize-BobPeerLaneJobsResult $Jobs)) {
+        if (-not $j) { continue }
+        if (Test-BobFleetJobProcessLive -Job $j -OrphanSec $OrphanSec) {
+            $out += ,$j
+        }
+    }
+    return $out
 }
 
 function Get-BobPeerLaneJobs {

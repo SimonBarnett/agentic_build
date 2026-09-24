@@ -71,8 +71,14 @@ foreach ($i in 1..20) {
 }
 if (-not $ok) { throw "$ServiceName did not come up (service=$( (Get-Service $ServiceName).Status ); ergo process missing)" }
 
+$jeeves = Get-Service -Name 'BobJeeves' -ErrorAction SilentlyContinue
+if ($jeeves) {
+    Start-Service -Name 'BobJeeves'
+}
+
 Write-Host "Service:  $ServiceName (Automatic, LocalSystem, NSSM)"
 Write-Host "Listen:   TLS :6697"
 Write-Host "Start:    Start-Service $ServiceName"
-Write-Host "Recycle:  Restart-Service $ServiceName"
+Write-Host "Recycle:  Restart-Service $ServiceName; Start-Service BobJeeves"
+Write-Host "Chair:    BobJeeves depends on $ServiceName. Stopping Ergo stops Jeeves; starting Ergo does not start him."
 Write-Host "Old task: $oldTask unregistered"

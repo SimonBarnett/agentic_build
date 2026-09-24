@@ -130,9 +130,7 @@ function Start-BobiverseIrcAgent {
         '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$mid-builder"
+        '--home', $ircHome
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
@@ -149,6 +147,8 @@ while ($true) {
             Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
         }
         Import-BobIrcPeerTranscript | Out-Null
+        # Shop backup: idle w-* says !BORED only. Does not !ACCEPT. Does not claim Jeeves GIT.
+        Import-BobWorkerGitShop | Out-Null
     }
     catch {
         Write-BobiverseLog ('tick error: ' + $_.Exception.Message)

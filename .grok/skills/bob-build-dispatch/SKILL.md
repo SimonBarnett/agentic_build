@@ -3,15 +3,12 @@ name: bob-build-dispatch
 description: >
   Write a build-and-test plan under /docs and Start-BobBuild on a legion machine.
   Use when the user says start the build agent, dispatch build, build0.1, kick
-  the parked spec, or /bob-build-dispatch. Requires docs already parked (see
-  bob-spec-intake). Job polling is grok-build-fleet.
-github: https://github.com/SimonBarnett/agentic_build
+  the parked spec, pick fuel, or /bob-build-dispatch. Requires docs already
+  parked (see bob-spec-intake). Fuel gate is bob-token-handoff (live digest
+  first). Job polling is grok-build-fleet. Bob listens and assigns only.
 ---
 
 # Build plan + dispatch
-
-Foundation: `harvest-agent-skills` (honesty box) -> report back to
-https://github.com/SimonBarnett/agentic_build.
 
 ## 1. Build-and-test plan
 
@@ -29,19 +26,20 @@ Write `docs/build-and-test-plan.md` in the target repo (commit + push) that a bu
 
 Git tasks: `Start-BobBuild -Task git` with **optional** `-Machine` / `-Fuel`.
 Default is `Select-BobGitWorker` (capacity pair, not a nick called cursor).
-Fuel order: Cursor Models remaining > 0 -> `cursor-models`, else
-`grok-build` (`-AllowCopilot` adds copilot). Override remains:
-`-Machine flamingo -Fuel grok-build` for formprep / MSSQL. `-Fix`
-re-runs the picker. **PR workers** use Cursor Composer `composer-2.5`
-or `build0.1` when grok.exe lists it, else `grok-4.5`. **MRB** uses
-Cursor Grok `grok-4.6` (cursor-agent) or grok.exe `grok-4.6`. Never
-Other Models. Transaction: `bob-build-loop`. Handoff: `cursor-mrb-dev`.
-STANDARD MRB worker process: `bob-mrb-worker`.
 
-Ids: `ionos`, `marchhare`, `dev1`, `flamingo` — not hostnames. DUMB / 2012
+**Fuel, before Start-BobBuild:** follow `bob-token-handoff`. Do not re-reason it.
+
+1. Read the live digest webhook first (`https://irc.ntsa.uk/bob/v1/report`, `pcent.cursor-models`). Do not invent the percent. MarchHare has no Cursor login.
+2. Cursor Models remaining > 0 -> `cursor-models`, else `grok-build`. `-AllowCopilot` adds copilot only after that. Never Other Models.
+3. Code agents: **PR = low** (Composer `composer-2.5`, or grok.exe `build0.1` when listed, else `grok-4.5`). **MRB = medium** (`grok-4.6`). **UAT = high** (Bob assigns only; Bob stamps UAT). Maximize free/cheap agents when included fuel remains.
+4. Bob listens and assigns only. Bob does not implement and does not write the MRB.
+
+Override remains: `-Machine flamingo -Fuel grok-build` for formprep / MSSQL. `-Fix` re-runs the picker. Transaction: `bob-build-loop`. Handoff: `cursor-mrb-dev`.
+
+Ids: `ionos`, `marchhare`, `dev1`, `flamingo` -- not hostnames. DUMB / 2012
 is not a git worker.
 
-Load BobBridge from the local agentic_build clone (`C:\\ai\\agentic_build`, `D:\\ai\\agentic_build`, or `C:\\src\\agentic_build`). Run `Get-BobHealth` / `Get-BobMachines` / `Get-BobCapacity`. Heal a dead watcher via `grok-build-fleet`.
+Load BobBridge from the local agentic_build clone (`C:\ai\agentic_build`, `D:\ai\agentic_build`, or `C:\src\agentic_build`). Run `Get-BobHealth` / `Get-BobMachines` / `Get-BobCapacity`. Heal a dead watcher via `grok-build-fleet`.
 
 ## 3. Start-BobBuild
 
@@ -53,7 +51,7 @@ Constraints (examples):
 
 - Do not invent APIs or procedure names the spec forbids
 - Do not put password= or API key **assignments** in prompts or commits
-- PR workers: Composer `composer-2.5`, or `build0.1` if `grok models` has it, else `grok-4.5`. Do not use Other Models.
+- PR workers: low tier (Composer `composer-2.5`, or `build0.1` if `grok models` has it, else `grok-4.5`). MRB: medium (`grok-4.6`). Do not use Other Models. Fuel number from `bob-token-handoff` (digest first).
 - Keep prior version folders intact on feature work
 - Success = PR URL, not a push to main
 
@@ -65,12 +63,10 @@ Prefer instructional wording for secrets ("do not set an API key environment var
 
 - Tell the human `jobId` + machine.
 - Poll `Get-BobBuild` / reply_channel pings (see `grok-build-fleet`).
-- On the worker PR, run `bob-job-loop` (`Start-BobBuildLoop.ps1`) so MRB
-  follows `bob-mrb-worker` until PASS merge (GitHub issue, not a PDF).
-  Single-SHA handoff: `bob-hostile-mrb` / `cursor-mrb-dev`. Worker STANDARD:
-  `bob-mrb-worker` (PASS merge; FAIL one fix PR then merge both).
+- On the worker PR, run `bob-job-loop` (`Start-BobBuildLoop.ps1`) so MRB/FIX
+  retries until PASS-nits (GitHub issue, not a PDF). Single-SHA handoff:
+  `bob-hostile-mrb` / `cursor-mrb-dev`.
 
 ## Long jobs
 
-Product builds often exceed a few minutes. Rely on Watch-BobAgents for
-running_orphan / inbox_stale / agent_stall. Do not Stop-BobBuild solely because wall time feels long while the worker process is alive. Prefer profiles.generic.timeoutSec >= 7200 on legion boxes.
+Product builds often exceed a few minutes. Rely on Watch-BobAgents for unning_orphan / inbox_stale / gent_stall. Do not Stop-BobBuild solely because wall time feels long while the worker process is alive. Prefer profiles.generic.timeoutSec >= 7200 on legion boxes.

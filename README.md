@@ -66,19 +66,53 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 
 ### Flow
 
+Proposed pair model (`#175` — Simon check this logic before more impl):
+
 ```mermaid
-flowchart TD
-  A[Get MRB: repo + PR] --> B[Checkout PR branch]
-  B --> C[Read the PR: intent + changed files]
-  C --> D[Add NEW tests appropriate to this PR]
-  D --> E[Run existing + new tests]
-  E --> F[Hostile review of the change]
-  F --> G{Verdict}
-  G -->|PASS| H[Merge PR to main]
-  H --> I[Jeeves announces merge]
-  G -->|FAIL| J[One fix branch/PR with the fix]
-  J --> K[Merge original PR + fix PR — one new PR only for the fix]
-  K --> L[Jeeves announces both]
+flowchart TB
+  IN["FR or functional spec for a new repo\nusually turns up"]
+  IN --> PARK["bob-machine parks issue + /docs"]
+  PARK --> CHAIR["bob-machine is the grok chair\ninstalled on every box\nbobiverse skills"]
+  TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
+  TIX --> ASSIGN
+  CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
+  CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
+  CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
+  CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
+  RT --> PAIR
+  CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> PING15["Every 15 min Bob pings own shop\ncheck connections / online\nintervene if workers stalled"]
+  CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
+  USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
+  CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
+  CHAIR --> OPS["bob-machine is ops in own shop channel\nJeeves is ops in #bobiverse"]
+  MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
+
+  subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
+    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+  end
+
+  PAIR --> WA
+  PAIR --> WB
+  ASSIGN --> WA
+  ASSIGN --> WB
+  MON -.-> PAIRBOX
+  WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
+  FIX --> WA
+  WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
+  NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
+  SWAP --> WA
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
+
+  WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
+  WB --> POST
+  POST --> DIG["Digest updates"]
+  DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nUAT model: MORE\nworkers never stamp UAT"]
 ```
 
 Full product loop (park / fuel / build) still uses `bob-spec-intake` +
