@@ -23,6 +23,12 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
 **Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, …). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
 
+**GIT work backup:** `bob-*` do not auto-claim Jeeves `GIT` lines.
+Idle `w-*` (> 2 min) says `!BORED` on the shop; on the chair's next
+offer it says `!ACCEPT {repo} {task} {id}` and `Start-BobBuild`.
+Skill `bob-git-accept`. Chair FIFO is agentic_irc `jeeves-git-webhook`
+(do not reimplement the queue here).
+
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
 

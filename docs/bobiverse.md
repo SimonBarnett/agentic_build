@@ -27,6 +27,12 @@ Home on each box: `~\.agentic-irc-bobiverse` (not the Club Madeira `#cm-bob-osca
 
 Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `#ionos`, `#ce-priority-dev1`; `#dev1` is the same room as `#ce-priority-dev1`). `bob-*` builders JOIN `#bobiverse` **and** the local shop (`Get-BobIrcBuilderChannels` in `Watch-Bobiverse` / `Install-BobIrc`). Git/MRB workers never JOIN `#bobiverse`; they appear on the shop only as `w-<short>-<pid>` (`w-io-<pid>` on ionos, `w-fl-<pid>` on flamingo, etc.) via `Start-BobWorkerIrcAgent` → `agentic_irc` `start_worker_irc_agent.py`. No `!report` write path on IRC; digest updates use write-only `reportUrl` POST (below).
 
+### Shop GIT backup (`!BORED` / `!ACCEPT`)
+
+Jeeves is the only nick that says `GIT` on `#bobiverse`. `bob-*` does not auto-claim those lines. When a `w-*` ear has been idle for more than 2 minutes, `Watch-Bobiverse` appends `PRIVMSG #<shop> :!BORED` to **that worker's** `outbox.txt` (not the builder outbox, not the chair outbox). Jeeves (agentic_irc chair; it already joins each shop) offers the next unaccepted task. The same `w-*` then says `!ACCEPT {repo} {task} {id}` and `Start-BobBuild` enqueues it. The digest webhook reports that inbox job and drops it when the job leaves inbox/running. Chair FIFO file `git-accept-queue.json` is read-only here. Skill `bob-git-accept`.
+
+After this lands on `main`, recycle **Watch-Bobiverse** on each box so the poller loads the shop tick. Recycle Jeeves only with the agentic_irc chair-queue change.
+
 ## Status on disk
 
 `Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.

@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-24 — shop !BORED / !ACCEPT (not bob-* auto-claim)
+
+Simon: when Jeeves announces GIT work, the backup is an idle `w-*`
+(`!BORED` after 2 min, then `!ACCEPT {repo} {task} {id}`), not a
+`bob-*` ear claiming every `GIT` line. Chair FIFO stays in
+agentic_irc `jeeves-git-webhook`. Home: `bob-git-accept`. Pointers:
+`bob-irc`, `github-irc-webhooks`, `setup-github-webhooks`,
+`docs/bobiverse.md`.
+
 ## 2026-09-23 — land quiet-talk park doc (#36 FIX)
 
 Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.

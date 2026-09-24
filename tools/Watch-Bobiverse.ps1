@@ -149,6 +149,8 @@ while ($true) {
             Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
         }
         Import-BobIrcPeerTranscript | Out-Null
+        # Shop backup: idle w-* !BORED / !ACCEPT. Does not claim Jeeves GIT on #bobiverse.
+        Import-BobWorkerGitShop | Out-Null
     }
     catch {
         Write-BobiverseLog ('tick error: ' + $_.Exception.Message)
