@@ -31,7 +31,7 @@ function Get-CursorIrcPython {
 }
 
 $mid = $env:BOB_MACHINE_ID
-if (-not $mid) { $mid = 'ionos' }
+if (-not $mid) { throw 'BOB_MACHINE_ID required for Watch-CursorIrc' }
 $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-cursor'
 if ($env:AGENTIC_IRC_CURSOR_HOME -and $env:AGENTIC_IRC_CURSOR_HOME.Trim()) {
     $ircHome = $env:AGENTIC_IRC_CURSOR_HOME.Trim()
@@ -118,8 +118,8 @@ function Test-CursorIrcTsrUp {
     $pidFile = Join-Path $logDir "irc-tsr-$nick.pid"
     if (-not (Test-Path $pidFile)) { return $false }
     try {
-        $pid = [int](Get-Content $pidFile -Raw).Trim()
-        return $null -ne (Get-Process -Id $pid -ErrorAction SilentlyContinue)
+        $tsrPid = [int](Get-Content $pidFile -Raw).Trim()
+        return $null -ne (Get-Process -Id $tsrPid -ErrorAction SilentlyContinue)
     }
     catch { return $false }
 }
@@ -154,7 +154,6 @@ while ($true) {
     try {
         New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
         Start-CursorIrcAgent -Py $py -Nick $nick -IrcHomeDir $ircHome
-        # TSR must follow every agent start or the coordinator cannot hear IRC.
         Start-CursorIrcListen -Py $py -IrcHomeDir $ircHome
     }
     catch {

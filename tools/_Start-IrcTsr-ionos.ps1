@@ -1,3 +1,3 @@
-# DO NOT EDIT — ionos Cursor IRC TSR wrapper ({machine}-{pid} nick).
+# DO NOT EDIT — per-machine wrapper from Install-BobFleet.ps1 (ionos).
 $env:BOB_MACHINE_ID = 'ionos'
-& 'C:\ai\agentic_build\tools\Start-IrcTsr.ps1' -MachineId ionos
+& (Join-Path $PSScriptRoot 'Start-IrcTsr.ps1') -MachineId ionos

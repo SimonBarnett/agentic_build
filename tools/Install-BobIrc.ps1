@@ -22,7 +22,8 @@ $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
 $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
 $nick = [string]$cfg.nicks.$MachineId
 if (-not $nick) { $nick = 'bob-' + $MachineId }
-$channel = [string]$cfg.channel
+$mootChannel = [string]$cfg.channel
+if (-not $mootChannel) { $mootChannel = '#bobiverse' }
 $mootId = [string]$cfg.mootId
 $ircHost = [string]$cfg.host
 $ircPort = 6697
@@ -54,9 +55,11 @@ $env:AGENTIC_IRC_HOME = $ircHome
 $env:BOB_IRC_NICK = $nick
 
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
+$agentChannels = $mootChannel
 if (Test-Path $psd1) {
     Import-Module $psd1 -Force
     Compact-BobIrcOutbox -Home $ircHome
+    $agentChannels = Get-BobIrcBuilderChannels -MachineId $MachineId
 }
 
 $ident = Join-Path $ircHome 'identity.json'
@@ -87,7 +90,7 @@ if ($already.Count -eq 0) {
         '--host', $ircHost,
         '--port', "$ircPort",
         '--nick', $nick,
-        '--channel', $channel,
+        '--channel', $agentChannels,
         '--home', $ircHome,
         '--announce-key',
         '--hello', "$MachineId-builder"
@@ -99,13 +102,13 @@ $mootPy = Join-Path $IrcRoot 'scripts\moot.py'
 $isChair = $Chair -or ($MachineId -eq 'flamingo')
 $stPath = Join-Path $ircHome (Join-Path 'moot' ($mootId + '.json'))
 if ($isChair -and -not (Test-Path $stPath)) {
-    & $py $mootPy --home $ircHome open --id $mootId --nick $nick --channel $channel --mode free --topic 'bobiverse fleet roster'
+    & $py $mootPy --home $ircHome open --id $mootId --nick $nick --channel $mootChannel --mode free --topic 'bobiverse fleet roster'
 }
 elseif (-not $isChair) {
-    & $py $mootPy --home $ircHome join --id $mootId --nick $nick --channel $channel
+    & $py $mootPy --home $ircHome join --id $mootId --nick $nick --channel $mootChannel
 }
 
-Write-Host "Bobiverse:  $channel moot=$mootId nick=$nick"
+Write-Host "Bobiverse:  $mootChannel (+ shop via agent) moot=$mootId nick=$nick"
 Write-Host "Home:       $ircHome"
 Write-Host "Python:     $py"
 Write-Host "Agent:      irc_agent.py (hidden, log ~/.grok/long-running-background-tasks/bobiverse_irc.log)"

@@ -8,13 +8,13 @@ param(
 
 $ErrorActionPreference = 'Continue'
 if (-not $MachineId) { $MachineId = $env:BOB_MACHINE_ID }
-if (-not $MachineId) { $MachineId = 'ionos' }
+if (-not $MachineId) { throw 'MachineId required (set BOB_MACHINE_ID or pass -MachineId)' }
 if (-not $IrcHome) {
     $IrcHome = Join-Path $env:USERPROFILE '.agentic-irc-cursor'
     if ($env:AGENTIC_IRC_CURSOR_HOME) { $IrcHome = $env:AGENTIC_IRC_CURSOR_HOME.Trim() }
 }
 if (-not $IrcRoot) {
-    foreach ($c in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc')) {
+    foreach ($c in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc', 'C:\src\agentic_irc')) {
         if (Test-Path (Join-Path $c 'scripts\irc_listen.py')) { $IrcRoot = $c; break }
     }
 }
