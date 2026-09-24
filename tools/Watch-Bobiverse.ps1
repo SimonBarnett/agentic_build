@@ -130,9 +130,7 @@ function Start-BobiverseIrcAgent {
         '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$mid-builder"
+        '--home', $ircHome
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }

@@ -1,4 +1,4 @@
-﻿function Test-BobTrayLooksLikeSha {
+function Test-BobTrayLooksLikeSha {
     param([string]$Value)
     if (-not $Value) { return $true }
     $s = [string]$Value.Trim()
@@ -552,6 +552,19 @@ function Get-BobCursorOverageGbp {
             return [double]$doc.overage_gbp
         }
     } catch { }
+    try {
+        $cache = Read-BobCursorPoolsCache
+        foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+            $lab = $null
+            if ($seatEnt.Value.overage_label) { $lab = [string]$seatEnt.Value.overage_label }
+            if (-not $lab) { continue }
+            # Real overspend only (GBP/USD), never plain "0%" / "82%" remaining labels.
+            if (-not (($lab -match '^-') -or ($lab.IndexOf([char]0x00A3) -ge 0) -or ($lab -match 'GBP|\$'))) { continue }
+            if ($lab -match '([0-9]+(?:\.[0-9]+)?)') {
+                return [double]$Matches[1]
+            }
+        }
+    } catch { }
     return $null
 }
 function Test-BobCursorOverageLabel {
@@ -1051,6 +1064,105 @@ function ConvertFrom-BobReportDigestTask {
     }
 }
 
+function Format-BobCursorControlPoolPctLabel {
+    param($RemainingPct)
+    if ($null -eq $RemainingPct) { return 'n/a' }
+    return ('{0}%' -f [int]$RemainingPct)
+}
+
+function Format-BobCursorControlPoolHeading {
+    param(
+        [string]$GroupLabel,
+        [string]$PctLabel,
+        [string]$ResetLabel
+    )
+    $heading = ('{0}  {1}' -f $GroupLabel, $PctLabel)
+    if ($ResetLabel) { $heading = ('{0}  {1}' -f $heading, $ResetLabel) }
+    return $heading
+}
+
+function Select-BobCursorGroupRemainMinimum {
+    param([AllowNull()]$Values)
+    $known = @()
+    foreach ($v in @($Values)) {
+        if ($null -eq $v) { continue }
+        try { $known += ,[int]$v } catch { }
+    }
+    if ($known.Count -eq 0) { return $null }
+    return ($known | Measure-Object -Minimum).Minimum
+}
+
+function Get-BobCursorGroupPeriodEndForTray {
+    param(
+        $LocalCursorDoc,
+        $SeatCacheEntry,
+        [string]$GroupId,
+        [switch]$OnSeat
+    )
+    $gid = [string]$GroupId
+    if ($OnSeat -and $LocalCursorDoc) {
+        if ($gid -eq 'grok-chat') {
+            if ($LocalCursorDoc.sand_period_end) { return [string]$LocalCursorDoc.sand_period_end }
+            if ($LocalCursorDoc.period_end) { return [string]$LocalCursorDoc.period_end }
+        }
+        elseif ($LocalCursorDoc.period_end) {
+            return [string]$LocalCursorDoc.period_end
+        }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.groups) {
+        $g = $SeatCacheEntry.groups.$gid
+        if ($g -and $g.period_end) { return [string]$g.period_end }
+    }
+    if ($SeatCacheEntry -and $SeatCacheEntry.period_end -and $gid -ne 'grok-chat') {
+        return [string]$SeatCacheEntry.period_end
+    }
+    return $null
+}
+
+function Resolve-BobCursorPcentRowMapping {
+    param($Pc, [string]$MachineId)
+    if (-not $Pc) { return $null }
+    $src = [string]$Pc.source
+    if (-not $src) { return $null }
+    $pct = ConvertTo-BobTrayIntOrNull $Pc.pct
+    if ($null -eq $pct) { return $null }
+    $reportMac = [string]$Pc.machine
+    if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
+    $seatId = $src
+    $groupId = $null
+    if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models') {
+        $groupId = 'low-cost-models'
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
+        $groupId = $src
+        $macForSeat = $MachineId
+        if ($reportMac) { $macForSeat = $reportMac }
+        $seat = Get-BobSeatForMachine -MachineId $macForSeat
+        if ($seat) { $seatId = [string]$seat.id }
+    }
+    elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
+        $seatId = $src
+        $groupId = 'low-cost-models'
+    }
+    if (-not $groupId) { return $null }
+    return [pscustomobject]@{ seat_id = $seatId; group_id = $groupId; pct = $pct }
+}
+
+function Set-BobCursorControlPoolRow {
+    param($Pool, $RemainingPct, [string]$PeriodEnd)
+    $resetLabel = Format-BobResetLabel $PeriodEnd
+    $pctLabel = Format-BobCursorControlPoolPctLabel $RemainingPct
+    $Pool.remaining_pct = $RemainingPct
+    $Pool.period_end = $PeriodEnd
+    $Pool.reset_label = $resetLabel
+    $Pool.pct_label = $pctLabel
+    $Pool.heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
+}
+
 function Get-BobCursorPoolsForTray {
     param(
         [string]$MachineId,
@@ -1088,12 +1200,32 @@ function Get-BobCursorPoolsForTray {
         $glabel = [string]$grp.label
         $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid
         if ($null -eq $remain) { $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid }
+        if ($null -eq $remain) {
+            # Fleet-shared Cursor: any seat cached group (ionos/flamingo publish; MarchHare consumes).
+            foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+                $cand = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $seatEnt.Value -GroupId $gid
+                if ($null -eq $cand) { continue }
+                if ($null -eq $remain -or [int]$cand -lt [int]$remain) { $remain = [int]$cand }
+            }
+        }
         # 0% is a real value (#179) — only missing/null is n/a.
         $pctLabel = 'n/a'
         if ($null -ne $remain -and [string]$remain -ne '') { $pctLabel = ('{0}%' -f [int]$remain) }
         # Per-group reset: grok chat uses Sand nextReset; spending + on-demand use billingCycleEnd.
         $pe = $periodEnd
         if ($gid -eq 'grok-chat' -and $sandPeriodEnd) { $pe = $sandPeriodEnd }
+        if ($ce -and $ce.groups) {
+            $ge = $ce.groups.$gid
+            if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
+            if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
+        }
+        if ($null -eq $pe -or $pe -eq '') {
+            foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+                if (-not $seatEnt.Value.groups) { continue }
+                $ge = $seatEnt.Value.groups.$gid
+                if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
+            }
+        }
         $resetLabel = Format-BobResetLabel $pe
         $heading = ('{0}  {1}' -f $glabel, $pctLabel)
         if ($resetLabel) { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
@@ -1119,29 +1251,29 @@ function Get-BobCursorPoolsForTray {
         if ($null -eq $pct) { continue }
         $reportMac = [string]$pc.machine
         if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
-        if ($reportMac -and [string]$reportMac -ne [string]$MachineId) { continue }
         $seatId = $localSeatId
         $groupId = $null
+        # Cursor spending groups are fleet-shared via digest/IRC (MarchHare has no local Cursor).
         if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models' -or $src -eq 'auto') {
             $groupId = 'auto'
-            $macForSeat = $MachineId
-            if ($reportMac) { $macForSeat = $reportMac }
-            $seat = Get-BobSeatForMachine -MachineId $macForSeat
-            if ($seat) { $seatId = [string]$seat.id }
         }
-        elseif ($src -eq 'grok-chat' -or $src -eq 'high-cost-models') {
-            $groupId = $src
-            $macForSeat = $MachineId
-            if ($reportMac) { $macForSeat = $reportMac }
-            $seat = Get-BobSeatForMachine -MachineId $macForSeat
-            if ($seat) { $seatId = [string]$seat.id }
+        elseif ($src -eq 'grok-chat' -or $src -eq 'grok-weekly' -or $src -eq 'sand') {
+            $groupId = 'grok-chat'
+        }
+        elseif ($src -eq 'high-cost-models' -or $src -eq 'other-models') {
+            $groupId = 'high-cost-models'
         }
         elseif ($src -match '^(smart-catalogue|club-madeira|ntsa)$') {
             $seatId = $src
-            $groupId = 'low-cost-models'
+            $groupId = 'auto'
+            if ($seatId -and $localSeatId -and [string]$seatId -ne [string]$localSeatId) { continue }
         }
+        else { continue }
         if (-not $groupId) { continue }
-        if ($seatId -and $localSeatId -and [string]$seatId -ne $localSeatId) { continue }
+        if ($reportMac) {
+            $macSeat = Get-BobSeatForMachine -MachineId $reportMac
+            if ($macSeat) { $seatId = [string]$macSeat.id }
+        }
         foreach ($pool in $pools) {
             if ([string]$pool.group_id -eq $groupId) {
                 $pool.remaining_pct = $pct
@@ -1151,12 +1283,16 @@ function Get-BobCursorPoolsForTray {
                 break
             }
         }
-        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
-            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $pct
-            if ($groupId -eq 'low-cost-models') {
-                Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $pct
+        foreach ($seat in @(Get-BobSeatConfig)) {
+            if (-not $seat -or -not $seat.id) { continue }
+            $sid = [string]$seat.id
+            Save-BobCursorPoolGroupForSeat -SeatId $sid -GroupId $groupId -RemainingPct $pct
+            if ($groupId -eq 'low-cost-models' -or $groupId -eq 'auto') {
+                Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $pct
             }
         }
+        Set-BobCursorControlPoolRow -Pool $row -RemainingPct $remain -PeriodEnd $periodEnd
+        $pools += ,$row
     }
     return $pools
 }
