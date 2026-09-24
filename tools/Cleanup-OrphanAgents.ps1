@@ -1,4 +1,4 @@
-# Cleanup-OrphanAgents.ps1 — close orphan python/node/powershell; keep fleet.
+﻿# Cleanup-OrphanAgents.ps1 — close orphan python/node/powershell; keep fleet.
 # Skill: cleanup-orphans. Never print secrets.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(

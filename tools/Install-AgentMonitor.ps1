@@ -1,4 +1,4 @@
-# Install / initialise the AgentMonitor watch-seat on this box. Not a Windows
+﻿# Install / initialise the AgentMonitor watch-seat on this box. Not a Windows
 # service. Triggered by the Bob Fleet tray "Agents" menu when a watch-seat
 # agent (Cursor / Grok) is not yet installed, or run by hand / skill harvest.
 # Deploys github.com/SimonBarnett/AgentMonitor into Desktop\Watch-AgentHealth
