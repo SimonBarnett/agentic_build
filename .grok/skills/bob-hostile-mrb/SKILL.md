@@ -16,6 +16,14 @@ Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`.
 
+## Shop IRC (every MRB worker)
+
+Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
+JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
+title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
+Conversation stdout → shop. Thinking/tool traces → open Query only.
+On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
+
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
@@ -73,6 +81,28 @@ The loop finish race (`FAILED: PASS-nits finish: PR still open after gh
 pr merge`) is not a reason to skip close/pull. If the PR is already
 MERGED and the FR is CLOSED, treat DONE, then still pull.
 
+## recycle-after-merge (Simon 2026-09-23 — merger owns live fleet)
+
+Anyone merging `agentic_build` or `agentic_irc` to **main** (PASS-nits MRB
+worker or Bob) must **recycle-after-merge** so live boxes are not left on
+the old tree. Sister FR: `agentic_irc` #168 (`agentic-irc` / `bob-irc`
+skills); this skill owns the MRB merger duty on `agentic_build`.
+
+After merge, close, and pull (above), before the driver prints DONE:
+
+4. **Recycle live machines**: merger (or Bob) recycles Watch-Bobiverse,
+   Bob Fleet tray, and agent seats on affected fleet boxes — pull `main`
+   at the merge SHA, then roll watchers / tray / seats per local playbook.
+5. **ionos restart IRC when required**: when the merged change is not
+   tray-only, notify **ionos** to restart IRC altogether (Ergo / bobircd /
+   chair). Merger decides tray-only vs full IRC restart; exact notify
+   transport is UNKNOWN (`agentic_irc` #152).
+
+**Implementer PR workers do not live-recycle.** Document the duty in skill
+and FR only. Bob or ionos runs recycle / IRC restart after merge to main —
+not a worker on DEV1 (or any non-merger seat) calling live `!recycle` at
+another box.
+
 Escape hatch: if Cursor Agent and grok.exe both cannot start, Bob writes the
 MRB himself using the rest of this skill. Say that in the issue.
 
@@ -124,13 +154,17 @@ voided issue. If you then see the **same PR already MERGED** (another
 worker scored a later head, or `gh pr view` is MERGED), close that
 leftover FAIL with the merged PR URL. Do **not** start FIX. Pull
 main. Do not claim you merged unless your `gh pr merge` succeeded.
+`gh pr merge` can print `already merged` and still exit 0. That is
+not this worker's merge. Parse stdout. Do not write `Merged <url>`
+unless this process created the merge commit.
 
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
-4. Post with `tools/Start-BobMrb.ps1`:
-   - Title: `MRB FAIL|PASS-nits: <feature slug> <sha>`
-   - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
+4. Post **only** with `tools/Start-BobMrb.ps1` (never `gh issue create`):
+   - `-Verdict FAIL` or `PASS-nits`; title slug + `-Sha`; body sections as below.
+   - **PASS-nits requires `-PrUrl`** — the script **merges that PR before** creating the
+     `mrb-pass` issue. If merge fails, post **FAIL** instead.
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
 5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**

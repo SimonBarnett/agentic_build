@@ -45,7 +45,28 @@ line wakes you. Stdout is `DONE` / `FAILED` only.
 Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 (default `~\.grok\bob-bridge\loops\`).
 
-A new persistent worker seat is Watch-AgentHealth only (`watch-agent-health`). This driver starts **jobs**, not seats.
+## FR queue (receive order)
+
+Work **one FR at a time** until MRB **PASS-nits** (`phase=pass` on its loop
+board, driver stdout `DONE`). Do **not** start the next FR while the current
+one is still building, in MRB, or in FIX.
+
+**Queue order**
+
+1. User-stated sequence wins (e.g. “#70 then #73”).
+2. Else: open `feature-request` issues on that repo, **lowest issue number
+   first** (proxy for received order when parked in order).
+3. Skip issues already `phase=pass`, closed, or superseded.
+
+**While the head of the queue is open:** no second loop on a later FR for the
+same repo (no parallel build/MRB on #70 and #73). Chained wrappers must
+wait for the prior loop to exit `DONE` before launching the next. An older FR
+still in `wait_mrb` / `wait_pr` (e.g. #56) blocks starting a newer FR (#70)
+unless the human explicitly reprioritizes and pauses the older board.
+
+After PASS-nits on the current FR, launch **only** the next queued FR (one
+`run-bob-build-loop.ps1`, new worktree + log). Missing-features issues parked
+by MRB join the **tail** of the queue in issue-number order.
 
 ## Dispatcher hard rules
 
@@ -143,3 +164,24 @@ A new persistent worker seat is Watch-AgentHealth only (`watch-agent-health`). T
 Never Other Models. Copilot only with `-AllowCopilot`. No MRB PDF. No
 `password=` / `XAI_API_KEY=` assignments. Test-Pack seams: `-Once`
 `-TestWorld` only.
+
+## GitHub hygiene (do not troll old boards)
+
+After messy MRB cycles or before picking the next FR, sweep the repo so
+open lists show **current** work only:
+
+```powershell
+# Issues: PASS boards, superseded FAIL, loop-pass FRs
+tools/Close-BobMrbPassedIssues.ps1 -Repo owner/repo
+
+# PRs: duplicate FIX stacks, stale PRs when the FR is already closed
+tools/Close-BobSupersededGithub.ps1 -Repo owner/repo -ProtectPrNumbers <active-pr>
+
+# Retro merge when PASS boards exist but gh merge was skipped earlier
+tools/Merge-BobMrbPassOpenPrs.ps1 -Repo owner/repo
+```
+
+MRB **PASS-nits** must use `Start-BobMrb.ps1 -PrUrl <url>` (merges with
+`gh pr merge --merge` before posting). Loop `DONE` also runs
+`Close-BobBuildLoopFinished` (merge + close). Protect the PR on an
+**active** loop board (`phase` not `pass`/`failed`) via `-ProtectPrNumbers`.
