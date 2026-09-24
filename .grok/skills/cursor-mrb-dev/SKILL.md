@@ -1,18 +1,25 @@
 ---
 name: cursor-mrb-dev
 description: >
-  Hand off hostile MRB then FIX until PASS-nits: Cursor Models while remaining
-  > 0, else grok.exe. Workers open PRs. PASS-nits merges. FAIL spawns a FIX
-  worker unless the loop PR is already merged (leftover FAIL; dispatcher
-  closes the board, no FIX). Use when the user says cursor mrb, mrb until pass, cursor
-  builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev. Launch: start-bob-cursor.
-  Verdicts: bob-hostile-mrb. Table: bob-build-loop. Bob stamps UAT.
+  Hand off hostile MRB per bob-mrb-worker: Cursor Models while remaining > 0,
+  else grok.exe. Workers open PRs. PASS merges. FAIL → exactly one fix PR then
+  merge both (not a FIX-worker chain). Leftover FAIL after another seat already
+  merged: close the board, no extra fix. Use when the user says cursor mrb,
+  mrb until pass, cursor builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev.
+  Launch: start-bob-cursor. Verdicts: bob-hostile-mrb. Standard: bob-mrb-worker.
+  Table: bob-build-loop. Bob stamps UAT.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
-# MRB / FIX until PASS-nits
+# MRB / one-fix until PASS
 
-Transaction table and mermaid: `bob-build-loop`. Bob does not write the MRB
-or the code. Hand off, watch GitHub, dispatch the next row.
+Foundation: `harvest-agent-skills` (honesty box) -> report back to
+https://github.com/SimonBarnett/agentic_build.
+
+**STANDARD process:** `bob-mrb-worker` (tests-first mermaid; PASS merge;
+FAIL one fix PR then merge both). Transaction pointer: `bob-build-loop`.
+Bob does not write the MRB or the code. Hand off, watch GitHub, dispatch
+the next row.
 
 ## Fuel (no judgment)
 
@@ -60,16 +67,17 @@ Workers post via `tools/Start-BobMrb.ps1` (creates missing `mrb` /
 Driver: `tools/Start-BobBuildLoop.ps1` / `tools/run-bob-build-loop.ps1`
 (skill `bob-job-loop`). Launch it and wait for `DONE`. It starts the PR
 worker if needed, hands off MRB to a **new** `-Kind mrb` agent, retries
-failed cursor/grok jobs, reads Required fixes on FAIL, back-links boards,
-and exits on PASS-nits. On FAIL, or when open `feature-request` issues
-remain after DONE / Missing features, pass each to a **new** worker. Do
-not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix` by hand unless
-the driver cannot start. Do not resume the implementer to review their
-own PR.
+failed cursor/grok jobs, and exits on PASS merge. On FAIL the MRB seat
+follows `bob-mrb-worker` (one fix PR, merge both). When open actionable
+issues remain after DONE / Missing features, pass each to a **new**
+worker. Do not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix` by
+hand unless the driver cannot start. Do not resume the implementer to
+review their own PR.
 Board state: `Get-BobMrbBoard` in `tools/Bob-BuildLoop.ps1`.
 
-Transaction table: `bob-build-loop`. Bars: `bob-hostile-mrb`. Launch
-primitives: `start-bob-cursor`. Only **Bob** stamps ready for human UAT.
+Transaction table: `bob-build-loop`. Bars: `bob-hostile-mrb`. Standard:
+`bob-mrb-worker`. Launch primitives: `start-bob-cursor`. Only **Bob**
+stamps ready for human UAT.
 
 ## Watch
 
@@ -82,3 +90,4 @@ grok-4.6` (MRB) or `--model composer-2.5` (PR) when fuel is cursor-models.
 - No MRB PDFs.
 - No `password=` / `XAI_API_KEY=` assignments.
 - Do not burn Grok Bot weekly when Cursor Models or grok.exe can take it.
+- Do not spawn multiple fix PRs for one FAIL (`bob-mrb-worker`).

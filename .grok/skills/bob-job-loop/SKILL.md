@@ -1,22 +1,28 @@
 ---
 name: bob-job-loop
 description: >
-  Hand off starting a git job and hostile MRB until PASS-nits: run
+  Hand off starting a git job and hostile MRB until PASS: run
   Start-BobBuildLoop.ps1 (or tools/run-bob-build-loop.ps1) and get notified
-  on DONE. Retries failed cursor/grok jobs. FAIL spawns FIX. After PASS-nits,
-  hand remaining open issues (not only feature-request) to new workers.
-  Does not stamp UAT. Use when the user says hand off the job, bob job,
-  bob job FRs, start and mrb until pass, retry failed cursor/grok jobs,
-  run the program and notify on PASS-nits, or /bob-job-loop. Table:
-  bob-build-loop. Bars: bob-hostile-mrb.
+  on DONE. Retries failed cursor/grok jobs. FAIL follows bob-mrb-worker (one
+  fix PR, merge both). After PASS, hand remaining open issues (not only
+  feature-request) to new workers. Does not stamp UAT. Use when the user
+  says hand off the job, bob job, bob job FRs, start and mrb until pass,
+  retry failed cursor/grok jobs, run the program and notify on PASS-nits,
+  or /bob-job-loop. Table: bob-build-loop. Bars: bob-hostile-mrb. Standard:
+  bob-mrb-worker.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
-# Build / MRB until PASS-nits (one program)
+# Build / MRB until PASS (one program)
+
+Foundation: `harvest-agent-skills` (honesty box) -> report back to
+https://github.com/SimonBarnett/agentic_build.
 
 Transaction table: `bob-build-loop`. Fuel and login: `cursor-mrb-dev` /
-`start-bob-cursor`. Verdicts: `bob-hostile-mrb`.
+`start-bob-cursor`. Verdicts / boards: `bob-hostile-mrb`. **Worker STANDARD:**
+`bob-mrb-worker`.
 
-The dispatcher does not sit in the MRB/FIX table. Launch the driver, then
+The dispatcher does not sit in the MRB table. Launch the driver, then
 stop. Do not poll `Get-BobBuild`. Do not retype `Start-BobMrbHandoff` or
 `Start-BobBuild -Fix` unless the driver cannot start.
 
@@ -61,9 +67,10 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    PR exists (or a local branch with the work), push if needed, re-pin the
    board to `idle`/`wait_mrb` with `-Sha`/`-Pr`, and relaunch. Do not burn
    three more blind builds first.
-8. **Pass to a new worker when MRB FAIL** (FIX with Required fixes) **or
-   when any open actionable issues remain** after this FR's PASS-nits /
-   Missing features park. Do not stop at one FR DONE while open work
+8. **MRB FAIL** follows `bob-mrb-worker`: the MRB seat opens **exactly one**
+   fix PR and merges original + fix (not a FIX-worker chain). **Also** pass
+   to a new worker when any open actionable issues remain after this FR's
+   PASS / Missing features park. Do not stop at one FR DONE while open work
    sits idle. Skip boards already `phase=pass` and superseded issues.
 9. **No Bob, still open issues — find a seat (Simon 2026-09-22):** after
    MRB, if Bob is absent and open actionable issues remain, do not park
@@ -71,7 +78,7 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    next issue, or start the next `bob-job-loop` yourself. Harvest into
    skills when this rule is learned (`harvest-agent-skills`).
 10. **Check open issues as well as FRs (Simon 2026-09-22):** when bob-job
-    looks for work (first launch, after PASS-nits, short-of-work, no-Bob),
+    looks for work (first launch, after PASS, short-of-work, no-Bob),
     run `gh issue list --state open` on the repo — **not only**
     `--label feature-request`. Actionable = any open issue that is not a
     pure MRB meta board (`mrb` + `mrb-pass`/`mrb-fail`, titles starting
@@ -91,23 +98,23 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
 
 ## On wakeup
 
-- `DONE: MRB PASS-nits ...` — tell the human the issue, SHA, and PR. Do
-  not stamp ready for human UAT. Bob chairs that. Confirm the MRB
-  **merged the PR, closed the finished FR / FAIL / PASS issues, and
-  pulled the merge onto product main** (Simon 2026-09-22 — VERY
-  important). If merge/close was skipped, run `Close-BobBuildLoopFinished`
-  and `git fetch` + fast-forward before anything else. Then list **all
-  open issues** on that repo (not only `feature-request`); for each
-  actionable issue not already PASS and not superseded, launch a new
-  `bob-job-loop` (isolated worktree + unique log) **from the pulled
-  main**. Also launch any issues the MRB just parked under Missing
-  features.
+- `DONE: MRB PASS-nits ...` / PASS merge — tell the human the issue, SHA,
+  and PR. Do not stamp ready for human UAT. Bob chairs that. Confirm the
+  MRB **merged the PR (and any single fix PR), closed the finished FR /
+  FAIL / PASS issues, and pulled the merge onto product main** (Simon
+  2026-09-22 — VERY important). If merge/close was skipped, run
+  `Close-BobBuildLoopFinished` and `git fetch` + fast-forward before
+  anything else. Then list **all open issues** on that repo (not only
+  `feature-request`); for each actionable issue not already PASS and not
+  superseded, launch a new `bob-job-loop` (isolated worktree + unique log)
+  **from the pulled main**. Also launch any issues the MRB just parked
+  under Missing features.
 - `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
   secrets in the goal), then relaunch. Do not start a second loop on the
   same FR while one is still alive.
 - `FAILED: PASS-nits finish: PR still open after gh pr merge` — race.
   If `gh pr view` is already MERGED and the FR issue is CLOSED (or has
-  PASS-nits merge comment), treat as DONE. Do not relaunch a build.
+  PASS merge comment), treat as DONE. Do not relaunch a build.
 - `FAILED: PASS-nits finish: gh pr merge failed: GraphQL: Merge already
   in progress` — same race. `gh pr view --json merged` is invalid (no
   such field); that made `Test-BobGhPrIsMerged` always false and skipped
@@ -124,14 +131,15 @@ Board: `$BOB_BRIDGE_HOME\loops\<owner>_<repo>-<issue>.json`
    per phase). Cursor start miss falls back to grok-build. Fuel is
    re-read each start.
 3. Start a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`). Never
-   the implementer.
+   the implementer. Seed / rules must include `bob-mrb-worker`.
 4. Wait for `MRB FAIL|PASS-nits: ... <sha>`. Job crash without that issue:
    retry the MRB job.
-5. FAIL: do not merge. Read Required fixes. Start a FIX worker unless
-   `gh pr view` on the loop PR is already MERGED (leftover FAIL after a
-   merge race): close that FAIL with the merged PR URL; do not spawn FIX.
-   Comment the new PR / next board on the prior FAIL issue when FIX runs.
-6. PASS-nits: the MRB worker already **merged the PR**, **closed** the
+5. FAIL: MRB seat opens **exactly one** fix PR and merges original + fix
+   (`bob-mrb-worker`). If `gh pr view` on the loop PR is already MERGED
+   (leftover FAIL after a merge race): close that FAIL with the merged PR
+   URL; do not open another fix. Comment the fix PR URL on the prior FAIL
+   issue when the one fix runs.
+6. PASS: the MRB worker already **merged the PR**, **closed** the
    finished FR, prior FAIL boards, and PASS board, and **pulled** the
    completed PR onto product main (see `Close-BobBuildLoopFinished` in
    `tools/Bob-BuildLoop.ps1` if the worker skipped a close). If `gh pr
