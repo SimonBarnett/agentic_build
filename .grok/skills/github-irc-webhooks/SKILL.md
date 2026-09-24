@@ -16,5 +16,5 @@ Two homes. Do not put the playbook here.
 | Cursor Web / cursor[bot] PR grant | `setup-github-cursor` |
 
 Jeeves `GIT ...` announce: agentic_irc `jeeves-git-webhook`.
-Shop backup (`!BORED` / `!ACCEPT`): agentic_build `bob-git-accept`.
+Shop backup (`!BORED` / `!TASK`): agentic_build `bob-git-accept`.
 Digest `reportUrl`: `config/bobiverse.json` + `bob-irc`.

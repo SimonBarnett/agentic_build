@@ -1,11 +1,14 @@
 # Skill harvest log
 
-## 2026-09-24 — shop !BORED / !ACCEPT (not bob-* auto-claim)
+## 2026-09-24 — shop !BORED / !TASK (webhook queue)
 
-Simon: when Jeeves announces GIT work, the backup is an idle `w-*`
-(`!BORED` after 2 min, then `!ACCEPT {repo} {task} {id}`), not a
-`bob-*` ear claiming every `GIT` line. Chair FIFO stays in
-agentic_irc `jeeves-git-webhook`. Home: `bob-git-accept`. Pointers:
+Simon: idle `w-*` says `!BORED` only. Jeeves returns the top
+not-yet-accepted GIT job as `!TASK {repo} {task} {#id}` and marks it
+accepted in that step. The worker does not say `!ACCEPT`. It
+`Start-BobBuild` and posts agent+model on the digest webhook
+(`working_on`), then clears that when the job leaves inbox/running.
+Queue field on `reportUrl` is `git_unaccepted`. Do not merge until
+agentic_irc #197 follow-up matches. Home: `bob-git-accept`. Pointers:
 `bob-irc`, `github-irc-webhooks`, `setup-github-webhooks`,
 `docs/bobiverse.md`.
 

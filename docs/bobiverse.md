@@ -27,9 +27,11 @@ Home on each box: `~\.agentic-irc-bobiverse` (not the Club Madeira `#cm-bob-osca
 
 Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `#ionos`, `#ce-priority-dev1`; `#dev1` is the same room as `#ce-priority-dev1`). `bob-*` builders JOIN `#bobiverse` **and** the local shop (`Get-BobIrcBuilderChannels` in `Watch-Bobiverse` / `Install-BobIrc`). Git/MRB workers never JOIN `#bobiverse`; they appear on the shop only as `w-<short>-<pid>` (`w-io-<pid>` on ionos, `w-fl-<pid>` on flamingo, etc.) via `Start-BobWorkerIrcAgent` → `agentic_irc` `start_worker_irc_agent.py`. No `!report` write path on IRC; digest updates use write-only `reportUrl` POST (below).
 
-### Shop GIT backup (`!BORED` / `!ACCEPT`)
+### Shop GIT backup (`!BORED` / `!TASK`)
 
-Jeeves is the only nick that says `GIT` on `#bobiverse`. `bob-*` does not auto-claim those lines. When a `w-*` ear has been idle for more than 2 minutes, `Watch-Bobiverse` appends `PRIVMSG #<shop> :!BORED` to **that worker's** `outbox.txt` (not the builder outbox, not the chair outbox). Jeeves (agentic_irc chair; it already joins each shop) offers the next unaccepted task. The same `w-*` then says `!ACCEPT {repo} {task} {id}` and `Start-BobBuild` enqueues it. The digest webhook reports that inbox job and drops it when the job leaves inbox/running. Chair FIFO file `git-accept-queue.json` is read-only here. Skill `bob-git-accept`.
+Jeeves is the only nick that says `GIT` on `#bobiverse`. `bob-*` does not auto-claim those lines. When a `w-*` ear has been idle for more than 2 minutes, `Watch-Bobiverse` appends `PRIVMSG #<shop> :!BORED` to **that worker's** `outbox.txt` (not the builder outbox, not the chair outbox). Jeeves returns only the top not-yet-accepted row as `!TASK {repo} {task} {#id}` and marks it accepted in that step. The worker does not say `!ACCEPT`. It runs `Start-BobBuild` and posts `working_on` as `{agent} {model} {task} {repo}{#id}` to the digest webhook, then clears `working_on` when the job leaves inbox/running.
+
+Not-yet-accepted rows are `git_unaccepted.items` on `https://irc.ntsa.uk/bob/v1/report` (`repo`, `task` `PR`|`MRB`, `id` `#n`, `seq`). This repo reads that document and does not write it. Do not merge until agentic_irc #197 follow-up uses the same object and the same `!TASK` accept step. Skill `bob-git-accept`.
 
 After this lands on `main`, recycle **Watch-Bobiverse** on each box so the poller loads the shop tick. Recycle Jeeves only with the agentic_irc chair-queue change.
 

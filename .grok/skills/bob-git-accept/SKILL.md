@@ -1,117 +1,107 @@
 ---
 name: bob-git-accept
 description: >
-  Shop backup when Bob is out of Sand: idle w-* says !BORED, Jeeves
-  offers the next unaccepted GIT task, the worker says !ACCEPT and
-  Start-BobBuild. Use when the user says !BORED, !ACCEPT, git accept,
-  shop idle worker, Jeeves offer, or /bob-git-accept. Chair FIFO is
-  agentic_irc jeeves-git-webhook. bob-* must not auto-claim GIT lines.
+  Shop backup when Bob is out of Sand: idle w-* says !BORED only, Jeeves
+  returns the top unaccepted GIT job as !TASK and marks it accepted,
+  the worker Start-BobBuild and reports agent+model on the digest webhook.
+  Use when the user says !BORED, !TASK, git accept, shop idle worker,
+  or /bob-git-accept. Queue is the digest report. Do not merge until
+  agentic_irc #197 follow-up uses this schema. bob-* must not auto-claim.
 ---
 
-# Shop !BORED / !ACCEPT
+# Shop !BORED / !TASK
 
-Simon 2026-09-24. When Bob is out of Sand, idle workers on the boxes
-take incoming GIT work. Jeeves stays deterministic. No model call in
-the chair, and no model call in this tick.
+Backup when the builder is out of Sand. `bob-*` does **not** auto-claim
+Jeeves `GIT` lines. The worker does **not** say `!ACCEPT`.
 
 ## Who speaks
 
-| Nick | Room | Line |
+| Nick | Where | What |
 |---|---|---|
+| `Jeeves` | `#bobiverse` | `GIT …` announce only |
 | `w-<short>-<pid>` | shop `#<machine>` only | `!BORED` after idle **> 2 min** (120s) |
-| Jeeves (chair) | that shop | next unaccepted task, FIFO |
-| same `w-*` | same shop | `!ACCEPT {repo} {task} {id}` then start |
+| `Jeeves` | that shop | `!TASK {repo} {task} {id}` — top row, already accepted |
+| same `w-*` | — | `Start-BobBuild` and digest activity. No `!ACCEPT` line |
 
-`!ACCEPT` is spoken from **that worker ear outbox**
-(`~\.agentic-irc-bobiverse\workers\<machine>\<pid>\outbox.txt`), as
-`PRIVMSG #<shop> :!ACCEPT {repo} {task} {id}`. Not the chair outbox.
-Not the `bob-*` builder outbox.
+`!BORED` is `PRIVMSG #<shop> :!BORED` on **that worker's** `outbox.txt`.
+Not the builder outbox. Not `chair-outbox.txt`.
 
-`FILE v1 ACCEPT` is filexfer. Do not treat it as this claim.
+## Queue (digest webhook)
 
-## Chair owns the queue (do not copy it here)
+Source of truth for **not-yet-accepted** jobs is the digest report:
 
-On-disk list of GIT tasks **not yet accepted**, shop announce, and
-"mark accepted" when `!ACCEPT` is seen: **SimonBarnett/agentic_irc**
-`irc_agent.py --chair` / skill `jeeves-git-webhook`. Jeeves already
-JOINs `#bobiverse` and every fleet shop (`chair_channels` in
-`scripts/bobreport.py`), so a shop `!BORED` is audible.
+`https://irc.ntsa.uk/bob/v1/report`
 
-This repo only **reads** `git-accept-queue.json` on the IRC home
-(`Get-BobGitAcceptQueue`). It never creates or writes that file.
-Schema the chair may write:
+(`reportUrl` in `config/bobiverse.json`. Local dev may be `http://bob.ntsa.uk/bob/v1/report`.)
+
+agentic_irc #197 follow-up must publish the FIFO on that document. This
+repo only **reads** it (`Get-BobGitUnaccepted`). It does not write the
+queue and it does not read `git-accept-queue.json`.
 
 ```json
-{"v":1,"pending":[{"repo":"owner/repo","task":"MRB","id":"44","enqueued":"2026-09-24T00:00:00Z"}]}
+{
+  "git_unaccepted": {
+    "v": 1,
+    "items": [
+      {
+        "repo": "owner/repo",
+        "task": "MRB",
+        "id": "#44",
+        "seq": 1,
+        "ts": "2026-09-24T10:00:00Z",
+        "event": "pull_request",
+        "action": "opened",
+        "line": "GIT pull_request owner/repo opened #44 …"
+      }
+    ]
+  }
+}
 ```
 
-`task` is `PR`, `MRB`, or `BUILD`. As of 2026-09-24 agentic_irc `main`
-has no queue PR yet. Workers already speak the lines below so that
-chair change can mark them. Do not invent a second queue in
-agentic_build.
+`seq` ascending is the only order. `id` keeps the `#`. `task` is `PR`
+or `MRB`. `BUILD` is not used.
 
-## Offer the worker will take
+Do not merge this PR until the #197 follow-up stores that object on the
+report and marks the top row accepted in the same step as `!TASK`.
 
-After **this** nick has said `!BORED`, only a later line from the
-chair nick (`Jeeves`, else `config/bobiverse.json` `chairNick`) whose
-target is the shop or this `w-*` nick:
+## Allowlist (chair)
 
-- `OFFER {repo} {task} {id}` (preferred; task `PR` / `MRB` / `BUILD`)
-- or a claimable `GIT ...` line (same allowlist as Jeeves announce)
-
-Ignore `#bobiverse`. Ignore `GIT ping`. Ignore lines from `bob-*`.
-
-### GIT allowlist (skip if unsure)
-
-Live shape (`format_github_webhook_announce`):
-`GIT <event> <owner/repo> <action> #n ... by <actor>`.
-
-| Event | Action | Task |
+| GitHub event | action | task |
 |---|---|---|
-| `issues` | `opened` | `PR` (issue to PR; not `BUILD`) |
-| `issues` | `labeled` | `PR` only when the line contains `label=FR`, `label=build`, or `label=feature-request`. Live Jeeves text does not include the label name, so a bare `labeled` is skipped. |
-| `pull_request` | `opened`, `ready_for_review`, `synchronize` | `MRB` |
-| `ping`, `push`, other actions (`closed`, `edited`, ...) | | skip |
+| `issues` | `opened` | `PR` |
+| `pull_request` | `opened` | `MRB` |
+| `pull_request` | `ready_for_review` | `MRB` |
 
-`{id}` is the `#n` digits. `{repo}` is `owner/repo`.
+`ping`, `push`, `synchronize`, `labeled`, `closed`, and everything else
+are announced only and are not queued. The worker does not start from a
+`GIT` line. It starts only from `!TASK`.
 
-One winner: if the worker log already contains `!ACCEPT {repo} {task} {id}`, do not start and do not say it again. On one box, the first `w-*` to enqueue writes `workers/<machine>/_git-accept-claims.json`; a sibling that sees the same offer no-ops. A refused start drops that claim.
+## Worker clock
+
+`Watch-Bobiverse` calls `Import-BobWorkerGitShop` each loop.
+
+- Busy (`git-accept-busy.json` and that fleet job still inbox/running): no `!BORED`. When the job leaves those lanes, post `working_on` empty.
+- Idle 120 seconds: append `!BORED` once. A later idle stretch appends it again.
+- Chair reply on that shop, after the `!BORED` byte offset:
+  - `NAK !BORED wait|busy|empty` — reset the idle clock. Do not start.
+  - `!TASK {owner/repo} {PR|MRB} {#n}` — Jeeves has already marked that row accepted. Start work.
+- `OFFER`, `GIT`, `FILE v1 ACCEPT`, and a `!TASK` on `#bobiverse` do not start work.
+- On one box, the first `w-*` to enqueue writes `workers/<machine>/_git-accept-claims.json`. A sibling that sees the same `!TASK` no-ops. A refused start drops that claim. Jeeves will not put the row back.
 
 ## Start and activity
 
-On a fresh offer, `Start-BobGitAcceptWork` calls `Start-BobBuild -Task git`
-on **this** machine. Fuel order is `Get-BobFuelOrder`: Cursor Models
-while remaining > 0, else grok-build. Never Other Models. Never
-`-AllowCopilot` (CCA is not live).
+`Start-BobBuild -Task git` on **this** machine. No `-AllowCopilot`.
+Fuel order inside the picker: Cursor Models, then grok-build.
 
-- `MRB` -> `-Kind mrb` and the pull URL
-- `PR` / `BUILD` -> `-Kind build`
+| task | Kind | goal |
+|---|---|---|
+| `PR` | `build` | issue → implement |
+| `MRB` | `mrb` | hostile MRB of `…/pull/{n}` |
 
-`!ACCEPT` is appended only when that enqueue returns `ok` and not
-`wait`. A refused start leaves the task unaccepted.
+On a real start, POST the digest webhook (`op: merge`) with `working_on`
+set to `{agent} {model} {task} {repo}{#n}` (example: `Cursor Models grok-4.6 MRB owner/repo#44`), plus `model`, `fuel`, `kind`, and `repo`.
+`Write-BobIrcStatus` still posts the inbox job. When the job leaves
+inbox/running, POST `working_on` empty.
 
-Activity is the fleet inbox/running job, posted by the existing
-`Write-BobIrcStatus` digest webhook (`reportUrl`
-`https://irc.ntsa.uk/bob/v1/report`). `git-accept-busy.json` in the
-worker home tracks that job id. When the job is no longer inbox or
-running, the stamp is removed and the next status post no longer
-lists it. Do not POST a synthetic START that is not a job file.
-
-## What Watch-Bobiverse does
-
-Each poll calls `Import-BobWorkerGitShop` for local `w-*` homes. That
-appends to the **worker** outbox. It does not claim a Jeeves `GIT`
-line on `#bobiverse`. It does not write the chair queue.
-
-Optional fast path: a `bob-*` nick may still say
-`!ACCEPT {repo} {task} {id}` on `#bobiverse` if that seat already
-holds the work. Watch does not emit that from a fleet `GIT` line.
-The backup path is `!BORED` workers.
-
-## After merge
-
-Recycle **Watch-Bobiverse** on each box (`_Watch-Bobiverse-<id>`) so
-the poller loads `Import-BobWorkerGitShop`. Worker ears already drain
-`PRIVMSG` lines from their own `outbox.txt`; recycle a `w-*` irc_agent
-only if its outbox is stuck. Recycle Jeeves only when the agentic_irc
-chair-queue change merges.
+`bob-*` may still say `!ACCEPT` on `#bobiverse` if that seat already
+accepted work itself. This backup path does not.

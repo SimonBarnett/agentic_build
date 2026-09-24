@@ -149,7 +149,7 @@ while ($true) {
             Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
         }
         Import-BobIrcPeerTranscript | Out-Null
-        # Shop backup: idle w-* !BORED / !ACCEPT. Does not claim Jeeves GIT on #bobiverse.
+        # Shop backup: idle w-* says !BORED only. Does not !ACCEPT. Does not claim Jeeves GIT.
         Import-BobWorkerGitShop | Out-Null
     }
     catch {

@@ -28,7 +28,7 @@ Jeeves announces accepted events as `GIT ...` on `#bobiverse`.
 `bob-*` and talk seats do not narrate, and `bob-*` does not
 auto-claim those lines. Skill `jeeves-git-webhook` in
 **agentic_irc** (chair queue). Idle shop workers: skill
-`bob-git-accept` (`!BORED` / `!ACCEPT`).
+`bob-git-accept` (`!BORED` only; Jeeves `!TASK` marks accepted).
 
 ## One repo
 

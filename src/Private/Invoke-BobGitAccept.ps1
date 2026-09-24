@@ -1,9 +1,8 @@
-# Shop backup for Jeeves GIT work (Simon 2026-09-24).
-# Chair FIFO lives in agentic_irc (jeeves-git-webhook / irc_agent.py --chair).
-# This file does not write the chair queue and does not write the chair outbox.
-# bob-* ears do not auto-claim GIT lines on #bobiverse.
-# w-* idle > 2 min says !BORED on the shop; on a later Jeeves OFFER or
-# claimable GIT in that shop, the same nick says !ACCEPT and Start-BobBuild.
+# Shop backup for Jeeves GIT work (Simon 2026-09-24, webhook follow-up).
+# Not-yet-accepted rows live on the digest webhook (reportUrl), owned by
+# agentic_irc #197. This file does not write that queue or the chair outbox.
+# w-* idle > 2 min says !BORED only. Jeeves answers !TASK and marks the
+# top row accepted in that step. This worker does not say !ACCEPT.
 # Copilot stays off (no Allow switch on Start-BobBuild).
 
 function Get-BobGitChairNicks {
@@ -26,30 +25,38 @@ function Get-BobGitChairNicks {
     return @($nicks)
 }
 
-function ConvertFrom-BobGitOffer {
+function ConvertFrom-BobGitTask {
+    <#
+      Jeeves reply to !BORED. Wire id keeps the # prefix (agentic_irc #197).
+      !TASK owner/repo MRB #44
+    #>
     param([string]$Body)
     $raw = ([string]$Body).Trim()
-    if ($raw -notmatch '^(?i)OFFER\s+(\S+)\s+(PR|MRB|BUILD)\s+(\d+)\s*$') { return $null }
+    if ($raw -notmatch '^(?i)!TASK\s+(\S+)\s+(PR|MRB)\s+#(\d+)\s*$') { return $null }
     $repo = [string]$Matches[1]
     $task = ([string]$Matches[2]).ToUpperInvariant()
-    $id = [string]$Matches[3]
+    $num = [string]$Matches[3]
     if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { return $null }
     return [pscustomobject]@{
         repo   = $repo
         task   = $task
-        id     = $id
-        event  = $null
-        action = $null
-        source = 'offer'
+        id     = ('#' + $num)
+        number = $num
+        source = 'task'
     }
+}
+
+function Test-BobGitBoredNak {
+    param([string]$Body)
+    $raw = ([string]$Body).Trim()
+    if ($raw -notmatch '^(?i)NAK !BORED (wait|busy|empty)$') { return $null }
+    return ([string]$Matches[1]).ToLowerInvariant()
 }
 
 function ConvertFrom-BobGitAnnounce {
     <#
-      Claimable Jeeves GIT lines only. ping, push, and unknown actions return null.
-      issues opened -> PR (issue to PR). labeled only with label=FR|build|feature-request
-      (live Jeeves text does not include the label name).
-      pull_request opened|ready_for_review|synchronize -> MRB.
+      Allowlist matches agentic_irc #197. ping, push, synchronize, labeled,
+      and every other action return null. Id is #n.
     #>
     param([string]$Body)
     $raw = ([string]$Body).Trim()
@@ -71,77 +78,83 @@ function ConvertFrom-BobGitAnnounce {
             $action = ([string]$tok).ToLowerInvariant()
             continue
         }
-        if ($tok -match '^#(\d+)$') { $id = [string]$Matches[1] }
+        if ($tok -match '^#(\d+)$') { $id = '#' + [string]$Matches[1] }
     }
     if (-not $id -or -not $action) { return $null }
     $task = $null
-    if ($event -eq 'issues' -and $action -eq 'opened') {
-        $task = 'PR'
-    }
-    elseif ($event -eq 'issues' -and $action -eq 'labeled') {
-        $blob = ($tail -join ' ')
-        if ($blob -match '(?i)(?:^|\s)label=(FR|build|feature-request)(?:\s|$)') { $task = 'PR' }
-    }
-    elseif ($event -eq 'pull_request') {
-        if (@('opened', 'ready_for_review', 'synchronize') -contains $action) { $task = 'MRB' }
-    }
+    if ($event -eq 'issues' -and $action -eq 'opened') { $task = 'PR' }
+    elseif ($event -eq 'pull_request' -and @('opened', 'ready_for_review') -contains $action) { $task = 'MRB' }
     if (-not $task) { return $null }
     return [pscustomobject]@{
         repo   = $repo
         task   = $task
         id     = $id
+        number = $id.TrimStart('#')
         event  = $event
         action = $action
         source = 'git'
     }
 }
 
-function ConvertFrom-BobShopWorkLine {
-    param([string]$Body)
-    $offer = ConvertFrom-BobGitOffer $Body
-    if ($offer) { return $offer }
-    return (ConvertFrom-BobGitAnnounce $Body)
-}
-
-function Get-BobGitAcceptQueuePath {
-    param([string]$Path)
-    if ($Path -and $Path.Trim()) { return $Path.Trim() }
-    $home = $null
-    try { $home = Get-BobIrcHome } catch { }
-    if (-not $home) { return $null }
-    return (Join-Path $home 'git-accept-queue.json')
-}
-
-function Get-BobGitAcceptQueue {
-    <#
-      Read-only. Chair (agentic_irc) writes git-accept-queue.json.
-      Missing or malformed file yields an empty list. Never creates the file.
-    #>
-    param([string]$Path)
-    $p = Get-BobGitAcceptQueuePath -Path $Path
-    if (-not $p -or -not (Test-Path -LiteralPath $p)) { return @() }
-    try {
-        $doc = Read-JsonFile $p
+function Get-BobGitUnacceptedRows {
+    param($Doc)
+    if (-not $Doc) { return @() }
+    $items = $null
+    if ($Doc.git_unaccepted) {
+        $block = $Doc.git_unaccepted
+        if ($block.items) { $items = @($block.items) }
+        elseif ($block -is [System.Array]) { $items = @($block) }
     }
-    catch { return @() }
-    if (-not $doc -or -not $doc.pending) { return @() }
+    if (-not $items -and $Doc.items) { $items = @($Doc.items) }
+    if (-not $items) { return @() }
     $rows = @()
-    foreach ($item in @($doc.pending)) {
+    foreach ($item in $items) {
         if (-not $item) { continue }
         $repo = [string]$item.repo
         $task = ([string]$item.task).ToUpperInvariant()
-        $id = [string]$item.id
+        $idRaw = [string]$item.id
+        if ($idRaw -match '^#(\d+)$') { $id = '#' + $Matches[1]; $num = $Matches[1] }
+        elseif ($idRaw -match '^(\d+)$') { $id = '#' + $Matches[1]; $num = $Matches[1] }
+        else { continue }
         if ($repo -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { continue }
-        if (@('PR', 'MRB', 'BUILD') -notcontains $task) { continue }
-        if ($id -notmatch '^\d+$') { continue }
+        if (@('PR', 'MRB') -notcontains $task) { continue }
+        $seq = 0
+        if ($null -ne $item.seq -and [string]$item.seq -ne '') {
+            try { $seq = [int]$item.seq } catch { $seq = 0 }
+        }
         $rows += [pscustomobject]@{
-            repo     = $repo
-            task     = $task
-            id       = $id
-            enqueued = $(if ($item.enqueued) { [string]$item.enqueued } else { $null })
+            repo   = $repo
+            task   = $task
+            id     = $id
+            number = $num
+            seq    = $seq
+            ts     = $(if ($item.ts) { [string]$item.ts } else { $null })
+            event  = $(if ($item.event) { [string]$item.event } else { $null })
+            action = $(if ($item.action) { [string]$item.action } else { $null })
         }
     }
-    return $rows
+    return @($rows | Sort-Object seq, ts, repo, task, id)
+}
+
+function Get-BobGitUnaccepted {
+    <#
+      Read-only view of not-yet-accepted GIT rows on the digest document.
+      Field git_unaccepted.items matches agentic_irc git-unaccepted.json.
+      Never writes the digest or a local queue file.
+    #>
+    param(
+        $Digest,
+        [string]$JsonPath
+    )
+    $doc = $Digest
+    if (-not $doc -and $JsonPath) {
+        if (-not (Test-Path -LiteralPath $JsonPath)) { return @() }
+        try { $doc = Read-JsonFile $JsonPath } catch { return @() }
+    }
+    if (-not $doc) {
+        try { $doc = Read-BobReportDigest } catch { $doc = $null }
+    }
+    return @(Get-BobGitUnacceptedRows $doc)
 }
 
 function Add-BobWorkerShopOutboxLine {
@@ -155,11 +168,8 @@ function Add-BobWorkerShopOutboxLine {
         New-Item -ItemType Directory -Force -Path $WorkerHome | Out-Null
     }
     $outbox = Join-Path $WorkerHome 'outbox.txt'
-    $last = $null
-    if (Test-Path -LiteralPath $outbox) {
-        try { $last = Get-Content -LiteralPath $outbox -Tail 1 -ErrorAction SilentlyContinue } catch { }
-    }
-    if ($last -and ([string]$last).Trim() -eq $text) { return }
+    # boredSent is the once-per-stretch guard. A later idle stretch must
+    # append !BORED again even when the previous line is still the tail.
     Add-Content -LiteralPath $outbox -Value $text -Encoding utf8
 }
 
@@ -354,18 +364,6 @@ function Remove-BobGitAcceptLocalClaim {
     Write-JsonFile $p ([pscustomobject]$map)
 }
 
-function Test-BobGitAcceptAlreadySpoken {
-    param(
-        [string]$LogText,
-        [string]$Repo,
-        [string]$Task,
-        [string]$Id
-    )
-    if (-not $LogText) { return $false }
-    $re = '(?i)(?:^|[\s:])!ACCEPT\s+' + [regex]::Escape($Repo) + '\s+' + [regex]::Escape($Task) + '\s+' + [regex]::Escape($Id) + '\b'
-    return [bool]($LogText -match $re)
-}
-
 function Get-BobGitAcceptBusyPath {
     param([Parameter(Mandatory)][string]$WorkerHome)
     Join-Path $WorkerHome 'git-accept-busy.json'
@@ -438,11 +436,12 @@ function Start-BobGitAcceptWork {
     $kind = 'build'
     if ($task -eq 'MRB') { $kind = 'mrb' }
     $repo = [string]$Claim.repo
-    $id = [string]$Claim.id
+    $num = [string]$Claim.number
+    if (-not $num) { $num = ([string]$Claim.id).TrimStart('#') }
     $url = 'https://github.com/' + $repo
-    $goal = "Shop !ACCEPT $repo $task $id. Work item $url . Finish with the existing git job. Do not use Copilot. Do not use Other Models. Do not merge."
+    $goal = "Jeeves !TASK $repo $task #$num. Work item $url . Finish with the existing git job. Do not use Copilot. Do not use Other Models. Do not merge."
     if ($task -eq 'MRB') {
-        $goal = "Shop !ACCEPT $repo MRB $id. Hostile MRB of $url/pull/$id . Follow skill bob-hostile-mrb. Do not use Copilot. Do not use Other Models."
+        $goal = "Jeeves !TASK $repo MRB #$num. Hostile MRB of $url/pull/$num . Follow skill bob-hostile-mrb. Do not use Copilot. Do not use Other Models."
     }
     $buildArgs = @{
         Task    = 'git'
@@ -452,17 +451,69 @@ function Start-BobGitAcceptWork {
         Goal    = $goal
         From    = 'git-accept'
     }
-    if ($task -eq 'MRB') { $buildArgs['PrUrl'] = ($url + '/pull/' + $id) }
+    if ($task -eq 'MRB') { $buildArgs['PrUrl'] = ($url + '/pull/' + $num) }
     return (Start-BobBuild @buildArgs)
+}
+
+function Get-BobGitWorkAgentLabel {
+    param([string]$Fuel)
+    switch (([string]$Fuel).ToLowerInvariant()) {
+        'cursor-models' { return 'Cursor Models' }
+        'grok-build' { return 'grok.exe' }
+        'grok-bot' { return 'Grok Bot' }
+        default { return [string]$Fuel }
+    }
+}
+
+function Send-BobGitWorkActivity {
+    <#
+      Digest webhook merge. working_on carries agent and model.
+      clear sends an empty working_on. Does not replace the jobs list.
+    #>
+    param(
+        [Parameter(Mandatory)][ValidateSet('start', 'clear')][string]$Phase,
+        [string]$MachineId,
+        $Claim,
+        $Start
+    )
+    if (-not $MachineId) { return $null }
+    $working = ''
+    $model = ''
+    $fuel = ''
+    $kind = ''
+    $repo = ''
+    if ($Phase -eq 'start' -and $Claim) {
+        $fuel = [string]$Start.fuel
+        $model = [string]$Start.model
+        $agent = Get-BobGitWorkAgentLabel $fuel
+        $id = [string]$Claim.id
+        if ($id -notmatch '^#') { $id = '#' + $id.TrimStart('#') }
+        $working = (@($agent, $model, [string]$Claim.task, ([string]$Claim.repo + $id)) | Where-Object { $_ }) -join ' '
+        $repo = [string]$Claim.repo
+        if ([string]$Claim.task -eq 'MRB') { $kind = 'mrb' } else { $kind = 'build' }
+    }
+    $payload = [ordered]@{
+        op         = 'merge'
+        machine    = $MachineId
+        online     = $true
+        status     = 'I am online'
+        working_on = $working
+    }
+    if ($Phase -eq 'start') {
+        if ($model) { $payload.model = $model }
+        if ($fuel) { $payload.fuel = $fuel }
+        if ($kind) { $payload.kind = $kind }
+        if ($repo) { $payload.repo = $repo }
+    }
+    return (Invoke-BobDigestWebhookPost -Payload ([pscustomobject]$payload))
 }
 
 function Invoke-BobWorkerShopTick {
     <#
       One w-* home. Idle >= BoredAfterSeconds (default 120) appends
-      PRIVMSG <shop> :!BORED once per idle stretch.
-      After that byte offset, a chair OFFER or claimable GIT on the shop
-      (never #bobiverse) starts work, then appends !ACCEPT. A failed start
-      does not ACCEPT. FILE v1 ACCEPT is not a git claim.
+      PRIVMSG <shop> :!BORED once. The worker never appends !ACCEPT.
+      After that byte offset, a chair !TASK on the shop starts work.
+      NAK !BORED resets the idle clock. GIT lines are not claims.
     #>
     param(
         [Parameter(Mandatory)][string]$WorkerHome,
@@ -479,10 +530,11 @@ function Invoke-BobWorkerShopTick {
     if (-not $ChairNicks -or @($ChairNicks).Count -eq 0) { $ChairNicks = @(Get-BobGitChairNicks) }
     $nowUtc = $Now.ToUniversalTime()
     $result = [pscustomobject]@{
-        bored    = $false
-        accepted = $false
-        claim    = $null
-        start    = $null
+        bored   = $false
+        started = $false
+        nak     = $null
+        claim   = $null
+        start   = $null
     }
     if ($IsBusy) {
         Write-BobWorkerBoredState -WorkerHome $WorkerHome -BoredSent $false -BoredAtBytes 0
@@ -509,20 +561,22 @@ function Invoke-BobWorkerShopTick {
         $raw = [IO.File]::ReadAllBytes((Join-Path $WorkerHome 'irc.log'))
         $suffix = [Text.Encoding]::UTF8.GetString($raw, $state.boredAtBytes, ($raw.Length - $state.boredAtBytes))
     }
+    $nak = $null
     $claim = $null
     foreach ($row in @(Get-BobShopPrivmsgLines $suffix)) {
         if (-not (Test-BobGitChairNick -Nick $row.nick -ChairNicks $ChairNicks)) { continue }
         if (-not (Test-BobShopOfferTarget -Target $row.target -ShopChannel $ShopChannel -WorkerNick $WorkerNick)) { continue }
-        $parsed = ConvertFrom-BobShopWorkLine $row.body
-        if (-not $parsed) { continue }
-        $claim = $parsed
-        break
+        $why = Test-BobGitBoredNak $row.body
+        if ($why) { $nak = $why; continue }
+        $parsed = ConvertFrom-BobGitTask $row.body
+        if ($parsed) { $claim = $parsed }
     }
-    if (-not $claim) { return $result }
-    if (Test-BobGitAcceptAlreadySpoken -LogText $snap.text -Repo $claim.repo -Task $claim.task -Id $claim.id) {
+    if ($nak -and -not $claim) {
         Write-BobWorkerBoredState -WorkerHome $WorkerHome -IdleSince $nowUtc -BoredSent $false -BoredAtBytes $snap.length
+        $result.nak = $nak
         return $result
     }
+    if (-not $claim) { return $result }
     if (Test-BobGitAcceptLocalClaim -WorkerHome $WorkerHome -Repo $claim.repo -Task $claim.task -Id $claim.id) {
         Write-BobWorkerBoredState -WorkerHome $WorkerHome -IdleSince $nowUtc -BoredSent $false -BoredAtBytes $snap.length
         return $result
@@ -544,16 +598,18 @@ function Invoke-BobWorkerShopTick {
         Write-BobWorkerBoredState -WorkerHome $WorkerHome -IdleSince $nowUtc -BoredSent $false -BoredAtBytes $snap.length
         return $result
     }
-    $accept = 'PRIVMSG ' + $ShopChannel.Trim() + ' :!ACCEPT ' + $claim.repo + ' ' + $claim.task + ' ' + $claim.id
-    Add-BobWorkerShopOutboxLine -WorkerHome $WorkerHome -Line $accept
     if ($started.jobId) {
         Write-BobGitAcceptBusy -WorkerHome $WorkerHome -JobId ([string]$started.jobId) -Claim $claim
     }
     if (-not $SkipActivity) {
+        try {
+            Send-BobGitWorkActivity -Phase start -MachineId $MachineId -Claim $claim -Start $started | Out-Null
+        }
+        catch { }
         try { Write-BobIrcStatus | Out-Null } catch { }
     }
     Write-BobWorkerBoredState -WorkerHome $WorkerHome -BoredSent $false -BoredAtBytes $snap.length
-    $result.accepted = $true
+    $result.started = $true
     return $result
 }
 
@@ -588,12 +644,23 @@ function Import-BobWorkerGitShop {
         if ($pid -le 0) { continue }
         $nick = $null
         try { $nick = Get-BobWorkerIrcNick -MachineId $MachineId -WorkerPid $pid } catch { $nick = $null }
+        $busyPath = Get-BobGitAcceptBusyPath $dir.FullName
+        $busyDoc = $null
+        if (Test-Path -LiteralPath $busyPath) {
+            try { $busyDoc = Read-JsonFile $busyPath } catch { }
+        }
         $busy = Test-BobGitAcceptWorkerBusy -WorkerHome $dir.FullName
+        if ($busyDoc -and -not $busy -and -not $SkipActivity) {
+            try {
+                Send-BobGitWorkActivity -Phase clear -MachineId $MachineId -Claim $busyDoc | Out-Null
+            }
+            catch { }
+        }
         try {
             $tick = Invoke-BobWorkerShopTick -WorkerHome $dir.FullName -ShopChannel $shop -IsBusy:$busy -Now $Now `
                 -ChairNicks $chairs -WorkerNick $nick -MachineId $MachineId -StartWork $StartWork `
                 -BoredAfterSeconds $BoredAfterSeconds -SkipActivity:$SkipActivity
-            if ($tick -and ($tick.bored -or $tick.accepted)) { $done += $tick }
+            if ($tick -and ($tick.bored -or $tick.started)) { $done += $tick }
         }
         catch { }
     }
