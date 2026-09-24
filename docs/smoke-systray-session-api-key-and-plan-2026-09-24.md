@@ -8,7 +8,7 @@
 5. Cursor remaining 0% → same for `CURSOR_API_KEY`.
 
 ## Plan -> Grok / Cursor
-1. Right-click tray → **Agents** → **Plan** → **Grok** or **Cursor**.
+1. Right-click tray → **Plan** (top-level, next to **Agents**) → **Grok** or **Cursor**.
 2. First run syncs https://github.com/SimonBarnett/skills-visionary (clone under D:\ai / C:\ai / C:\src) and copies visionary skills into `~/.grok/skills`.
 3. Agent opens in plan mode (Grok `--permission-mode plan`, Cursor `--plan`) with cwd/workspace = skills-visionary clone.
 4. No Watch-AgentHealth, no IRC / Watch-Bobiverse, no agentic_build work repo.

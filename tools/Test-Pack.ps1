@@ -766,13 +766,23 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Show-BobTraySessionApiKeyDialog') { throw 'empty fuel must offer Show-BobTraySessionApiKeyDialog' }
     if ($traySrc -notmatch 'XAI_API_KEY') { throw 'session Grok key must set child env XAI_API_KEY' }
     if ($traySrc -notmatch 'CURSOR_API_KEY') { throw 'session Cursor key must set child env CURSOR_API_KEY' }
-    if ($traySrc -notmatch 'UseShellExecute\s*=\s*\False') { throw 'session env launch must UseShellExecute=false (child-only env)' }
+    if ($traySrc -notmatch 'UseShellExecute\s*=\s*\$false') { throw 'session env launch must UseShellExecute=false (child-only env)' }
     if ($traySrc -match "SetEnvironmentVariable\([^\)]*'User'|SetEnvironmentVariable\([^\)]*'Machine'") {
         throw 'must not SetEnvironmentVariable User/Machine for session API keys'
     }
     if ($traySrc -notmatch 'lastFuelSnapshot') { throw 'Update-Hover must cache lastFuelSnapshot for fuel checks' }
-    if ($traySrc -notmatch 'Start-BobTrayPlanAgent') { throw 'Agents menu must support Plan starts (Start-BobTrayPlanAgent)' }
-    if ($traySrc -notmatch "Text = 'Plan'") { throw 'Agents menu must add a Plan submenu' }
+    if ($traySrc -notmatch 'Start-BobTrayPlanAgent') { throw 'Plan menu must support Plan starts (Start-BobTrayPlanAgent)' }
+    if ($traySrc -notmatch "Text = 'Plan'") { throw 'tray must add a Plan menu' }
+    # Plan is a top-level context-menu item, same level as Agents (not nested under Agents).
+    if ($traySrc -notmatch 'function Build-BobTrayPlanMenu') { throw 'tray must build the Plan menu via Build-BobTrayPlanMenu' }
+    if ($traySrc -notmatch '\[void\]\$menu\.Items\.Add\(\$miPlan\)') { throw 'Plan must be added to the top-level context menu ($menu.Items.Add($miPlan))' }
+    $agentsFn = [regex]::Match($traySrc, '(?s)function Build-BobTrayAgentsMenu\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $agentsFn.Success) { throw 'Build-BobTrayAgentsMenu function not found' }
+    if ($agentsFn.Value -match 'Plan') { throw 'Agents submenu must not contain Plan (Plan is top-level)' }
+    $planFn = [regex]::Match($traySrc, '(?s)function Build-BobTrayPlanMenu\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $planFn.Success -or $planFn.Value -notmatch "'Grok', 'Cursor'" -or $planFn.Value -notmatch 'Start-BobTrayPlanAgent') {
+        throw 'Build-BobTrayPlanMenu must offer Grok / Cursor wired to Start-BobTrayPlanAgent'
+    }
     if ($traySrc -notmatch 'Sync-BobTrayVisionarySkills') { throw 'Plan starts must sync skills-visionary' }
     if ($traySrc -notmatch 'Install-VisionarySkills') { throw 'Plan sync must call tools/Install-VisionarySkills.ps1' }
     if ($traySrc -notmatch '--permission-mode') { throw 'Plan Grok must use --permission-mode plan' }

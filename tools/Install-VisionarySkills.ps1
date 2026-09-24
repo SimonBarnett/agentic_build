@@ -1,6 +1,6 @@
 ﻿# Sync SimonBarnett/skills-visionary into a local sister clone and copy
 # .grok/skills/*/SKILL.md into ~/.grok/skills (same pattern as Copy-BobProjectSkills /
-# mud skill-book installs). Used by Bob Fleet tray Agents > Plan starts.
+# mud skill-book installs). Used by Bob Fleet tray Plan (top-level menu) starts.
 # Never commits. Never starts IRC / Watch-Bobiverse / Start-BobBuild.
 [CmdletBinding()]
 param(
