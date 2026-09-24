@@ -72,6 +72,14 @@ read the `BobJeeves` service environment. Do not guess a path.
 
 `Watch-Bobiverse` resolves that seat with exported `Resolve-BobiverseMachineId` (nick or raw name to a `config/bobiverse.json` machine id). BobBridge must export it. A private copy throws every watcher tick before `irc_agent` starts. `Get-ThisMachineId` does not do that map. See `docs/bobiverse.md`.
 
+**GIT work backup:** `bob-*` do not auto-claim Jeeves `GIT` lines.
+Idle `w-*` (> 2 min) says `!BORED` only. Jeeves replies `!TASK` and
+marks that row accepted. The worker does not say `!ACCEPT`; it
+`Start-BobBuild` and posts agent+model on the digest webhook.
+Skill `bob-git-accept`. Unaccepted rows are `git_unaccepted` on
+`reportUrl` (agentic_irc #197 follow-up). Do not merge until that
+schema matches.
+
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
 

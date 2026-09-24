@@ -4047,6 +4047,201 @@ Invoke-Case 'BT0irtsr install and bobiverse isolation' {
     if ($watchCi -match 'grok\.exe') { throw 'Watch-CursorIrc must not invoke grok.exe' }
 }
 
+# --- BT0git shop !BORED / !TASK (digest webhook queue, no worker !ACCEPT) ---
+Invoke-Case 'BT0git shop bored accept' {
+    param($bridgeRoot)
+    $src = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobGitAccept.ps1') -Raw
+    if ($src -match '-AllowCopilot') { throw 'git accept must not pass -AllowCopilot' }
+    if ($src -match 'chair-outbox') { throw 'git accept must not reference chair-outbox' }
+    if ($src -match 'git-accept-queue') { throw 'git accept must not use git-accept-queue.json' }
+    if ($src -match '(?m)^\s*PRIVMSG .+ :!ACCEPT') { throw 'worker tick must not emit !ACCEPT' }
+    if ($src -notmatch 'Start-BobBuild') { throw 'git accept must call Start-BobBuild' }
+    if ($src -notmatch '!TASK') { throw 'worker must take Jeeves !TASK' }
+    if ($src -notmatch '!BORED') { throw 'worker must send !BORED' }
+
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -notmatch 'Import-BobWorkerGitShop') { throw 'Watch-Bobiverse must tick shop !BORED' }
+    if ($watchBv -notmatch 'Does not !ACCEPT') { throw 'Watch must say it does not !ACCEPT' }
+    if ($watchBv -notmatch 'does not claim Jeeves GIT') { throw 'Watch must say it does not claim fleet GIT' }
+    if ($watchBv -match 'chair-outbox') { throw 'Watch must not write the chair outbox' }
+
+    $ping = ConvertFrom-BobGitAnnounce 'GIT ping SimonBarnett/agentic_build Keep it logically awesome by octocat'
+    if ($ping) { throw 'ping must not be claimable' }
+    $push = ConvertFrom-BobGitAnnounce 'GIT push SimonBarnett/agentic_build main deadbeef0123 1 commit(s) by simon'
+    if ($push) { throw 'push must not be claimable' }
+    $sync = ConvertFrom-BobGitAnnounce 'GIT pull_request SimonBarnett/agentic_build synchronize #44 more by simon'
+    if ($sync) { throw 'synchronize must not be claimable' }
+    $closed = ConvertFrom-BobGitAnnounce 'GIT pull_request SimonBarnett/agentic_build closed #44 done by simon'
+    if ($closed) { throw 'closed pull_request must not be claimable' }
+    $labeled = ConvertFrom-BobGitAnnounce 'GIT issues SimonBarnett/agentic_build labeled #12 label=FR by simon'
+    if ($labeled) { throw 'labeled must not be claimable' }
+    $pr = ConvertFrom-BobGitAnnounce 'GIT pull_request SimonBarnett/agentic_build opened #44 Hostile MRB by simon'
+    if (-not $pr -or $pr.task -ne 'MRB' -or $pr.id -ne '#44') { throw "pull_request opened id=$($pr.id)" }
+    $ready = ConvertFrom-BobGitAnnounce 'GIT pull_request SimonBarnett/agentic_build ready_for_review #7 title by simon'
+    if (-not $ready -or $ready.task -ne 'MRB' -or $ready.id -ne '#7') { throw 'ready_for_review must be MRB #7' }
+    $issue = ConvertFrom-BobGitAnnounce 'GIT issues SimonBarnett/agentic_build opened #12 Add a widget by simon'
+    if (-not $issue -or $issue.task -ne 'PR' -or $issue.id -ne '#12') { throw "issues opened id=$($issue.id)" }
+    $taskLine = ConvertFrom-BobGitTask '!TASK SimonBarnett/agentic_build MRB #44'
+    if (-not $taskLine -or $taskLine.task -ne 'MRB' -or $taskLine.id -ne '#44' -or $taskLine.number -ne '44') {
+        throw 'TASK parse failed'
+    }
+    $bareId = ConvertFrom-BobGitTask '!TASK SimonBarnett/agentic_build MRB 44'
+    if ($bareId) { throw 'TASK id must keep the # prefix' }
+    if (Test-BobGitBoredNak 'NAK !BORED empty') { } else { throw 'NAK empty' }
+    if (Test-BobGitBoredNak 'FILE v1 ACCEPT abc') { throw 'FILE v1 ACCEPT is not a NAK' }
+    if (ConvertFrom-BobGitTask 'FILE v1 ACCEPT owner/repo MRB #44') { throw 'FILE v1 ACCEPT must not parse as TASK' }
+    if (ConvertFrom-BobGitTask 'OFFER SimonBarnett/agentic_build MRB #44') { throw 'OFFER is not a TASK' }
+
+    $digest = [pscustomobject]@{
+        v = 1
+        git_unaccepted = [pscustomobject]@{
+            v = 1
+            items = @(
+                [pscustomobject]@{ repo = 'SimonBarnett/agentic_build'; task = 'MRB'; id = '#44'; seq = 2 }
+                [pscustomobject]@{ repo = 'SimonBarnett/agentic_build'; task = 'PR'; id = '#12'; seq = 1 }
+                [pscustomobject]@{ repo = 'nope'; task = 'BUILD'; id = '#1'; seq = 0 }
+            )
+        }
+    }
+    $queued = @(Get-BobGitUnaccepted -Digest $digest)
+    if ($queued.Count -ne 2) { throw "unaccepted rows=$($queued.Count)" }
+    if ($queued[0].id -ne '#12' -or $queued[0].task -ne 'PR') { throw "fifo top=$($queued[0].task) $($queued[0].id)" }
+    if ($queued[1].id -ne '#44') { throw 'second row must be #44' }
+    $qpath = Join-Path $bridgeRoot 'no-queue.json'
+    if (Test-Path $qpath) { Remove-Item $qpath -Force }
+    $missing = @(Get-BobGitUnaccepted -JsonPath $qpath)
+    if ($missing.Count -ne 0) { throw 'missing report must be empty' }
+    if (Test-Path $qpath) { throw 'unaccepted read must not create a file' }
+
+    $ircHome = Join-Path $bridgeRoot 'irc-home'
+    New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
+    $env:BOB_MACHINE_ID = 'flamingo'
+    $worker = Join-Path $ircHome 'workers\flamingo\4242'
+    New-Item -ItemType Directory -Force -Path $worker | Out-Null
+    $earOut = Join-Path $ircHome 'outbox.txt'
+    'PRIVMSG #bobiverse :keep-builder' | Set-Content -LiteralPath $earOut -Encoding utf8
+    $t0 = [datetime]::Parse('2026-09-24T10:00:00Z').ToUniversalTime()
+    $startLog = Join-Path $bridgeRoot 'git-accept-starts.txt'
+    $env:BOB_GIT_ACCEPT_TEST_LOG = $startLog
+    $startOk = {
+        param($Claim)
+        Add-Content -LiteralPath $env:BOB_GIT_ACCEPT_TEST_LOG -Value ($Claim.repo + ' ' + $Claim.task + ' ' + $Claim.id) -Encoding utf8
+        [pscustomobject]@{ ok = $true; wait = $false; jobId = 'job-44'; fuel = 'cursor-models'; model = 'grok-4.6' }
+    }
+    $chairs = @('Jeeves')
+    $common = @{
+        WorkerHome   = $worker
+        ShopChannel  = '#flamingo'
+        ChairNicks   = $chairs
+        WorkerNick   = 'w-fl-4242'
+        MachineId    = 'flamingo'
+        StartWork    = $startOk
+        SkipActivity = $true
+    }
+    $r0 = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0
+    if ($r0.bored -or $r0.started) { throw 'first idle tick must only start the clock' }
+    $r119 = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0.AddSeconds(119)
+    if ($r119.bored) { throw '119s must not !BORED' }
+    $rb = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0.AddSeconds(121)
+    if (-not $rb.bored) { throw '121s must !BORED' }
+    $ob = @(Get-Content (Join-Path $worker 'outbox.txt'))
+    if ($ob.Count -ne 1 -or $ob[0] -ne 'PRIVMSG #flamingo :!BORED') { throw "bored line=$($ob -join ' | ')" }
+    $rb2 = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0.AddSeconds(130)
+    if ($rb2.bored -or $rb2.started) { throw 'second tick must not repeat !BORED' }
+
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #bobiverse :!TASK SimonBarnett/agentic_build MRB #44' -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :GIT pull_request SimonBarnett/agentic_build opened #44 Hostile MRB by simon' -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :GIT ping SimonBarnett/agentic_build zen by simon' -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':bob-flamingo!u@h PRIVMSG #flamingo :!TASK SimonBarnett/agentic_build MRB #44' -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :FILE v1 ACCEPT deadbeef' -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :OFFER SimonBarnett/agentic_build MRB #44' -Encoding utf8
+    $rnoise = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0.AddSeconds(140)
+    if ($rnoise.started) { throw 'fleet TASK, GIT, ping, non-chair, FILE, and OFFER must not start' }
+    $ob = @(Get-Content (Join-Path $worker 'outbox.txt'))
+    if ($ob.Count -ne 1) { throw "noise wrote outbox=$($ob -join ' | ')" }
+
+    Add-Content -LiteralPath (Join-Path $worker 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :!TASK SimonBarnett/agentic_build MRB #44' -Encoding utf8
+    $rok = Invoke-BobWorkerShopTick @common -IsBusy:$false -Now $t0.AddSeconds(150)
+    if (-not $rok.started) { throw 'shop !TASK must start work' }
+    if ($rok.claim.id -ne '#44' -or $rok.claim.task -ne 'MRB') { throw "claim=$($rok.claim.task) $($rok.claim.id)" }
+    $ob = @(Get-Content (Join-Path $worker 'outbox.txt'))
+    if ($ob.Count -ne 1 -or ($ob -join ' ') -match '!ACCEPT') { throw "worker must not !ACCEPT: $($ob -join ' | ')" }
+    $started = @(Get-Content $startLog)
+    if ($started.Count -ne 1 -or $started[0] -ne 'SimonBarnett/agentic_build MRB #44') { throw "start log=$($started -join ' | ')" }
+    $ear = @(Get-Content $earOut)
+    if ($ear.Count -ne 1 -or $ear[0] -notmatch 'keep-builder') { throw "builder ear outbox changed: $($ear -join ' | ')" }
+
+    $cap = Join-Path $bridgeRoot 'git-activity.ndjson'
+    if (Test-Path $cap) { Remove-Item $cap -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $cap
+    $code = Send-BobGitWorkActivity -Phase start -MachineId flamingo -Claim $rok.claim -Start $rok.start
+    if ($code -ne 204) { throw "activity start status=$code" }
+    $posted = Get-Content $cap -Raw
+    if ($posted -notmatch 'Cursor Models') { throw "activity missing agent: $posted" }
+    if ($posted -notmatch 'grok-4.6') { throw "activity missing model: $posted" }
+    if ($posted -notmatch 'working_on') { throw "activity missing working_on: $posted" }
+    if ($posted -notmatch 'SimonBarnett/agentic_build#44') { throw "activity missing repo id: $posted" }
+    Send-BobGitWorkActivity -Phase clear -MachineId flamingo -Claim $rok.claim | Out-Null
+    $lines = @(Get-Content $cap)
+    if ($lines.Count -ne 2) { throw "activity lines=$($lines.Count)" }
+    $cleared = $lines[1] | ConvertFrom-Json
+    if ([string]$cleared.working_on -ne '') { throw "clear working_on=$($cleared.working_on)" }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+
+    $busyPath = Join-Path $worker 'git-accept-busy.json'
+    if (-not (Test-Path $busyPath)) { throw 'start must record busy job' }
+    if (Test-BobGitAcceptWorkerBusy -WorkerHome $worker) { throw 'missing fleet job must clear busy' }
+    if (Test-Path $busyPath) { throw 'cleared busy file must be gone' }
+
+    $jobDir = Join-Path $bridgeRoot 'fleet\inbox\flamingo'
+    New-Item -ItemType Directory -Force -Path $jobDir | Out-Null
+    '{"id":"live-job","machine":"flamingo","goal":"hold"}' | Set-Content -LiteralPath (Join-Path $jobDir 'live-job.json') -Encoding utf8
+    '{"jobId":"live-job","repo":"SimonBarnett/agentic_build","task":"MRB","id":"#44"}' | Set-Content -LiteralPath $busyPath -Encoding utf8
+    if (-not (Test-BobGitAcceptWorkerBusy -WorkerHome $worker)) { throw 'inbox job must stay busy' }
+
+    $waitHome = Join-Path $ircHome 'workers\flamingo\99'
+    New-Item -ItemType Directory -Force -Path $waitHome | Out-Null
+    $t1 = [datetime]::Parse('2026-09-24T12:00:00Z').ToUniversalTime()
+    $startWait = { param($Claim) [pscustomobject]@{ ok = $true; wait = $true; jobId = $null; reason = 'no eligible worker' } }
+    Invoke-BobWorkerShopTick -WorkerHome $waitHome -ShopChannel '#flamingo' -IsBusy:$false -Now $t1 -ChairNicks $chairs -StartWork $startOk -SkipActivity | Out-Null
+    Invoke-BobWorkerShopTick -WorkerHome $waitHome -ShopChannel '#flamingo' -IsBusy:$false -Now $t1.AddSeconds(121) -ChairNicks $chairs -StartWork $startOk -SkipActivity | Out-Null
+    Add-Content -LiteralPath (Join-Path $waitHome 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :NAK !BORED empty' -Encoding utf8
+    $rnak = Invoke-BobWorkerShopTick -WorkerHome $waitHome -ShopChannel '#flamingo' -IsBusy:$false -Now $t1.AddSeconds(130) -ChairNicks $chairs -StartWork $startOk -SkipActivity
+    if ($rnak.started) { throw 'NAK must not start' }
+    if ($rnak.nak -ne 'empty') { throw "nak=$($rnak.nak)" }
+    $wob = @(Get-Content (Join-Path $waitHome 'outbox.txt'))
+    if ($wob.Count -ne 1 -or $wob[0] -ne 'PRIVMSG #flamingo :!BORED') { throw "nak outbox=$($wob -join ' | ')" }
+    $rbored2 = Invoke-BobWorkerShopTick -WorkerHome $waitHome -ShopChannel '#flamingo' -IsBusy:$false -Now $t1.AddSeconds(260) -ChairNicks $chairs -StartWork $startOk -SkipActivity
+    if (-not $rbored2.bored) { throw 'after NAK the worker must !BORED again once idle' }
+    Add-Content -LiteralPath (Join-Path $waitHome 'irc.log') -Value ':Jeeves!u@h PRIVMSG #flamingo :!TASK SimonBarnett/agentic_build PR #12' -Encoding utf8
+    $rwait = Invoke-BobWorkerShopTick -WorkerHome $waitHome -ShopChannel '#flamingo' -IsBusy:$false -Now $t1.AddSeconds(270) -ChairNicks $chairs -StartWork $startWait -SkipActivity
+    if ($rwait.started) { throw 'wait start must not count as started' }
+    $wob = @(Get-Content (Join-Path $waitHome 'outbox.txt'))
+    if ($wob.Count -ne 2 -or ($wob -join ' ') -match '!ACCEPT') { throw "wait outbox=$($wob -join ' | ')" }
+
+    foreach ($pair in @(@('21', 'w-fl-21'), @('22', 'w-fl-22'))) {
+        $sib = Join-Path $ircHome ('workers\flamingo\' + $pair[0])
+        New-Item -ItemType Directory -Force -Path $sib | Out-Null
+        $t4 = [datetime]::Parse('2026-09-24T15:00:00Z').ToUniversalTime()
+        Invoke-BobWorkerShopTick -WorkerHome $sib -ShopChannel '#flamingo' -IsBusy:$false -Now $t4 -ChairNicks $chairs -WorkerNick $pair[1] -StartWork $startOk -SkipActivity | Out-Null
+        Invoke-BobWorkerShopTick -WorkerHome $sib -ShopChannel '#flamingo' -IsBusy:$false -Now $t4.AddSeconds(121) -ChairNicks $chairs -WorkerNick $pair[1] -StartWork $startOk -SkipActivity | Out-Null
+    }
+    $taskMsg = ':Jeeves!u@h PRIVMSG #flamingo :!TASK SimonBarnett/agentic_build MRB #88'
+    Add-Content -LiteralPath (Join-Path $ircHome 'workers\flamingo\21\irc.log') -Value $taskMsg -Encoding utf8
+    Add-Content -LiteralPath (Join-Path $ircHome 'workers\flamingo\22\irc.log') -Value $taskMsg -Encoding utf8
+    $t5 = [datetime]::Parse('2026-09-24T15:05:00Z').ToUniversalTime()
+    $first = Invoke-BobWorkerShopTick -WorkerHome (Join-Path $ircHome 'workers\flamingo\21') -ShopChannel '#flamingo' -IsBusy:$false -Now $t5 -ChairNicks $chairs -WorkerNick 'w-fl-21' -StartWork $startOk -SkipActivity
+    $second = Invoke-BobWorkerShopTick -WorkerHome (Join-Path $ircHome 'workers\flamingo\22') -ShopChannel '#flamingo' -IsBusy:$false -Now $t5 -ChairNicks $chairs -WorkerNick 'w-fl-22' -StartWork $startOk -SkipActivity
+    if (-not $first.started) { throw 'first idle sibling must start' }
+    if ($second.started) { throw 'second sibling must no-op once the claim is taken' }
+    $sib2 = @(Get-Content (Join-Path $ircHome 'workers\flamingo\22\outbox.txt'))
+    if ($sib2 -join ' ' -match '!ACCEPT') { throw "second sibling spoke ACCEPT: $($sib2 -join ' | ')" }
+
+    $env:BOB_GIT_ACCEPT_TEST_LOG = $null
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+    $env:BOB_MACHINE_ID = $null
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
