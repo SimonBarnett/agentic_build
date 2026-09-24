@@ -3,8 +3,9 @@ name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. PASS-nits: that MRB agent merges the PR. FAIL: dispatcher
-  spawns a FIX worker. No MRB PDFs. Use when the user says MRB, hostile
+  in-session. PASS-nits: that MRB agent merges the PR. FAIL or remaining
+  open issues (FRs and other actionable issues): dispatcher passes each
+  to a new worker. No MRB PDFs. Use when the user says MRB, hostile
   review, review the push, ready for UAT, hand off MRB, missing features,
   or /bob-hostile-mrb. Loop table is bob-build-loop.
 ---
@@ -21,8 +22,8 @@ Bob **does not write** the review in Grok Bot / this grok.exe session.
 The implementer does not review their own PR. Dispatcher runs
 `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`) or, for a single
 SHA, starts a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`) as
-soon as the PR exists. The driver comments the new MRB URL on the prior
-FAIL board.
+soon as the PR exists. The driver comments the new URL on the prior FAIL
+board.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 `
@@ -50,6 +51,49 @@ IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
 **Chair:** only Bob may declare **ready for human UAT**. Worker posts `FAIL`
 or `PASS-nits` only. PASS-nits **includes merge**. If the worker thinks it
 passed UAT, they write `candidate PASS-UAT, Bob stamp required`.
+
+## PASS-nits MUST close, merge, and pull (Simon 2026-09-22 — VERY important)
+
+A PASS-nits that leaves git dirty is not finished. The MRB worker MUST,
+in this order, before the driver prints DONE:
+
+1. **Merge** the reviewed PR (`gh pr merge --merge` — non-interactive
+   `gh` requires a strategy). Do not claim merged unless that command
+   succeeded (or `gh pr view` is already MERGED).
+2. **Close finished issues**: the feature-request issue, **every** prior
+   FAIL MRB board for this FR, and this PASS-nits issue. Each close
+   comment links the merged PR URL.
+3. **Pull completed PRs** on the product checkout and isolated worktrees
+   (`git fetch` + fast-forward `main` / default branch to the merge SHA).
+   The next FR must not start on stale main. Dispatcher verifies
+   `origin/main` contains the merge commit before `start_build` on a
+   remaining issue.
+
+The loop finish race (`FAILED: PASS-nits finish: PR still open after gh
+pr merge`) is not a reason to skip close/pull. If the PR is already
+MERGED and the FR is CLOSED, treat DONE, then still pull.
+
+## recycle-after-merge (Simon 2026-09-23 — merger owns live fleet)
+
+Anyone merging `agentic_build` or `agentic_irc` to **main** (PASS-nits MRB
+worker or Bob) must **recycle-after-merge** so live boxes are not left on
+the old tree. Sister FR: `agentic_irc` #168 (`agentic-irc` / `bob-irc`
+skills); this skill owns the MRB merger duty on `agentic_build`.
+
+After merge, close, and pull (above), before the driver prints DONE:
+
+4. **Recycle live machines**: merger (or Bob) recycles Watch-Bobiverse,
+   Bob Fleet tray, and agent seats on affected fleet boxes — pull `main`
+   at the merge SHA, then roll watchers / tray / seats per local playbook.
+5. **ionos restart IRC when required**: when the merged change is not
+   tray-only, notify **ionos** to restart IRC altogether (Ergo / bobircd /
+   chair). Merger decides tray-only vs full IRC restart; exact notify
+   transport is UNKNOWN (`agentic_irc` #152).
+
+**Implementer PR workers do not live-recycle.** Document the duty in skill
+and FR only. Bob or ionos runs recycle / IRC restart after merge to main —
+not a worker on DEV1 (or any non-merger seat) calling live `!recycle` at
+another box.
 
 Escape hatch: if Cursor Agent and grok.exe both cannot start, Bob writes the
 MRB himself using the rest of this skill. Say that in the issue.
@@ -79,13 +123,29 @@ Before the verdict, walk:
 
 | Gap | Action |
 |---|---|
-| This FR's acceptance still red | **Required fix** on this MRB issue. Do not open a second FR for the same MUST. |
-| Adjacent / unspecified hole, or an issue with no intake doc | **Request it**: park via `bob-spec-intake`. Link from **Missing features**. |
-| Already parked issue+doc, not in this PR | List under Missing features with the issue URL. Do not duplicate. |
+| This FR's acceptance still red | **Required fix** on this MRB issue. Do not open a second FR for the same MUST. Dispatcher starts a **new** FIX worker. |
+| Adjacent / unspecified hole, or an issue with no intake doc | **Request it**: park via `bob-spec-intake`. Link from **Missing features**. Dispatcher starts a **new** worker for that FR. |
+| Already parked issue+doc, not in this PR | List under Missing features with the issue URL. Do not duplicate. Dispatcher starts a **new** worker if none is running. |
 
-Do not implement the missing feature in the MRB job.
+Do not implement the missing feature in the MRB job. Listing alone is not
+enough — the dispatcher must hand remaining FRs to new workers
+(`bob-job-loop`).
 
 ## Worker steps
+
+Score the review SHA only. If the shared checkout HEAD is a different
+job, add a detached worktree at that SHA. Do not `reset` / `checkout`
+away from another worker's branch. Do not score later commits or dirty
+files. A GitHub `CONFLICTING` PR is FAIL even when this SHA's
+acceptance is green in isolation: PASS-nits includes `gh pr merge`.
+Re-read `mergeable` immediately before posting PASS-nits. A stale
+`CLEAN` can go `DIRTY` while the board is written. If `gh pr merge`
+then fails, that PASS-nits is void: open a **new** FAIL issue on the
+same SHA (do not reuse the pass board). Comment the FAIL URL on the
+voided issue. If you then see the **same PR already MERGED** (another
+worker scored a later head, or `gh pr view` is MERGED), close that
+leftover FAIL with the merged PR URL. Do **not** start FIX. Pull
+main. Do not claim you merged unless your `gh pr merge` succeeded.
 
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
@@ -95,10 +155,29 @@ Do not implement the missing feature in the MRB job.
    - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
-5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a FIX
-   worker (`cursor-mrb-dev`). Do not reuse this FAIL issue as the next board.
-6. **PASS-nits:** merge the PR (`gh pr merge`). Nits stay listed; they do
-   not block the merge.
+5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**
+   FIX worker (`cursor-mrb-dev` / `bob-job-loop`). Do not reuse this FAIL
+   issue as the next board.
+6. **PASS-nits:** merge the PR (`gh pr merge --merge`). Nits stay listed; they do
+   not block the merge. After merge succeeds, close the feature-request
+   issue, **every** prior FAIL MRB board for this FR (all FAIL cycles on
+   the loop board, not only the latest), and this PASS-nits issue. Each
+   close comment links the merged PR URL. Do not write that the PR merged
+   unless `gh pr merge` succeeded.
+7. **Remaining issues / feature requests:** after FAIL or PASS-nits, the
+   dispatcher must pass work to **new** workers for (a) this FAIL's
+   Required fixes (FIX worker), and (b) **any other open actionable
+   issues** — not only those labeled `feature-request` (Simon
+   2026-09-22: bob-job checks open issues as well as FRs). Skip pure
+   MRB meta boards. Missing features just parked count. Listing under
+   Missing features is not enough — hand each to `bob-job-loop`.
+   Remaining issues do not block this PASS-nits merge.
+8. **No Bob, still open issues — do not sit (Simon 2026-09-22):** if you
+   just MRB'd and Bob is not on channel / not assigning, **do not leave
+   remaining open issues idle**. Find someone: ask `#bobiverse` for a
+   spare seat, or launch the next `bob-job-loop` yourself on another
+   open actionable issue. Waiting for Bob to notice is a bug. Harvest
+   this playbook when you learn it (`harvest-agent-skills`).
 
 ## Pass bar
 

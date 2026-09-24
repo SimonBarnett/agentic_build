@@ -47,32 +47,40 @@ Never paste `auth.json`, sand-secrets, or bearer tokens.
 
 ## Cursor dashboard meters (do not mix)
 
-Spending (`cursor.com/dashboard/spending`) has three included bars. Fuel for
-MRB/PR is **only** the first.
+Spending (`cursor.com/dashboard/spending`) included meters on the TipForm
+(Simon labels; API in `tools/Get-CursorAgentUsage.py`):
 
-| Meter | Fuel | How to show |
+| TipForm group | Spending / API source | Fuel |
 |---|---|---|
-| **Cursor Models** (Includes Cursor Grok and Composer) | `cursor-models` for MRB and PRs | Tray top bar `Cursor Models (N%)` where N is **remaining**. `Get-BobCapacity.cursor_models.remaining_pct`. Picker uses this: remaining > 0 -> Cursor, else grok.exe |
-| Other Models | none (do not use for this loop) | Do not display as Cursor Models |
-| Grok Bot weekly (Sand) | `grok-bot` only | Not the top bar. 100% used silences Grok Bot (`cursor-sand-billing`) |
+| **grok chat** | `GetSandUsageStatus.usagePercent` → `cursor_spending_groups[id=grok-chat]` | `grok-bot` only (Sand). Not MRB/PR fuel. |
+| **high cost models** | `GetCurrentPeriodUsage.planUsage.apiPercentUsed` | named / Other Models |
+| **auto** | `planUsage.autoPercentUsed` (Auto picker / `autoBucketModels`) | `cursor-models` for MRB and PRs |
 
-20 Sep 2026 21:25: Cursor Models **1% used** (~99% left), Other Models 6%,
-Grok Bot 100%. Tray wrongly showed `Cursor Models (-GBP 54.14)` (Sand overage).
-Do not substitute overage GBP or Sand remaining for Cursor Models remaining.
+**Auto** is the pool when the model is Auto — not on-demand. Docs: Auto bills
+at the routed model's list price from **Cursor Models** (and Other Models if
+the router picks third-party). Do **not** paint an on-demand usage bar; header
+`overspend £…` (USD cents → GBP, right-aligned in the tile host) covers
+spend-limit pay-as-you-go.
+
+TipForm paints **three labelled bars**. Hover JSON: `cursor_pools` (three
+rows). Legacy: low cost models ≈ auto; Cursor Models ≈ auto.
 
 | Signal | How |
 |---|---|
-| Cursor Models remaining % | Must match Spending "Cursor Models" (100 - used). `Get-BobCapacity.cursor_models.remaining_pct`. Do not invent. |
-| Sand remaining % | `Get-BobCursorAgentWeeklyRemaining` / `tools\Get-CursorAgentUsage.py` → Sand `usagePercent`. Live confirm: `GrokBotApi.py post --service aiserver.v1.DashboardService --method GetSandUsageStatus`. This is **not** Cursor Models fuel. |
-| Empty / 100% Sand | `usagePercent: 100` / Sand `remaining_pct` null. Grok Bot turns then `ACCEPTED_TEMPORAL` with **no** assistant `send-message` and **no** "limit reached" banner (Cursor bug). `hasAvailableUsage: true` + on-demand `enabled` does not mean they generate. Confirm Stripe: `GrokBotApi.py post --method ListGrokBotStripeLinkPaymentMethods`. `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` = on-demand cannot charge (box send 503). Cursor dashboard banner **You may have an unpaid invoice** + invoice Status **Open** is the same block (ionos 2026-09-20: Open mid-month 16 Sep cycle and Open 14 Sep cycle). Human pays Open invoices / finishes Stripe Link in billing settings. Not a RecreateSandBox fix — see `unstick-grok-bot`. |
-| Empty / overspent | `overage_gbp` from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents → GBP FX). Show as overage, **not** as Cursor Models remaining. Not tip_cursor.json fakes |
-| Reset date | Cursor Models / Sand `period_end` → `reset DD Mon` |
+| auto remaining % | Must match Spending `autoPercentUsed` (100 − used). `Get-BobCapacity.cursor_models.remaining_pct`. |
+| grok chat remaining % | Sand `usagePercent` via `cursor_spending_groups` / `sand_remaining_pct`. |
+| high cost models remaining % | `apiPercentUsed` via `cursor_spending_groups`. |
+| Empty / overspent GBP | `overage_gbp` from `spendLimitUsage.individualUsed` — header only, not a bar. |
+| Reset date | **Every** spending group row: `reset DD Mon`. `grok chat` → Sand `sand_period_end`; high/auto → `billingCycleEnd`. |
 | Cache | `~\.grok\bob-bridge\cursor-agent-usage.json` (~15 min); delete to force refresh |
 
 ## TipForm wiring
 
-`Get-BobTrayHover` sets `account_reset_label` and each machine's `reset_label`.
-`Watch-BobTray` appends them on the cursor row and every seat tile.
+`Get-BobTrayHover` sets `reset_label` on **each** of the three `cursor_pools`
+rows, plus each machine tile. Overspend is right-aligned inside the tile host
+(host width − text − 2px). Agent section icons resolve Desktop `.lnk` then
+Program Files `Grok Bot` / Cursor exe (`ExtractAssociatedIcon` plated on a
+light chip).
 
 ## Other signals
 
