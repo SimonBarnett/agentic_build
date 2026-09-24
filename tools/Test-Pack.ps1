@@ -4678,49 +4678,56 @@ public static class BobTestArgv {
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
 }
 
-Invoke-Case 'BT0tray grok session key overrides OAuth' {
+Invoke-Case 'BT0tray idempotent ear/jobs start' {
     param($bridgeRoot)
-    # grok 1.0.41 prefers ~/.grok/auth.json (OAuth) over XAI_API_KEY; the #314 session key was
-    # ignored. Session env must isolate GROK_AUTH_PATH to a fresh temp path, child-env only.
+    # Tray restart spawned a second Watch-Bobiverse ear (and Watch-BobJobs): PS 5.1 unrolls a
+    # one-element @() returned from Test-*WatcherUp to a bare object whose .Count is $null.
     $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
-    $traySrc = Get-Content $trayPath -Raw
     $tok = $null; $err = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
-    foreach ($name in @('Get-BobTrayGrokSessionRoot', 'New-BobTrayGrokSessionEnv', 'Register-BobTrayGrokSession', 'Clear-BobTrayGrokSessionDirs')) {
+    foreach ($name in @('Select-BobTraySingleWatcher', 'Start-IrcWatcher', 'Start-JobsWatcher')) {
         $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
         if (-not $fn) { throw "Watch-BobTray must define $name" }
         . ([scriptblock]::Create($fn.Extent.Text))
     }
+    $calls = @{ wrap = 0; jobs = 0; stopped = @() }
+    $ears = @()
+    $jobsUp = @()
     function Write-TrayLog([string]$m) { }
-    $script:bobTrayGrokSessions = @()
-    $beforeAuth = $env:GROK_AUTH_PATH
-    $beforeKey = $env:XAI_API_KEY
-    $dummy = 'xai-bt0-dummy-not-a-key'
-    $e1 = New-BobTrayGrokSessionEnv -ApiKey $dummy
-    $e2 = New-BobTrayGrokSessionEnv -ApiKey $dummy
-    if ($e1.XAI_API_KEY -ne $dummy) { throw 'session env must carry XAI_API_KEY' }
-    $ap = [string]$e1.GROK_AUTH_PATH
-    if (-not $ap) { throw 'session env must set GROK_AUTH_PATH (else OAuth auth.json wins over XAI_API_KEY)' }
-    $tmp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-    if (-not ([IO.Path]::GetFullPath($ap)).StartsWith($tmp, [StringComparison]::OrdinalIgnoreCase)) { throw "GROK_AUTH_PATH must live under TEMP: $ap" }
-    if ((Split-Path -Leaf $ap) -ne 'auth.json') { throw 'GROK_AUTH_PATH must point at an auth.json file path' }
-    if (Test-Path -LiteralPath $ap) { throw 'session auth.json must not exist (no OAuth creds for the child)' }
-    if (-not (Test-Path -LiteralPath (Split-Path -Parent $ap))) { throw 'session dir must exist' }
-    if ($ap -eq $e2.GROK_AUTH_PATH) { throw 'each start needs its own session dir' }
-    if ($ap -like "*\.grok\auth.json") { throw 'must not reuse ~/.grok/auth.json' }
-    if ($env:GROK_AUTH_PATH -ne $beforeAuth -or $env:XAI_API_KEY -ne $beforeKey) { throw 'tray process env must not be modified' }
-    # exited child -> session dir removed; running child -> kept
-    Register-BobTrayGrokSession -Process ([pscustomobject]@{ HasExited = $true }) -SessionEnv $e1
-    Register-BobTrayGrokSession -Process ([pscustomobject]@{ HasExited = $false }) -SessionEnv $e2
-    Clear-BobTrayGrokSessionDirs
-    if (Test-Path -LiteralPath (Split-Path -Parent $e1.GROK_AUTH_PATH)) { throw 'exited session dir must be removed' }
-    if (-not (Test-Path -LiteralPath (Split-Path -Parent $e2.GROK_AUTH_PATH))) { throw 'running session dir must be kept' }
-    Remove-Item -LiteralPath (Split-Path -Parent $e2.GROK_AUTH_PATH) -Recurse -Force
-    # contracts: Agents->Grok and Plan->Grok both use it; child-env only; tracked for cleanup
-    if (([regex]::Matches($traySrc, '\$sessionEnv = New-BobTrayGrokSessionEnv -ApiKey \$key')).Count -ne 2) { throw 'Agents->Grok and Plan->Grok must both build env via New-BobTrayGrokSessionEnv' }
-    if ($traySrc -match '\$sessionEnv = @\{ XAI_API_KEY') { throw 'bare XAI_API_KEY session env is ignored when OAuth auth.json exists' }
-    if ($traySrc -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:GROK_AUTH_PATH\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session key/auth path must not touch tray/User/Machine env' }
-    if (([regex]::Matches($traySrc, 'Register-BobTrayGrokSession -Process \$proc -SessionEnv \$SessionEnv')).Count -ne 2) { throw 'both session launch helpers must register the child for session-dir cleanup' }
+    function Start-BobiverseMootWrapper { $calls.wrap++ }
+    function Test-BobiverseWatcherUp { $h = @($ears); return $h }
+    function Test-JobsWatcherUp { $h = @($jobsUp); return $h }
+    function Stop-Process { param([int]$Id, [switch]$Force, [string]$ErrorAction) $calls.stopped += $Id }
+    function Start-Process { $calls.jobs++; return [pscustomobject]@{ Id = 999 } }
+    $watchJobs = 'x'
+    $old = [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; CreationDate = [datetime]'2026-09-24T20:00:00' }
+    $new = [pscustomobject]@{ ProcessId = 200; ParentProcessId = 1; CreationDate = [datetime]'2026-09-24T21:00:00' }
+    $child = [pscustomobject]@{ ProcessId = 300; ParentProcessId = 100; CreationDate = [datetime]'2026-09-24T20:00:01' }
+    # one existing ear -> reuse (the bug: started a second one)
+    $ears = @($old)
+    Start-IrcWatcher
+    if ($calls.wrap -ne 0) { throw "tray start with one existing ear spawned another (wrap=$($calls.wrap))" }
+    if ($calls.stopped.Count -ne 0) { throw 'single ear must not be stopped' }
+    # no ear -> start exactly one
+    $ears = @()
+    Start-IrcWatcher
+    if ($calls.wrap -ne 1) { throw "no ear must start exactly one (wrap=$($calls.wrap))" }
+    # two ears -> keep oldest, stop newer, start none
+    $calls.wrap = 0
+    $ears = @($new, $old)
+    Start-IrcWatcher
+    if ($calls.wrap -ne 0) { throw 'duplicate ears must not start a third' }
+    if (($calls.stopped -join ',') -ne '200') { throw "must stop newer duplicate only, stopped=$($calls.stopped -join ',')" }
+    # wrapper + in-process child tree is one watcher, not a duplicate
+    $calls.stopped = @()
+    $ears = @($old, $child)
+    Start-IrcWatcher
+    if ($calls.stopped.Count -ne 0) { throw 'wrapper->child tree must not be treated as duplicate' }
+    # jobs watcher: one existing -> reuse, no Start-Process
+    $jobsUp = @($old)
+    Start-JobsWatcher
+    if ($calls.jobs -ne 0) { throw 'tray start with one Watch-BobJobs spawned another' }
+    if ($script:jobsPid -ne 100) { throw "jobsPid must adopt existing pid 100, got $($script:jobsPid)" }
 }
 
 Write-Host ''
