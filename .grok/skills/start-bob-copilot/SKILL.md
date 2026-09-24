@@ -4,17 +4,25 @@ description: >
   Start GitHub Copilot cloud agent on a SimonBarnett repo from this Grok
   session. Use when the user says start Copilot, assign Copilot, offload to
   Copilot, GitHub coding agent, or /start-bob-copilot. Bills GitHub Copilot
-  credits, not Cursor weekly usage and not grok.exe.
+  credits, not Cursor weekly usage and not grok.exe. Before start, pass the
+  digest fuel gate (bob-token-handoff). Copilot is not the default while
+  cursor-models remaining is above 0.
 ---
 
 # Start Bob Copilot
 
-Repo work that can live on GitHub goes to Copilot (including **hostile MRB** posts — Bob uses `tools/Start-BobMrbHandoff.ps1`, which calls this script). Do not implement that work with Grok Bot (Cursor weekly usage) or extra `grok.exe` when Copilot can take it.
+Copilot is an optional fuel (`-AllowCopilot`), including hostile MRB only when the picker chose `copilot`. Bob uses `tools/Start-BobMrbHandoff.ps1`. Default MRB/PR fuel is cursor-models then grok-build (`bob-token-handoff`), not this script.
+
+## Digest fuel gate (before start)
+
+Follow `bob-token-handoff` first. GET `https://irc.ntsa.uk/bob/v1/report` and read `pcent.cursor-models`. Do not invent the percent.
+
+Start Copilot only when fuel is `copilot`: the operator passed `-AllowCopilot` / `-Fuel copilot`, and included `cursor-models` is already 0 (or the picker explicitly chose copilot). While `cursor-models` remaining is above 0, do not offload here. Never Other Models. PR stays the low tier; MRB stays medium (`grok-4.6`) on cursor-models or grok-build. UAT stays with Bob.
 
 Reached via `Select-BobGitWorker` when fuel is `copilot` (same picker as
 `start-bob-cursor`). Grok **hands off** by opening a GitHub issue that
 `@copilot`s Copilot, then tries the cloud-agent task API. If GitHub returns
-`CCA not enabled`, the issue is still the handoff — do not implement that
+`CCA not enabled`, the issue is still the handoff -- do not implement that
 work in Grok Bot or extra grok.exe.
 
 ## Command

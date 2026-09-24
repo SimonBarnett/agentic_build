@@ -26,6 +26,14 @@ No `#bobiverse` JOIN from the worker. Canon: agentic_build #124.
 
 Picker selected `cursor-models`, `Start-BobBuild -Task git -Fuel cursor-models`, `Start-BobMrbHandoff`, or `cursor-mrb-dev`.
 
+## Digest fuel gate (before start)
+
+Follow `bob-token-handoff` first. GET `https://irc.ntsa.uk/bob/v1/report` and read `pcent.cursor-models`.
+
+- Remaining > 0: start this script.
+- Remaining 0 or the key is missing: do not start cursor-agent. Fall through to grok-build. Do not invent a percent. MarchHare has no Cursor login; do not treat a local Cursor miss there as "empty" without the digest.
+- Tier: PR/build = low (`composer-2.5`). MRB = medium (`grok-4.6`). UAT is not this script (Bob assigns; high tier). Never Other Models.
+
 ## Login
 
 Binary is `%LOCALAPPDATA%\cursor-agent\cursor-agent.cmd` (or `.ps1`). Never `~\.grok\bin\agent.exe` (grok). `cursor-agent status` must show logged in. Login: `agent login` with `NO_OPEN_BROWSER=1` (prints a cursor.com URL). A Grok Bot Cursor token is **not** CLI auth.

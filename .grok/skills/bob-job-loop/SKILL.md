@@ -7,18 +7,33 @@ description: >
   hand remaining open issues (not only feature-request) to new workers.
   Does not stamp UAT. Use when the user says hand off the job, bob job,
   bob job FRs, start and mrb until pass, retry failed cursor/grok jobs,
-  run the program and notify on PASS-nits, or /bob-job-loop. Table:
-  bob-build-loop. Bars: bob-hostile-mrb.
+  run the program and notify on PASS-nits, or /bob-job-loop. Fuel gate:
+  bob-token-handoff (live digest first; PR=low, MRB=medium, UAT=high).
+  Table: bob-build-loop. Bars: bob-hostile-mrb. Bob listens and assigns only.
 ---
 
 # Build / MRB until PASS-nits (one program)
 
-Transaction table: `bob-build-loop`. Fuel and login: `cursor-mrb-dev` /
-`start-bob-cursor`. Verdicts: `bob-hostile-mrb`.
+Transaction table: `bob-build-loop`. Fuel and login: `bob-token-handoff`
+then `cursor-mrb-dev` / `start-bob-cursor`. Verdicts: `bob-hostile-mrb`.
 
 The dispatcher does not sit in the MRB/FIX table. Launch the driver, then
 stop. Do not poll `Get-BobBuild`. Do not retype `Start-BobMrbHandoff` or
-`Start-BobBuild -Fix` unless the driver cannot start.
+`Start-BobBuild -Fix` unless the driver cannot start. Bob listens and
+assigns only.
+
+## Fuel (do not re-reason)
+
+Before the driver starts a worker, the number comes from the **live digest
+webhook** (`bob-token-handoff`, `https://irc.ntsa.uk/bob/v1/report`
+`pcent.cursor-models`). Do not invent it. MarchHare has no Cursor login.
+
+- Cursor Models remaining > 0 -> `cursor-models`, else grok.exe (`grok-build`).
+- **PR = low** code agent: Composer `composer-2.5`, or `build0.1` if listed, else `grok-4.5`.
+- **MRB = medium** code agent: `grok-4.6`. New worker. Never the implementer.
+- **UAT = high**: Bob assigns and stamps UAT. This loop does not stamp UAT. Do not spend a high agent to implement or to MRB.
+- Never Other Models. Copilot only with `-AllowCopilot`.
+- Maximize free/cheap agents when included fuel remains. The driver re-reads fuel at each start; the source of the percent is still the digest.
 
 ## Launch (Grok session)
 
@@ -88,14 +103,14 @@ by MRB join the **tail** of the queue in issue-number order.
    when any open actionable issues remain** after this FR's PASS-nits /
    Missing features park. Do not stop at one FR DONE while open work
    sits idle. Skip boards already `phase=pass` and superseded issues.
-9. **No Bob, still open issues — find a seat (Simon 2026-09-22):** after
+9. **No Bob, still open issues -- find a seat (Simon 2026-09-22):** after
    MRB, if Bob is absent and open actionable issues remain, do not park
    the channel waiting for Bob. Ask `#bobiverse` for a spare to take the
    next issue, or start the next `bob-job-loop` yourself. Harvest into
    skills when this rule is learned (`harvest-agent-skills`).
 10. **Check open issues as well as FRs (Simon 2026-09-22):** when bob-job
     looks for work (first launch, after PASS-nits, short-of-work, no-Bob),
-    run `gh issue list --state open` on the repo — **not only**
+    run `gh issue list --state open` on the repo -- **not only**
     `--label feature-request`. Actionable = any open issue that is not a
     pure MRB meta board (`mrb` + `mrb-pass`/`mrb-fail`, titles starting
     `MRB PASS-nits:` / `MRB FAIL:`). Unlabeled or other-label open issues
@@ -114,10 +129,10 @@ by MRB join the **tail** of the queue in issue-number order.
 
 ## On wakeup
 
-- `DONE: MRB PASS-nits ...` — tell the human the issue, SHA, and PR. Do
+- `DONE: MRB PASS-nits ...` -- tell the human the issue, SHA, and PR. Do
   not stamp ready for human UAT. Bob chairs that. Confirm the MRB
   **merged the PR, closed the finished FR / FAIL / PASS issues, and
-  pulled the merge onto product main** (Simon 2026-09-22 — VERY
+  pulled the merge onto product main** (Simon 2026-09-22 -- VERY
   important). If merge/close was skipped, run `Close-BobBuildLoopFinished`
   and `git fetch` + fast-forward before anything else. Then list **all
   open issues** on that repo (not only `feature-request`); for each
@@ -125,14 +140,14 @@ by MRB join the **tail** of the queue in issue-number order.
   `bob-job-loop` (isolated worktree + unique log) **from the pulled
   main**. Also launch any issues the MRB just parked under Missing
   features.
-- `FAILED: ...` — read the loop log. Fix the reason (auth, cwd, missed PR,
+- `FAILED: ...` -- read the loop log. Fix the reason (auth, cwd, missed PR,
   secrets in the goal), then relaunch. Do not start a second loop on the
   same FR while one is still alive.
-- `FAILED: PASS-nits finish: PR still open after gh pr merge` — race.
+- `FAILED: PASS-nits finish: PR still open after gh pr merge` -- race.
   If `gh pr view` is already MERGED and the FR issue is CLOSED (or has
   PASS-nits merge comment), treat as DONE. Do not relaunch a build.
 - `FAILED: PASS-nits finish: gh pr merge failed: GraphQL: Merge already
-  in progress` — same race. `gh pr view --json merged` is invalid (no
+  in progress` -- same race. `gh pr view --json merged` is invalid (no
   such field); that made `Test-BobGhPrIsMerged` always false and skipped
   the close. Re-check `--json state,mergedAt`. If `state` is MERGED,
   close leftover FR / FAIL / PASS boards and pull. Do not relaunch.

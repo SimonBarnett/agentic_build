@@ -16,6 +16,8 @@ or the code. Hand off, watch GitHub, dispatch the next row.
 
 ## Fuel (no judgment)
 
+Number source: `bob-token-handoff` (live digest `pcent.cursor-models` first). Do not invent it.
+
 `Select-BobGitWorker` / default `-Fuel cursor-models`.
 
 - Cursor Models remaining > 0: Cursor Agent. MRB = Cursor Grok
