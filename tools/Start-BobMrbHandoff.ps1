@@ -52,22 +52,24 @@ $shaLine = $(if ($Sha) { "SHA $Sha. Review that commit only. Do not stage or com
 $mrbPostShaLine = $(if ($Sha) { "When you post the verdict, call tools/Start-BobMrb.ps1 with -Sha $Sha so the issue title carries that commit." } else { '' })
 $docsLine = $(if ($Docs) { $Docs } else { 'docs/feature-request-*.md' })
 $planLine = $(if ($Plan) { $Plan } else { 'docs/build-and-test-plan*.md' })
+$prLine = $(if ($Pr) { "PR under review: $Pr" } else { 'Find the open PR for the reviewed SHA.' })
+$mrbPrUrlArg = $(if ($Pr) { $Pr } else { 'https://github.com/' + $Repo + '/pull/<number>' })
 
 $prompt = @"
 Hostile MRB of $issueUrl. Follow skill bob-hostile-mrb and the transaction in bob-build-loop (https://github.com/SimonBarnett/agentic_build .grok/skills).
 
-$shaLine This is a PR head. Diff vs $docsLine and $planLine (and the parked PDF if one was supplied).
+$shaLine $prLine Diff vs $docsLine and $planLine (and the parked PDF if one was supplied).
 $mrbPostShaLine
 
 Walk missing features: this FR's red acceptance = Required fixes on the MRB issue; unspecified holes / issues with no intake doc = park via bob-spec-intake (issue + markdown) and list under Missing features. Do not implement missing features in the MRB job.
 
-Post a GitHub issue on $Repo titled 'MRB FAIL|PASS-nits: <slug> <sha>' with labels mrb + mrb-fail or mrb-pass. Body: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes, PR. No MRB PDF.
-
 Verdict FAIL or PASS-nits only. Do not write the words ready for human UAT. Bob chairs that stamp.
 
-PASS-nits: merge the PR (gh pr merge). Nits do not block the merge.
-After merge succeeds, close the feature-request issue, every prior FAIL MRB board for this FR, and this PASS-nits issue (gh issue close --comment). Each close comment must link the merged PR URL. Do not claim merged unless gh pr merge succeeded.
-FAIL: do not merge. Required fixes only. Do not start the FIX worker yourself.
+Post boards only with tools/Start-BobMrb.ps1 (never gh issue create). Body sections: Verdict, Feature request, Missing features, Blockers, Nits, Evidence, Required fixes, PR. No MRB PDF.
+
+PASS-nits: call Start-BobMrb.ps1 -Verdict PASS-nits -PrUrl '$mrbPrUrlArg' -Sha <sha> -Title '<slug>' -Body '...' -FeatureIssue '<fr url>'. The script runs gh pr merge before creating the mrb-pass issue; if merge fails, post FAIL instead. Nits do not block merge. After the board exists, close the feature-request issue, every prior FAIL MRB board for this FR, and this PASS-nits issue (gh issue close --comment linking the merged PR). Do not claim PASS-nits if Start-BobMrb.ps1 threw.
+
+FAIL: Start-BobMrb.ps1 -Verdict FAIL (no -PrUrl). Do not merge. Required fixes only. Do not start the FIX worker yourself.
 
 Work with Cursor Models (Cursor Grok / Composer) or grok.exe only. Do not use Other Models. Do not use Copilot. Do not burn Grok Bot weekly usage. Do not assign secrets in the issue (no password or XAI_API_KEY literals in git).
 "@
@@ -108,7 +110,15 @@ else {
     $sel = Select-BobGitWorker -Fuel $enqueueFuel -AllowCopilot:$AllowCopilot -Repo "https://github.com/$Repo"
 }
 if ($sel.wait) {
-    throw "MRB handoff preflight: no eligible $enqueueFuel worker ($($sel.reason)). Fix capacity before spending Grok on the review."
+    $why = "no eligible $enqueueFuel worker ($($sel.reason))"
+    return [pscustomobject]@{
+        ok         = $false
+        started    = $false
+        startError = $why
+        jobId      = $null
+        pid        = $null
+        handed     = $enqueueFuel
+    }
 }
 Assert-BobMrbWorkerCanPost -WorkerMachine ([string]$sel.machine)
 

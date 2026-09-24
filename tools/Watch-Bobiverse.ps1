@@ -63,11 +63,13 @@ function Stop-StaleBobiverseIrcAgent {
 }
 
 function Test-BobiverseIrcAgentUp {
+    # Key on fleet bob-* nick — worker homes under .../workers/... contain
+    # "bobiverse" in the path and must not count as the keep-alive agent (#70).
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -match '--nick\s+bob-' -and
             (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     return ($hits.Count -gt 0)
@@ -98,10 +100,12 @@ function Start-BobiverseIrcAgent {
     }
     $mid = $env:BOB_MACHINE_ID
     if (-not $mid) { $mid = $env:COMPUTERNAME.ToLowerInvariant() }
+    $resolvedMid = Resolve-BobiverseMachineId $mid
+    if ($resolvedMid) { $mid = $resolvedMid }
     $nick = $null
     if ($cfg.nicks) { $nick = [string]$cfg.nicks.$mid }
     if (-not $nick) { $nick = 'bob-' + $mid }
-    $channel = [string]$cfg.channel
+    $channel = Get-BobIrcBuilderChannels -MachineId $mid
     $ircHost = [string]$cfg.host
     $ircPort = 6697
     if ($cfg.port) { $ircPort = [int]$cfg.port }
@@ -126,9 +130,7 @@ function Start-BobiverseIrcAgent {
         '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$mid-builder"
+        '--home', $ircHome
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
@@ -138,27 +140,12 @@ while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
-        try { Sync-BobShopChannelRepoDescriptions | Out-Null } catch { }
-        try { Invoke-BobIrcOutboxWireConsumer | Out-Null } catch { }
-        Write-BobIrcStatus | Out-Null
-        try {
-            $stampPath = Join-Path (Get-BobIrcHome) 'bob-peers\_bobiverse-usage-last.txt'
-            $due = $true
-            if (Test-Path $stampPath) {
-                try {
-                    $prev = [datetime]::Parse((Get-Content $stampPath -Raw).Trim(), $null, [Globalization.DateTimeStyles]::RoundtripKind)
-                    if (([DateTime]::UtcNow - $prev.ToUniversalTime()).TotalSeconds -lt $BobiversePullSec) { $due = $false }
-                }
-                catch { }
-            }
-            if ($due) {
-                Invoke-BobRepoPairChairUsageWebhookIfChanged | Out-Null
-                Set-Content -Path $stampPath -Value ([DateTime]::UtcNow.ToString('o')) -Encoding utf8 -NoNewline
-            }
-        }
-        catch { }
+        $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
+        if ($localDoc) {
+            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+        }
         Import-BobIrcPeerTranscript | Out-Null
     }
     catch {

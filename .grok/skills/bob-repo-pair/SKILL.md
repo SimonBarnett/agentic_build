@@ -45,12 +45,18 @@ Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
   — do not enqueue two implement jobs on the same SHA.
 - **Handoff:** `Register-BobRepoPairDevComplete -PrUrl …` then MRB seat;
   `Register-BobRepoPairMrbComplete` for digest lines.
-- **Bob reports:** `Invoke-BobRepoPairBobiverseSay` queues digest lines as `PRIVMSG #bobiverse` in `outbox.txt` for `irc_agent` to send (do not pre-drain).
-- **Shop JOIN:** each seat starts a dedicated shop `irc_agent` (manifest `shop-join-<sessionId>.json`); Fake-Grok must not forge JOIN JSON.
-- **Shop description:** `Set-BobShopChannelRepoDescription` queues `SHOPDESC` on `outbox-wire.txt`; `Invoke-BobIrcOutboxWireConsumer` issues real TOPIC/MODE on the wire (not `say()` chat).
-- **Usage webhook:** `Invoke-BobRepoPairChairUsageWebhookIfChanged` on Bob `!bobiverse` cadence via `Watch-Bobiverse` (not every chair tick).
-- **Idle assign:** `Deliver-BobBobiversePeerAssign` targets idle remote bobiverse agents (>20s), not local inbox mentions.
-- **Dismiss:** `Remind-BobRepoPairHarvestBeforeDismiss` before idle-stop.
+- **Bob reports:** `Invoke-BobRepoPairBobiverseSay` posts digest lines (dev complete /
+  MRB complete) to `#bobiverse` via `outbox.txt`. Workers do not spam channel.
+- **Shop JOIN:** each seat starts `irc_agent.py` on the shop channel (manifest
+  `shop-join-<sessionId>.json`); not a `shop-joined-*.flag` file.
+- **Shop description:** `Set-BobShopChannelRepoDescription` queues `TOPIC #<machine> :<repo>` (and `SHOPDESC` for audit); Watch applies pending topics.
+  (Ergo topic/description + `shop-channel-descriptions.json`) when the assigned repo changes.
+- **Channel ops (A23):** `config/channel-ops.json` → `channel-ops.json` in IRC home
+  (`bob-{machine}` on `#{machine}`, Jeeves on `#bobiverse`).
+- **Tickets:** `Invoke-BobRepoPairOutstandingTickets` runs on chair tick only when
+  `Test-BobRepoPairTicketCadenceDue` (every 2h during business hours).
+- **Usage webhook:** `Invoke-BobRepoPairChairUsageWebhookIfChanged` posts identity +
+  `cursor_pools` (grok chat / high / low) + `local_weekly` on change (`Watch-Bobiverse` tick).
 - **No nested agents:** workers never call `Start-BobBuild`, `Start-BobBuildLoop`,
   `Start-BobMrbHandoff`, or `cursor-mrb-dev` handoff.
 
