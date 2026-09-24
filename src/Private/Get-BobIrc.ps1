@@ -788,6 +788,14 @@ function Add-BobIrcOutboxChannelLine {
     Add-Content -Path $outbox -Value ([string]$Line).Trim() -Encoding utf8
 }
 
+function Add-BobIrcBobiversePrivmsg {
+    param([Parameter(Mandatory)][string]$Text)
+    $chan = '#bobiverse'
+    $safe = ([string]$Text).Trim()
+    if (-not $safe) { return }
+    Add-BobIrcOutboxChannelLine ("PRIVMSG $chan :$safe")
+}
+
 function ConvertFrom-BobIrcTrayLine {
     param([string]$Text)
     $prefix = Get-BobIrcTrayPrefix
