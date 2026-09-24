@@ -183,13 +183,20 @@ Invoke-Case 'BT0 skills' {
 Invoke-Case 'BT0 parse' {
     $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |
         Where-Object { $_.FullName -notmatch '\\tests\\fixtures\\' }
+    # Report EVERY file that does not parse (Windows PowerShell 5.1 reads BOM-less files as ANSI:
+    # a UTF-8 em dash ends in 0x94 = a curly quote, which terminates strings). Throwing on the
+    # first failure let Cleanup-OrphanAgents.ps1 hide a broken Install-AgentMonitor.ps1.
+    $bad = @()
     foreach ($f in $files) {
         $tokens = $null
         $errors = $null
         [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tokens, [ref]$errors)
         if ($errors -and $errors.Count -gt 0) {
-            throw "$($f.FullName): $($errors[0].Message)"
+            $bad += ('{0}: L{1} {2}' -f $f.FullName, $errors[0].Extent.StartLineNumber, $errors[0].Message)
         }
+    }
+    if ($bad.Count -gt 0) {
+        throw ("{0} file(s) do not parse under this PowerShell (save non-ASCII scripts as UTF-8 with BOM): {1}" -f $bad.Count, ($bad -join ' | '))
     }
 }
 
