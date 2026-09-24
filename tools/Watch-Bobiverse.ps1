@@ -1,9 +1,10 @@
 # Dumb #bobiverse publisher/poller. Not a Grok session. No reasoning.
-# POINT local BOB v1 status; harvest peer POINT lines into bob-peers JSON;
+# Refresh local bob-peers JSON; channel talk on real change; tray pull via !bobiverse ~120s.
 # keep irc_agent.py joined. Tray only reads those files.
 [CmdletBinding()]
 param(
     [int]$PollSec = 30,
+    [int]$BobiversePullSec = 120,
     [string]$RepoRoot
 )
 
@@ -62,11 +63,13 @@ function Stop-StaleBobiverseIrcAgent {
 }
 
 function Test-BobiverseIrcAgentUp {
+    # Key on fleet bob-* nick — worker homes under .../workers/... contain
+    # "bobiverse" in the path and must not count as the keep-alive agent (#70).
     $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.CommandLine -and
             $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match 'bobiverse' -and
+            $_.CommandLine -match '--nick\s+bob-' -and
             (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
         })
     return ($hits.Count -gt 0)
@@ -97,10 +100,12 @@ function Start-BobiverseIrcAgent {
     }
     $mid = $env:BOB_MACHINE_ID
     if (-not $mid) { $mid = $env:COMPUTERNAME.ToLowerInvariant() }
+    $resolvedMid = Resolve-BobiverseMachineId $mid
+    if ($resolvedMid) { $mid = $resolvedMid }
     $nick = $null
     if ($cfg.nicks) { $nick = [string]$cfg.nicks.$mid }
     if (-not $nick) { $nick = 'bob-' + $mid }
-    $channel = [string]$cfg.channel
+    $channel = Get-BobIrcBuilderChannels -MachineId $mid
     $ircHost = [string]$cfg.host
     $ircPort = 6697
     if ($cfg.port) { $ircPort = [int]$cfg.port }
@@ -132,12 +137,17 @@ function Start-BobiverseIrcAgent {
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
 
-Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec"
+Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec pullSec=$BobiversePullSec"
 while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
-        Write-BobIrcStatus | Out-Null
+        $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+        Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
+        Import-BobIrcTrayPull | Out-Null
+        if ($localDoc) {
+            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+        }
         Import-BobIrcPeerTranscript | Out-Null
     }
     catch {

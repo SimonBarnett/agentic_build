@@ -99,5 +99,81 @@ if ($joined -match '(?i)\bissue\s+list\b') {
     Exit-Mode 0
 }
 
+if ($joined -match '(?i)\bissue\s+view\b') {
+    Write-FakeGhLog 'issue view'
+    $json = $env:BOB_FAKE_GH_ISSUE_VIEW_JSON
+    if (-not $json) { $json = '{"state":"OPEN","comments":[]}' }
+    Write-Output $json
+    Exit-Mode 0
+}
+
+function Get-FakeGhPrViewJson {
+    $next = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    if ($next -and (Test-Path -LiteralPath $next)) {
+        return [IO.File]::ReadAllText($next)
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        $sidecar = $log + '.pr-view.json'
+        if (Test-Path -LiteralPath $sidecar) {
+            return [IO.File]::ReadAllText($sidecar)
+        }
+    }
+    $json = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    if (-not $json) { $json = '{"state":"OPEN","mergedAt":null}' }
+    return $json
+}
+
+function Write-FakeGhPrViewMerged {
+    $merged = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $next = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    if ($next) {
+        [IO.File]::WriteAllText($next, $merged)
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        [IO.File]::WriteAllText(($log + '.pr-view.json'), $merged)
+    }
+}
+
+if ($joined -match '(?i)\bpr\s+view\b') {
+    Write-FakeGhLog 'pr view'
+    Write-Output (Get-FakeGhPrViewJson)
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bpr\s+merge\b') {
+    Write-FakeGhLog 'pr merge'
+    if ($mode -eq 'merge-fail') {
+        [Console]::Error.WriteLine('Fake-Gh: pr merge denied')
+        Exit-Mode 1
+    }
+    if ($mode -eq 'merge-in-progress') {
+        Write-FakeGhPrViewMerged
+        [Console]::Error.WriteLine('GraphQL: Merge already in progress (mergePullRequest)')
+        Exit-Mode 1
+    }
+    Write-FakeGhPrViewMerged
+    Exit-Mode 0
+}
+
+if ($joined -match '(?i)\bissue\s+close\b') {
+    Write-FakeGhLog 'issue close'
+    if ($mode -eq 'close-fail') {
+        [Console]::Error.WriteLine('Fake-Gh: issue close denied')
+        Exit-Mode 1
+    }
+    $log = $env:BOB_FAKE_GH_LOG
+    if ($log) {
+        $entry = [ordered]@{
+            ts   = [DateTime]::UtcNow.ToString('o')
+            argv = $joined
+            op   = 'issue close'
+        }
+        [IO.File]::AppendAllText($log, (($entry | ConvertTo-Json -Compress) + [Environment]::NewLine))
+    }
+    Exit-Mode 0
+}
+
 Write-Error "Fake-Gh: unhandled: $joined"
 Exit-Mode 1
