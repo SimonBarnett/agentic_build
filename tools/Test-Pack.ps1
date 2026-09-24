@@ -3735,7 +3735,9 @@ Invoke-Case 'BT0gtalk inbox outbox fuel' {
     $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
     if ($watchBv -match 'Invoke-BobGrokTalkTick|grok-inbox') { throw 'Watch-Bobiverse must not run grok-talk worker' }
     $installGt = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
-    if ($installGt -notmatch 'Register-ScheduledTask -TaskName \$gtTask') { throw 'Install-BobFleet must register scheduled task for grok-talk poller' }
+    if ($installGt -notmatch 'Install-BobWatcherTask -Name ''GrokTalk'' -TaskName \$gtTask') { throw 'Install-BobFleet must register scheduled task for grok-talk poller' }
+    $installHelpers = Get-Content (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1') -Raw
+    if ($installHelpers -notmatch 'Register-ScheduledTask -TaskName \$TaskName') { throw 'Install-BobWatcherTask must register the watcher logon task' }
     if ($installGt -notmatch 'Watch-GrokTalk') { throw 'Install-BobFleet grok-talk task must target Watch-GrokTalk' }
 
     $env:BOB_WEEKLY_LOG = $null
@@ -4847,6 +4849,124 @@ Invoke-Case 'BT0tray grok session key overrides OAuth' {
     if ($traySrc -match '\$sessionEnv = @\{ XAI_API_KEY') { throw 'bare XAI_API_KEY session env is ignored when OAuth auth.json exists' }
     if ($traySrc -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:GROK_AUTH_PATH\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session key/auth path must not touch tray/User/Machine env' }
     if (([regex]::Matches($traySrc, 'Register-BobTrayGrokSession -Process \$proc -SessionEnv \$SessionEnv')).Count -ne 2) { throw 'both session launch helpers must register the child for session-dir cleanup' }
+}
+
+Invoke-Case 'BT0install bobfleet idempotent' {
+    param($bridgeRoot)
+    # Re-running Install-BobFleet on a live box: Start-ScheduledTask BobFleet-<id> with no running
+    # check -> SECOND tray; GrokTalk/IrcTsr/CursorIrc tasks registered + started on every machine
+    # from the generic tools\_Watch-<Name>.ps1; User env overwritten every run.
+    . (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1')
+    foreach ($name in @('Select-BobTraySingleWatcher', 'Start-BobInstallTray', 'Install-BobWatcherTask', 'Set-BobInstallUserEnv')) {
+        if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { throw "BobInstallHelpers must provide $name" }
+    }
+    $st = @{ procs = @(); start = @(); stop = @(); reg = @(); env = @{}; set = @() }
+    function Write-TrayLog([string]$m) { }
+    function Get-BobInstallProcesses([string]$Pattern) { $h = @($st.procs | Where-Object { $_.CommandLine -match $Pattern }); return $h }
+    function Stop-Process { param([int]$Id, [switch]$Force, [string]$ErrorAction) $st.stop += $Id }
+    function Start-ScheduledTask { param([string]$TaskName) $st.start += $TaskName }
+    function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Settings, $Principal, [switch]$Force, [string]$ErrorAction) if ($st.regFail) { throw 'Access is denied.' }; $st.reg += $TaskName }
+    function New-ScheduledTaskAction { param($Execute, $Argument, $WorkingDirectory) return 'action' }
+    function Get-ScheduledTask { param($TaskName, $ErrorAction) return $null }
+    function Reset-Bt0Install { $st.start = @(); $st.stop = @(); $st.reg = @() }
+    function New-Bt0Proc([int]$ProcId, [string]$When, [string]$Cmd) { [pscustomobject]@{ ProcessId = $ProcId; ParentProcessId = 1; CreationDate = [datetime]$When; CommandLine = $Cmd } }
+    $trayOld = New-Bt0Proc 100 '2026-09-24T20:00:00' 'powershell.exe -NoProfile -STA -File D:\ai\agentic_build\tools\_Watch-BobTray-testbox.ps1'
+    $trayNew = New-Bt0Proc 200 '2026-09-24T21:00:00' 'powershell.exe -NoProfile -STA -File "D:\ai\agentic_build\tools\Watch-BobTray.ps1"'
+    $jobs = New-Bt0Proc 300 '2026-09-24T20:00:05' 'powershell.exe -NoProfile -File D:\ai\agentic_build\tools\Watch-BobJobs.ps1'
+    $ear = New-Bt0Proc 400 '2026-09-24T20:00:10' 'powershell.exe -NoProfile -File D:\ai\agentic_build\tools\_Watch-Bobiverse-testbox.ps1'
+
+    # --- tray: none -> start once; one -> reuse; two -> keep oldest, stop newer, start none
+    $st.procs = @($jobs, $ear)
+    $r = Start-BobInstallTray -TaskName 'BobFleet-testbox'
+    if (-not $r.Started -or ($st.start -join ',') -ne 'BobFleet-testbox') { throw "no tray must start exactly one (start=$($st.start -join ','))" }
+    Reset-Bt0Install
+    $st.procs = @($trayOld, $jobs, $ear)
+    $r = Start-BobInstallTray -TaskName 'BobFleet-testbox'
+    if ($r.Started -or $st.start.Count -ne 0) { throw 're-run with a running tray started a second tray' }
+    if ($st.stop.Count -ne 0) { throw 'single running tray must not be stopped' }
+    if ($r.Pid -ne 100) { throw "must report the running tray pid 100, got $($r.Pid)" }
+    Reset-Bt0Install
+    $st.procs = @($trayNew, $trayOld, $jobs)
+    $r = Start-BobInstallTray -TaskName 'BobFleet-testbox'
+    if ($st.start.Count -ne 0) { throw 'duplicate trays must not start a third' }
+    if (($st.stop -join ',') -ne '200' -or $r.Pid -ne 100) { throw "must keep oldest tray 100 and stop newer 200 only (stop=$($st.stop -join ','))" }
+
+    # --- watcher tasks: generic wrapper alone is NOT this machine; machine wrapper or opt-in is
+    $repo = Join-Path $bridgeRoot 'repo'
+    New-Item -ItemType Directory -Force -Path (Join-Path $repo 'tools') | Out-Null
+    foreach ($leaf in @('_Watch-GrokTalk.ps1', '_Watch-IrcTsr.ps1', '_Watch-IrcTsr-testbox.ps1', '_Watch-CursorIrc.ps1', '_Watch-Bobiverse.ps1', '_Watch-Bobiverse-testbox.ps1')) {
+        Set-Content -LiteralPath (Join-Path $repo "tools\$leaf") -Value '# bt0'
+    }
+    $ta = @{ MachineId = 'testbox'; RepoRoot = $repo; Trigger = $null; Settings = $null; Principal = $null; PsExe = 'powershell.exe' }
+    Reset-Bt0Install
+    $st.procs = @()
+    $w = Install-BobWatcherTask -Name 'GrokTalk' -TaskName '_Watch-GrokTalk-testbox' @ta
+    if ($w.Registered -or $st.reg.Count -ne 0 -or $st.start.Count -ne 0) { throw 'generic-only GrokTalk must not be registered/started without -Watchers GrokTalk' }
+    if ($w.Status -notmatch 'not for this machine' -or $w.Status -notmatch '-Watchers GrokTalk') { throw "skip status must explain opt-in: $($w.Status)" }
+    $w = Install-BobWatcherTask -Name 'IrcTsr' -TaskName '_Watch-IrcTsr-testbox' @ta
+    if (-not $w.Started -or $w.File -notlike '*_Watch-IrcTsr-testbox.ps1') { throw "machine wrapper IrcTsr must register + start its own wrapper ($($w.File))" }
+    $w = Install-BobWatcherTask -Name 'CursorIrc' -TaskName '_Watch-CursorIrc-testbox' -OptIn @ta
+    if (-not $w.Started -or $w.File -notlike '*\_Watch-CursorIrc.ps1') { throw 'opt-in CursorIrc must register + start the generic wrapper' }
+    if (($st.reg -join ',') -ne '_Watch-IrcTsr-testbox,_Watch-CursorIrc-testbox') { throw "registered=$($st.reg -join ',')" }
+    Reset-Bt0Install
+    $w = Install-BobWatcherTask -Name 'Bobiverse' -TaskName '_Watch-Bobiverse-testbox' -AllMachines -NoStart @ta
+    if (-not $w.Registered -or $w.Started -or $st.start.Count -ne 0) { throw 'ear with a just-started tray must be registered only (tray owns the ear start)' }
+    if ($w.File -notlike '*_Watch-Bobiverse-testbox.ps1') { throw 'ear must prefer the machine wrapper' }
+    Reset-Bt0Install
+    $st.procs = @($ear, $trayOld)
+    $w = Install-BobWatcherTask -Name 'Bobiverse' -TaskName '_Watch-Bobiverse-testbox' -AllMachines @ta
+    if ($w.Started -or $st.start.Count -ne 0 -or $st.stop.Count -ne 0) { throw 'running ear must be reused, not started again' }
+    if ($w.Status -notmatch 'already running pid=400') { throw "ear status: $($w.Status)" }
+    # non-elevated shell: Register-ScheduledTask Access is denied -> say NOT registered, still no second ear
+    Reset-Bt0Install
+    $st.regFail = $true
+    $w = Install-BobWatcherTask -Name 'Bobiverse' -TaskName '_Watch-Bobiverse-testbox' -AllMachines @ta
+    $st.regFail = $false
+    if ($w.Registered -or $w.Status -notmatch 'task NOT registered \(Access is denied\.\)') { throw "register failure must be reported: $($w.Status)" }
+    if ($w.Status -notmatch 'already running pid=400' -or $st.start.Count -ne 0) { throw 'register failure must not start a second ear' }
+
+    # --- User env: set when unset, keep existing, overwrite only with -Update, never secrets
+    function Get-BobUserEnv([string]$Name) { return $st.env[$Name] }
+    function Set-BobUserEnv([string]$Name, [string]$Value) { $st.set += $Name; $st.env[$Name] = $Value }
+    $script:BobInstallEnvReport = $null
+    $st.env = @{ BT0_INST_A = $null; BT0_INST_B = 'same'; BT0_INST_C = 'old' }
+    try {
+        $e = Set-BobInstallUserEnv -Name 'BT0_INST_A' -Value 'a'
+        if ($e.Action -notmatch '^set' -or $st.env.BT0_INST_A -ne 'a' -or $e.Before -ne '' -or $e.After -ne 'a') { throw "unset var must be set: $($e | ConvertTo-Json -Compress)" }
+        $e = Set-BobInstallUserEnv -Name 'BT0_INST_B' -Value 'same'
+        if ($e.Action -ne 'unchanged') { throw "same value must be unchanged: $($e.Action)" }
+        $e = Set-BobInstallUserEnv -Name 'BT0_INST_C' -Value 'new'
+        if ($e.Action -notmatch '^kept' -or $st.env.BT0_INST_C -ne 'old') { throw 'existing different value must be kept without -Update' }
+        if (($st.set -join ',') -ne 'BT0_INST_A') { throw "only the unset var may be written (set=$($st.set -join ','))" }
+        $e = Set-BobInstallUserEnv -Name 'BT0_INST_C' -Value 'new' -Update
+        if ($e.Action -notmatch '^updated' -or $st.env.BT0_INST_C -ne 'new') { throw '-Update must overwrite' }
+        if (@($script:BobInstallEnvReport).Count -ne 4) { throw "env report must list every touched var ($(@($script:BobInstallEnvReport).Count))" }
+        $threw = $false
+        try { [void](Set-BobInstallUserEnv -Name 'BT0_INST_API_KEY' -Value 'bt0-fake') } catch { $threw = $true }
+        if (-not $threw -or $st.env.ContainsKey('BT0_INST_API_KEY')) { throw 'secret-like names must never be persisted' }
+    }
+    finally {
+        foreach ($n in @('BT0_INST_A', 'BT0_INST_B', 'BT0_INST_C')) { Remove-Item -LiteralPath "Env:$n" -ErrorAction SilentlyContinue }
+        $script:BobInstallEnvReport = $null
+    }
+
+    # --- contracts: installers go through the helpers; no bare task start / env write
+    $fleetSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    $helperSrc = Get-Content (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1') -Raw
+    foreach ($pair in @(@('Install-BobFleet', $fleetSrc), @('Install-BobIrc', $ircSrc))) {
+        if ($pair[1] -notmatch 'BobInstallHelpers\.ps1') { throw "$($pair[0]) must dot-source BobInstallHelpers.ps1" }
+        if ($pair[1] -match 'SetEnvironmentVariable') { throw "$($pair[0]) must persist env only via Set-BobInstallUserEnv" }
+    }
+    if ($fleetSrc -match 'Start-ScheduledTask') { throw 'Install-BobFleet must start tasks only via Start-BobInstallTray / Install-BobWatcherTask' }
+    if ($fleetSrc -notmatch '\$tray = Start-BobInstallTray -TaskName \$taskName') { throw 'Install-BobFleet must start the tray via Start-BobInstallTray' }
+    if ($fleetSrc -notmatch 'Register-ScheduledTask -TaskName \$taskName [^\r\n]*-ErrorAction Stop' -or $fleetSrc -notmatch 'task NOT registered') { throw 'Install-BobFleet must report a failed tray task registration' }
+    foreach ($n in @('GrokTalk', 'IrcTsr', 'CursorIrc')) {
+        if ($fleetSrc -notmatch "-Name '$n' -TaskName \S+ -OptIn:\(\`$Watchers -contains '$n'\)") { throw "$n task must be opt-in (-Watchers $n) unless a machine wrapper exists" }
+    }
+    if (([regex]::Matches($helperSrc, 'SetEnvironmentVariable')).Count -ne 1) { throw 'only Set-BobUserEnv may call SetEnvironmentVariable' }
+    if ($helperSrc -match "SetEnvironmentVariable\([^\)]*'Machine'") { throw 'installers must never write Machine env' }
+    if ($ircSrc -notmatch '\$env:AGENTIC_IRC_PASSWORD = \$savedIrcEnv\.pw') { throw 'Install-BobIrc must restore AGENTIC_IRC_PASSWORD after starting irc_agent (session-only)' }
 }
 
 Write-Host ''

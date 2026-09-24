@@ -5,12 +5,14 @@ param(
     [Parameter(Mandatory)][string]$MachineId,
     [string]$RepoRoot,
     [string]$IrcRoot,
-    [switch]$Chair
+    [switch]$Chair,
+    [switch]$UpdateUserEnv
 )
 
 $ErrorActionPreference = 'Stop'
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+. (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1')
 if (-not $IrcRoot) {
     if (Test-Path 'C:\ai\agentic_irc') { $IrcRoot = 'C:\ai\agentic_irc' }
     elseif (Test-Path 'D:\ai\agentic_irc') { $IrcRoot = 'D:\ai\agentic_irc' }
@@ -47,12 +49,10 @@ if (-not $py) {
 }
 if (-not $py) { throw 'python.exe not found (install Python 3.12+ for MODE2 irc_agent)' }
 
-[Environment]::SetEnvironmentVariable('BOB_IRC_HOME', $ircHome, 'User')
-[Environment]::SetEnvironmentVariable('AGENTIC_IRC_HOME', $ircHome, 'User')
-[Environment]::SetEnvironmentVariable('BOB_IRC_NICK', $nick, 'User')
-$env:BOB_IRC_HOME = $ircHome
-$env:AGENTIC_IRC_HOME = $ircHome
-$env:BOB_IRC_NICK = $nick
+# Non-secret config only; existing different values are kept unless -UpdateUserEnv.
+[void](Set-BobInstallUserEnv -Name 'BOB_IRC_HOME' -Value $ircHome -Update:$UpdateUserEnv)
+[void](Set-BobInstallUserEnv -Name 'AGENTIC_IRC_HOME' -Value $ircHome -Update:$UpdateUserEnv)
+[void](Set-BobInstallUserEnv -Name 'BOB_IRC_NICK' -Value $nick -Update:$UpdateUserEnv)
 
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
 $agentChannels = $mootChannel
@@ -79,6 +79,9 @@ $already = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where
 if ($already.Count -eq 0) {
     $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    # Password / debug go to the irc_agent child only (session-only rule): restore after Start-Process
+    # so the caller's shell (Install-BobFleet runs this in-process) does not keep the secret.
+    $savedIrcEnv = @{ pw = $env:AGENTIC_IRC_PASSWORD; dbg = $env:AGENTIC_IRC_DEBUG }
     $env:AGENTIC_IRC_DEBUG = '1'
     $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
     if (-not (Test-Path $pwFile)) {
@@ -95,6 +98,8 @@ if ($already.Count -eq 0) {
         '--announce-key',
         '--hello', "$MachineId-builder"
     ) -WorkingDirectory $IrcRoot -WindowStyle Hidden | Out-Null
+    $env:AGENTIC_IRC_PASSWORD = $savedIrcEnv.pw
+    $env:AGENTIC_IRC_DEBUG = $savedIrcEnv.dbg
 }
 
 Start-Sleep -Seconds 3
@@ -113,3 +118,4 @@ Write-Host "Home:       $ircHome"
 Write-Host "Python:     $py"
 Write-Host "Agent:      irc_agent.py (hidden, log ~/.grok/long-running-background-tasks/bobiverse_irc.log)"
 Write-Host "Moot:       $(if ($isChair) { 'OPEN free (chair)' } else { 'JOIN' })"
+Write-BobInstallEnvReport 'Install-BobIrc'
