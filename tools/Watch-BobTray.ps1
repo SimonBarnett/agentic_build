@@ -9,6 +9,9 @@
 # _Watch-Bobiverse-<id>, then relaunches this tray. BAD: native
 # NotifyIcon.Text white chip — Clear-BobNativeTip always.
 # Exactly one TipForm; never Form.Show after ShowParkedAt.
+# Empty fuel: Agents start / Plan may prompt for session XAI_API_KEY or CURSOR_API_KEY
+# (child process env only; never persist User/Machine env or auth.json).
+# Agents > Plan -> Grok|Cursor: visionary skills-visionary plan seat (no IRC / no build).
 # Replaces the blank Interactive PowerShell window.
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
@@ -701,6 +704,168 @@ function Initialize-BobTrayAgentSetup {
         -WorkingDirectory $RepoRoot | Out-Null
 }
 
+function ConvertTo-BobTrayProcessArgumentString {
+    param([string[]]$ArgumentList)
+    # ProcessStartInfo.Arguments needs Windows-style quoting (PS 5.1 has no Start-Process -Environment).
+    $parts = foreach ($a in @($ArgumentList)) {
+        $s = [string]$a
+        if ($s -notmatch '[\s"]') { $s }
+        else { '"' + ($s.Replace('"', '\"')) + '"' }
+    }
+    return ($parts -join ' ')
+}
+
+function Start-BobTrayProcessWithSessionEnv {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory,
+        [hashtable]$SessionEnv
+    )
+    if (-not $SessionEnv -or $SessionEnv.Count -eq 0) {
+        Start-Process -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory -WindowStyle Hidden | Out-Null
+        return
+    }
+    # Child-only env: UseShellExecute=false + ProcessStartInfo.EnvironmentVariables.
+    # Never persist API keys to User/Machine environment or rewrite auth.json.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.Arguments = ConvertTo-BobTrayProcessArgumentString -ArgumentList $ArgumentList
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    foreach ($k in @($SessionEnv.Keys)) {
+        $psi.EnvironmentVariables[[string]$k] = [string]$SessionEnv[$k]
+    }
+    [void][System.Diagnostics.Process]::Start($psi)
+}
+
+function Get-BobTrayFuelLocalMachineId {
+    $mid = [string]$env:BOB_MACHINE_ID
+    if (-not $mid) {
+        try { $mid = [string](Get-ThisMachineId) } catch { $mid = $null }
+    }
+    if (-not $mid -and $script:lastFuelSnapshot -and $script:lastFuelSnapshot.machine) {
+        $mid = [string]$script:lastFuelSnapshot.machine
+    }
+    if ($mid) {
+        try { $mid = [string](Resolve-BobiverseMachineId $mid) } catch { }
+        return $mid.Trim().ToLowerInvariant()
+    }
+    return $null
+}
+
+function Get-BobTrayGrokFuelRemaining {
+    # Grok Build weekly for THIS machine (digest machines.*.remaining_pct / seat pcent).
+    $snap = $script:lastFuelSnapshot
+    if (-not $snap) { return $null }
+    $mid = Get-BobTrayFuelLocalMachineId
+    foreach ($m in @($snap.machines)) {
+        if (-not $m) { continue }
+        $id = [string]$m.id
+        if (-not $id) { continue }
+        try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
+        if (-not $id) { continue }
+        if ($mid -and ($id.ToLowerInvariant() -eq $mid)) {
+            if ($null -ne $m.remaining_pct -and [string]$m.remaining_pct -ne '') {
+                try { return [int]$m.remaining_pct } catch { return $null }
+            }
+        }
+    }
+    if ($null -ne $snap.remaining_pct -and [string]$snap.remaining_pct -ne '') {
+        try { return [int]$snap.remaining_pct } catch { return $null }
+    }
+    return $null
+}
+
+function Get-BobTrayCursorFuelRemaining {
+    # Cursor Agents start with -Model auto: prefer auto / low-cost / cursor-models pool.
+    $snap = $script:lastFuelSnapshot
+    if (-not $snap) { return $null }
+    $autoIds = @('auto', 'low-cost-models', 'cursor-models')
+    $bestAuto = $null
+    $bestAny = $null
+    foreach ($p in @($snap.cursor_pools)) {
+        if (-not $p) { continue }
+        if ($null -eq $p.remaining_pct -or [string]$p.remaining_pct -eq '') { continue }
+        try { $v = [int]$p.remaining_pct } catch { continue }
+        if ($null -eq $bestAny -or $v -gt $bestAny) { $bestAny = $v }
+        $gid = [string]$p.group_id
+        if (-not $gid -and $p.id) { $gid = [string]$p.id }
+        $gid = $gid.ToLowerInvariant()
+        if ($autoIds -contains $gid) {
+            if ($null -eq $bestAuto -or $v -gt $bestAuto) { $bestAuto = $v }
+        }
+    }
+    if ($null -ne $bestAuto) { return $bestAuto }
+    if ($null -ne $snap.account_remaining_pct -and [string]$snap.account_remaining_pct -ne '') {
+        try { return [int]$snap.account_remaining_pct } catch { }
+    }
+    return $bestAny
+}
+
+function Test-BobTrayAgentFuelExhausted {
+    param([string]$Kind)
+    $k = ([string]$Kind).ToLowerInvariant()
+    $remain = $null
+    if ($k -eq 'grok') { $remain = Get-BobTrayGrokFuelRemaining }
+    elseif ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
+    # Unknown/null remaining => do not block (keep current behaviour when digest missing).
+    if ($null -eq $remain) { return $false }
+    return ($remain -le 0)
+}
+
+function Show-BobTraySessionApiKeyDialog {
+    param(
+        [string]$Title = 'Session API key',
+        [string]$Prompt = 'No remaining tokens. Enter an API key for this start only (not saved).'
+    )
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $Title
+    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.MinimizeBox = $false
+    $form.MaximizeBox = $false
+    $form.ShowInTaskbar = $true
+    $form.TopMost = $true
+    $form.ClientSize = New-Object System.Drawing.Size 440, 150
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.AutoSize = $false
+    $lbl.Location = New-Object System.Drawing.Point 12, 12
+    $lbl.Size = New-Object System.Drawing.Size 416, 48
+    $lbl.Text = $Prompt
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Location = New-Object System.Drawing.Point 12, 68
+    $tb.Size = New-Object System.Drawing.Size 416, 24
+    $tb.UseSystemPasswordChar = $true
+    $ok = New-Object System.Windows.Forms.Button
+    $ok.Text = 'OK'
+    $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $ok.Location = New-Object System.Drawing.Point 272, 108
+    $ok.Size = New-Object System.Drawing.Size 75, 28
+    $cancel = New-Object System.Windows.Forms.Button
+    $cancel.Text = 'Cancel'
+    $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $cancel.Location = New-Object System.Drawing.Point 353, 108
+    $cancel.Size = New-Object System.Drawing.Size 75, 28
+    $form.AcceptButton = $ok
+    $form.CancelButton = $cancel
+    $form.Controls.AddRange(@($lbl, $tb, $ok, $cancel))
+    try {
+        $result = $form.ShowDialog()
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return $null }
+        $key = [string]$tb.Text
+        if ([string]::IsNullOrWhiteSpace($key)) { return $null }
+        return $key.Trim()
+    }
+    finally {
+        try { $tb.Text = '' } catch { }
+        try { $form.Dispose() } catch { }
+    }
+}
+
 function Start-BobTrayAgentWatch {
     param($Agent)
     if (-not (Test-BobTrayAgentMonitorReady)) {
@@ -714,18 +879,40 @@ function Start-BobTrayAgentWatch {
         Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
         return
     }
+    $kind = ([string]$Agent.kind).ToLowerInvariant()
+    $sessionEnv = $null
+    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        if ($kind -eq 'grok') {
+            Write-TrayLog 'agents: grok fuel remaining 0 - requesting session XAI_API_KEY dialog'
+            $key = Show-BobTraySessionApiKeyDialog -Title 'Grok session API key' -Prompt "No Grok tokens remaining on this machine.`r`nEnter XAI_API_KEY for this start only (not saved; process-scoped for the child only)."
+            if (-not $key) {
+                Write-TrayLog 'agents: grok start aborted (Cancel / empty session API key)'
+                return
+            }
+            # agent.exe reads XAI_API_KEY; pass only to the Watch-AgentHealth child (inherits to agent.exe).
+            $sessionEnv = @{ XAI_API_KEY = $key }
+        }
+        elseif ($kind -eq 'cursor') {
+            # cursor-agent supports --api-key / CURSOR_API_KEY (session BYOK).
+            Write-TrayLog 'agents: cursor fuel remaining 0 - requesting session CURSOR_API_KEY dialog'
+            $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor session API key' -Prompt "No Cursor tokens remaining (auto / cursor_pools).`r`nEnter CURSOR_API_KEY for this start only (not saved; process-scoped for the child only)."
+            if (-not $key) {
+                Write-TrayLog 'agents: cursor start aborted (Cancel / empty session API key)'
+                return
+            }
+            $sessionEnv = @{ CURSOR_API_KEY = $key }
+        }
+    }
     $ps = (Get-Command powershell.exe).Source
-    $kindFlag = if (([string]$Agent.kind).ToLowerInvariant() -eq 'grok') { '-Grok' } else { '-Cursor' }
+    $kindFlag = if ($kind -eq 'grok') { '-Grok' } else { '-Cursor' }
     # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
     # Cursor always --model auto (Simon 2026-09-23).
     $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New')
-    if (([string]$Agent.kind).ToLowerInvariant() -eq 'cursor') {
+    if ($kind -eq 'cursor') {
         $launchArgs += @('-Model', 'auto')
     }
-    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} model={2}' -f $Agent.kind, $ps1, $(if ($Agent.kind -eq 'cursor') { 'auto' } else { 'n/a' }))
-    Start-Process -FilePath $ps `
-        -ArgumentList $launchArgs `
-        -WorkingDirectory $script:agentMonitorDir -WindowStyle Hidden | Out-Null
+    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} model={2} sessionKey={3}' -f $Agent.kind, $ps1, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    Start-BobTrayProcessWithSessionEnv -FilePath $ps -ArgumentList $launchArgs -WorkingDirectory $script:agentMonitorDir -SessionEnv $sessionEnv
 }
 
 function Invoke-BobTrayAgent {
@@ -741,6 +928,165 @@ function Invoke-BobTrayAgent {
     Start-BobTrayAgentWatch $Agent
 }
 
+function Sync-BobTrayVisionarySkills {
+    # Plan seats load visionary ONLY from https://github.com/SimonBarnett/skills-visionary
+    # (sister pack may include git-setup slice; do not pull agentic_build skills here).
+    $installer = Join-Path $RepoRoot 'tools\Install-VisionarySkills.ps1'
+    if (-not (Test-Path -LiteralPath $installer)) {
+        throw "missing $installer"
+    }
+    $ps = (Get-Command powershell.exe).Source
+    $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $installer -Pull 2>&1
+    $code = $LASTEXITCODE
+    foreach ($line in @($out)) { Write-TrayLog ('visionary: ' + $line) }
+    if ($code -ne 0) { throw "Install-VisionarySkills failed (exit $code)" }
+    foreach ($c in @('D:\ai\skills-visionary', 'C:\ai\skills-visionary', 'C:\src\skills-visionary')) {
+        if (Test-Path -LiteralPath (Join-Path $c '.grok\skills\visionary\SKILL.md')) {
+            return [IO.Path]::GetFullPath($c)
+        }
+    }
+    throw 'skills-visionary clone not found after sync'
+}
+
+function Get-BobTrayPlanRules {
+    param([string]$VisionRoot)
+    $skillPath = Join-Path $env:USERPROFILE '.grok\skills\visionary\SKILL.md'
+    if (-not (Test-Path -LiteralPath $skillPath) -and $VisionRoot) {
+        $skillPath = Join-Path $VisionRoot '.grok\skills\visionary\SKILL.md'
+    }
+    return @(
+        'PLAN SEAT ONLY. Follow the visionary skill book (skills-visionary).',
+        'Do NOT join IRC / shop channels. Do NOT start Watch-Bobiverse, bob ear, or builds.',
+        'Do NOT use agentic_build or agentic_irc as the work repo.',
+        "Visionary skill path: $skillPath",
+        "Workspace: $VisionRoot"
+    ) -join ' '
+}
+
+function Resolve-BobTrayGrokCliExe {
+    $p = Join-Path $env:USERPROFILE '.grok\bin\agent.exe'
+    if (Test-Path -LiteralPath $p) { return $p }
+    $cmd = Get-Command agent.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
+    return $null
+}
+
+function Resolve-BobTrayCursorAgentCmd {
+    $p = Join-Path $env:LOCALAPPDATA 'cursor-agent\agent.cmd'
+    if (Test-Path -LiteralPath $p) { return $p }
+    $cmd = Get-Command agent.cmd, cursor-agent.cmd -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
+    return $null
+}
+
+function Start-BobTrayVisibleProcessWithSessionEnv {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList,
+        [string]$WorkingDirectory,
+        [hashtable]$SessionEnv
+    )
+    if (-not $SessionEnv -or $SessionEnv.Count -eq 0) {
+        Start-Process -FilePath $FilePath `
+            -ArgumentList $ArgumentList `
+            -WorkingDirectory $WorkingDirectory -WindowStyle Normal | Out-Null
+        return
+    }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $FilePath
+    $psi.Arguments = ConvertTo-BobTrayProcessArgumentString -ArgumentList $ArgumentList
+    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $false
+    foreach ($k in @($SessionEnv.Keys)) {
+        $psi.EnvironmentVariables[[string]$k] = [string]$SessionEnv[$k]
+    }
+    [void][System.Diagnostics.Process]::Start($psi)
+}
+
+function Start-BobTrayPlanAgent {
+    param($Kind)
+    $kind = ([string]$Kind).ToLowerInvariant()
+    if ($kind -ne 'grok' -and $kind -ne 'cursor') {
+        Write-TrayLog ('plan: unknown kind ' + $kind)
+        return
+    }
+    $visionRoot = $null
+    try {
+        $visionRoot = Sync-BobTrayVisionarySkills
+    }
+    catch {
+        Write-TrayLog ('plan: visionary sync failed: ' + $_.Exception.Message)
+        [void][System.Windows.Forms.MessageBox]::Show(
+            ("Could not sync skills-visionary:`r`n{0}" -f $_.Exception.Message),
+            'Plan seat',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+        return
+    }
+    $sessionEnv = $null
+    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        if ($kind -eq 'grok') {
+            Write-TrayLog 'plan: grok fuel 0 - session XAI_API_KEY dialog'
+            $key = Show-BobTraySessionApiKeyDialog -Title 'Grok plan session API key' -Prompt "No Grok tokens remaining.`r`nEnter XAI_API_KEY for this Plan start only (not saved)."
+            if (-not $key) { Write-TrayLog 'plan: grok aborted (no key)'; return }
+            $sessionEnv = @{ XAI_API_KEY = $key }
+        }
+        else {
+            Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
+            $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor plan session API key' -Prompt "No Cursor tokens remaining.`r`nEnter CURSOR_API_KEY for this Plan start only (not saved)."
+            if (-not $key) { Write-TrayLog 'plan: cursor aborted (no key)'; return }
+            $sessionEnv = @{ CURSOR_API_KEY = $key }
+        }
+    }
+    $rules = Get-BobTrayPlanRules -VisionRoot $visionRoot
+    $prompt = 'Follow the visionary skill. Plan-mode only: no IRC, no build, no agentic_build/agentic_irc work repo.'
+    if ($kind -eq 'grok') {
+        $exe = Resolve-BobTrayGrokCliExe
+        if (-not $exe) {
+            Write-TrayLog 'plan: grok agent.exe missing'
+            [void][System.Windows.Forms.MessageBox]::Show(
+                'Grok agent.exe not found (~/.grok/bin/agent.exe).',
+                'Plan seat',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            )
+            return
+        }
+        # permission-mode plan; cwd = skills-visionary (not agentic_build). No Watch-AgentHealth / IRC.
+        $launchArgs = @(
+            '--permission-mode', 'plan',
+            '--cwd', $visionRoot,
+            '--rules', $rules,
+            $prompt
+        )
+        Write-TrayLog ('plan: launch grok plan seat cwd={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
+        Start-BobTrayVisibleProcessWithSessionEnv -FilePath $exe -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv
+        return
+    }
+    $cmd = Resolve-BobTrayCursorAgentCmd
+    if (-not $cmd) {
+        Write-TrayLog 'plan: cursor agent.cmd missing'
+        [void][System.Windows.Forms.MessageBox]::Show(
+            'Cursor agent.cmd not found (%LOCALAPPDATA%\cursor-agent\agent.cmd).',
+            'Plan seat',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+        return
+    }
+    # --plan / --mode plan; workspace = skills-visionary. No IRC watch seat.
+    $launchArgs = @(
+        '--plan',
+        '--model', 'auto',
+        '--workspace', $visionRoot,
+        $prompt
+    )
+    Write-TrayLog ('plan: launch cursor plan seat workspace={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    Start-BobTrayVisibleProcessWithSessionEnv -FilePath $cmd -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv
+}
+
 function Build-BobTrayAgentsMenu {
     param([System.Windows.Forms.ToolStripMenuItem]$Parent)
     $Parent.DropDownItems.Clear()
@@ -753,6 +1099,21 @@ function Build-BobTrayAgentsMenu {
         $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
         [void]$Parent.DropDownItems.Add($item)
     }
+    # Plan -> Grok / Cursor (visionary plan seat; no IRC / no build).
+    $plan = New-Object System.Windows.Forms.ToolStripMenuItem
+    $plan.Text = 'Plan'
+    foreach ($pk in @('Grok', 'Cursor')) {
+        $pi = New-Object System.Windows.Forms.ToolStripMenuItem
+        $pi.Text = $pk
+        $pi.Tag = $pk.ToLowerInvariant()
+        try {
+            $def = @(Get-BobTrayAgentDefs | Where-Object { $_.kind -eq $pi.Tag } | Select-Object -First 1)
+            if ($def) { $pi.Image = Get-BobTrayAgentImage -Agent $def[0] -Installed (Test-BobTrayAgentInstalled $def[0]) }
+        } catch { }
+        $pi.Add_Click({ param($s, $e) Start-BobTrayPlanAgent $s.Tag })
+        [void]$plan.DropDownItems.Add($pi)
+    }
+    [void]$Parent.DropDownItems.Add($plan)
 }
 
 $script:attention = $false
@@ -763,6 +1124,9 @@ $script:jobsOwned = $false
 $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID
 $script:hoverBody = $script:hoverTitle
 $script:remainingPct = $null
+# Last TipForm fuel snapshot from Update-Hover (machines / cursor_pools / account).
+# Used by Start-BobTrayAgentWatch when deciding whether to prompt for a session API key.
+$script:lastFuelSnapshot = $null
 $script:alertKind = 'none'
 $script:iconRectCache = $null
 $script:cardClosed = $false
@@ -920,6 +1284,13 @@ function Update-Hover {
         if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
         else { $script:remainingPct = [int]$h.remaining_pct }
+        $script:lastFuelSnapshot = [pscustomobject]@{
+            machine               = $(if ($h.machine) { [string]$h.machine } else { $null })
+            remaining_pct         = $script:remainingPct
+            machines              = @($h.machines)
+            cursor_pools          = @($h.cursor_pools)
+            account_remaining_pct = $h.account_remaining_pct
+        }
         $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct -BarWidth 392
         $script:alertKind = Get-BobTrayAlertKind -Alerts $script:lastAlerts -RemainingPct $script:remainingPct
         $short = [string]$h.short

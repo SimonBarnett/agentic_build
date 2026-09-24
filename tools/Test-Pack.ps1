@@ -756,11 +756,29 @@ Invoke-Case 'BT0l tray hover' {
     $watchBody = $watchFn.Value
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
     if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
-    if ($watchBody -notmatch "'-Model',\s*'auto'|\"-Model\",\s*\"auto\"|-Model.*auto") { throw 'systray Cursor Agents must pass -Model auto' }
+    if ($watchBody -notmatch '-Model.*auto') { throw 'systray Cursor Agents must pass -Model auto' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
+    if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted') { throw 'systray Agents must check fuel before start (Test-BobTrayAgentFuelExhausted)' }
+    if ($watchBody -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'systray Agents must launch via Start-BobTrayProcessWithSessionEnv' }
+    if ($traySrc -notmatch 'Show-BobTraySessionApiKeyDialog') { throw 'empty fuel must offer Show-BobTraySessionApiKeyDialog' }
+    if ($traySrc -notmatch 'XAI_API_KEY') { throw 'session Grok key must set child env XAI_API_KEY' }
+    if ($traySrc -notmatch 'CURSOR_API_KEY') { throw 'session Cursor key must set child env CURSOR_API_KEY' }
+    if ($traySrc -notmatch 'UseShellExecute\s*=\s*\False') { throw 'session env launch must UseShellExecute=false (child-only env)' }
+    if ($traySrc -match "SetEnvironmentVariable\([^\)]*'User'|SetEnvironmentVariable\([^\)]*'Machine'") {
+        throw 'must not SetEnvironmentVariable User/Machine for session API keys'
+    }
+    if ($traySrc -notmatch 'lastFuelSnapshot') { throw 'Update-Hover must cache lastFuelSnapshot for fuel checks' }
+    if ($traySrc -notmatch 'Start-BobTrayPlanAgent') { throw 'Agents menu must support Plan starts (Start-BobTrayPlanAgent)' }
+    if ($traySrc -notmatch "Text = 'Plan'") { throw 'Agents menu must add a Plan submenu' }
+    if ($traySrc -notmatch 'Sync-BobTrayVisionarySkills') { throw 'Plan starts must sync skills-visionary' }
+    if ($traySrc -notmatch 'Install-VisionarySkills') { throw 'Plan sync must call tools/Install-VisionarySkills.ps1' }
+    if ($traySrc -notmatch '--permission-mode') { throw 'Plan Grok must use --permission-mode plan' }
+    if ($traySrc -notmatch '--plan') { throw 'Plan Cursor must pass --plan' }
+    if ($traySrc -notmatch 'skills-visionary') { throw 'Plan seats must target skills-visionary' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\Install-VisionarySkills.ps1'))) { throw 'missing tools/Install-VisionarySkills.ps1' }
     if ($traySrc -notmatch 'ConvertTo-BobTrayTipVisibleImage') { throw 'agent icons must plate dark exe glyphs for dark tip' }
     $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
     if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }

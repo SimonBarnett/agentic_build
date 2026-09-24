@@ -41,8 +41,12 @@ Machines on the **same seat share one weekly remaining %** (account-level).
 Do not show divergent % for marchhare vs ce-priority-dev1. Prefer the
 conservative (lowest) known remaining for that seat.
 
-Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
-(`si@ntsa.uk`).
+Never set `XAI_API_KEY` on DEV1 as a **User/Machine** persistent env; both
+ntsa boxes use OIDC session (`si@ntsa.uk`). Exception: when TipForm/Agents
+**Start Agent (Grok)** sees this machine's Grok weekly remaining at **0%**,
+offer a session-only API key dialog and pass `XAI_API_KEY` to the
+**child** `Watch-AgentHealth` process only (`ProcessStartInfo`, never
+`SetEnvironmentVariable` User/Machine, never rewrite `auth.json`).
 
 Named xAI seats (`smart-catalogue`, `club-madeira`, `ntsa`) stay per-seat.
 They are not Cursor spending bars.
@@ -192,6 +196,34 @@ light chip, else a bright C/G badge). Not installed -> greyed icon, click
 launches `Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok **-New**` (always a
 fresh session + skills + prompt -- never resume). Cursor also gets
 `-Model auto`. Owner skill: `agent-monitor-setup`.
+
+### Empty fuel / session API key (Simon 2026-09-24)
+
+Before **Start Agent** or **Plan** start, tray reads the last TipForm fuel snapshot
+(`machines.*.remaining_pct` for Grok on this host; `cursor_pools` / account auto
+for Cursor):
+
+- **Remaining > 0 or unknown**: unchanged launch (no dialog).
+- **Grok remaining 0**: WinForms password dialog for `XAI_API_KEY`. Cancel aborts.
+  OK sets the key only on the child process env (not tray Process, not User/Machine,
+  not disk profiles / `auth.json`).
+- **Cursor remaining 0**: same dialog for `CURSOR_API_KEY` (`cursor-agent --api-key`
+  / env). Cancel aborts. Never persist.
+
+### Plan -> Grok / Cursor (Simon 2026-09-24)
+
+Agents menu also has **Plan** -> **Grok** | **Cursor**:
+
+1. Sync https://github.com/SimonBarnett/skills-visionary via
+   `tools/Install-VisionarySkills.ps1` (clone/pull sister repo; copy
+   `.grok/skills/*/SKILL.md` into `~/.grok/skills`). Visionary pack only —
+   do not pull agentic_build skills into the Plan seat.
+2. **No IRC / no build**: does **not** launch `Watch-AgentHealth`, does not join
+   shop channels, does not start Watch-Bobiverse / bob ear. cwd/workspace is the
+   skills-visionary clone (not agentic_build / agentic_irc).
+3. **Plan mode**: Grok `agent.exe --permission-mode plan`; Cursor
+   `agent.cmd --plan` (`--mode plan`). Visible TUI.
+4. Reuses the same empty-fuel session API key dialogs as Start Agent.
 
 ### Agent shortcut icons (CAST IRON -- Simon 2026-09-23)
 
