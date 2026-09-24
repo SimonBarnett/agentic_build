@@ -212,7 +212,7 @@ for Cursor):
 
 ### Plan -> Grok / Cursor (Simon 2026-09-24)
 
-Agents menu also has **Plan** -> **Grok** | **Cursor**:
+Top-level **Plan** menu (sibling of **Agents**, not nested under it) -> **Grok** | **Cursor**:
 
 1. Sync https://github.com/SimonBarnett/skills-visionary via
    `tools/Install-VisionarySkills.ps1` (clone/pull sister repo; copy

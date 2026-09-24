@@ -96,8 +96,8 @@ PASS merge / FAIL one fix PR). Do not leave MRB process only in chat memory.
   tray only passes `cursor` / `grok`, letting AgentMonitor pick the watch home.
 - No secrets. No UAT stamp.
 
-## Plan submenu (Simon 2026-09-24)
+## Plan menu (Simon 2026-09-24)
 
-Bob Fleet tray **Agents > Plan > Grok|Cursor** starts a visionary **plan seat**
+Bob Fleet tray **Plan > Grok|Cursor** (top-level, same level as **Agents**) starts a visionary **plan seat**
 (not a watch seat): syncs `skills-visionary`, opens the agent in plan mode, no
 IRC / no `Watch-AgentHealth`. See `bob-fleet-tray`.

@@ -11,7 +11,7 @@
 # Exactly one TipForm; never Form.Show after ShowParkedAt.
 # Empty fuel: Agents start / Plan may prompt for session XAI_API_KEY or CURSOR_API_KEY
 # (child process env only; never persist User/Machine env or auth.json).
-# Agents > Plan -> Grok|Cursor: visionary skills-visionary plan seat (no IRC / no build).
+# Plan -> Grok|Cursor (top-level, sibling of Agents): visionary skills-visionary plan seat (no IRC / no build).
 # Replaces the blank Interactive PowerShell window.
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
@@ -1099,9 +1099,13 @@ function Build-BobTrayAgentsMenu {
         $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
         [void]$Parent.DropDownItems.Add($item)
     }
-    # Plan -> Grok / Cursor (visionary plan seat; no IRC / no build).
-    $plan = New-Object System.Windows.Forms.ToolStripMenuItem
-    $plan.Text = 'Plan'
+}
+
+function Build-BobTrayPlanMenu {
+    # Top-level Plan -> Grok / Cursor, same level as Agents (Simon 2026-09-24).
+    # Visionary plan seat; no IRC / no build. Behaviour unchanged from #314.
+    param([System.Windows.Forms.ToolStripMenuItem]$Parent)
+    $Parent.DropDownItems.Clear()
     foreach ($pk in @('Grok', 'Cursor')) {
         $pi = New-Object System.Windows.Forms.ToolStripMenuItem
         $pi.Text = $pk
@@ -1111,9 +1115,8 @@ function Build-BobTrayAgentsMenu {
             if ($def) { $pi.Image = Get-BobTrayAgentImage -Agent $def[0] -Installed (Test-BobTrayAgentInstalled $def[0]) }
         } catch { }
         $pi.Add_Click({ param($s, $e) Start-BobTrayPlanAgent $s.Tag })
-        [void]$plan.DropDownItems.Add($pi)
+        [void]$Parent.DropDownItems.Add($pi)
     }
-    [void]$Parent.DropDownItems.Add($plan)
 }
 
 $script:attention = $false
@@ -1896,6 +1899,11 @@ $miAgents.Text = 'Agents'
 [void]$menu.Items.Add($miAgents)
 Build-BobTrayAgentsMenu -Parent $miAgents
 $miAgents.Add_DropDownOpening({ Build-BobTrayAgentsMenu -Parent $miAgents })
+$miPlan = New-Object System.Windows.Forms.ToolStripMenuItem
+$miPlan.Text = 'Plan'
+[void]$menu.Items.Add($miPlan)
+Build-BobTrayPlanMenu -Parent $miPlan
+$miPlan.Add_DropDownOpening({ Build-BobTrayPlanMenu -Parent $miPlan })
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')
