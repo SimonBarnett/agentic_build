@@ -4622,6 +4622,62 @@ Invoke-Case 'BT0tip digest webhook merge post lastSeen heartbeat' {
     }
 }
 
+Invoke-Case 'BT0agent grok TUI argv quoting' {
+    param($bridgeRoot)
+    # Systray Agents/Grok -> Watch-AgentHealth -> agent.exe TUI. PS 5.1 Start-Process does not
+    # quote -ArgumentList elements, so '--rules <text with spaces>' + prompt split into words and
+    # grok exited ("unexpected argument 'at' found") before the TUI window was visible.
+    $wah = Join-Path $RepoRoot 'tools\Watch-AgentHealth\Watch-AgentHealth.ps1'
+    $wahSrc = Get-Content $wah -Raw
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($wah, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertTo-WatchProcessArgumentString' }, $true)
+    if (-not $fn) { throw 'Watch-AgentHealth must define ConvertTo-WatchProcessArgumentString' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    if (-not ('BobTestArgv' -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class BobTestArgv {
+    [DllImport("shell32.dll", SetLastError = true)]
+    static extern IntPtr CommandLineToArgvW([MarshalAs(UnmanagedType.LPWStr)] string cmd, out int n);
+    [DllImport("kernel32.dll")]
+    static extern IntPtr LocalFree(IntPtr h);
+    public static string[] Split(string cmd) {
+        int n;
+        IntPtr p = CommandLineToArgvW(cmd, out n);
+        try {
+            string[] r = new string[n];
+            for (int i = 0; i < n; i++) { r[i] = Marshal.PtrToStringUni(Marshal.ReadIntPtr(p, i * IntPtr.Size)); }
+            return r;
+        }
+        finally { LocalFree(p); }
+    }
+}
+"@
+    }
+    $rules = 'Skills live at C:\Users\x\.grok\skills. Follow agent-monitor, watch-seat; fleet to agentic_build.'
+    $prompt = "WATCH SEAT. Line with `"quotes`" and C:\dir\ path`r`nsecond line ends with backslash\"
+    $in = @('--no-auto-update', '--no-alt-screen', '--cwd', 'D:\ai', '-s', 'sid-1', '--rules', $rules, $prompt, '', 'C:\Program Files\x\')
+    $cmd = ConvertTo-WatchProcessArgumentString -ArgumentList $in
+    $round = @([BobTestArgv]::Split('agent.exe ' + $cmd))
+    if ($round.Count -ne ($in.Count + 1)) { throw "argv count=$($round.Count - 1) want $($in.Count): $cmd" }
+    for ($i = 0; $i -lt $in.Count; $i++) {
+        if ($round[$i + 1] -cne $in[$i]) { throw "argv[$i] round-trip mismatch: got <$($round[$i + 1])> want <$($in[$i])>" }
+    }
+    $tui = [regex]::Match($wahSrc, "(?s)\`$argList = @\('--no-auto-update', '--no-alt-screen'.*?AgentTuiWindowStyle")
+    if (-not $tui.Success) { throw 'grok TUI launch block not found' }
+    if ($tui.Value -notmatch 'ConvertTo-WatchProcessArgumentString -ArgumentList \$argList') { throw 'grok TUI Start-Process must quote argv via ConvertTo-WatchProcessArgumentString' }
+    if ($tui.Value -match "'-p'|'--print'|'--prompt'") { throw 'grok TUI launch must not use headless -p/--print flags' }
+    if ($wahSrc -notmatch "\[string\]\`$Windows = 'on'") { throw 'Watch-AgentHealth default -Windows must stay on (visible TUI)' }
+    if ($wahSrc -notmatch "AgentTuiWindowStyle = \`$\(if \(\`$Windows -eq 'on'\) \{ 'Normal' \}") { throw 'TUI window style must be Normal when -Windows on' }
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $sessFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $sessFn.Success) { throw 'Start-BobTrayProcessWithSessionEnv not found' }
+    if ($sessFn.Value -notmatch 'EnvironmentVariables\[') { throw 'session API key must be passed only via child ProcessStartInfo.EnvironmentVariables' }
+    if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
+}
+
 Write-Host ''
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
