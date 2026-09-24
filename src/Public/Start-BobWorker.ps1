@@ -95,6 +95,9 @@ function Start-BobWorker {
     try { Copy-BobProjectSkills | Out-Null } catch { }
     Write-Audit -SessionId $SessionId -Cwd $cwdFull -Profile $Profile -Prompt $Prompt
 
+    # #70 MUST 2: shop IRC client for this git worker (grok-build / on-demand path)
+    try { Start-BobWorkerIrcAgent -WorkerPid $PID } catch { }
+
     if ($useBot) {
         $raw = Invoke-GrokBotApi -Action send -Agent $Agent -Text $Prompt -Wait -TimeoutSec $prof.TimeoutSec
         $mapped = ConvertFrom-GrokBotRun -Run $raw -SessionId $SessionId

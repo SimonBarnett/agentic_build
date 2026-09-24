@@ -15,6 +15,7 @@ flowchart TB
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
   CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
   CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
@@ -41,7 +42,8 @@ flowchart TB
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
   SWAP --> WA
-  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
 
   WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST
@@ -91,6 +93,8 @@ Change how Bob works:
 31. **Bob must direct them to JOIN IRC.**
 32. **Every 15 minutes** Bob **pings in his own shop** to check **connections / online**, and **intervenes if workers are stalled**.
 33. **Bob can assign to any idle (>20 sec) agent on the bobiverse.**
+34. **If Bob is not responding**, find an **idle worker to MRB your PR**.
+35. **Bob must remind workers to harvest their skills before dismissing them.**
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)

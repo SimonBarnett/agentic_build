@@ -79,6 +79,7 @@ function Build-BobRepoPairWorkerPrompt {
         return @(
             "You are the persistent DEV worker for repo $Repo on this machine shop."
             $rules
+            'JOIN the machine shop IRC channel now (bob-irc skill). Never join #bobiverse.'
             'Implement git tasks and open PRs. Never push main. Never merge.'
             'After you open a PR, register dev complete; the MRB seat hostile-reviews it; you take the next PR.'
             'Do not put secrets or API key assignments in git or prompts.'
@@ -87,6 +88,7 @@ function Build-BobRepoPairWorkerPrompt {
     return @(
         "You are the persistent MRB worker for repo $Repo on this machine shop."
         $rules
+        'JOIN the machine shop IRC channel now (bob-irc skill). Never join #bobiverse.'
         'Hostile MRB only — never implement the same PR you review.'
         'PASS-nits may merge per existing rule; FAIL means the dev seat FIXes, then you re-MRB.'
         'Do not put secrets or API key assignments in git or prompts.'
@@ -122,6 +124,12 @@ function Test-BobRepoPairSeatProcessResponding {
     if (Test-Path $hbPath) {
         try {
             $hb = Read-JsonFile $hbPath
+            if ($hb -and $hb.agentPid) {
+                $ap = $hb.agentPid
+                if ($ap -is [System.Array]) { $ap = @($ap)[0] }
+                $agentProc = Get-Process -Id ([int]$ap) -ErrorAction SilentlyContinue
+                if (-not $agentProc) { return $false }
+            }
             if ($hb -and $hb.at) {
                 $at = [DateTime]::Parse([string]$hb.at, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
                 $age = ([DateTime]::UtcNow - $at).TotalSeconds
@@ -144,7 +152,11 @@ function Test-BobRepoPairSeatShopJoined {
     $manifestPath = Join-Path $home ('shop-join-' + $sid + '.json')
     if (-not (Test-Path -LiteralPath $manifestPath)) { return $false }
     $manifest = Read-JsonFile $manifestPath
-    if (-not $manifest -or [string]$manifest.joinKind -notmatch 'irc_agent') { return $false }
+    if (-not $manifest) { return $false }
+    $jk = [string]$manifest.joinKind
+    if ($jk -eq 'irc_agent_stub' -or $jk -match 'stub') { return $false }
+    if ($jk -notmatch '^(irc_agent|irc_agent_worker)$') { return $false }
+    if ($manifest.shopNickLive -eq $false) { return $false }
     $ircPid = $manifest.ircAgentPid
     if (-not $ircPid) { return $false }
     if ($ircPid -is [System.Array]) { $ircPid = @($ircPid)[0] }
@@ -230,6 +242,7 @@ function Start-BobRepoPair {
     if ($mrb.error) { return [pscustomobject]@{ ok = $false; error = $mrb.error; reason = $mrb.reason; role = 'mrb' } }
     Write-BobRepoPairState $state
     Set-BobShopChannelRepoDescription -Repo $repo -MachineId $mid | Out-Null
+    Sync-BobChannelOpsManifest -MachineId $mid | Out-Null
     return [pscustomobject]@{
         ok    = $true
         repo  = $repo
@@ -538,6 +551,41 @@ function Get-BobShopChannelDescriptionsPath {
     Join-Path (Get-BobIrcHome) 'shop-channel-descriptions.json'
 }
 
+function Get-BobChannelOpsConfigPath {
+    Join-Path (Get-ModuleRoot) 'config\channel-ops.json'
+}
+
+function Sync-BobChannelOpsManifest {
+    [CmdletBinding()]
+    param([string]$MachineId)
+    $path = Get-BobChannelOpsConfigPath
+    if (-not (Test-Path $path)) { return [pscustomobject]@{ ok = $false; error = 'no_config' } }
+    $cfg = Read-JsonFile $path
+    if (-not $cfg -or -not $cfg.channels) { return [pscustomobject]@{ ok = $false; error = 'bad_config' } }
+    $home = Get-BobIrcHome
+    if (-not $home) { return [pscustomobject]@{ ok = $false; error = 'no_irc_home' } }
+    New-Item -ItemType Directory -Force -Path $home | Out-Null
+    $mid = $MachineId
+    if (-not $mid) { $mid = Get-ThisMachineId }
+    $shop = Get-BobShopChannelForMachine -MachineId $mid
+    $map = @{}
+    foreach ($p in $cfg.channels.PSObject.Properties) {
+        $map[[string]$p.Name] = [string]$p.Value
+    }
+    if ($shop -and -not $map.ContainsKey($shop)) {
+        $nick = $null
+        try {
+            $bv = Get-BobiverseConfig
+            if ($bv -and $bv.nicks -and $bv.nicks.$mid) { $nick = [string]$bv.nicks.$mid }
+        }
+        catch { }
+        if ($nick) { $map[$shop] = $nick }
+    }
+    Write-JsonFile (Join-Path $home 'channel-ops.json') ([pscustomobject]$map)
+    try { Sync-BobIrcChannelOpsWire | Out-Null } catch { }
+    return [pscustomobject]@{ ok = $true; path = (Join-Path $home 'channel-ops.json') }
+}
+
 function Sync-BobShopChannelRepoDescriptions {
     [CmdletBinding()]
     param()
@@ -567,8 +615,8 @@ function Sync-BobShopChannelRepoDescriptions {
         if ($prev -eq $repo) { continue }
         $map[$chan] = $repo
         $applied += ,[pscustomobject]@{ channel = $chan; repo = $repo }
-        Add-BobIrcOutboxChannelLine ("TOPIC $chan :$repo")
         Add-BobIrcOutboxChannelLine ("SHOPDESC $chan $repo")
+        Add-BobIrcOutboxChannelLine ("TOPIC $chan :$repo")
     }
     if ($applied.Count -gt 0) {
         Write-JsonFile $descPath ([pscustomobject]$map)
@@ -663,16 +711,21 @@ function Invoke-BobRepoPairBobiverseSay {
             elseif ($wo -match 'mrb_complete|MRB complete') { $line = "Bob digest: MRB complete for $repo ($wo)." }
         }
         if ($line) {
-            Add-BobIrcOutboxChannelLine $line
+            Add-BobIrcBobiversePrivmsg -Text $line
             $said += $key
             $out += $line
         }
     }
+    $drain = $null
     if ($out.Count -gt 0) {
+        try {
+            $drain = Invoke-BobIrcDrainOutboxLines -MatchPrefix @('PRIVMSG #bobiverse')
+        }
+        catch { }
         $s | Add-Member -NotePropertyName bobiverseSaid -NotePropertyValue @($said) -Force
         Write-BobRepoPairState $s
     }
-    return [pscustomobject]@{ ok = $true; said = @($out) }
+    return [pscustomobject]@{ ok = $true; said = @($out); drained = $(if ($drain) { @($drain.drained) } else { @() }) }
 }
 
 function Get-BobRepoPairTicketIntervalSec {
@@ -718,10 +771,185 @@ function Test-BobRepoPairTicketCadenceDue {
     catch { return $true }
 }
 
+function Get-BobRepoPairShopPingIntervalSec {
+    if ($env:BOB_REPO_PAIR_SHOP_PING_SEC -and $env:BOB_REPO_PAIR_SHOP_PING_SEC.Trim()) {
+        try { return [int]$env:BOB_REPO_PAIR_SHOP_PING_SEC } catch { }
+    }
+    return 900
+}
+
+function Invoke-BobRepoPairShopPing {
+    [CmdletBinding()]
+    param()
+    $s = Read-BobRepoPairState
+    if (-not $s -or -not $s.repo) {
+        return [pscustomobject]@{ ok = $true; skipped = 'no_pair' }
+    }
+    $interval = Get-BobRepoPairShopPingIntervalSec
+    if ($s.lastShopPingAt) {
+        try {
+            $last = [DateTime]::Parse([string]$s.lastShopPingAt, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            $age = ([DateTime]::UtcNow - $last).TotalSeconds
+            if ($age -lt $interval) {
+                return [pscustomobject]@{ ok = $true; skipped = 'cadence' }
+            }
+        }
+        catch { }
+    }
+    $mid = [string]$s.machineId
+    if (-not $mid) { $mid = Get-ThisMachineId }
+    $chan = Get-BobShopChannelForMachine -MachineId $mid
+    if ($chan) {
+        Add-BobIrcOutboxChannelLine ("PRIVMSG $chan :Bob shop ping - checking repo-pair worker seats.")
+    }
+    $intervened = @()
+    foreach ($role in @('dev', 'mrb')) {
+        $seat = $null
+        if ($s.seats) { $seat = $s.seats.$role }
+        if (-not $seat) { continue }
+        if (-not (Test-BobRepoPairSeatAlive -Seat $seat)) {
+            $intervened += $role
+            if ($seat.sessionId) {
+                Stop-BobWorker -SessionId ([string]$seat.sessionId) | Out-Null
+                $seat | Add-Member -NotePropertyName sessionId -NotePropertyValue $null -Force
+            }
+            Ensure-BobRepoPairSeat -State $s -Role $role -Cwd ([string]$s.cwd) -Repo ([string]$s.repo) | Out-Null
+        }
+    }
+    $s | Add-Member -NotePropertyName lastShopPingAt -NotePropertyValue ([DateTime]::UtcNow.ToString('o')) -Force
+    Write-BobRepoPairState $s
+    return [pscustomobject]@{ ok = $true; intervened = @($intervened) }
+}
+
+function Get-BobBobiverseAgentsIdleOverSec {
+    [CmdletBinding()]
+    param([int]$MinIdleSec = 20)
+    $home = Get-BobIrcHome
+    if (-not $home) { return @() }
+    $peersDir = Join-Path $home 'bob-peers'
+    if (-not (Test-Path -LiteralPath $peersDir)) { return @() }
+    $now = [DateTime]::UtcNow
+    $idle = @()
+    foreach ($f in @(Get-ChildItem -LiteralPath $peersDir -Filter '*.json' -ErrorAction SilentlyContinue)) {
+        $doc = Read-JsonFile $f.FullName
+        if (-not $doc -or -not $doc.id) { continue }
+        $seen = $null
+        if ($doc.lastSeen) {
+            try {
+                $seen = [DateTime]::Parse([string]$doc.lastSeen, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            }
+            catch { continue }
+        }
+        if (-not $seen) { continue }
+        $age = ($now - $seen).TotalSeconds
+        if ($age -lt $MinIdleSec) { continue }
+        $run = $false
+        if ($doc.running -eq $true -or [string]$doc.running -eq '1') { $run = $true }
+        if ($run) { continue }
+        $idle += ,[pscustomobject]@{ machineId = [string]$doc.id; idleSec = [int]$age }
+    }
+    return @($idle)
+}
+
+function Invoke-BobRepoPairChairIdleAssign {
+    [CmdletBinding()]
+    param(
+        [int]$MinIdleSec = 20
+    )
+    $idlePeers = @(Get-BobBobiverseAgentsIdleOverSec -MinIdleSec $MinIdleSec)
+    $assigned = @()
+    $s = Read-BobRepoPairState
+    if (-not $s -or -not $s.repo) {
+        return [pscustomobject]@{ ok = $true; idlePeers = @($idlePeers); assigned = @() }
+    }
+    foreach ($role in @('dev', 'mrb')) {
+        $seat = $null
+        if ($s.seats) { $seat = $s.seats.$role }
+        if (-not $seat) { continue }
+        $busy = $false
+        if ($seat.lastActiveAt) {
+            try {
+                $last = [DateTime]::Parse([string]$seat.lastActiveAt, $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+                $age = ([DateTime]::UtcNow - $last).TotalSeconds
+                if ($age -lt $MinIdleSec) { $busy = $true }
+            }
+            catch { }
+        }
+        if ($busy) { continue }
+        if ($seat.chairTask -and [string]$seat.chairTask.Trim()) { continue }
+        if ($idlePeers.Count -eq 0) { continue }
+        $peer = $idlePeers[0]
+        $task = "bobiverse idle assign ($($peer.machineId) idle $($peer.idleSec)s): pick up next $role work on $($s.repo)"
+        $r = Assign-BobRepoPairTask -Seat $role -Task $task -SkipWorkingOnPost
+        if ($r.ok) {
+            $assigned += ,[pscustomobject]@{ seat = $role; peer = $peer.machineId; task = $task }
+            $idlePeers = @($idlePeers | Select-Object -Skip 1)
+        }
+    }
+    return [pscustomobject]@{ ok = $true; idlePeers = @($idlePeers); assigned = @($assigned) }
+}
+
+function Invoke-BobRepoPairMrbSeatHygiene {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('dev', 'mrb')][string]$Seat,
+        [string]$WorkerDir
+    )
+    if ($Seat -ne 'mrb') { return [pscustomobject]@{ ok = $true; skipped = 'not_mrb' } }
+    $dir = $WorkerDir
+    if (-not $dir) { return [pscustomobject]@{ ok = $false; error = 'no_worker_dir' } }
+    $stampPath = Join-Path $dir 'outbox\mrb-hygiene-last.txt'
+    if (Test-Path $stampPath) {
+        try {
+            $prev = [DateTime]::Parse((Get-Content $stampPath -Raw).Trim(), $null, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            if (([DateTime]::UtcNow - $prev).TotalSeconds -lt 900) {
+                return [pscustomobject]@{ ok = $true; skipped = 'cadence' }
+            }
+        }
+        catch { }
+    }
+    $s = Read-BobRepoPairState
+    $repo = $(if ($s -and $s.repo) { [string]$s.repo } else { $null })
+    if (-not $repo) { return [pscustomobject]@{ ok = $true; skipped = 'no_repo' } }
+    $gh = $env:BOB_GH_EXE
+    if (-not $gh) { $gh = 'gh' }
+    $actions = @()
+    if ($env:BOB_FAKE_GH_MODE) {
+        $actions += 'fake_hygiene'
+    }
+    else {
+        try {
+            $open = & $gh issue list --repo $repo --state open --limit 50 --json number,title 2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $open.Trim()) {
+                $issues = @($open | ConvertFrom-Json)
+                $seen = @{}
+                foreach ($issue in $issues) {
+                    if (-not $issue) { continue }
+                    $title = ([string]$issue.title).Trim().ToLowerInvariant()
+                    if (-not $title) { continue }
+                    if ($seen.ContainsKey($title)) {
+                        $dup = [int]$issue.number
+                        & $gh issue close $dup --repo $repo --comment 'MRB seat: duplicate issue closed' 2>$null | Out-Null
+                        $actions += "closed_dup_$dup"
+                    }
+                    else {
+                        $seen[$title] = $true
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+    [IO.File]::WriteAllText($stampPath, [DateTime]::UtcNow.ToString('o'))
+    return [pscustomobject]@{ ok = $true; actions = @($actions) }
+}
+
 function Invoke-BobRepoPairChairTick {
     [CmdletBinding()]
     param()
+    try { Invoke-BobRepoPairShopPing | Out-Null } catch { }
     $tick = Invoke-BobRepoPairTick
+    $idleAssign = Invoke-BobRepoPairChairIdleAssign
     $ticket = [pscustomobject]@{ ok = $true; skipped = 'cadence' }
     if (Test-BobRepoPairTicketCadenceDue) {
         $ticket = Invoke-BobRepoPairOutstandingTickets
@@ -729,10 +957,11 @@ function Invoke-BobRepoPairChairTick {
     $say = Invoke-BobRepoPairBobiverseSay
     try { Invoke-BobRepoPairChairUsageWebhookIfChanged | Out-Null } catch { }
     return [pscustomobject]@{
-        ok        = $true
-        tickets   = $ticket
-        tick      = $tick
-        bobiverse = $say
+        ok         = $true
+        tickets    = $ticket
+        tick       = $tick
+        bobiverse  = $say
+        idleAssign = $idleAssign
     }
 }
 

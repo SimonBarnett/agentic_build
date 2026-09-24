@@ -140,6 +140,70 @@ if ($gtFile) {
     }
 }
 
+$tsWrapId = Join-Path $RepoRoot ("tools\_Watch-IrcTsr-{0}.ps1" -f $rec.id)
+$tsWrap = Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1'
+$tsInner = Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1'
+$tsFile = $null
+if (Test-Path $tsWrapId) { $tsFile = $tsWrapId }
+elseif (Test-Path $tsWrap) { $tsFile = $tsWrap }
+elseif (Test-Path $tsInner) { $tsFile = $tsInner }
+$tsTask = "_Watch-IrcTsr-$($rec.id)"
+$tsStarted = 'skipped (no wrapper script)'
+if ($tsFile) {
+    $tsArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$tsFile`""
+    $tsAction = New-ScheduledTaskAction -Execute $ps -Argument $tsArg -WorkingDirectory $RepoRoot
+    Register-ScheduledTask -TaskName $tsTask -Action $tsAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+    $tsAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            ($_.CommandLine -match 'Watch-IrcTsr\.ps1' -or $_.CommandLine -match '_Watch-IrcTsr')
+        })
+    if ($tsAlready.Count -gt 0) {
+        $tsStarted = 'already running (not started again)'
+    }
+    else {
+        try {
+            Start-ScheduledTask -TaskName $tsTask
+            $tsStarted = 'started now'
+        }
+        catch {
+            $tsStarted = "register-only (start failed: $($_.Exception.Message))"
+        }
+    }
+}
+
+$ciWrapId = Join-Path $RepoRoot ("tools\_Watch-CursorIrc-{0}.ps1" -f $rec.id)
+$ciWrap = Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1'
+$ciInner = Join-Path $RepoRoot 'tools\Watch-CursorIrc.ps1'
+$ciFile = $null
+if (Test-Path $ciWrapId) { $ciFile = $ciWrapId }
+elseif (Test-Path $ciWrap) { $ciFile = $ciWrap }
+elseif (Test-Path $ciInner) { $ciFile = $ciInner }
+$ciTask = "_Watch-CursorIrc-$($rec.id)"
+$ciStarted = 'skipped (no wrapper script)'
+if ($ciFile) {
+    $ciArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ciFile`""
+    $ciAction = New-ScheduledTaskAction -Execute $ps -Argument $ciArg -WorkingDirectory $RepoRoot
+    Register-ScheduledTask -TaskName $ciTask -Action $ciAction -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+    $ciAlready = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and
+            ($_.CommandLine -match 'Watch-CursorIrc\.ps1' -or $_.CommandLine -match '_Watch-CursorIrc')
+        })
+    if ($ciAlready.Count -gt 0) {
+        $ciStarted = 'already running (not started again)'
+    }
+    else {
+        try {
+            Start-ScheduledTask -TaskName $ciTask
+            $ciStarted = 'started now'
+        }
+        catch {
+            $ciStarted = "register-only (start failed: $($_.Exception.Message))"
+        }
+    }
+}
+
 Write-Host "Machine:     $($rec.id) ($($rec.hostname) $($rec.windowsUser))"
 Write-Host "MSSQL:       integrated (this Windows logon)"
 Write-Host "Bridge home: $BridgeHome"
@@ -147,6 +211,8 @@ Write-Host "Skills:      $skillDstRoot ($($copied -join ', '))"
 Write-Host "Task:        $taskName (AtLogOn + demand start, not a Windows service; $started)"
 Write-Host "Bobiverse:   $bvTask -> $bvFile ($bvStarted)"
 Write-Host "Grok-talk:   $gtTask -> $gtFile ($gtStarted)"
+Write-Host "IRC TSR:     $tsTask -> $tsFile ($tsStarted)"
+Write-Host "Cursor IRC:  $ciTask -> $ciFile ($ciStarted)"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
