@@ -1942,6 +1942,8 @@ function Build-BobDigestWebhookMergePayload {
         online  = $true
         status  = 'operational'
     }
+    # Report lastSeen only advances when the merge carries it (heartbeat).
+    if ($Doc.lastSeen) { $payload.lastSeen = [string]$Doc.lastSeen }
     if ($null -ne $Doc.weekly -and [string]$Doc.weekly -ne '') { $payload.weekly = [int]$Doc.weekly }
     if ($Doc.cursor_label) { $payload.cursor_label = [string]$Doc.cursor_label }
     if ($Doc.cursor_period_end) { $payload.cursor_period_end = [string]$Doc.cursor_period_end }
@@ -1969,7 +1971,11 @@ function Test-BobDigestWebhookPayloadSecretFree {
     return $true
 }
 
-function Invoke-BobDigestWebhookPost {
+# Named *MergePost* (not Invoke-BobDigestWebhookPost): Invoke-BobDigestWebhook.ps1
+# defines Invoke-BobDigestWebhookPost(-WorkingOn/-Repo) and is dot-sourced later,
+# so a same-named function here was silently replaced and every -Payload caller
+# threw "A parameter cannot be found that matches parameter name 'Payload'".
+function Invoke-BobDigestWebhookMergePost {
     param([Parameter(Mandatory)]$Payload)
     $capture = [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE
     $body = $Payload | ConvertTo-Json -Depth 8 -Compress
@@ -2000,17 +2006,44 @@ function Invoke-BobDigestWebhookPost {
     }
 }
 
+function Get-BobDigestWebhookHeartbeatSec {
+    # Change-only POSTs never advance report lastSeen while a peer is idle and in
+    # sync. Re-POST at most this often (0 disables). Env: BOB_DIGEST_WEBHOOK_HEARTBEAT_SEC.
+    $raw = [string]$env:BOB_DIGEST_WEBHOOK_HEARTBEAT_SEC
+    if ($raw.Trim()) {
+        try { return [int]$raw.Trim() } catch { }
+    }
+    return 300
+}
+
+function Test-BobDigestWebhookHeartbeatDue {
+    param(
+        [hashtable]$Posted,
+        [string]$MachineId,
+        [string]$StatePath
+    )
+    $sec = Get-BobDigestWebhookHeartbeatSec
+    if ($sec -le 0 -or -not $MachineId -or -not $Posted) { return $false }
+    # Never posted for this machine: normal change detection handles the first POST.
+    if (-not $Posted.ContainsKey($MachineId)) { return $false }
+    $last = $null
+    $atKey = $MachineId + '@posted_at'
+    if ($Posted.ContainsKey($atKey)) {
+        try { $last = [DateTimeOffset]::FromUnixTimeSeconds([long]$Posted[$atKey]).UtcDateTime } catch { }
+    }
+    if ($null -eq $last -and $StatePath -and (Test-Path -LiteralPath $StatePath)) {
+        # State written before posted_at existed: fall back to file mtime.
+        try { $last = (Get-Item -LiteralPath $StatePath).LastWriteTimeUtc } catch { }
+    }
+    if ($null -eq $last) { return $true }
+    return (([DateTime]::UtcNow - $last).TotalSeconds -ge $sec)
+}
+
 function Send-BobDigestWebhookIfChanged {
     param(
         [Parameter(Mandatory)]$Doc,
         $Before
     )
-    if ($Before) {
-        if (Test-BobIrcDigestWebhookChairInSync -Chair $Before -Local $Doc) {
-            return $null
-        }
-    }
-    $fp = Get-BobDigestWebhookFingerprint $Doc
     $mid = [string]$Doc.id
     if (-not $mid) { return $null }
     $posted = @{}
@@ -2022,15 +2055,23 @@ function Send-BobDigestWebhookIfChanged {
         }
         catch { }
     }
-    if ($posted.ContainsKey($mid) -and [string]$posted[$mid] -eq $fp) { return $null }
+    $heartbeatDue = Test-BobDigestWebhookHeartbeatDue -Posted $posted -MachineId $mid -StatePath $statePath
+    if (-not $heartbeatDue -and $Before) {
+        if (Test-BobIrcDigestWebhookChairInSync -Chair $Before -Local $Doc) {
+            return $null
+        }
+    }
+    $fp = Get-BobDigestWebhookFingerprint $Doc
+    if (-not $heartbeatDue -and $posted.ContainsKey($mid) -and [string]$posted[$mid] -eq $fp) { return $null }
     if (-not (Get-BobDigestReportUrl) -and -not [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE.Trim()) {
         return $null
     }
     $payload = Build-BobDigestWebhookMergePayload $Doc
     if (-not $payload) { return $null }
-    $code = Invoke-BobDigestWebhookPost -Payload $payload
+    $code = Invoke-BobDigestWebhookMergePost -Payload $payload
     if ($null -ne $code -and $code -ge 200 -and $code -lt 300) {
         $posted[$mid] = $fp
+        $posted[$mid + '@posted_at'] = [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
         try { Write-JsonFile $statePath ([pscustomobject]$posted) } catch { }
         return $code
     }
