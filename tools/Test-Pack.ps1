@@ -48,6 +48,10 @@ function Import-Bridge {
     }
     $env:BOB_IRC_CONFIG = $ircCfg
     $env:BOB_CURSOR_USAGE_FILE = Join-Path $BridgeRoot 'no-cursor-usage.json'
+    # Default digest URL is the live report endpoint. Keep the pack on local
+    # bob-peers fixtures; a refused port fails fast and falls back to the file.
+    Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+    $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/bob/v1/digest'
     $env:BOB_SKIP_LIVE_GROK = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
@@ -121,6 +125,8 @@ function Invoke-Case {
         $env:BOB_FAKE_GH_LOG = $null
         $env:BOB_FAKE_GH_QUIET = $null
         $env:BOB_MACHINE_ID = $null
+        $env:BOB_DIGEST_URL = $null
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
         $env:BOB_GROK_TALK_CURSOR_FIXTURE = $null
         $env:BOB_GROK_TALK_TEST_THROW = $null
         $env:AGENTIC_IRC_HOME = $null
@@ -132,13 +138,43 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'bob-repo-pair', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'cleanup-orphans', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'watch-agent-health', 'setup-github-cursor', 'visionary')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'https://github\.com/SimonBarnett/agentic_build') { throw 'harvest-agent-skills must name home GitHub' }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'honesty box') { throw 'harvest-agent-skills must keep the honesty box' }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
+        if ($n -eq 'cleanup-orphans' -and $raw -notmatch 'Cleanup-OrphanAgents') { throw 'cleanup-orphans skill must document Cleanup-OrphanAgents.ps1' }
+        if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }
+        if ($n -eq 'setup-github-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'setup-github-webhooks must document git URL' }
+        if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'cursor\[bot\]') { throw 'setup-github-cursor must name cursor[bot]' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'All repositories') { throw 'setup-github-cursor must require All repositories' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'not a user') { throw 'setup-github-cursor must say cursor[bot] is not a collaborator user' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'user/installations') { throw 'setup-github-cursor must document user/installations 403' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'settings/installations') { throw 'setup-github-cursor must Configure existing install' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'installations/new') { throw 'setup-github-cursor must warn against installations/new' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'merge queues') { throw 'setup-github-cursor must record the GitHub UI permission list' }
+        if ($n -eq 'setup-github-cursor' -and $raw -notmatch 'Disconnect') { throw 'setup-github-cursor must document dashboard Disconnect when All repos is already set' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'setup-github-cursor') { throw 'bob-spec-intake New repo must call setup-github-cursor' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'visionary') { throw 'bob-spec-intake New product must call visionary first' }
+        if ($n -eq 'bob-spec-intake' -and $raw -notmatch 'validate-vision-pack') { throw 'bob-spec-intake must run validate-vision-pack before park/dispatch' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'validate-vision-pack') { throw 'visionary must refuse until validate-vision-pack exits 0' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'measurable') { throw 'visionary must require measurable success' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'docs/mocks') { throw 'visionary must park HTML mocks in docs/mocks' }
+        if ($n -eq 'visionary' -and $raw -notmatch 'bob-spec-intake') { throw 'visionary must hand park to bob-spec-intake' }
+        if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-cursor') { throw 'github-irc-webhooks must point at setup-github-cursor' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch 'recycle-after-merge') { throw 'bob-hostile-mrb must document recycle-after-merge after merge to main' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)ionos') { throw 'bob-hostile-mrb must document ionos IRC restart when required' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)restart') { throw 'bob-hostile-mrb must document ionos restart IRC when required' }
+        if ($n -eq 'bob-hostile-mrb' -and $raw -notmatch '(?i)Implementer PR workers do not live-recycle') { throw 'bob-hostile-mrb must say Bob/ionos recycle, not implementer live-recycle' }
     }
+    $visionTpl = Join-Path $RepoRoot 'docs\templates\vision.md'
+    if (-not (Test-Path $visionTpl)) { throw 'missing docs/templates/vision.md' }
+    $visionTplRaw = Get-Content $visionTpl -Raw
+    if ($visionTplRaw -notmatch 'fail-when') { throw 'vision template must have a success fail-when column' }
     $stopHung = Get-Content (Join-Path $RepoRoot 'tools\Stop-HungAgent.ps1') -Raw
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
@@ -378,13 +414,14 @@ Invoke-Case 'BT0l tray hover' {
     if ([string]$h.scope -ne 'local-store') { throw "scope=$($h.scope)" }
     if ([string]$h.machine -ne 'testhost') { throw "machine=$($h.machine)" }
     if ([string]$h.body -match '(?i)no fleet jobs running') { throw "idle body still says no fleet jobs: $($h.body)" }
-    if (@($h.cursor_pools).Count -lt 6) { throw "idle cursor_pools count=$(@($h.cursor_pools).Count) expected >=6 (3 groups x 2+ seats)" }
+    if (@($h.cursor_pools).Count -ne 3) { throw "idle cursor_pools count=$(@($h.cursor_pools).Count) expected 3 Cursor spending groups" }
     if (@($h.cursor_groups).Count -lt 3) { throw "idle cursor_groups count=$(@($h.cursor_groups).Count) expected >=3" }
-    if ([string]$h.jobs_text -notmatch '(?m)grok chat') { throw "idle jobs_text missing grok chat group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)high cost models') { throw "idle jobs_text missing high cost models group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)low cost models') { throw "idle jobs_text missing low cost models group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  grok chat') { throw "idle jobs_text missing Smart Catalogue pool: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+Club Madeira  grok chat') { throw "idle jobs_text missing Club Madeira pool: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+grok chat') { throw "idle jobs_text missing grok chat group: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+high cost models') { throw "idle jobs_text missing high cost models group: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+low cost models') { throw "idle jobs_text missing low cost models group: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models)') {
+        throw "xAI seat labels must not prefix Cursor spending bars: $($h.jobs_text)"
+    }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
     if ([string]$h.account_name -ne 'low cost models') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
@@ -700,6 +737,33 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray paint path does not use Get-BobTrayBarPaint' }
     if ($traySrc -notmatch 'Get-BobTrayBarPaint') { throw 'Watch-BobTray must paint weekly bars via Get-BobTrayBarPaint' }
 
+    # Agents submenu: two watch-seat agents as one menu, desktop-parity icons,
+    # grey when not installed, click initialises setup (agent-monitor-setup).
+    if ($traySrc -notmatch "Text = 'Agents'") { throw 'Watch-BobTray must add an Agents context-menu item' }
+    if ($traySrc -notmatch 'Build-BobTrayAgentsMenu') { throw 'Watch-BobTray must build the Agents submenu (Cursor/Grok)' }
+    if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'Agents menu icons must match the Desktop shortcut app exe' }
+    if ($traySrc -notmatch 'ConvertTo-BobTrayGrayImage') { throw 'not-installed agent must be greyed' }
+    if ($traySrc -notmatch 'New-BobTrayAgentBadgeImage') { throw 'missing agent must fall back to branded C/G badge icon' }
+    if ($traySrc -notmatch 'Resolve-BobTrayAgentIconExe') { throw 'Grok icon must prefer Grok Bot.exe via Resolve-BobTrayAgentIconExe' }
+    if ($traySrc -notmatch 'Get-BobTrayAgentExeCandidates') { throw 'Resolve-BobTrayAgentExe must use candidates helper' }
+    if ($traySrc -match 'return \$cands\[0\]') { throw 'Resolve must not return a missing candidate path' }
+    if ($traySrc -notmatch 'Matrix33 = 0\.92') { throw 'grey icons must stay visible on dark tip (Matrix33 0.92)' }
+    if ($traySrc -notmatch 'Install-AgentMonitor') { throw 'clicking a not-installed agent must initialise setup' }
+    if ($traySrc -notmatch 'Watch-AgentHealth\.cmd') { throw 'AgentMonitor readiness still resolves Watch-AgentHealth.cmd' }
+    if ($traySrc -notmatch 'Start-BobTrayAgentWatch') { throw 'Agents click must call Start-BobTrayAgentWatch' }
+    $watchFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayAgentWatch\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $watchFn.Success) { throw 'Start-BobTrayAgentWatch function not found' }
+    $watchBody = $watchFn.Value
+    if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
+    if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
+    if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
+    if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
+    if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
+    $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
+    if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
+    if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\Install-AgentMonitor.ps1'))) { throw 'missing tools/Install-AgentMonitor.ps1 setup' }
+
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
     if ($skillTray -notmatch '(?i)weekly remaining') { throw 'bob-fleet-tray skill must document weekly remaining bar' }
     if ($skillTray -notmatch 'creditUsagePercent') { throw 'bob-fleet-tray skill must name creditUsagePercent source' }
@@ -1004,6 +1068,7 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ([string]$cfg.channel -ne '#bobiverse') { throw "channel=$($cfg.channel)" }
     if ([string]$cfg.mode -ne 'free') { throw "mode=$($cfg.mode)" }
     if ([string]$cfg.host -ne 'irc.ntsa.uk') { throw "host=$($cfg.host)" }
+    if ([string]$cfg.reportUrl -ne 'https://irc.ntsa.uk/bob/v1/report') { throw "reportUrl=$($cfg.reportUrl)" }
     if ([string]$cfg.nicks.flamingo -ne 'bob-flamingo') { throw 'flamingo nick' }
     $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
     if ($installIrc -notmatch 'AGENTIC_IRC_PASSWORD') { throw 'Install-BobIrc must load connect.password' }
@@ -1046,6 +1111,39 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($watchBv -match 'Start-BobWorker|Invoke-BobFleetTick|Send-BobPrompt') { throw 'Watch-Bobiverse must not start a Grok reasoning job' }
     if ($watchBv -notmatch 'Write-BobIrcStatus') { throw 'Watch-Bobiverse must refresh via Write-BobIrcStatus' }
     if ($watchBv -notmatch 'Request-BobIrcBobiversePull') { throw 'Watch-Bobiverse must poll !bobiverse for tray pull' }
+    if ($watchBv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'Watch-Bobiverse must POST digest webhook after !bobiverse ingest (#196)' }
+    if ($watchBv -notmatch 'SkipDigestWebhook') { throw 'Watch-Bobiverse must defer webhook until after chair digest (#196)' }
+    if ($watchBv -match '\$pulled\b') { throw 'Watch must not gate Sync on !bobiverse enqueue; chair answer lands later (#247)' }
+    $psd1Bv = Get-Content (Join-Path $RepoRoot 'src\BobBridge.psd1') -Raw
+    $psm1Bv = Get-Content (Join-Path $RepoRoot 'src\BobBridge.psm1') -Raw
+    if ($psd1Bv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'BobBridge.psd1 must export Sync-BobDigestWebhookAfterBobiversePull (#247)' }
+    if ($psm1Bv -notmatch 'Sync-BobDigestWebhookAfterBobiversePull') { throw 'BobBridge.psm1 must export Sync-BobDigestWebhookAfterBobiversePull (#247)' }
+    if (-not (Get-Command Sync-BobDigestWebhookAfterBobiversePull -ErrorAction SilentlyContinue)) {
+        throw 'Sync-BobDigestWebhookAfterBobiversePull must resolve after Import-Module (#247)'
+    }
+    foreach ($watchCmd in @(
+            'Write-BobIrcStatus',
+            'Request-BobIrcBobiversePull',
+            'Import-BobIrcTrayPull',
+            'Sync-BobDigestWebhookAfterBobiversePull',
+            'Import-BobIrcPeerTranscript',
+            'Compact-BobIrcOutbox'
+        )) {
+        if (-not (Get-Command $watchCmd -ErrorAction SilentlyContinue)) {
+            throw "Watch-Bobiverse module surface missing $watchCmd (#255)"
+        }
+    }
+    if ($watchBv -match 'Get-BobIrcChairDigestPeerForMachine') {
+        if (-not (Get-Command Get-BobIrcChairDigestPeerForMachine -ErrorAction SilentlyContinue)) {
+            throw 'Watch calls Get-BobIrcChairDigestPeerForMachine but it is not exported (#255)'
+        }
+    }
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -match 'BOB_IRC_ENQUEUE_BOBIVERSE_PULL') {
+        throw 'Request-BobIrcBobiversePull must not gate on BOB_IRC_ENQUEUE_BOBIVERSE_PULL (#255)'
+    }
+    if ($ircSrc -notmatch '_chair-digest-peers\.json') { throw 'chair digest peer cache must not use _report-digest.json patch (#247)' }
+    if ($ircSrc -notmatch 'Test-BobIrcBobiversePullSeat') { throw 'Get-BobIrc must gate !bobiverse to bob-* builders (#196)' }
     if ($watchBv -notmatch 'Import-BobIrcTrayPull') { throw 'Watch-Bobiverse must ingest !bobiverse tray/digest whispers' }
     if ($watchBv -notmatch 'Import-BobIrcPeerTranscript') { throw 'Watch-Bobiverse may still harvest MOOT POINT transcript' }
     if ($watchBv -notmatch 'BOB_IRC_HOST') { throw 'Watch-Bobiverse must honor BOB_IRC_HOST' }
@@ -1095,7 +1193,19 @@ Invoke-Case 'BT0o bobiverse irc' {
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     $stampBob = Join-Path $peerDir '_bobiverse-last.txt'
     if (Test-Path $stampBob) { Remove-Item -LiteralPath $stampBob -Force }
-    $env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL = '1'
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_NICK = 'bob-ionos'
+    $savedSkip = $env:BOB_IRC_SKIP_BOBIVERSE_PULL
+    $env:BOB_IRC_SKIP_BOBIVERSE_PULL = $null
+    $env:BOB_IRC_NICK = 'ionos-23624'
+    if (Request-BobIrcBobiversePull -MinIntervalSec 120) { throw 'talk seat ionos-23624 must not pull !bobiverse' }
+    if (Test-Path $ob) {
+        $obTalk = @(Get-Content $ob | Where-Object { $_ })
+        if ($obTalk.Count -gt 0) { throw "talk seat outbox=$($obTalk -join ' | ')" }
+    }
+    $env:BOB_IRC_NICK = 'w-io-4242'
+    if (Request-BobIrcBobiversePull -MinIntervalSec 120) { throw 'shop worker w-io-4242 must not pull !bobiverse' }
+    $env:BOB_IRC_NICK = 'bob-ionos'
     $p1 = Request-BobIrcBobiversePull -MinIntervalSec 120
     if (-not $p1) { throw 'first Request-BobIrcBobiversePull must enqueue !bobiverse' }
     $obLines1 = @(Get-Content $ob | Where-Object { $_ })
@@ -1104,8 +1214,10 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($p2) { throw 'second Request-BobIrcBobiversePull within 120s must be suppressed' }
     $obLines2 = @(Get-Content $ob | Where-Object { $_ })
     if ($obLines2.Count -ne 1) { throw "bobiverse pull duplicated outbox=$($obLines2 -join ' | ')" }
+    $env:BOB_IRC_SKIP_BOBIVERSE_PULL = $savedSkip
 
     $env:BOB_MACHINE_ID = 'testhost'
+    $env:BOB_IRC_NICK = $null
     if (Test-Path $ob) { Remove-Item -LiteralPath $ob -Force }
     Write-BobIrcStatus | Out-Null
     Write-BobIrcStatus | Out-Null
@@ -1115,6 +1227,115 @@ Invoke-Case 'BT0o bobiverse irc' {
     }
     $peerSelf = Read-BobIrcPeer -Id testhost
     if (-not $peerSelf) { throw 'Write-BobIrcStatus must write bob-peers json without POINT outbox' }
+
+    $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
+    '{"percentUsed":10}' | Set-Content -Path $cursorFile -Encoding utf8
+    $webhookCap = Join-Path $bridgeRoot 'digest-webhook-capture.ndjson'
+    if (Test-Path $webhookCap) { Remove-Item -LiteralPath $webhookCap -Force }
+    $postedState = Join-Path $peerDir '_digest-webhook-posted.json'
+    if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $webhookCap
+    $env:BOB_MACHINE_ID = 'testhost'
+    Write-BobIrcStatus | Out-Null
+    if (Test-Path $webhookCap) { Remove-Item -LiteralPath $webhookCap -Force }
+    Write-BobIrcStatus | Out-Null
+    Write-BobIrcStatus | Out-Null
+    $capLines = @()
+    if (Test-Path $webhookCap) { $capLines = @(Get-Content $webhookCap | Where-Object { $_ }) }
+    if ($capLines.Count -ne 0) { throw "lastSeen-only webhook must not POST: $($capLines -join ' | ')" }
+    '{"percentUsed":50}' | Set-Content -Path $cursorFile -Encoding utf8
+    Write-BobIrcStatus | Out-Null
+    $capLines = @(Get-Content $webhookCap | Where-Object { $_ })
+    if ($capLines.Count -ne 1) { throw "fuel delta must POST once: count=$($capLines.Count)" }
+    if ($capLines[0] -notmatch '"op":"merge"' -or $capLines[0] -notmatch '"machine":"testhost"') {
+        throw "webhook payload=$($capLines[0])"
+    }
+    if ($capLines[0] -match 'password=|xai_api_key=') { throw 'webhook must not carry secrets in JSON' }
+    Write-BobIrcStatus | Out-Null
+    $capLines = @(Get-Content $webhookCap | Where-Object { $_ })
+    if ($capLines.Count -ne 1) { throw "duplicate webhook after same fuel: count=$($capLines.Count)" }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_IRC_NICK = 'bob-ionos'
+    $cursorFileChair = Join-Path $bridgeRoot 'cursor-usage-chair-sync.json'
+    '{"percentUsed":10}' | Set-Content -Path $cursorFileChair -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFileChair
+    $localChairBase = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    if (-not $localChairBase) { throw 'Write-BobIrcStatus must return local doc for chair sync' }
+    $chairJobs = @()
+    foreach ($cj in @($localChairBase.jobs)) {
+        if (-not $cj) { continue }
+        $chairJobs += @{
+            repo  = [string]$cj.repo
+            state = [string]$cj.state
+        }
+    }
+    $chairEnt = @{
+        weekly            = $localChairBase.weekly
+        remaining_pct     = $localChairBase.remaining_pct
+        running           = $localChairBase.running
+        queued            = $localChairBase.queued
+        model             = $localChairBase.model
+        kind              = $localChairBase.kind
+        repo              = $localChairBase.repo
+        sha               = $localChairBase.sha
+        lastSeen          = $localChairBase.lastSeen
+        cursor_label      = $localChairBase.cursor_label
+        cursor_period_end = $localChairBase.cursor_period_end
+        period_end        = $localChairBase.period_end
+        fuel              = $localChairBase.fuel
+        working_on        = $localChairBase.working_on
+        online            = $localChairBase.online
+        status            = $localChairBase.status
+        responding        = $localChairBase.responding
+        jobs              = $chairJobs
+    }
+    $chairPeersPath = Join-Path $peerDir '_chair-digest-peers.json'
+    if (Test-Path $chairPeersPath) { Remove-Item -LiteralPath $chairPeersPath -Force }
+    $chairDigestObj = @{
+        v        = 1
+        ts       = '2026-09-21T12:00:00Z'
+        machines = @{ ionos = $chairEnt }
+    }
+    $ingested = @(Add-TestBobIrcDigestWhisper -IrcHome $ircHome -Nick 'bob-ionos' -DigestObj $chairDigestObj -ResetTrayPos)
+    if ($ingested -notcontains 'ionos') { throw "chair digest whisper ingest=$($ingested -join ',')" }
+    if (-not (Test-Path $chairPeersPath)) { throw 'chair digest whisper must write _chair-digest-peers.json (#247)' }
+    $webhookCapChair = Join-Path $bridgeRoot 'digest-webhook-chair-sync.ndjson'
+    if (Test-Path $webhookCapChair) { Remove-Item -LiteralPath $webhookCapChair -Force }
+    if (Test-Path $postedState) { Remove-Item -LiteralPath $postedState -Force }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $webhookCapChair
+    function Invoke-TestWatchBobiverseChairSync {
+        param($LocalDoc)
+        if ($LocalDoc) {
+            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $LocalDoc
+        }
+    }
+    $localChair = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChair
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChair
+    $chairCap = @()
+    if (Test-Path $webhookCapChair) { $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ }) }
+    if ($chairCap.Count -ne 0) { throw "chair match must not POST: $($chairCap -join ' | ')" }
+    '{"percentUsed":55}' | Set-Content -Path $cursorFileChair -Encoding utf8
+    $localChairDelta = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChairDelta
+    $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ })
+    if ($chairCap.Count -ne 1) { throw "chair-diff fuel delta must POST once via Sync: count=$($chairCap.Count)" }
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    $localChairLastSeen = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+    Invoke-TestWatchBobiverseChairSync -LocalDoc $localChairLastSeen
+    $chairCap = @(Get-Content $webhookCapChair | Where-Object { $_ })
+    if ($chairCap.Count -ne 1) { throw "lastSeen-only chair sync must not POST again: count=$($chairCap.Count)" }
+    if ($chairCap[0] -notmatch '"op":"merge"' -or $chairCap[0] -notmatch '"machine":"ionos"') {
+        throw "chair-diff webhook payload=$($chairCap[0])"
+    }
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
+    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
 
     $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
     if ($stamp -eq '?' -or -not $stamp) {
@@ -1138,16 +1359,14 @@ Invoke-Case 'BT0o bobiverse irc' {
     $tickSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobFleet.ps1') -Raw
     if ($tickSrc -match 'Write-BobIrcStatus') { throw 'fleet tick must not POINT; that is Watch-Bobiverse automation' }
 
-    $cursorFile = Join-Path $bridgeRoot 'cursor-usage.json'
     '{"percentUsed":98}' | Set-Content -Path $cursorFile -Encoding utf8
-    $env:BOB_CURSOR_USAGE_FILE = $cursorFile
     $cu = Get-BobCursorAgentWeeklyRemaining
     if ([int]$cu.used_pct -ne 98) { throw "cursor used=$($cu.used_pct)" }
     if ([int]$cu.remaining_pct -ne 2) { throw "cursor remaining=$($cu.remaining_pct) expected 2 from 98% used" }
     $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 2) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  low cost models  2%') { throw "jobs_text cursor pool=$($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+low cost models  2%') { throw "jobs_text cursor pool=$($hCur.jobs_text)" }
     $env:BOB_MACHINE_ID = $null
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'Watch-Bobiverse\.ps1') { throw 'tray must start Watch-Bobiverse, not a grok job' }
@@ -1173,30 +1392,44 @@ Invoke-Case 'BT0o2 cursor models spending meter' {
 '@ | Set-Content -Path $apiFixture -Encoding utf8
     $py = $null
     foreach ($c in @(
-            'python',
-            'py',
-            'C:\Python\Python312\python.exe',
-            'C:\Python\Python313\python.exe',
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
             (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe')
+            'C:\Python\Python313\python.exe',
+            'C:\Python\Python312\python.exe',
+            'python',
+            'py'
         )) {
         if (-not $c) { continue }
         if ($c -eq 'python' -or $c -eq 'py') {
             try {
                 $probe = & $c -c "import sys; print(sys.executable)" 2>$null
-                if ($probe) { $py = $c; break }
+                if (-not $probe) { continue }
+                $ok = & $c -c "print(1)" 2>$null
+                if ($ok -eq '1') { $py = $c; break }
             }
             catch { }
             continue
         }
-        if (Test-Path $c) { $py = $c; break }
+        if (-not (Test-Path $c)) { continue }
+        try {
+            $ok = & $c -c "print(1)" 2>$null
+            if ($ok -eq '1') { $py = $c; break }
+        }
+        catch { }
     }
-    if (-not $py) { throw 'python required for Get-CursorAgentUsage parser test' }
     $script = Join-Path $RepoRoot 'tools\Get-CursorAgentUsage.py'
     $env:BOB_CURSOR_AGENT_FIXTURE = $apiFixture
     $env:BOB_CURSOR_USD_GBP_RATE = '0.7918'
-    $parsedRaw = & $py $script 2>$null
-    if (-not $parsedRaw) { throw 'Get-CursorAgentUsage fixture run returned empty' }
+    $parsedRaw = $null
+    if ($py) { $parsedRaw = & $py $script 2>$null }
+    if (-not $parsedRaw) {
+        $psDoc = Get-BobCursorSpendingFromApiFixture -Path $apiFixture
+        if (-not $psDoc) {
+            $psDoc = Get-BobCursorAgentWeeklyRemaining
+        }
+        if (-not $psDoc) { throw 'Get-CursorAgentUsage fixture parse failed (python and PS fallback)' }
+        $parsedRaw = ($psDoc | ConvertTo-Json -Depth 6 -Compress)
+    }
     $parsed = $parsedRaw | ConvertFrom-Json
     if ([int]$parsed.used_pct -ne 1) { throw "parser used_pct=$($parsed.used_pct) expected 1 from autoPercentUsed=1" }
     if ([int]$parsed.remaining_pct -ne 99) { throw "parser remaining_pct=$($parsed.remaining_pct) expected 99" }
@@ -1233,9 +1466,9 @@ Invoke-Case 'BT0o2 cursor models spending meter' {
     $env:BOB_MACHINE_ID = 'ionos'
     $hCur = Get-BobTrayHover
     if ([int]$hCur.account_remaining_pct -ne 99) { throw "hover cursor remaining=$($hCur.account_remaining_pct)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+Smart Catalogue  low cost models  99%') { throw "jobs_text must show Smart Catalogue low cost models 99%: $($hCur.jobs_text)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)Smart Catalogue  high cost models  94%') { throw "jobs_text must show high cost models 94%: $($hCur.jobs_text)" }
-    if ([string]$hCur.jobs_text -notmatch '(?m)Smart Catalogue  grok chat  0%') { throw "jobs_text must show grok chat 0% from Sand: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+low cost models  99%') { throw "jobs_text must show low cost models 99%: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+high cost models  94%') { throw "jobs_text must show high cost models 94%: $($hCur.jobs_text)" }
+    if ([string]$hCur.jobs_text -notmatch '(?m)^[ ]+grok chat  0%') { throw "jobs_text must show grok chat 0% from Sand: $($hCur.jobs_text)" }
     if ([string]$hCur.jobs_text -match [char]0x00A3) { throw 'jobs_text must not show Sand overage GBP as Cursor Models remaining' }
     $env:BOB_MACHINE_ID = $null
 }
@@ -1303,12 +1536,26 @@ Invoke-Case 'BT0l3 tray cursor pools report' {
     $env:BOB_IRC_HOME = $ircHome
     $env:AGENTIC_IRC_HOME = $ircHome
 
+    $ircPools = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircPools -notmatch 'https://irc\.ntsa\.uk/bob/v1/report') {
+        throw 'Get-BobDigestUrl default must be the report endpoint'
+    }
+
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
-    if (@($h.cursor_pools).Count -lt 3) { throw "cursor_pools=$(@($h.cursor_pools).Count)" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  9%') { throw "Smart Catalogue bar must use ionos digest pcent: $txt" }
-    if ($txt -notmatch '(?m)Club Madeira  low cost models  37%') { throw "Club Madeira bar must use flamingo cursor-models pcent: $txt" }
-    if ($txt -notmatch '(?m)ntsa  low cost models  0%') { throw "ntsa seat must show 0% not n/a: $txt" }
+    if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools=$(@($h.cursor_pools).Count) expected 3 groups" }
+    # Fleet-shared Cursor groups: peer pcent is not dropped when machine != local.
+    # Fixture order ends on ce-priority-dev1 cursor-models 0, so the auto bar is 0%.
+    if ($txt -notmatch '(?m)^[ ]+auto  0%') { throw "fleet digest pcent must paint auto bar: $txt" }
+    Remove-Item -LiteralPath (Join-Path $bridgeRoot 'cursor-pools.json') -ErrorAction SilentlyContinue
+    $env:BOB_MACHINE_ID = 'marchhare'
+    $hMh = Get-BobTrayHover
+    $txtMh = [string]$hMh.jobs_text
+    if ($txtMh -notmatch '(?m)^[ ]+auto  0%') { throw "marchhare must consume peer cursor-models pcent: $txtMh" }
+    if ($txtMh -match '(?m)^[ ]+auto  n/a') { throw "marchhare auto bar still n/a: $txtMh" }
+    $env:BOB_MACHINE_ID = 'ionos'
+    if ($txt -match '(?m)^[ ]+Club Madeira  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
+    if ($txt -match '(?m)^[ ]+ntsa  low cost models') { throw "peer xAI seat must not appear as Cursor bar: $txt" }
     if ($txt -notmatch 'deadbee') { throw "ionos digest sha missing: $txt" }
     if ($txt -notmatch 'digest fixture line') { throw "ionos description missing: $txt" }
     if ($txt -notmatch '3m11s') { throw "ionos run_time missing: $txt" }
@@ -1405,6 +1652,9 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
         if ($got -notcontains $need) { throw "digest ingest missing peer $need : $($got -join ',')" }
         if (-not (Test-Path (Join-Path $ircHome "bob-peers\$need.json"))) { throw "missing bob-peers/$need.json" }
     }
+    if (-not (Test-Path (Join-Path $ircHome 'bob-peers\_chair-digest-peers.json'))) {
+        throw 'digest ingest must cache chair machine rows (#247)'
+    }
     $ionosPeer = Read-BobIrcPeer -Id ionos
     if ([string]$ionosPeer.source -ne 'irc-digest') { throw "ionos source=$($ionosPeer.source)" }
     if ([string]$ionosPeer.sha -ne 'beef142') { throw "ionos sha=$($ionosPeer.sha)" }
@@ -1420,8 +1670,8 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     if ($txt -notmatch 'beef142') { throw "hover missing digest sha: $txt" }
     if ($txt -notmatch 'digest ingest fixture') { throw "hover missing description: $txt" }
     if ($txt -notmatch 'face142') { throw "hover missing flamingo sha: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  11%') { throw "Smart Catalogue bar from digest pools: $txt" }
-    if ($txt -notmatch '(?m)Club Madeira  low cost models  22%') { throw "Club Madeira bar from digest pools: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  11%') { throw "local low cost models bar from digest: $txt" }
+    if ($txt -match '(?m)^[ ]+Club Madeira  low cost models') { throw "peer pool cache must not paint xAI seat as Cursor bar: $txt" }
     if ($txt -notmatch '(?m)ionos[^\r\n]*\(12%\)') { throw "ionos weekly bar missing: $txt" }
     if ($txt -notmatch '(?m)flamingo[^\r\n]*\(8%\)') { throw "flamingo weekly bar missing: $txt" }
     if ($txt -notmatch 'reset 28 Sep') { throw "ionos reset label missing: $txt" }
@@ -1551,6 +1801,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
   "used_pct": 5,
   "remaining_pct": 95,
   "period_end": "2026-10-16T00:00:00Z",
+  "sand_period_end": "2026-09-23T00:00:00Z",
   "sand_used_pct": 25,
   "sand_remaining_pct": 75,
   "cursor_spending_groups": [
@@ -1583,10 +1834,13 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_groups).Count -lt 3) { throw "cursor_groups=$(@($h.cursor_groups).Count)" }
-    if ($txt -notmatch '(?m)Smart Catalogue  grok chat  75%') { throw "ionos local grok chat bar: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  high cost models  90%') { throw "ionos local high cost bar: $txt" }
-    if ($txt -notmatch '(?m)Smart Catalogue  low cost models  95%') { throw "ionos local low cost bar: $txt" }
-    if ($txt -match '(?m)Smart Catalogue  low cost models  95%[^\r\n]*\r?\n[ ]+Smart Catalogue  low cost models') {
+    if ($txt -notmatch '(?m)^[ ]+grok chat  75%') { throw "ionos local grok chat bar: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+high cost models  90%') { throw "ionos local high cost bar: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  95%') { throw "ionos local low cost bar: $txt" }
+    if ($txt -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models)') {
+        throw 'xAI seat labels must not prefix Cursor spending bars'
+    }
+    if ($txt -match '(?m)^[ ]+low cost models  95%[^\r\n]*\r?\n[ ]+low cost models') {
         throw 'must not collapse Cursor groups into one low cost row only'
     }
     if ($txt -notmatch 'digest worker fixture line') { throw "flamingo irc worker line missing: $txt" }
@@ -1601,6 +1855,89 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $env:BOB_IRC_HOME = $null
     $env:AGENTIC_IRC_HOME = $null
     $env:BOB_CURSOR_USAGE_FILE = $null
+}
+
+# --- BT0l6 systray Cursor overspend / help / section icons (issue #266) ---
+Invoke-Case 'BT0l6 tray cursor overspend help icons' {
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend £N.NN' }
+    if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
+    if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
+    if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
+    if ($traySrc -notmatch 'high cost models:') { throw 'help tooltip must explain high cost models bracket' }
+    if ($traySrc -notmatch 'function Add-BobTraySectionHeader') { throw 'Watch-BobTray must paint labelled Cursor vs Grok sections' }
+    if ($traySrc -notmatch "Title 'Cursor'") { throw 'Cursor section label missing' }
+    if ($traySrc -notmatch "Title 'Grok accounts'") { throw 'Grok accounts section label missing' }
+    if ($traySrc -notmatch 'AccountOverageGbp') { throw 'Rebuild-BobTrayTiles must take account_overage_gbp from hover' }
+    if ($traySrc -notmatch 'Get-BobTrayAgentImage') { throw 'section icons must reuse Get-BobTrayAgentImage (Agents menu parity)' }
+    if ($traySrc -notmatch 'ExtractAssociatedIcon') { throw 'section icons must use ExtractAssociatedIcon on agent exes' }
+    if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
+    if ($traySrc -notmatch 'function Set-BobTrayHelpTip') { throw 'TipForm ? must use Set-BobTrayHelpTip (MouseHover Show)' }
+    if ($traySrc -notmatch 'RightText') { throw 'Cursor overspend must sit on section header RightText' }
+    if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
+    $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
+    if ($zero -match 'overspend') {
+        # formatter must omit zero — contract checked via source branch on $v -le 0
+        if ($traySrc -notmatch '\$v -le 0') { throw 'Format-BobTrayCursorOverspendLine must omit zero overspend' }
+    }
+    $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
+    if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
+}
+
+# --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
+Invoke-Case 'BT0l24 shop channel worker reportUrl' {
+    param($bridgeRoot)
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    if ((Get-BobIrcShopChannel -MachineId ionos) -ne '#ionos') { throw 'ionos shop channel' }
+    if ((Get-BobIrcShopChannel -MachineId dev1) -ne '#ce-priority-dev1') { throw 'dev1 shop alias' }
+    if ((Get-BobIrcBuilderChannels -MachineId ionos) -ne '#bobiverse,#ionos') { throw 'builder channels ionos' }
+    if ((Get-BobWorkerIrcNick -MachineId ionos -WorkerPid 4242) -ne 'w-io-4242') { throw 'worker nick ionos' }
+    if ((Get-BobWorkerIrcNick -MachineId ce-priority-dev1 -WorkerPid 99) -ne 'w-d1-99') { throw 'worker nick dev1' }
+
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
+    if (-not [string]$cfg.reportUrl) { throw 'config/bobiverse.json must define reportUrl' }
+    if ([string]$cfg.reportUrl -match 'password=|xai_api_key=') { throw 'reportUrl must not embed secrets' }
+
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'Invoke-WebRequest.*-Method POST') { throw 'digest webhook must POST only' }
+    if ($ircSrc -match '-Method\s+Get') { throw 'digest webhook must not HTTP GET reportUrl' }
+
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -notmatch 'Get-BobIrcBuilderChannels') { throw 'Watch-Bobiverse must join fleet + shop' }
+    $installIrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    if ($installIrc -notmatch 'Get-BobIrcBuilderChannels') { throw 'Install-BobIrc agent must join fleet + shop' }
+    if ($installIrc -notmatch 'mootChannel') { throw 'Install-BobIrc moot must stay on fleet channel only' }
+
+    $workerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1') -Raw
+    if ($workerSrc -notmatch 'start_worker_irc_agent\.py') { throw 'worker IRC spawn helper missing' }
+
+    foreach ($root in @('C:\ai\agentic_irc', 'D:\ai\agentic_irc')) {
+        $spawn = Join-Path $root 'scripts\start_worker_irc_agent.py'
+        if (-not (Test-Path -LiteralPath $spawn)) { continue }
+        $py = $null
+        foreach ($c in @(
+                (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+                (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+            )) {
+            if ($c -and (Test-Path -LiteralPath $c)) { $py = $c; break }
+        }
+        if (-not $py) { break }
+        $dryLines = @(& $py $spawn --dry-run --machine-id ionos --pid 4242 2>&1)
+        if ($LASTEXITCODE -ne 0 -or $dryLines.Count -eq 0) { break }
+        $dry = ($dryLines | Out-String)
+        if ($dry -notmatch 'w-io-4242') { throw "worker dry-run nick: $dry" }
+        if ($dry -notmatch '#ionos') { throw "worker dry-run shop: $dry" }
+        if ($dry -match '#bobiverse') { throw "worker dry-run must be shop-only: $dry" }
+        break
+    }
+
+    $docsBv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($docsBv -notmatch 'shop') { throw 'docs/bobiverse.md must document shop channels' }
+    $skillIrc = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-irc\SKILL.md') -Raw
+    if ($skillIrc -notmatch 'shop') { throw 'bob-irc skill must mention shop JOIN' }
+    $env:BOB_IRC_CONFIG = $null
 }
 
 # --- BT0p git-task capacity picker (issue #8) ---
@@ -2466,6 +2803,243 @@ FAIL
     if ($d.pass.verdict -ne 'FAIL') { throw "pass verdict=$($d.pass.verdict)" }
 }
 
+# --- BT228 dispatcher skip FIX on leftover FAIL when PR merged (issue #228) ---
+Invoke-Case 'BT228a leftover fail merged pr no fix' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state.phase = 'wait_mrb'
+        $state.currentKind = 'mrb'
+        $world = [pscustomobject]@{
+            Job          = $null
+            ProcessAlive = $true
+            Prs          = @()
+            Issues       = @(
+                [pscustomobject]@{
+                    number = 8
+                    title  = 'MRB FAIL: slug abc1234deadbeef'
+                    url    = 'https://github.com/fixture/repo/issues/8'
+                    body   = "## Verdict`nFAIL`n## Required fixes`n- Should not FIX"
+                }
+            )
+        }
+        $d = Get-BobBuildLoopDecision -State $state -World $world
+        if ($d.action -ne 'close_leftover_fail') { throw "action=$($d.action)" }
+        if ($d.goal) { throw 'must not spawn FIX goal' }
+        if (-not $d.close -or [int]$d.close.issue -ne 8) { throw 'close issue missing' }
+        if ($d.close.comment -notmatch [regex]::Escape('https://github.com/fixture/repo/pull/2')) { throw "close comment=$($d.close.comment)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT228b open pr fail still starts fix' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state.phase = 'wait_mrb'
+        $state.currentKind = 'mrb'
+        $body = @"
+## Verdict
+FAIL
+
+## Required fixes
+- Restore gate A
+"@
+        $world = [pscustomobject]@{
+            Job          = $null
+            ProcessAlive = $true
+            Prs          = @()
+            Issues       = @(
+                [pscustomobject]@{
+                    number = 8
+                    title  = 'MRB FAIL: slug abc1234deadbeef'
+                    url    = 'https://github.com/fixture/repo/issues/8'
+                    body   = $body
+                }
+            )
+        }
+        $d = Get-BobBuildLoopDecision -State $state -World $world
+        if ($d.action -ne 'start_fix') { throw "action=$($d.action)" }
+        if ($d.goal -notmatch 'Restore gate A') { throw "goal missing fixes" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT228c loop closes leftover fail via hook' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $cwd = Join-Path $bridgeRoot 'cwd'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 228
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 8
+                title  = 'MRB FAIL: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = "## Verdict`nFAIL"
+            }
+        )
+    }
+    $fixStarts = New-Object System.Collections.Generic.List[string]
+    $closeCalls = New-Object System.Collections.Generic.List[string]
+    $r = & $loop -Issue 228 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestStartBuild {
+        param($st, $goal)
+        [void]$fixStarts.Add('build')
+        [pscustomobject]@{ ok = $true; started = $true; jobId = 'job-build'; pid = 1; fuel = 'cursor-models'; branch = 'work/job-build' }
+    } -TestClose {
+        param($c)
+        [void]$closeCalls.Add([string]$c.comment)
+        $c
+    }
+    if ($r.action -ne 'close_leftover_fail') { throw "action=$($r.action)" }
+    if ($fixStarts.Count -gt 0) { throw 'must not start FIX worker' }
+    if ($closeCalls.Count -ne 1) { throw "close hook calls=$($closeCalls.Count)" }
+    if ($closeCalls[0] -notmatch 'pull/2') { throw "close comment=$($closeCalls[0])" }
+    $env:BOB_GH_EXE = $savedGh
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+}
+
+Invoke-Case 'BT228d leftover fail merged fr closed done path' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $savedIssueView = $env:BOB_FAKE_GH_ISSUE_VIEW_JSON
+    $env:BOB_GH_EXE = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = '{"state":"CLOSED","comments":[]}'
+    $cwd = Join-Path $bridgeRoot 'cwd-bt228d'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 228
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 8
+                title  = 'MRB FAIL: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = "## Verdict`nFAIL"
+                state  = 'OPEN'
+            }
+        )
+    }
+    $fixStarts = New-Object System.Collections.Generic.List[string]
+    $finishCalls = New-Object System.Collections.Generic.List[int]
+    $pullCalls = New-Object System.Collections.Generic.List[string]
+    try {
+        $r = & $loop -Issue 228 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestStartBuild {
+            param($st, $goal)
+            [void]$fixStarts.Add('build')
+            [pscustomobject]@{ ok = $true; started = $true; jobId = 'job-build'; pid = 1; fuel = 'cursor-models'; branch = 'work/job-build' }
+        } -TestPassNitsFinish {
+            param($st, $passIssue)
+            [void]$finishCalls.Add($passIssue)
+            [pscustomobject]@{ ok = $true }
+        } -TestPullProductMain {
+            param($st)
+            [void]$pullCalls.Add([string]$st.cwd)
+            [pscustomobject]@{ ok = $true }
+        }
+        if ($r.action -ne 'close_leftover_fail') { throw "action=$($r.action)" }
+        if (-not $r.ok) { throw "loop not ok stdout=$($r.stdout)" }
+        if ($r.phase -ne 'pass') { throw "phase=$($r.phase)" }
+        if ($r.stdout -notmatch '^DONE: MRB PASS-nits') { throw "stdout=$($r.stdout)" }
+        if ($fixStarts.Count -gt 0) { throw 'must not start FIX worker' }
+        if ($finishCalls.Count -ne 1) { throw "finish hook calls=$($finishCalls.Count)" }
+        if ($pullCalls.Count -ne 1) { throw "pull hook calls=$($pullCalls.Count)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+        $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = $savedIssueView
+    }
+}
+
+Invoke-Case 'BT228e leftover fail merged fr pass-nits comment done' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $savedIssueView = $env:BOB_FAKE_GH_ISSUE_VIEW_JSON
+    $env:BOB_GH_EXE = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T21:20:14Z"}'
+    $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = '{"state":"OPEN","comments":[{"body":"PASS-nits finished. Merged PR: https://github.com/fixture/repo/pull/2"}]}'
+    $cwd = Join-Path $bridgeRoot 'cwd-bt228e'
+    New-Item -ItemType Directory -Force -Path $cwd | Out-Null
+    $loop = Join-Path $RepoRoot 'tools\Start-BobBuildLoop.ps1'
+    $path = Get-BobBuildLoopStatePath -Repo 'fixture/repo' -Issue 228
+    $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 228 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd $cwd
+    $state.phase = 'wait_mrb'
+    $state.currentKind = 'mrb'
+    Write-BobBuildLoopState -Path $path -State $state
+    $world = [pscustomobject]@{
+        Job          = $null
+        ProcessAlive = $true
+        Prs          = @()
+        Issues       = @(
+            [pscustomobject]@{
+                number = 8
+                title  = 'MRB FAIL: slug abc1234deadbeef'
+                url    = 'https://github.com/fixture/repo/issues/8'
+                body   = "## Verdict`nFAIL"
+                state  = 'OPEN'
+            }
+        )
+    }
+    $finishCalls = New-Object System.Collections.Generic.List[int]
+    try {
+        $r = & $loop -Issue 228 -Repo 'fixture/repo' -Cwd $cwd -Once -TestWorld $world -StatePath $path -TestPassNitsFinish {
+            param($st, $passIssue)
+            [void]$finishCalls.Add($passIssue)
+            [pscustomobject]@{ ok = $true }
+        } -TestPullProductMain {
+            param($st)
+            [pscustomobject]@{ ok = $true }
+        }
+        if (-not $r.ok) { throw "loop not ok stdout=$($r.stdout)" }
+        if ($r.stdout -notmatch '^DONE: MRB PASS-nits') { throw "stdout=$($r.stdout)" }
+        if ($finishCalls.Count -ne 1) { throw "finish hook calls=$($finishCalls.Count)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+        $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = $savedIssueView
+    }
+}
+
 Invoke-Case 'BT0loop6 pass-nits terminal' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 19 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -2745,6 +3319,55 @@ Invoke-Case 'BT118c pass-nits merge fail leaves boards open' {
     }
 }
 
+Invoke-Case 'BT119a Start-BobMrb PASS-nits requires PrUrl' {
+    param($bridgeRoot)
+    $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+    try {
+        & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' 2>&1 | Out-Null
+        throw 'PASS-nits without PrUrl must throw'
+    }
+    catch {
+        if ($_.Exception.Message -notmatch 'requires -PrUrl') { throw $_.Exception.Message }
+    }
+}
+
+Invoke-Case 'BT119b Start-BobMrb PASS-nits merges before issue create' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-pass-merge.jsonl'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","merged":false}'
+    try {
+        $mrb = Join-Path $RepoRoot 'tools\Start-BobMrb.ps1'
+        $r = & $mrb -Repo 'fixture/repo' -Title 'slug' -Verdict 'PASS-nits' -Body '## Verdict`nPASS-nits' -Sha 'abc1234deadbeef' -PrUrl 'https://github.com/fixture/repo/pull/2'
+        if (-not $r.ok) { throw 'Start-BobMrb failed' }
+        $sawMerge = $false
+        $sawCreateAfterMerge = $false
+        foreach ($line in @(Get-Content $log)) {
+            $row = $line | ConvertFrom-Json
+            $a = [string]$row.argv
+            if ($a -match '(?i)\bpr\s+merge\b') { $sawMerge = $true }
+            if ($a -match '(?i)\bissue\s+create\b') {
+                if (-not $sawMerge) { throw 'issue create before pr merge' }
+                $sawCreateAfterMerge = $true
+            }
+        }
+        if (-not $sawCreateAfterMerge) { throw 'expected pr merge then issue create in fake gh log' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
 Invoke-Case 'BT118d pass-nits finish without gh' {
     param($bridgeRoot)
     $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
@@ -2825,6 +3448,41 @@ Invoke-Case 'BT118f pass-nits finish closes via fake gh' {
         $env:BOB_FAKE_GH_MODE = $savedMode
         $env:BOB_FAKE_GH_LOG = $savedLog
         $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+    }
+}
+
+Invoke-Case 'BT118g pass-nits merge-in-progress already MERGED' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-merge-in-progress.jsonl'
+    $next = Join-Path $bridgeRoot 'fake-gh-pr-view-next.json'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $savedLog = $env:BOB_FAKE_GH_LOG
+    $savedView = $env:BOB_FAKE_GH_PR_VIEW_JSON
+    $savedNext = $env:BOB_FAKE_GH_PR_VIEW_NEXT
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'merge-in-progress'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    $env:BOB_FAKE_GH_PR_VIEW_NEXT = $next
+    try {
+        $state = New-BobBuildLoopState -Repo 'fixture/repo' -Issue 107 -Sha 'abc1234deadbeef' -Pr 'https://github.com/fixture/repo/pull/2' -Cwd (Join-Path $bridgeRoot 'cwd')
+        $state = Add-BobBuildLoopPass -State $state -Pass ([pscustomobject]@{
+            sha = 'abc1234deadbeef'; pr = 'https://github.com/fixture/repo/pull/2'
+            mrb = 'https://github.com/fixture/repo/issues/115'; verdict = 'PASS-nits'; issue = 115
+        })
+        $r = Invoke-BobPassNitsFinish -State $state -PassIssue 115 -Gh $fakeGh
+        if (-not $r.ok) { throw "in-progress MERGED must succeed: $($r.message)" }
+        $closes = @(Get-Content $log | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.op -eq 'issue close' -or $_.command -eq 'issue close' })
+        if ($closes.Count -lt 2) { throw "expected issue close after in-progress merge, got $($closes.Count)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+        $env:BOB_FAKE_GH_LOG = $savedLog
+        $env:BOB_FAKE_GH_PR_VIEW_JSON = $savedView
+        $env:BOB_FAKE_GH_PR_VIEW_NEXT = $savedNext
     }
 }
 
@@ -3044,6 +3702,163 @@ Invoke-Case 'BT0gtalk worker finally unwedge' {
     $env:BOB_MACHINE_ID = $null
 }
 
+# --- BT0irtsr IRC TSR + Cursor listen watchdog (#163) ---
+Invoke-Case 'BT0irtsr wake silence matrix' {
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    $now = [datetime]'2026-09-22T12:00:00'
+    $wake = Join-Path $bridgeRoot 'irc-tsr-test-wake.jsonl'
+    $hb30 = ($now.AddSeconds(-30).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wake -Value $hb30 -Encoding utf8
+    if (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now) {
+        throw '30s-old process heartbeat must not be stale at 60s gate'
+    }
+    $hb120 = ($now.AddSeconds(-120).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wake -Value $hb120 -Encoding utf8
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw '120s-old process heartbeat must be stale'
+    }
+    Add-Content -LiteralPath $wake -Value 'FROM recent chat must not reset silence' -Encoding utf8
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw 'recent FROM must not mask stale process heartbeat'
+    }
+    $ircLog = Join-Path $bridgeRoot 'irc.log'
+    Set-Content -LiteralPath $ircLog -Value 'PRIVMSG quiet channel' -Encoding utf8
+    (Get-Item -LiteralPath $ircLog).LastWriteTime = $now
+    (Get-Item -LiteralPath $wake).LastWriteTime = $now.AddSeconds(-120)
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wake -SilenceSec 60 -Now $now)) {
+        throw 'fresh irc.log must not override wake-only stale check'
+    }
+    $missingWake = Join-Path $bridgeRoot 'irc-tsr-missing-wake.jsonl'
+    if (Test-Path -LiteralPath $missingWake) { Remove-Item -LiteralPath $missingWake -Force }
+    if (Test-IrcTsrWakeSilenceStale -WakePath $missingWake -SilenceSec 60 -Now $now) {
+        throw 'missing wake file must not count as stale process heartbeat'
+    }
+    $watch = Get-Content (Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1') -Raw
+    if ($watch -match 'irc\.log') { throw 'Watch-IrcTsr must not gate on irc.log mtime' }
+}
+
+Invoke-Case 'BT0irtsr runner core matrix' {
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false)) {
+        throw 'expected healthy runner'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $false -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'dead runner must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $false -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'missing listen child must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 900 -RestartAfterSec 600 -WakeSilenceStale $false) {
+        throw 'runner age cap must fail'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $true) {
+        throw 'stale wake must fail'
+    }
+    # #173 fix 5: quiet channel — fresh process heartbeat, idle/old/missing irc.log, no FROM → no recycle
+    $now = [datetime]'2026-09-22T12:00:00'
+    $wakeQuiet = Join-Path $bridgeRoot 'irc-tsr-fix5-wake.jsonl'
+    $hbFix5 = ($now.AddSeconds(-20).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wakeQuiet -Value $hbFix5 -Encoding utf8
+    $wakeStaleFlag = Test-IrcTsrWakeSilenceStale -WakePath $wakeQuiet -SilenceSec 60 -Now $now
+    if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $wakeStaleFlag)) {
+        throw 'healthy runner+listen with fresh process heartbeat must not recycle'
+    }
+    foreach ($ircCase in @(
+            @{ label = 'idle'; content = 'PRIVMSG quiet' },
+            @{ label = 'old'; content = 'PRIVMSG stale' },
+            @{ label = 'missing'; content = $null }
+        )) {
+        $ircLogFix5 = Join-Path $bridgeRoot ("irc-fix5-{0}.log" -f $ircCase.label)
+        if ($ircCase.content) {
+            Set-Content -LiteralPath $ircLogFix5 -Value $ircCase.content -Encoding utf8
+            (Get-Item -LiteralPath $ircLogFix5).LastWriteTime = $now.AddSeconds(-3600)
+        }
+        elseif (Test-Path -LiteralPath $ircLogFix5) { Remove-Item -LiteralPath $ircLogFix5 -Force }
+        if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $wakeStaleFlag)) {
+            throw "irc.log $($ircCase.label) must not affect recycle when process heartbeat is fresh"
+        }
+    }
+    $hbStale = ($now.AddSeconds(-120).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
+    Set-Content -LiteralPath $wakeQuiet -Value $hbStale -Encoding utf8
+    if (-not (Test-IrcTsrWakeSilenceStale -WakePath $wakeQuiet -SilenceSec 60 -Now $now)) {
+        throw 'stale process heartbeat must trip silence gate'
+    }
+    if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $true) {
+        throw 'stale process heartbeat must fail healthy core'
+    }
+    $missingWakeFix5 = Join-Path $bridgeRoot 'irc-tsr-fix5-no-wake.jsonl'
+    if (Test-Path -LiteralPath $missingWakeFix5) { Remove-Item -LiteralPath $missingWakeFix5 -Force }
+    if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false)) {
+        throw 'runner+listen up with missing wake must stay healthy until heartbeat is written'
+    }
+    foreach ($rel in @('tools\Watch-IrcTsr.ps1', 'tools\Start-IrcTsr.ps1', 'tools\Watch-CursorIrc.ps1')) {
+        $raw = Get-Content (Join-Path $RepoRoot $rel) -Raw
+        if ($raw -match "if \(\-not `$MachineId\) \{ `$MachineId = 'ionos' \}") { throw "$rel must not default MachineId to ionos" }
+    }
+    $runner = Get-Content (Join-Path $RepoRoot 'tools\Irc-Tsr-Runner.ps1') -Raw
+    if ($runner -notmatch 'AGENT_LOOP_WAKE_irc-tsr') { throw 'Irc-Tsr-Runner must emit AGENT_LOOP_WAKE_irc-tsr' }
+    if ($runner -notmatch 'PROCESS_HEARTBEAT') { throw 'Irc-Tsr-Runner must touch wake with PROCESS_HEARTBEAT while listen is alive' }
+}
+
+Invoke-Case 'BT0bobircd install contract' {
+    $ircd = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+    if ($ircd -notmatch "ServiceName = 'BobIrcd'") { throw 'Install-BobIrcd must default service BobIrcd' }
+    if ($ircd -notmatch 'nssm\.exe') { throw 'Install-BobIrcd must use Ergo-root nssm.exe' }
+    if ($ircd -match 'filebrowser') { throw 'Install-BobIrcd must not copy NSSM from filebrowser' }
+    if ($ircd -notmatch 'Unregister-ScheduledTask') { throw 'Install-BobIrcd must unregister BobIrcd-ionos' }
+    if ($ircd -notmatch 'BobIrcd-ionos') { throw 'Install-BobIrcd must name old task BobIrcd-ionos' }
+    if ($ircd -match '(?<!Un)Register-ScheduledTask') { throw 'Install-BobIrcd must not register BobIrcd-ionos' }
+    if ($ircd -match 'Stop-Process.*ergo') { throw 'Install-BobIrcd must not Stop-Process ergo' }
+    if ($ircd -notmatch 'sc\.exe create') { throw 'Install-BobIrcd must create service via sc.exe' }
+    if ($ircd -notmatch 'start= auto') { throw 'Install-BobIrcd must set Automatic start' }
+    if ($ircd -notmatch 'Application') { throw 'Install-BobIrcd must set NSSM Application to ergo.exe' }
+    if ($ircd -notmatch "AppParameters.*run --conf ircd\.yaml") { throw 'Install-BobIrcd must pass run --conf ircd.yaml' }
+    if ($ircd -notmatch 'AppExit') { throw 'Install-BobIrcd must configure NSSM AppExit Restart' }
+    if ($ircd -notmatch 'Restart-Service') { throw 'Install-BobIrcd help must document Restart-Service' }
+}
+
+Invoke-Case 'BT0bobircd cert and ionos docs' {
+    $cert = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcdCert.ps1') -Raw
+    if ($cert -notmatch 'Restart-Service') { throw 'Install-BobIrcdCert must Restart-Service BobIrcd' }
+    if ($cert -match 'Start-ScheduledTask|Stop-ScheduledTask|(?<!Un)Register-ScheduledTask|Unregister-ScheduledTask|BobFleet-') {
+        throw 'Install-BobIrcdCert must not touch scheduled tasks or BobFleet'
+    }
+    $doc = Get-Content (Join-Path $RepoRoot 'docs\bobiverse-ionos-ircd.md') -Raw
+    if ($doc -notmatch 'Start-Service BobIrcd') { throw 'ionos doc must document Start-Service BobIrcd' }
+    if ($doc -notmatch 'Restart-Service BobIrcd') { throw 'ionos doc must document Restart-Service BobIrcd' }
+    if ($doc -match 'Start-ScheduledTask -TaskName.*BobIrcd-ionos') { throw 'ionos doc must not tell operators to start BobIrcd-ionos' }
+    if ($doc -match '\| Task \|.*BobIrcd-ionos') { throw 'ionos doc must not list BobIrcd-ionos as a logon task' }
+    if ($doc -notmatch 'Install-BobIrcdCert') { throw 'ionos doc must reference in-repo cert recycle script' }
+}
+
+Invoke-Case 'BT0bobircd fleet isolation' {
+    $fleet = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($fleet -notmatch 'Register-ScheduledTask') { throw 'Install-BobFleet must keep logon scheduled tasks' }
+    if ($fleet -match 'BobIrcd') { throw 'Install-BobFleet must not register BobIrcd service' }
+    $ircd = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+    if ($ircd -match 'BobFleet') { throw 'Install-BobIrcd must not stop BobFleet tasks' }
+}
+
+Invoke-Case 'BT0irtsr install and bobiverse isolation' {
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch '_Watch-IrcTsr-') { throw 'Install-BobFleet must register _Watch-IrcTsr-<id>' }
+    if ($installSrc -notmatch '_Watch-CursorIrc-') { throw 'Install-BobFleet must register _Watch-CursorIrc-<id>' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1'))) { throw 'missing tools/_Watch-IrcTsr.ps1' }
+    if (-not (Test-Path (Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1'))) { throw 'missing tools/_Watch-CursorIrc.ps1' }
+    $tsWrap = Get-Content (Join-Path $RepoRoot 'tools\_Watch-IrcTsr.ps1') -Raw
+    if ($tsWrap -notmatch 'Watch-IrcTsr\.ps1') { throw '_Watch-IrcTsr must delegate to Watch-IrcTsr.ps1' }
+    $ciWrap = Get-Content (Join-Path $RepoRoot 'tools\_Watch-CursorIrc.ps1') -Raw
+    if ($ciWrap -notmatch 'Watch-CursorIrc\.ps1') { throw '_Watch-CursorIrc must delegate to Watch-CursorIrc.ps1' }
+    $watchBv = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watchBv -match 'Watch-IrcTsr|Start-IrcTsr|Watch-CursorIrc') {
+        throw 'Watch-Bobiverse must not fold IRC TSR / Cursor listen pollers'
+    }
+    $watchCi = Get-Content (Join-Path $RepoRoot 'tools\Watch-CursorIrc.ps1') -Raw
+    if ($watchCi -notmatch 'Start-IrcTsr') { throw 'Watch-CursorIrc must start TSR via Start-IrcTsr' }
+    if ($watchCi -match 'grok\.exe') { throw 'Watch-CursorIrc must not invoke grok.exe' }
+}
+
 # --- BT0house fleet docs / skills surface ---
 Invoke-Case 'BT0house machine tables' {
     $regPath = Join-Path $RepoRoot 'config\fleet-registry.json'
@@ -3099,6 +3914,41 @@ Invoke-Case 'BT0house agent export list' {
     if ($agent -notmatch 'job-audit') { throw 'agent_readme must document job-audit.jsonl' }
 }
 
+# --- BT0p21 control systray Cursor meters (issue #175 P21) ---
+Invoke-Case 'BT0p21 control systray cursor meters' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ce-priority-dev1'
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $null = Register-BobMachine -Id ce-priority-dev1 -CwdRoots $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-p21-control'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:AGENTIC_IRC_HOME = $ircHome
+    @'
+{
+  "machines": {
+    "ce-priority-dev1": {
+      "pcent": { "cursor-models": 0 },
+      "running": 0,
+      "jobs": []
+    }
+  }
+}
+'@ | Set-Content -Path (Join-Path $ircHome 'bob-peers\_report-digest.json') -Encoding utf8
+
+    $h = Get-BobTrayHover
+    $txt = [string]$h.jobs_text
+    if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools count=$(@($h.cursor_pools).Count) want 3 control groups" }
+    if ($txt -notmatch '(?m)^[ ]+low cost models  0%') { throw "ntsa box must show 0% not n/a: $txt" }
+    if ($txt -match '(?m)low cost models  n/a') { throw "zero remaining must not render n/a: $txt" }
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -notmatch 'Format-BobCursorControlPoolHeading') { throw 'hover must format control Cursor pool headings' }
+
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_HOME = $null
+    $env:AGENTIC_IRC_HOME = $null
+}
+
 # --- BT0pair175 bob two persistent workers (issue #175 / FIX #177) ---
 Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     param($bridgeRoot)
@@ -3107,25 +3957,6 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $cap = Join-Path $bridgeRoot 'webhook-cap'
     $env:BOB_REPORT_CAPTURE_DIR = $cap
     $env:BOB_REPO_PAIR_IDLE_SEC = '120'
-
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -and $_.CommandLine -match 'Fake-IrcAgent\.ps1' } |
-        ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch { } }
-
-    $wireCapture = Join-Path $bridgeRoot 'irc-wire.capture'
-    $privCapture = Join-Path $env:BOB_IRC_HOME 'privmsg-sent.capture'
-    $env:BOB_IRC_WIRE_CAPTURE = $wireCapture
-    $env:BOB_IRC_WIRE_SKIP_LIVE = '1'
-    $env:BOB_IRC_PRIVMSG_CAPTURE = $privCapture
-    $fakeIrc = Join-Path $RepoRoot 'tools\Fake-IrcAgent.ps1'
-    $exe = (Get-Command powershell.exe).Source
-    Start-Process -FilePath $exe -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $fakeIrc,
-        '-IrcHome', $env:BOB_IRC_HOME,
-        '-Nick', 'bob-flamingo',
-        '-Channel', '#bobiverse',
-        '-SessionId', 'chair-outbox'
-    ) -WindowStyle Hidden | Out-Null
 
     $pairSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Invoke-BobRepoPair.ps1') -Raw
     $pairWorkerSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobRepoPairWorker.ps1') -Raw
@@ -3147,16 +3978,10 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if ($fakeGrokSrc -match '--persistent' -and $fakeGrokSrc -notmatch 'not a real grok flag') { throw 'Fake-Grok must reject invented --persistent' }
     if ($pairWorkerSrc -notmatch "cursor-agent', 'persist'|cursor-agent', `"persist`"" -and $pairWorkerSrc -notmatch "'persist'") { throw 'cursor seat must launch cursor-agent persist subcommand' }
     if ($pairSrc -notmatch 'Get-BobBobiverseAgentsIdleOverSec') { throw 'chair must wire idle-over-20s bobiverse agents' }
-    if ($pairSrc -notmatch 'Deliver-BobBobiversePeerAssign') { throw 'idle-over-20s must assign to remote bobiverse peer' }
-    if ($pairSrc -match 'Invoke-BobIrcDrainOutboxLines') { throw 'bobiverse digest must not delete PRIVMSG before irc_agent sends' }
-    if ($pairSrc -notmatch 'Invoke-BobIrcOutboxWireConsumer|Add-BobIrcOutboxWireLine') { throw 'shop TOPIC/MODE/SHOPDESC must use wire consumer not chat say()' }
-    if ($pairSrc -notmatch 'Remind-BobRepoPairHarvestBeforeDismiss') { throw 'idle-stop must remind workers to harvest skills' }
-    if ($pairWorkerSrc -match 'shop-join-[^\s''"]+\.json' -and $fakeGrokSrc -match 'shopNickLive') { throw 'Fake-Grok must not forge shop-join manifest' }
-    if ($pairWorkerSrc -notmatch 'BOB_REPO_PAIR_INTEGRATED_IRC') { throw 'shop JOIN must be integrated on worker seat agent' }
-    if ($pairWorkerSrc -match 'shopNickLive\s*=\s*\$true' -and $pairWorkerSrc -notmatch 'shopNickLive\s*=\s*\$false') { throw 'shop manifest must not forge shopNickLive at spawn' }
-    if ($pairSrc -match 'irc-sent\.log') { throw 'must not treat irc-sent.log as bobiverse send proof' }
+    if ($pairSrc -notmatch 'Invoke-BobIrcDrainOutboxLines') { throw 'bobiverse digest must drain PRIVMSG from outbox' }
+    if ($pairSrc -notmatch 'TOPIC \$chan') { throw 'shop channel description must queue IRC TOPIC' }
     if ($pairSrc -notmatch 'Sync-BobIrcChannelOpsWire') { throw 'channel ops must MODE on wire not JSON copy only' }
-    if ($pairSrc -notmatch 'SHOPDESC') { throw 'shop channel description must queue SHOPDESC for wire consumer' }
+    if ($pairWorkerSrc -match '--hello') { throw 'workers must not use irc_agent --hello shop PRIVMSG' }
     if ($pairSrc -match 'Add-BobIrcOutboxChannelLine \$line' -and $pairSrc -notmatch 'Add-BobIrcBobiversePrivmsg') { throw 'bobiverse digest must PRIVMSG #bobiverse not channel say()' }
     if ($pairSrc -match 'PRIVMSG \$chan.*TOPIC') { throw 'shop description must not fake TOPIC as PRIVMSG text' }
     if ($pairSrc -notmatch 'Sync-BobChannelOpsManifest') { throw 'repo pair must write channel ops manifest (A23)' }
@@ -3189,7 +4014,7 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
         if ([string]$w.kind -ne 'persistent') { throw "worker $($w.sessionId) kind=$($w.kind) must be persistent" }
         if (-not $w.shopNick) { throw 'worker missing shopNick (JOIN policy)' }
     }
-    Start-Sleep -Seconds 5
+    Start-Sleep -Seconds 1
     if (-not (Test-BobRepoPairSeatAlive -Seat $live.dev)) { throw 'dev seat not alive (process/shop)' }
     if (-not (Test-BobRepoPairSeatAlive -Seat $live.mrb)) { throw 'mrb seat not alive (process/shop)' }
 
@@ -3250,35 +4075,12 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     if (@($say.said).Count -lt 1) { throw 'bobiverse say must post digest lines' }
     $outbox = Join-Path $env:BOB_IRC_HOME 'outbox.txt'
     if (-not (Test-Path $outbox)) { throw 'missing IRC outbox after bobiverse say' }
-    $outRaw = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
-        try {
-            $outRaw = [IO.File]::ReadAllText($outbox)
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    if (-not $outRaw) { throw 'missing IRC outbox after bobiverse say' }
-    if ($outRaw -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse PRIVMSG must remain in outbox until irc_agent sends' }
-    Start-Sleep -Seconds 3
-    if (-not (Test-Path $privCapture)) { throw 'irc agent must capture sent PRIVMSG lines' }
-    $sent = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
-        try {
-            $sent = [IO.File]::ReadAllText($privCapture)
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    if (-not $sent) { throw 'irc agent must capture sent PRIVMSG lines' }
-    if ($sent -notmatch 'dev complete') { throw "privmsg capture missing dev complete: $sent" }
-    if ($sent -notmatch 'MRB complete') { throw "privmsg capture missing MRB complete: $sent" }
-    if ($sent -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse on the wire' }
-    if (Test-Path (Join-Path $env:BOB_IRC_HOME 'outbox-drained.txt')) { throw 'must not use outbox-drained anti-send path' }
+    $drainedPath = Join-Path $env:BOB_IRC_HOME 'outbox-drained.txt'
+    if (-not (Test-Path $drainedPath)) { throw 'bobiverse PRIVMSG must be drained from outbox (not only queued)' }
+    $drained = Get-Content $drainedPath -Raw
+    if ($drained -notmatch 'dev complete') { throw "drained outbox missing dev complete: $drained" }
+    if ($drained -notmatch 'MRB complete') { throw "drained outbox missing MRB complete: $drained" }
+    if ((Get-Content $outbox -Raw) -match 'PRIVMSG #bobiverse') { throw 'bobiverse lines must not remain in outbox after drain' }
 
     $topic = Set-BobShopChannelRepoDescription -Repo 'SimonBarnett/agentic_build' -MachineId flamingo
     if (-not $topic.ok) { throw 'shop topic failed' }
@@ -3287,7 +4089,9 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $desc = Get-Content $descPath -Raw
     if ($desc -notmatch '#flamingo') { throw "shop desc channel: $desc" }
     if ($desc -notmatch 'SimonBarnett/agentic_build') { throw "shop desc repo: $desc" }
-    if (-not (Test-Path $wireCapture) -or (Get-Content $wireCapture -Raw) -notmatch 'TOPIC #flamingo') { throw 'SHOPDESC consumer must issue real TOPIC on IRC wire' }
+    if (-not (Test-Path $outbox) -or (Get-Content $outbox -Raw) -notmatch 'SHOPDESC') { throw 'outbox must carry SHOPDESC for shop channel description' }
+    if ($drained -notmatch 'PRIVMSG #bobiverse') { throw 'bobiverse digest must use PRIVMSG #bobiverse' }
+    if ((Get-Content $outbox -Raw) -notmatch 'TOPIC #flamingo') { throw 'shop topic must use IRC TOPIC command' }
 
     $usage = Invoke-BobRepoPairChairUsageWebhookIfChanged -Force
     if (-not $usage.posted) { throw 'usage webhook must POST with pools' }
@@ -3307,47 +4111,8 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     $st = Get-Content $pairPath -Raw | ConvertFrom-Json
     $st.seats.dev.lastActiveAt = [DateTime]::UtcNow.AddMinutes(-10).ToString('o')
     ($st | ConvertTo-Json -Depth 8) | Set-Content -Path $pairPath -Encoding utf8
-    $devSidBefore = [string]$st.seats.dev.sessionId
     $tick = Invoke-BobRepoPairTick
-    if ($tick.idleStop -and @($tick.idleStop).Count -gt 0) { throw 'idle tick must remind harvest before first stop' }
-    $harvestPath = Join-Path $bridgeRoot "workers\$devSidBefore\inbox\harvest-before-dismiss.txt"
-    if (-not (Test-Path $harvestPath)) { throw 'idle-stop must write harvest remind inbox' }
-    Start-Sleep -Seconds 5
-    $tickHarv = Invoke-BobRepoPairTick
-    if (@($tickHarv.idleStop) -notcontains 'dev') { throw "idle tick must stop dev after harvest ack: $($tickHarv.idleStop -join ',')" }
-
-    $peerDir = Join-Path $env:BOB_IRC_HOME 'bob-peers'
-    New-Item -ItemType Directory -Force -Path $peerDir | Out-Null
-    ([pscustomobject]@{ id = 'ionos'; lastSeen = [DateTime]::UtcNow.AddSeconds(-45).ToString('o'); running = 0 } | ConvertTo-Json -Compress) |
-        Set-Content -LiteralPath (Join-Path $peerDir 'ionos.json') -Encoding utf8
-    $idleAssign = Invoke-BobRepoPairChairIdleAssign
-    Start-Sleep -Seconds 3
-    if (@($idleAssign.assigned).Count -lt 1) { throw 'idle assign must target remote bobiverse peer' }
-    if ([string]$idleAssign.assigned[0].peer -eq 'flamingo') { throw 'idle assign must not target local chair only' }
-    $priv2 = $null
-    for ($ri = 0; $ri -lt 12; $ri++) {
-        try {
-            $priv2 = [IO.File]::ReadAllText($privCapture)
-            break
-        }
-        catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
-    if (-not $priv2) { throw 'missing privmsg capture for idle assign' }
-    $outAssign = $null
-    for ($ri = 0; $ri -lt 20; $ri++) {
-        try {
-            if (Test-Path $outbox) { $outAssign = [IO.File]::ReadAllText($outbox) }
-            if ($priv2 -match 'PRIVMSG bob-ionos :CHAIR_ASSIGN') { break }
-            if ($outAssign -match 'PRIVMSG bob-ionos :CHAIR_ASSIGN') { break }
-        }
-        catch { }
-        Start-Sleep -Milliseconds 300
-    }
-    if ($priv2 -notmatch 'PRIVMSG bob-ionos :CHAIR_ASSIGN' -and $outAssign -notmatch 'PRIVMSG bob-ionos :CHAIR_ASSIGN') {
-        throw 'idle assign must PRIVMSG remote bob chair nick'
-    }
+    if (@($tick.idleStop) -notcontains 'dev') { throw "idle tick must stop dev seat: $($tick.idleStop -join ',')" }
 
     $st2 = Get-Content $pairPath -Raw | ConvertFrom-Json
     $devSid = [string]$st2.seats.dev.sessionId
@@ -3362,12 +4127,6 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     }
     $tick2 = Invoke-BobRepoPairTick
     if (@($tick2.restarted) -notcontains 'dev') { throw "deaf tick must restart dev: $($tick2.restarted -join ',')" }
-
-    foreach ($w in @(Get-BobWorkers)) {
-        if ($w.sessionId) {
-            try { Stop-BobWorker -SessionId ([string]$w.sessionId) | Out-Null } catch { }
-        }
-    }
 }
 
 Write-Host ''

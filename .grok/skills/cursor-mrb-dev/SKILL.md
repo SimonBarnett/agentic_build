@@ -2,8 +2,9 @@
 name: cursor-mrb-dev
 description: >
   Hand off hostile MRB then FIX until PASS-nits: Cursor Models while remaining
-  > 0, else grok.exe. Workers open PRs. PASS-nits merges. Every FAIL spawns a
-  FIX worker. Use when the user says cursor mrb, mrb until pass, cursor
+  > 0, else grok.exe. Workers open PRs. PASS-nits merges. FAIL spawns a FIX
+  worker unless the loop PR is already merged (leftover FAIL; dispatcher
+  closes the board, no FIX). Use when the user says cursor mrb, mrb until pass, cursor
   builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev. Launch: start-bob-cursor.
   Verdicts: bob-hostile-mrb. Table: bob-build-loop. Bob stamps UAT.
 ---
@@ -60,9 +61,10 @@ Driver: `tools/Start-BobBuildLoop.ps1` / `tools/run-bob-build-loop.ps1`
 (skill `bob-job-loop`). Launch it and wait for `DONE`. It starts the PR
 worker if needed, hands off MRB to a **new** `-Kind mrb` agent, retries
 failed cursor/grok jobs, reads Required fixes on FAIL, back-links boards,
-and exits on PASS-nits. On FAIL, or when open `feature-request` issues
-remain after DONE / Missing features, pass each to a **new** worker. Do
-not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix` by hand unless
+and exits on PASS-nits. On FAIL, FIX stays on this FR. After DONE, start
+**one** `bob-job-loop` for the **next** queued FR (receive order;
+`bob-job-loop`). Do not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix`
+by hand unless
 the driver cannot start. Do not resume the implementer to review their
 own PR.
 Board state: `Get-BobMrbBoard` in `tools/Bob-BuildLoop.ps1`.

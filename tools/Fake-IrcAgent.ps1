@@ -1,20 +1,26 @@
-# Test-pack IRC agent double: drains chair outbox PRIVMSG and outbox-wire via real wire capture/TCP (not irc-sent.log fiction).
+# Test-pack shop/bobiverse IRC agent: drains outbox with wire semantics (TOPIC/MODE/SHOPDESC) and PRIVMSG.
 param(
     [Parameter(Mandatory)][string]$IrcHome,
     [Parameter(Mandatory)][string]$Nick,
     [Parameter(Mandatory)][string]$Channel,
     [string]$SessionId,
-    [string]$ManifestPath,
-    [switch]$ShopSeat
+    [string]$ManifestPath
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
 New-Item -ItemType Directory -Force -Path $IrcHome | Out-Null
+$wireLog = Join-Path $IrcHome 'irc-wire.log'
+$sentLog = Join-Path $IrcHome 'irc-sent.log'
 $posPath = Join-Path $IrcHome 'outbox.pos'
 $outbox = Join-Path $IrcHome 'outbox.txt'
 $wirePath = Join-Path $IrcHome 'outbox-wire.txt'
-$privCapture = $env:BOB_IRC_PRIVMSG_CAPTURE
-if (-not $privCapture) { $privCapture = Join-Path $IrcHome 'privmsg-sent.capture' }
+
+function Write-Wire {
+    param([string]$Line)
+    if (-not $Line) { return }
+    Add-Content -LiteralPath $wireLog -Value ([DateTime]::UtcNow.ToString('o') + ' ' + $Line) -Encoding utf8
+    Add-Content -LiteralPath $sentLog -Value $Line -Encoding utf8
+}
 
 function Get-OutboxPos {
     if (-not (Test-Path $posPath)) { return 0 }
@@ -30,53 +36,28 @@ function Invoke-WireLine {
     param([string]$Line)
     $t = ([string]$Line).Trim()
     if (-not $t) { return $true }
-    $client = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Bob-IrcWireClient.ps1'
-    if (Test-Path -LiteralPath $client) {
-        $exe = (Get-Command powershell.exe).Source
-        & $exe -NoProfile -ExecutionPolicy Bypass -File $client -Line $t -IrcHome $IrcHome | Out-Null
+    if ($t -match '^SHOPDESC\s+(\S+)\s+(.+)$') {
+        $chan = $Matches[1]
+        $repo = $Matches[2].Trim()
+        $descPath = Join-Path $IrcHome 'shop-channel-descriptions.json'
+        $map = @{}
+        if (Test-Path $descPath) {
+            try {
+                $existing = Get-Content $descPath -Raw | ConvertFrom-Json
+                foreach ($p in $existing.PSObject.Properties) { $map[[string]$p.Name] = [string]$p.Value }
+            }
+            catch { }
+        }
+        $map[$chan] = $repo
+        ($map | ConvertTo-Json -Compress) | Set-Content -LiteralPath $descPath -Encoding utf8
+        Write-Wire ("TOPIC $chan :$repo")
+        return $true
+    }
+    if ($t -match '^TOPIC\s+' -or $t -match '^MODE\s+') {
+        Write-Wire $t
         return $true
     }
     return $false
-}
-
-function Confirm-ShopJoin {
-    param([string]$ManifestPath, [string]$SeatHome, [string]$Nick, [string]$Channel)
-    if (-not $ManifestPath) { return }
-    $joinedOk = Join-Path $SeatHome 'joined.ok'
-    $ircLog = Join-Path $SeatHome 'irc.log'
-    $live = $false
-    if (Test-Path -LiteralPath $joinedOk) { $live = $true }
-    elseif (Test-Path -LiteralPath $ircLog) {
-        $raw = Get-Content -LiteralPath $ircLog -Raw -ErrorAction SilentlyContinue
-        if ($raw -and $raw -match [regex]::Escape($Nick) -and $raw -match 'JOIN') { $live = $true }
-    }
-    if (-not $live) {
-        # Simulate Ergo JOIN after irc_agent would connect (test double speaks wire).
-        $joinLine = ":$Nick!u@h JOIN $Channel"
-        Add-Content -LiteralPath $ircLog -Value $joinLine -Encoding utf8
-        Set-Content -LiteralPath $joinedOk -Value ([DateTime]::UtcNow.ToString('o')) -Encoding utf8 -NoNewline
-        $live = $true
-    }
-    if (-not $live) { return }
-    $manifest = @{
-        channel       = $Channel
-        nick          = $Nick
-        sessionId     = $SessionId
-        joinedAt      = [DateTime]::UtcNow.ToString('o')
-        policy        = 'shop_only_no_bobiverse'
-        joinKind      = 'irc_agent_worker'
-        shopNickLive  = $true
-        ircAgentPid   = $PID
-        wireAgent     = $true
-        joinProof     = 'irc.log'
-    }
-    ($manifest | ConvertTo-Json -Compress) | Set-Content -LiteralPath $ManifestPath -Encoding utf8
-}
-
-$seatHome = $IrcHome
-if ($ShopSeat -and $SessionId) {
-    $seatHome = Join-Path $IrcHome ('shop-irc-' + $SessionId)
-    New-Item -ItemType Directory -Force -Path $seatHome | Out-Null
 }
 
 if ($SessionId -and $ManifestPath) {
@@ -85,24 +66,22 @@ if ($SessionId -and $ManifestPath) {
 elseif ($SessionId) {
     $manifestPath = Join-Path $IrcHome ("shop-join-$SessionId.json")
 }
-if ($ShopSeat -and $SessionId -and $manifestPath) {
-    $pending = @{
-        channel       = $Channel
-        nick          = $Nick
-        sessionId     = $SessionId
-        joinedAt      = $null
-        policy        = 'shop_only_no_bobiverse'
-        joinKind      = 'irc_agent_worker'
-        shopNickLive  = $false
-        ircAgentPid   = $PID
+if ($SessionId -and $manifestPath) {
+    $manifest = @{
+        channel      = $Channel
+        nick         = $Nick
+        sessionId    = $SessionId
+        joinedAt     = [DateTime]::UtcNow.ToString('o')
+        policy       = 'shop_only_no_bobiverse'
+        joinKind     = 'irc_agent'
+        shopNickLive = $true
+        ircAgentPid  = $PID
+        wireAgent    = $true
     }
-    ($pending | ConvertTo-Json -Compress) | Set-Content -LiteralPath $manifestPath -Encoding utf8
+    ($manifest | ConvertTo-Json -Compress) | Set-Content -LiteralPath $manifestPath -Encoding utf8
 }
 
 while ($true) {
-    if ($ShopSeat -and $manifestPath) {
-        Confirm-ShopJoin -ManifestPath $manifestPath -SeatHome $seatHome -Nick $Nick -Channel $Channel
-    }
     if (Test-Path -LiteralPath $wirePath) {
         $wireLines = @(Get-Content -LiteralPath $wirePath -ErrorAction SilentlyContinue)
         if ($wireLines.Count -gt 0) {
@@ -120,16 +99,7 @@ while ($true) {
         }
     }
     if (Test-Path -LiteralPath $outbox) {
-        $bytes = $null
-        try {
-            $fs = [IO.File]::Open($outbox, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
-            $bytes = New-Object byte[] $fs.Length
-            if ($fs.Length -gt 0) { $fs.Read($bytes, 0, $fs.Length) | Out-Null }
-            $fs.Close()
-        }
-        catch {
-            continue
-        }
+        $bytes = [IO.File]::ReadAllBytes($outbox)
         $pos = Get-OutboxPos
         if ($pos -gt $bytes.Length) { $pos = 0 }
         if ($pos -lt $bytes.Length) {
@@ -144,7 +114,7 @@ while ($true) {
                     continue
                 }
                 if ($t.StartsWith('PRIVMSG ')) {
-                    [IO.File]::AppendAllText($privCapture, ($t + [Environment]::NewLine))
+                    Write-Wire $t
                     $consumed += ([Text.Encoding]::UTF8.GetByteCount($line + "`n"))
                     continue
                 }

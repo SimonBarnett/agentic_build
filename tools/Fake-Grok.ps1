@@ -144,9 +144,29 @@ if ($persistent) {
     if (-not $sessionId) { $sessionId = [guid]::NewGuid().ToString() }
     if ($prompt) { Save-Session -Id $sessionId -Prompt $prompt }
     $hbPath = $env:BOB_REPO_PAIR_HEARTBEAT_PATH
+    $manifestPath = $env:BOB_REPO_PAIR_SHOP_MANIFEST_PATH
     $workerDir = $env:BOB_REPO_PAIR_WORKER_DIR
     $role = $env:BOB_REPO_PAIR_ROLE
     if (-not $role) { $role = 'dev' }
+    $shopNick = $env:BOB_REPO_PAIR_SHOP_NICK
+    $shopChan = $env:BOB_REPO_PAIR_SHOP_CHANNEL
+    if ($manifestPath -and $shopNick -and $shopChan) {
+        $manifest = @{
+            channel       = $shopChan
+            nick          = $shopNick
+            sessionId     = $sessionId
+            joinedAt      = [DateTime]::UtcNow.ToString('o')
+            policy        = 'shop_only_no_bobiverse'
+            joinKind      = 'irc_agent_worker'
+            shopNickLive  = $true
+            ircAgentPid   = $PID
+        }
+        $manifestDir = Split-Path -Parent $manifestPath
+        if ($manifestDir -and -not (Test-Path -LiteralPath $manifestDir)) {
+            New-Item -ItemType Directory -Force -Path $manifestDir | Out-Null
+        }
+        [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json -Compress))
+    }
     $lastTask = $null
     while ($true) {
         if ($hbPath) {
@@ -154,11 +174,6 @@ if ($persistent) {
             [IO.File]::WriteAllText($hbPath, ($hb | ConvertTo-Json -Compress))
         }
         if ($workerDir) {
-            $harvestRemind = Join-Path $workerDir 'inbox\harvest-before-dismiss.txt'
-            $harvestAck = Join-Path $workerDir 'inbox\harvest-ack.txt'
-            if ((Test-Path -LiteralPath $harvestRemind) -and -not (Test-Path -LiteralPath $harvestAck)) {
-                [IO.File]::WriteAllText($harvestAck, ([DateTime]::UtcNow.ToString('o')))
-            }
             $inbox = Join-Path $workerDir 'inbox\chair-task.txt'
             if (Test-Path -LiteralPath $inbox) {
                 try {
@@ -172,7 +187,7 @@ if ($persistent) {
                 catch { }
             }
         }
-        Start-Sleep -Seconds 3
+        Start-Sleep -Seconds 15
     }
 }
 

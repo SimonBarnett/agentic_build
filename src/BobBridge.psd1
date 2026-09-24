@@ -40,8 +40,10 @@
         'Get-BobTrayBarFillRgb',
         'Get-BobTrayAlertKind',
         'Get-BobTrayTitle',
+        'Get-BobTrayCursorGroupHelpTooltip',
         'Get-BobWeeklyRemaining',
         'Get-BobCursorAgentWeeklyRemaining',
+        'Get-BobCursorSpendingFromApiFixture',
         'Get-BobTrayTipPlacement',
         'Get-BobFleetRegistry',
         'ConvertTo-BobIrcPoint',
@@ -51,8 +53,12 @@
         'Import-BobIrcPeerTranscript',
         'Import-BobIrcTrayPull',
         'Request-BobIrcBobiversePull',
+        'Sync-BobDigestWebhookAfterBobiversePull',
         'ConvertFrom-BobIrcTrayLine',
         'Get-BobJobRepoStamp',
+        'Get-BobIrcShopChannel',
+        'Get-BobIrcBuilderChannels',
+        'Get-BobWorkerIrcNick',
         'Compact-BobIrcOutbox',
         'Write-BobJobAuditLine',
         'Write-BobJobAuditFromPacket',
@@ -65,7 +71,6 @@
         'Start-BobRepoPair',
         'Invoke-BobRepoPairTick',
         'Invoke-BobRepoPairChairTick',
-        'Invoke-BobRepoPairChairIdleAssign',
         'Assign-BobRepoPairTask',
         'Invoke-BobRepoPairOutstandingTickets',
         'Invoke-BobRepoPairBobiverseSay',
@@ -81,13 +86,7 @@
         'Invoke-BobDigestWebhookPost',
         'Invoke-BobRepoPairChairUsageWebhookIfChanged',
         'Start-BobRepoPairMrbReview',
-        'Test-BobRepoPairTicketCadenceDue',
-        'Start-BobRepoPairShopIrc',
-        'Update-BobRepoPairShopJoinManifest',
-        'Invoke-BobRepoPairMrbSeatHygiene',
-        'Invoke-BobChairBobiverseUsageHook',
-        'Invoke-BobIrcWireSend',
-        'Invoke-BobIrcOutboxWireConsumer'
+        'Test-BobRepoPairTicketCadenceDue'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
