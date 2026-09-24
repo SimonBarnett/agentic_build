@@ -33,7 +33,20 @@ Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `
 Historical park (2026-09-20 quieter-talk intake, DM-centric `!bobiverse` later superseded by #74 / digest): `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` / issue #36.
 
 
-On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` from `config/bobiverse.json` (`op=merge`, header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret` — never git). The digest **chair** (`chairNick` / `Install-BobChair.ps1`) is separate from `bob-<machine>` builders; Watch does not start the chair.
+On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` from `config/bobiverse.json` (`op=merge`, header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret` — never git). The digest **chair** is nick **Jeeves** (`chairNick` in `config/bobiverse.json`). Watch does not start the chair.
+
+## Jeeves (starts with the IRC server)
+
+Jeeves is a second agent on ionos. His IRC `--home` is `~\.agentic-irc-jeeves`. `BOB_DIGEST_HOME` must be `~\.agentic-irc-bobiverse`, the directory `bobcallback` uses for `chair-outbox.txt` (`POST /bob/v1/git`). `fleet_digest_home()` follows that env. Without it, Jeeves drains his own home and GIT lines sit on the digest home. Do not pass the bob-ionos home as `--home` (QUIT/JOIN storm). Do not pass `--hello` or `--announce-key`.
+
+Service **`BobJeeves`** (Automatic, NSSM, depends on `BobIrcd`) is the start path. Install: `tools/Install-BobJeeves.ps1` or `tools/Install-BobChair.ps1` (same service). Boot starts `BobIrcd`, then `BobJeeves`. `Restart-Service BobIrcd` stops Jeeves and does not start him again:
+
+```powershell
+Restart-Service BobIrcd
+Start-Service BobJeeves
+```
+
+Command the service runs: `python -u scripts/irc_agent.py --host irc.ntsa.uk --port 6697 --nick Jeeves --channel #bobiverse --home <jeevesHome> --chair` with `AGENTIC_IRC_PASSWORD` read from `~\.grok\ergo\connect.password` (never git) and `BOB_DIGEST_HOME` set to the digest home.
 
 Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests chair **`BOB DIGEST v1`** JSON whispers (chunked when needed) from `irc.log` into `bob-peers\` plus `cursor-pools.json` cache. Legacy **`BOB TRAY v1`** kv lines still work. Protocol: `agentic_irc` `!bobiverse` digest + issue #142 / `docs/feature-request-bobiverse-digest-feeds-systray-2026-09-21.md`.
 
@@ -55,6 +68,8 @@ Python 3.12+ plus `pip install -r C:\ai\agentic_irc\requirements.txt`.
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Install-BobIrc.ps1 -MachineId flamingo -Chair
 # other boxes: omit -Chair (JOIN)
 ```
+
+That `-Chair` switch opens the MODE2 moot for the **builder** seat. It is not Jeeves. On ionos, after `BobIrcd` is up, install the digest chair with `tools/Install-BobJeeves.ps1` (see **Jeeves** above).
 
 `Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden ~30s loop: local peer JSON, optional channel talk, `!bobiverse` tray pull ~120s, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files. `Watch-BobTray` starts the loop the same way it starts `Watch-BobJobs`.
 

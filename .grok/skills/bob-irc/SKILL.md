@@ -23,6 +23,8 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
 **Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, …). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
 
+**Jeeves:** digest chair, `chairNick` `Jeeves`. IRC `--home` is `~\.agentic-irc-jeeves`. The process must set `BOB_DIGEST_HOME` to `~\.agentic-irc-bobiverse` so `fleet_digest_home()` drains `chair-outbox.txt` where bobcallback writes. Do not use the bob-ionos home as `--home`. Service `BobJeeves` (Automatic, depends on `BobIrcd`): `tools/Install-BobJeeves.ps1`. After `Restart-Service BobIrcd`, run `Start-Service BobJeeves`. Watch-Bobiverse does not start the chair.
+
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
 

@@ -1,5 +1,14 @@
 # Skill harvest log
 
+## 2026-09-24 — Jeeves auto-start with BobIrcd
+
+Digest chair nick is `Jeeves`. IRC home `~\.agentic-irc-jeeves`. Service
+`BobJeeves` depends on `BobIrcd` and sets `BOB_DIGEST_HOME` to
+`~\.agentic-irc-bobiverse` so GIT `chair-outbox.txt` drains. After
+`Restart-Service BobIrcd`, `Start-Service BobJeeves`. Homes:
+`bob-irc` (stub), `docs/bobiverse-ionos-ircd.md`, `tools/Install-BobJeeves.ps1`.
+Canonical chair facts: `agentic_irc` skill `bob-irc`.
+
 ## 2026-09-23 — land quiet-talk park doc (#36 FIX)
 
 Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.

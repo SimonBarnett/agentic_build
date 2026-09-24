@@ -3762,6 +3762,62 @@ Invoke-Case 'BT0bobircd fleet isolation' {
     if ($ircd -match 'BobFleet') { throw 'Install-BobIrcd must not stop BobFleet tasks' }
 }
 
+Invoke-Case 'BT0jeeves chair autostart' {
+    $cfg = Get-Content (Join-Path $RepoRoot 'config\bobiverse.json') -Raw | ConvertFrom-Json
+    if ([string]$cfg.chairNick -ne 'Jeeves') { throw 'chairNick must be Jeeves' }
+    $chair = Get-Content (Join-Path $RepoRoot 'tools\Install-BobChair.ps1') -Raw
+    if ($chair -notmatch '\.agentic-irc-jeeves') { throw 'Install-BobChair must use .agentic-irc-jeeves' }
+    if ($chair -notmatch 'BOB_DIGEST_HOME') { throw 'Install-BobChair must set BOB_DIGEST_HOME' }
+    if ($chair -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobChair must point BOB_DIGEST_HOME at .agentic-irc-bobiverse' }
+    if ($chair -match 'Install-BobIrc\.ps1') { throw 'Install-BobChair must not call Install-BobIrc' }
+    if ($chair -match '--hello|--announce-key') { throw 'Install-BobChair must not pass hello or announce-key' }
+    $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-BobJeeves.ps1') -Raw
+    if ($inst -notmatch "ServiceName = 'BobJeeves'") { throw 'Install-BobJeeves must default service BobJeeves' }
+    if ($inst -notmatch "DependsOn = 'BobIrcd'") { throw 'BobJeeves must depend on BobIrcd' }
+    if ($inst -notmatch 'depend=') { throw 'Install-BobJeeves must pass sc depend=' }
+    if ($inst -notmatch 'start= auto') { throw 'BobJeeves must be Automatic' }
+    if ($inst -notmatch 'nssm\.exe') { throw 'Install-BobJeeves must use Ergo-root nssm.exe' }
+    if ($inst -match 'filebrowser') { throw 'Install-BobJeeves must not copy NSSM from filebrowser' }
+    if ($inst -notmatch 'BOB_DIGEST_HOME') { throw 'Install-BobJeeves must set BOB_DIGEST_HOME' }
+    if ($inst -notmatch '\.agentic-irc-jeeves') { throw 'Install-BobJeeves must keep the Jeeves IRC home' }
+    if ($inst -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobJeeves must name the digest home' }
+    if ($inst -match '--hello|--announce-key') { throw 'Install-BobJeeves must not pass hello or announce-key' }
+    $start = Get-Content (Join-Path $RepoRoot 'tools\Start-BobJeeves.ps1') -Raw
+    if ($start -notmatch '\$env:BOB_DIGEST_HOME') { throw 'Start-BobJeeves must set BOB_DIGEST_HOME' }
+    if ($start -notmatch '\.agentic-irc-jeeves') { throw 'Start-BobJeeves must default --home to .agentic-irc-jeeves' }
+    if ($start -notmatch '\.agentic-irc-bobiverse') { throw 'Start-BobJeeves must default digest home to .agentic-irc-bobiverse' }
+    if ($start -notmatch '--chair') { throw 'Start-BobJeeves must pass --chair' }
+    if ($start -notmatch "'--home'") { throw 'Start-BobJeeves must pass --home' }
+    if ($start -notmatch 'irc\.ntsa\.uk') { throw 'Start-BobJeeves must target irc.ntsa.uk' }
+    if ($start -match '--hello|--announce-key') { throw 'Start-BobJeeves must not pass hello or announce-key' }
+    if ($start -notmatch 'connect\.password') { throw 'Start-BobJeeves must read connect.password into the environment' }
+    if ($start -notmatch 'Stop-Process') { throw 'Start-BobJeeves must kill the prior chair before start' }
+    $ircd = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+    if ($ircd -notmatch 'Start-Service -Name ''BobJeeves''') { throw 'Install-BobIrcd must start BobJeeves when that service exists' }
+    if ($ircd -notmatch 'Start-Service BobJeeves') { throw 'Install-BobIrcd must document Start-Service BobJeeves' }
+    $cert = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcdCert.ps1') -Raw
+    if ($cert -notmatch 'Restart-Service') { throw 'Install-BobIrcdCert must still restart BobIrcd' }
+    if ($cert -notmatch 'BobJeeves') { throw 'Install-BobIrcdCert must start BobJeeves after BobIrcd' }
+    if ($cert -match 'Start-ScheduledTask|Stop-ScheduledTask|(?<!Un)Register-ScheduledTask|Unregister-ScheduledTask|BobFleet-') {
+        throw 'Install-BobIrcdCert must not touch scheduled tasks or BobFleet'
+    }
+    $doc = Get-Content (Join-Path $RepoRoot 'docs\bobiverse-ionos-ircd.md') -Raw
+    if ($doc -notmatch 'BobJeeves') { throw 'ionos doc must document BobJeeves' }
+    if ($doc -notmatch 'Start-Service BobJeeves') { throw 'ionos doc must document Start-Service BobJeeves' }
+    if ($doc -notmatch 'BOB_DIGEST_HOME') { throw 'ionos doc must document BOB_DIGEST_HOME' }
+    if ($doc -notmatch '\.agentic-irc-jeeves') { throw 'ionos doc must document the Jeeves home' }
+    if ($doc -notmatch 'Restart-Service BobIrcd') { throw 'ionos doc must keep Restart-Service BobIrcd' }
+    $bv = Get-Content (Join-Path $RepoRoot 'docs\bobiverse.md') -Raw
+    if ($bv -notmatch 'BobJeeves') { throw 'bobiverse.md must document BobJeeves autostart' }
+    if ($bv -notmatch '\.agentic-irc-jeeves') { throw 'bobiverse.md must document the Jeeves home' }
+    if ($bv -notmatch 'BOB_DIGEST_HOME') { throw 'bobiverse.md must document BOB_DIGEST_HOME' }
+    $skill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-irc\SKILL.md') -Raw
+    if ($skill -notmatch 'BOB_DIGEST_HOME') { throw 'bob-irc stub must mention BOB_DIGEST_HOME' }
+    if ($skill -notmatch 'BobJeeves') { throw 'bob-irc stub must mention service BobJeeves' }
+    $watch = Get-Content (Join-Path $RepoRoot 'tools\Watch-Bobiverse.ps1') -Raw
+    if ($watch -match 'Install-BobJeeves|Install-BobChair|--chair') { throw 'Watch-Bobiverse must not start the chair' }
+}
+
 Invoke-Case 'BT0irtsr install and bobiverse isolation' {
     $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
     if ($installSrc -notmatch '_Watch-IrcTsr-') { throw 'Install-BobFleet must register _Watch-IrcTsr-<id>' }
