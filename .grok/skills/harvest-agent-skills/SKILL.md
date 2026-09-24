@@ -1,46 +1,117 @@
 ---
 name: harvest-agent-skills
 description: >
-  Promote repeatable fleet/build playbooks into agentic_build .grok/skills on
-  GitHub (SimonBarnett/agentic_build). Use when you learn a new procedure while
-  doing build work, or the user says harvest skills, add it to the skills,
-  promote a playbook, skill harvest, hourly skill check, or /harvest-agent-skills.
-  Do not wait for the hourly task. Does not dispatch product builds
-  (grok-build-fleet / bob-build-dispatch).
+  FOUNDATION skill for every skill book. Identify this skill's home GitHub,
+  harvest playbooks back as a PR, and report gaps as issues/FRs. Triggers:
+  harvest skills, CAST IRON harvest, honesty box, skill book foundation,
+  learned a procedure, hourly skill check, /harvest-agent-skills, promote a
+  playbook, skill harvest. Prefer deterministic scripts over LLM reasoning.
+  Does not dispatch product builds.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
-# Harvest agent skills
+# Harvest agent skills (honesty box)
 
-Remote: `https://github.com/SimonBarnett/agentic_build` (`origin/main`). Local clone `C:\ai\agentic_build` on ionos (else `D:\ai\...` / `C:\src\...`).
+## Home GitHub (required on every harvest skill)
 
-All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo start/firewall, Watch-Bobiverse recycle, Halloy): harvest into `https://github.com/SimonBarnett/agentic_irc` `.grok/skills/` (clone `C:\ai\agentic_irc`). This repo keeps a `bob-irc` stub plus `config/bobiverse.json`.
+**This skill's home:** `https://github.com/SimonBarnett/agentic_build`
 
-**During the job, not later.** If this session learned a repeatable procedure (trigger, owner skill, hard rule), write or edit `.grok/skills/*/SKILL.md` now, note `docs/skill-harvest-log.md`, commit, push `origin/main`. Do not wait for `BobSkillHarvest-<id>` or a later harvest prompt.
+Every skill book ships this foundation skill (or a repo-local twin). The twin's
+frontmatter `github:` MUST name the public repo that owns that book.
 
-Empty harvest: **no git commit**. Useful harvest: add/update `SKILL.md`, note in `docs/`, commit, push `origin/main`.
+| Playbook domain | Home repo | Foundation skill |
+|-----------------|-----------|------------------|
+| IRC wire, Jeeves, talk seats, SEAL, moot, file, dumb, Ergo, Watch-Bobiverse | `SimonBarnett/agentic_irc` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| Fleet / build / MRB / Bob jobs / TipForm | `SimonBarnett/agentic_build` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| MUD / Discworld | `SimonBarnett/mud-skill` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| Visionary / new-product strategy | `SimonBarnett/skills-visionary` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| Design UAT | `SimonBarnett/bob-design-uat` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| Club Madeira Awin connector | `SimonBarnett/club-madeira-awin-connector` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| IRC client-as-skill | `SimonBarnett/irc-skill` | that repo's harvest skill (if present) |
+| Other skill products | that public repo | `.grok/skills/harvest-agent-skills/SKILL.md` |
 
-## Scan
+## CAST IRON - cost of using this skill book
 
-1. `~\.grok\skills\*` vs repo `.grok/skills\*` — user-only skills that are not one-off.
-2. `~\.grok\long-running-background-tasks\` scripts that encode a procedure the repo does not.
-3. Recent `docs/*ops*.md` and this repo's uncommitted playbooks.
-4. Existing skills — do not duplicate. Point at the owner skill instead.
+**You used these skills. You owe the home repo a report.**
 
-A candidate is useful only if it is **repeatable**, has a clear trigger, and is not a single incident report.
+This is an honesty box. Using any skill from this book binds you to return
+what you learned, what broke, and what is missing. Silence after a useful
+session is a breach of the bargain. Do not wait for an hourly task, a
+reminder, or Bob to dismiss you.
+
+### You MUST report back to the home GitHub when any of these are true
+
+1. You learned a **repeatable** procedure (trigger + steps + owner) not already
+   in the book.
+2. A skill was **wrong, incomplete, ambiguous, or token-wasteful**.
+3. You hit a **bug**, gap, or missing tool that a deterministic script should
+   own.
+4. You invented a workaround that should become a skill or a code change.
+
+### How to report (strict order - no main pushes)
+
+1. **Skill harvest / playbook / fix with write access** -> branch + **pull
+   request** against the home repo. Never `git push origin main` for harvest.
+2. **If the PR cannot be opened** (no permission, API fail, fork blocked) ->
+   open a **GitHub issue** on the home repo titled `harvest:` or `FR:` and
+   paste the intended PR title, branch name, file list, and full body.
+3. **Bugs / feature requests without a ready patch** -> GitHub **issue** or
+   **FR** on the home repo (use that repo's FR/issue templates if present).
+4. Empty harvest (nothing new, nothing broken): **no commit, no empty PR**.
+   Still OK to stay silent only in that case.
+
+Prefer `gh` / existing harvest scripts over free-form reasoning. If a script
+exists, run it; do not re-derive the procedure in chat.
+
+## Token efficiency (non-negotiable)
+
+- Prefer a **deterministic tool or script** over LLM reasoning whenever both
+  could finish the job.
+- Do not narrate step-by-step tool plans in skills; write the command or the
+  script name.
+- One home per fact. Point at the owner skill; do not duplicate.
+- ASCII in `SKILL.md`. Short triggers in frontmatter `description`.
+
+## Scan (deterministic first)
+
+1. Diff local installed skills vs repo `.grok/skills/` - promote repeatable
+   user-only playbooks.
+2. Run repo harvest script if present; do not reinvent it.
+3. Check recent `docs/*` FRs and `docs/skill-harvest-log.md` (create if missing).
+4. Skip one-off incident notes and noisy chat.
+
+A candidate is useful only if it is **repeatable**, has a clear trigger, and
+is not a single incident report.
 
 ## Write
 
-Follow `skill-design-principles` (one home per fact, no sprawl). Frontmatter `name` + `description` with triggers. ASCII in SKILL.md.
+1. Edit or add `.grok/skills/<name>/SKILL.md` (`name` + `description`;
+   foundation skill also has `github:` of THIS repo).
+2. Append a dated line to `docs/skill-harvest-log.md`.
+3. Commit on a **branch**, open a **PR**. Link related issues.
+4. If this repo has a Test-Pack / skill list gate, add the new name and run it.
 
-Add the name to `tools/Test-Pack.ps1` BT0 skills list. Run `tools\Test-Pack.ps1`. `Install-BobFleet` already copies every project skill into `~\.grok\skills`.
+### This repo
 
-Append a short dated section to `docs/skill-harvest-log.md` (create if missing).
+- `tools/Harvest-AgentSkills.ps1` enqueues the harvest job. Run it; do not re-derive the goal.
+- `tools/Install-SkillHarvest.ps1` registers hourly `BobSkillHarvest-<id>` (not a Windows service). Backup only; harvest during the job.
+- Add the new name to the `tools/Test-Pack.ps1` BT0 skills list, then run `tools\Test-Pack.ps1`.
+- `Install-BobFleet` copies project skills into `~\.grok\skills`. Setup that ships here includes `agent-monitor-setup` (`tools/Install-AgentMonitor.ps1`). Watch-seat runtime stays in the AgentMonitor repo.
 
 ## Do not
 
+- Push harvest to `main`.
 - Commit "nothing found".
-- Force-push, secrets, `password=` / `XAI_API_KEY=` assignments.
+- Force-push, secrets, or live credentials into skills.
 - Invent skills from noisy session chat.
-- Claim ready for human UAT.
-- Start extra fleet product jobs; this job is the harvest.
-- Copy `tools/_Watch-*.ps1` or other per-machine install wrappers into skills (generated by `Install-BobFleet` / tray install; see file header).
+- Claim ready for human UAT from a harvest alone.
+- Start unrelated product jobs under the harvest label.
+- Spend tokens reasoning through a path a script already encodes.
+- Dispatch product builds (`grok-build-fleet` / `bob-build-dispatch`). This job is the harvest.
+- Copy `tools/_Watch-*.ps1` or other per-machine install wrappers into skills (generated by `Install-BobFleet` / tray install).
+
+## Inclusion rule
+
+**Every skill book MUST include this foundation skill** (twin with that book's
+`github:`). Other skills in the book SHOULD link it in one line:
+`Foundation: harvest-agent-skills (honesty box) -> report back to <github>.`

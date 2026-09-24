@@ -11,8 +11,8 @@ Live shop-channel spec: `docs/feature-request-shop-channel-worker-cc-webhook-202
 | Fleet | `#bobiverse` — Bob ACTION (`/me`) + working-on. MODE2 `free`. No POINT firehose. |
 | Shop | `#flamingo` `#marchhare` `#ionos` `#ce-priority-dev1` (`#dev1` same channel) |
 | Moot id | `b0b1be15e0000001` |
-| Read | `!bobiverse` whisper JSON (no HTTP GET of digest) |
-| Write | POST `reportUrl` in `config/bobiverse.json` (write-only) + IRC JOIN/QUIT |
+| Human talk | Short English PRIVMSG on real field change or one-shot long-running warning |
+| Tray pull | `!bobiverse` ~every 120s from `bob-*` nicks; chair whispers `BOB DIGEST v1 i/n` JSON (full card) or legacy `BOB TRAY v1 …` kv lines |
 
 Nicks (one builder Bob per machine):
 
@@ -32,14 +32,29 @@ Disconnected workers are **deleted**. Bob drop closes that shop and deletes its 
 
 `!report` is gone. Do not send it.
 
+## Shop channels (`#<machine>`)
+
+Each fleet box has a **shop** room `#<machine-id>` (`#flamingo`, `#marchhare`, `#ionos`, `#ce-priority-dev1`; `#dev1` is the same room as `#ce-priority-dev1`). `bob-*` builders JOIN `#bobiverse` **and** the local shop (`Get-BobIrcBuilderChannels` in `Watch-Bobiverse` / `Install-BobIrc`). Git/MRB workers never JOIN `#bobiverse`; they appear on the shop only as `w-<short>-<pid>` (`w-io-<pid>` on ionos, `w-fl-<pid>` on flamingo, etc.) via `Start-BobWorkerIrcAgent` → `agentic_irc` `start_worker_irc_agent.py`. No `!report` write path on IRC; digest updates use write-only `reportUrl` POST (below).
+
 ## Status on disk
 
-Briefer file: `~\.agentic-irc-bobiverse\digest.json` (ionos). Not a public URL.
-`Write-BobIrcStatus` may still refresh local `bob-peers\<id>.json` for the tray.
-It does **not** append `MOOT v1 POINT` / `!report` every tick.
-Watch POSTs `working_on` / `pcent` / `uptime_since` on change to `reportUrl`.
+`Write-BobIrcStatus` (Watch loop, ~30s) refreshes `~\.agentic-irc-bobiverse\bob-peers\<id>.json` with weekly bars, jobs, model/kind/repo/sha, and `lastSeen`. It does **not** append a `MOOT v1 POINT … BOB v1` line every tick (that was the Halloy firehose). When model, kind, repo, sha, hung/responding, or running/queued counts change, one conversational English line goes to the channel via `outbox.txt`.
+Historical park (2026-09-20 quieter-talk intake, DM-centric `!bobiverse` later superseded by #74 / digest): `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` / issue #36.
 
-Tray may still `!bobiverse` ~120s and ingest the whisper. Do not HTTP GET the digest.
+
+On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` from `config/bobiverse.json` (`op=merge`, header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret` — never git). The digest **chair** (`chairNick` / `Install-BobChair.ps1`) is separate from `bob-<machine>` builders; Watch does not start the chair.
+
+Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests chair **`BOB DIGEST v1`** JSON whispers (chunked when needed) from `irc.log` into `bob-peers\` plus `cursor-pools.json` cache. Legacy **`BOB TRAY v1`** kv lines still work. Protocol: `agentic_irc` `!bobiverse` digest + issue #142 / `docs/feature-request-bobiverse-digest-feeds-systray-2026-09-21.md`.
+
+Example tray line (machine-readable, not for channel spam):
+
+```
+BOB TRAY v1 id=ionos weekly=4 running=1 queued=0 repo=SimonBarnett/agentic_build kind=worker model=Cursor Models lastSeen=2026-09-21T00:00:00Z jobs=SimonBarnett/agentic_build:running
+```
+
+`BOB v1` POINT trailing text remains supported for transcript ingest (`Import-BobIrcPeerTranscript`) but is not the primary Watch publish path.
+
+The tray paints **one weekly bar per registered `nicks` machine** from `bob-peers\`. Ghost IRC ids (`marchhare-bugets`, raw nicks) are dropped. `reach=irc-fallback` for those four seats. Repo stamps never publish `?` when a job is known.
 
 ## Install (each build box)
 

@@ -40,8 +40,10 @@
         'Get-BobTrayBarFillRgb',
         'Get-BobTrayAlertKind',
         'Get-BobTrayTitle',
+        'Get-BobTrayCursorGroupHelpTooltip',
         'Get-BobWeeklyRemaining',
         'Get-BobCursorAgentWeeklyRemaining',
+        'Get-BobCursorSpendingFromApiFixture',
         'Get-BobTrayTipPlacement',
         'Get-BobFleetRegistry',
         'ConvertTo-BobIrcPoint',
@@ -51,11 +53,20 @@
         'Import-BobIrcPeerTranscript',
         'Import-BobIrcTrayPull',
         'Request-BobIrcBobiversePull',
+        'Sync-BobDigestWebhookAfterBobiversePull',
         'ConvertFrom-BobIrcTrayLine',
         'Get-BobJobRepoStamp',
+        'Get-BobIrcShopChannel',
+        'Get-BobIrcBuilderChannels',
+        'Get-BobWorkerIrcNick',
         'Compact-BobIrcOutbox',
         'Write-BobJobAuditLine',
-        'Write-BobJobAuditFromPacket'
+        'Write-BobJobAuditFromPacket',
+        'Invoke-BobGrokTalkTick',
+        'Test-BobGrokTalkFuelAllowed',
+        'Select-BobGrokTalkFuel',
+        'Add-BobGrokTalkCompletion',
+        'ConvertTo-BobGrokTalkOutLines'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()
