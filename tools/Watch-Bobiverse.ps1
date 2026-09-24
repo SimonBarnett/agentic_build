@@ -130,9 +130,7 @@ function Start-BobiverseIrcAgent {
         '--port', "$ircPort",
         '--nick', $nick,
         '--channel', $channel,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$mid-builder"
+        '--home', $ircHome
     ) -WorkingDirectory $ircRoot -WindowStyle Hidden | Out-Null
     Write-BobiverseLog "started irc_agent nick=$nick host=$ircHost port=$ircPort"
 }
@@ -142,9 +140,12 @@ while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
         Start-BobiverseIrcAgent
-        Write-BobIrcStatus | Out-Null
+        $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
         Import-BobIrcTrayPull | Out-Null
+        if ($localDoc) {
+            Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
+        }
         Import-BobIrcPeerTranscript | Out-Null
     }
     catch {

@@ -1,11 +1,93 @@
 # Skill harvest log
 
-## 2026-09-23 - gh pr merge already-merged can exit 0
+## 2026-09-23 — cleanup-orphans
 
-AgentMonitor #34 PASS-nits on `b9ade5da`: `gh pr merge --merge` printed
-already-merged and exited 0. That is not this worker's merge. Parse
-stdout. Do not write `Merged <url>` unless this process created the
-merge commit. Home: `bob-hostile-mrb`.
+Simon: close orphan python/node/powershell after agent/IRC churn.
+Harvested `cleanup-orphans` + `tools/Cleanup-OrphanAgents.ps1`. Keeps
+newest fleet watchers, tray, bob-*, Jeeves, live session; kills stale
+irc_listen/TSR, duplicate Watch-*, old cursor-agent, bare powershell.
+Related: `killproc` (named hung seat), `bob-fleet-tray` (tray recycle).
+
+## 2026-09-23 — land quiet-talk park doc (#36 FIX)
+
+Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.
+
+## 2026-09-23 — preferred IRC wake = Watch-AgentHealth
+
+Simon: do not arm in-session `listen.stdout.log` `^FROM ` TSR (burns
+tokens on `#bobiverse` spam). Preferred: Watch-AgentHealth /
+AgentMonitor forwards FROM. Harvested `watch-agent-health` into this
+repo; updated `agent-monitor-setup`, `bob-irc` stub. Sister
+`agentic_irc` skills `agentic-irc` + `bob-irc` Listener + wake CAST IRON.
+
+## 2026-09-23 — intake must run validate-vision-pack
+
+skills-visionary #6 / PR #7 (`2c98dfd`) shipped
+`tools/validate-vision-pack.py`. `bob-spec-intake` and `visionary` now
+refuse park/dispatch unless that command exits 0 (product `tools/` else
+sister clone). Home: `bob-spec-intake`, `visionary`.
+
+## 2026-09-23 — visionary at new-product intake
+
+Simon: high-reasoning skill for the long-term strategy of a new product
+(measurable success, service/website/app, stack, architecture, HTML
+mocks). Required before park/dispatch. Feature requests skip it. Homes:
+`visionary`, `docs/templates/vision.md`, `bob-spec-intake` New product
+step 0.
+
+## 2026-09-23 — bob-spec-intake: Grant script opens settings/installations
+
+`bob-spec-intake` New GitHub repo step 3: `Grant-CursorGitHubApp.ps1` opens
+Configure existing at https://github.com/settings/installations, not
+`/apps/cursor/installations/new`. Home: `bob-spec-intake`.
+
+## 2026-09-23 — All repos already set: disconnect/reconnect, then local gh
+
+Simon: Cursor GitHub App already has All repositories plus the full
+permission list (code + pull requests write). receive-pack still
+denied to cursor[bot]. That is a stale/stripped Cursor installation
+token, not another GitHub click. Disconnect+Connect at
+cursor.com/dashboard/integrations as SimonBarnett. If still 403,
+use local gh / fleet cursor-agent. Home: `setup-github-cursor`.
+
+## 2026-09-23 — Cursor app permission list is enough; 403 is repo access
+
+Simon pasted the Cursor GitHub App permissions: Read on administration,
+commit statuses, deployments, metadata, packages, pages; Read and write
+on actions, checks, code, discussions, issues, merge queues, pull
+requests, workflows. That is the correct grant (`code` = Contents).
+A receive-pack 403 with that list is Repository access (All vs
+Selected), not missing scopes. Home: `setup-github-cursor`.
+
+## 2026-09-23 — Configure existing Cursor install; do not /installations/new
+
+Simon: Cursor Web still 403 on PRs after the grant pages. `cursor[bot]`
+receive-pack is the pusher; `cursoragent` is only the git author
+(`cursor/*` on agentic_build worked 2026-09-20).
+`/apps/cursor/installations/new` can replace a Selected-repos list and
+drop agentic_build. Use https://github.com/settings/installations
+Configure -> All repositories, then dashboard Integrations reconnect.
+Do not add cursoragent as a collaborator. Home: `setup-github-cursor`.
+
+## 2026-09-23 — cursor[bot] is not a collaborator; gh cannot prove the grant
+
+Simon: try-now after the Cursor app page. A TUI `gh` seat cannot replay
+`git-receive-pack` as `cursor[bot]`. `PUT collaborators/cursor[bot]` is
+404 (not a user). `GET collaborators/cursor[bot]/permission` is `none`
+on every repo (apps are not collaborators). `user/installations` is 403
+on a classic user token. Real test is Cursor Web push. Pages:
+`apps/cursor/installations/new?target_id=2916380`,
+`settings/installations`, `cursor.com/dashboard/integrations`. Home:
+`setup-github-cursor` + `tools/Grant-CursorGitHubApp.ps1`.
+
+## 2026-09-23 — Cursor GitHub App on every git (All repositories)
+
+Simon: Cursor Web 403 on PRs was `cursor[bot]` denied
+`git-receive-pack` on agentic_build. Public repos already allow human
+fork PRs. Fix is the Cursor GitHub App = **All repositories** (Contents
++ Pull requests write). User `gh` cannot grant an app install. New repo
+checklist: public + webhook + this app. Homes: `setup-github-cursor`,
+`bob-spec-intake` New GitHub repo, `tools/Grant-CursorGitHubApp.ps1`.
 
 ## 2026-09-23 — leftover FAIL after another worker merged
 
@@ -112,6 +194,15 @@ Simon on #bobiverse: go for it. `!bobiverse` answer is Jeeves-only.
 `Request-BobIrcBobiversePull` no longer enqueues channel `!bobiverse`
 unless `BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1`. Talk seats never answer it.
 
+## 2026-09-23 — bob-* must call !bobiverse again (#196)
+
+Simon #bobiverse / issue #196: each `bob-<machine>` on `Watch-Bobiverse`
+enqueues `!bobiverse` on the ~120s cadence again. `Test-BobIrcBobiversePullSeat`
+blocks talk seats (`{machine}-{pid}`) and shop `w-*` workers. After chair
+digest ingest, `Sync-BobDigestWebhookAfterBobiversePull` POSTs only when local
+fuel/jobs/online differs from the chair digest machine row (`_chair-digest-peers.json`;
+#141 change-only).
+
 ## 2026-09-22 — fleet harvest irc skill + failed-pong restart
 
 Simon `#bobiverse`: `everyone harvest your irc skill`; live seat on a
@@ -141,6 +232,32 @@ Simon: create a new killproc skill to end hung (jung) agents.
 Do not spray Stop-Process. Named Grok Bot remains `unstick-grok-bot`.
 Skill `killproc`.
 
+## 2026-09-21 — IRC TSR: Start-IrcTsr.ps1 + Watch-CursorIrc
+
+`tools/Start-IrcTsr.ps1`, `_Start-IrcTsr-ionos.ps1`; wake
+`^AGENT_LOOP_WAKE_irc-tsr`; `Watch-CursorIrc` starts TSR not bare listen.
+Skills `agentic-irc`, `bob-irc`.
+
+## 2026-09-21 — IRC: ALWAYS listen + Watch-CursorIrc
+
+`agentic-irc` / `bob-irc`: `irc_listen.py` must stay up on fleet Cursor seats
+(`cursor-<machine-id>`, `~/.agentic-irc-cursor`). `tools/Watch-CursorIrc.ps1`,
+`_Watch-CursorIrc-ionos.ps1`. Still MUST reply via outbox same turn.
+
+## 2026-09-21 — FR queue: receive order until PASS-nits
+
+One FR at a time per repo: user-stated sequence or lowest open
+`feature-request` #; do not start the next loop until the current board is
+`phase=pass` (MRB PASS-nits). Replaces “fan out all open FRs after DONE”.
+Skills: `bob-job-loop`, `bob-build-loop`, `bob-hostile-mrb`, `cursor-mrb-dev`.
+
+## 2026-09-21 — GitHub hygiene scripts + PASS-nits merge gate
+
+`Start-BobMrb.ps1` requires `-PrUrl`; merges with `gh pr merge --merge`
+before posting PASS-nits. Operator: `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1`. Skills:
+`bob-job-loop`, `bob-hostile-mrb`, `bob-build-loop`.
+
 ## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
 
 `bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
@@ -163,12 +280,11 @@ Harvest from live bob-job loops:
 - `tools/run-bob-build-loop.ps1` and `tools/start-bob-build-loop-issue.ps1`:
   GCM / credential-manager for `GH_TOKEN` (do not rely on interactive
   `git credential fill` when `gh` is the helper).
-- `bob-job-loop`: unique LogPath, recover missed PR, after DONE hand
-  remaining open `feature-request` issues to new workers.
-- **New MRB rule:** pass to a **new** worker on MRB FAIL **or** when any
-  open feature-request / Missing-features issues remain. Homes:
-  `bob-hostile-mrb`, `bob-job-loop`, pointer `bob-build-loop`,
-  `cursor-mrb-dev`.
+- `bob-job-loop`: unique LogPath, recover missed PR; after DONE start **next**
+  queued FR only (see 2026-09-21 FR queue harvest).
+- **MRB rule:** new worker on MRB FAIL (FIX). After PASS-nits, **one** next FR
+  in receive order — not parallel FR loops. Homes: `bob-hostile-mrb`,
+  `bob-job-loop`, `bob-build-loop`, `cursor-mrb-dev`.
 - FIX #112: `ConvertFrom-BobGhJsonList` keeps issue `body`; restore `-Pr`
   to `Start-BobMrbHandoff`; Test-Pack BT0loop10/11. Audit write must not
   abort DONE.
@@ -378,4 +494,33 @@ Owner: `docs/bobiverse.md` + `bob-irc` stub.
 
 - Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.
 - Import-BobIrcPeerTranscript keeps prior period_end when POINT lacks reset=.
+
+## 2026-09-23 -- tray Agents menu + agent-monitor-setup
+
+- New skill `agent-monitor-setup`: the two watch-seat agents (Cursor, Grok)
+  collapse into one tray context-menu item **Agents**; select which to launch.
+- Each entry's icon is `Icon.ExtractAssociatedIcon` of the agent app exe, so it
+  matches the AgentMonitor Desktop shortcut (`shortcuts/*.lnk` IconLocation),
+  not the tray robot glyph.
+- Not installed -> greyed icon (`ConvertTo-BobTrayGrayImage`), click initialises
+  setup via new `tools/Install-AgentMonitor.ps1` (clones AgentMonitor into
+  `Desktop\Watch-AgentHealth`, copies its watch-seat skills into `~\.grok\skills`).
+- Setup ships with the skill harvest (Copy-BobProjectSkills / Install-BobFleet);
+  `harvest-agent-skills` now points at it. Watch-seat runtime contract stays in
+  the AgentMonitor repo (`agent-monitor`, `watch-seat`).
+- Test-Pack BT0 skills + BT0l traySrc assert the Agents menu, icon parity, grey
+  state, and the setup tool. Rule (Simon 2026-09-23): harvest opens a PR, not a
+  commit to main.
+
+## 2026-09-24 -- honesty box foundation (harvest-agent-skills)
+
+Replaced `.grok/skills/harvest-agent-skills/SKILL.md` with the CAST IRON
+honesty box. Frontmatter `github:` is
+`https://github.com/SimonBarnett/agentic_build`. Report order stays PR, else
+a `harvest:` / `FR:` issue; never push harvest to main. Short addenda keep
+`tools/Harvest-AgentSkills.ps1`, `tools/Install-SkillHarvest.ps1`, the
+Test-Pack BT0 list, no product dispatch (`grok-build-fleet` /
+`bob-build-dispatch`), and skip `tools/_Watch-*.ps1`. One-line foundation
+pointer on `bob-irc` and `visionary` only.
+
 
