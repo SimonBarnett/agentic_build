@@ -755,10 +755,13 @@ Invoke-Case 'BT0l tray hover' {
     if (-not $watchFn.Success) { throw 'Start-BobTrayAgentWatch function not found' }
     $watchBody = $watchFn.Value
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
+    if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
+    if ($watchBody -notmatch "'-Model',\s*'auto'|\"-Model\",\s*\"auto\"|-Model.*auto") { throw 'systray Cursor Agents must pass -Model auto' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
+    if ($traySrc -notmatch 'ConvertTo-BobTrayTipVisibleImage') { throw 'agent icons must plate dark exe glyphs for dark tip' }
     $skillAgents = Get-Content (Join-Path $RepoRoot '.grok\skills\agent-monitor-setup\SKILL.md') -Raw
     if ($skillAgents -notmatch '(?i)agents') { throw 'agent-monitor-setup skill must document the Agents menu' }
     if ($skillAgents -notmatch 'Install-AgentMonitor') { throw 'agent-monitor-setup skill must name Install-AgentMonitor.ps1' }
@@ -1875,6 +1878,8 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'ToolTip') { throw 'help ? must use a ToolTip on hover' }
     if ($traySrc -notmatch 'function Set-BobTrayHelpTip') { throw 'TipForm ? must use Set-BobTrayHelpTip (MouseHover Show)' }
     if ($traySrc -notmatch 'RightText') { throw 'Cursor overspend must sit on section header RightText' }
+    if ($traySrc -notmatch 'TextRenderer::MeasureText|TextRenderer\]::MeasureText') { throw 'overspend must MeasureText for right-align inside tile host' }
+    if ($traySrc -notmatch '\$indent = 18') { throw 'Cursor pools and machines must share indent 18' }
     if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
@@ -1883,6 +1888,14 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     }
     $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
     if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
+
+    $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($ircSrc -notmatch 'is operational') { throw 'first IRC peer write must announce machine is operational' }
+    if ($ircSrc -notmatch "status\s*=\s*'operational'") { throw 'digest webhook status must be operational' }
+
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
+    if ($hoverSrc -notmatch 'sand_period_end') { throw 'grok chat reset must prefer sand_period_end' }
 }
 
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
