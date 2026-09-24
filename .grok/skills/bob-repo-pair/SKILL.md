@@ -20,7 +20,7 @@ description: >
 
 | Seat | Role | Skills (via `--rules` / project skills) |
 |------|------|-------------------------------------------|
-| `dev` | implement PRs | `bob-build-dispatch`, `bob-irc` |
+| `dev` | implement PRs | `bob-spec-intake`, `bob-build-dispatch`, `grok-build-fleet`, `bob-irc` (no `Start-BobBuild` handoff) |
 | `mrb` | hostile MRB | `bob-hostile-mrb`, `bob-irc` |
 
 Nick pattern: `w-<short>-dev` / `w-<short>-mrb` (`io`, `fl`, `mh`, `d1`).
@@ -47,9 +47,16 @@ Assign-BobRepoPairTask -Seat dev|mrb -Task '…' [-PrUrl …]
   `Register-BobRepoPairMrbComplete` for digest lines.
 - **Bob reports:** `Invoke-BobRepoPairBobiverseSay` posts digest lines (dev complete /
   MRB complete) to `#bobiverse` via `outbox.txt`. Workers do not spam channel.
-- **Shop description:** `Set-BobShopChannelRepoDescription` updates
-  `shop-channel-descriptions.json`; `Watch-Bobiverse` / `Sync-BobShopChannelRepoDescriptions`
-  apply `SHOPDESC` to the shop channel when the assigned repo changes.
+- **Shop JOIN:** each seat starts `irc_agent.py` on the shop channel (manifest
+  `shop-join-<sessionId>.json`); not a `shop-joined-*.flag` file.
+- **Shop description:** `Set-BobShopChannelRepoDescription` queues `TOPIC #<machine> :<repo>` (and `SHOPDESC` for audit); Watch applies pending topics.
+  (Ergo topic/description + `shop-channel-descriptions.json`) when the assigned repo changes.
+- **Channel ops (A23):** `config/channel-ops.json` → `channel-ops.json` in IRC home
+  (`bob-{machine}` on `#{machine}`, Jeeves on `#bobiverse`).
+- **Tickets:** `Invoke-BobRepoPairOutstandingTickets` runs on chair tick only when
+  `Test-BobRepoPairTicketCadenceDue` (every 2h during business hours).
+- **Usage webhook:** `Invoke-BobRepoPairChairUsageWebhookIfChanged` posts identity +
+  `cursor_pools` (grok chat / high / low) + `local_weekly` on change (`Watch-Bobiverse` tick).
 - **No nested agents:** workers never call `Start-BobBuild`, `Start-BobBuildLoop`,
   `Start-BobMrbHandoff`, or `cursor-mrb-dev` handoff.
 

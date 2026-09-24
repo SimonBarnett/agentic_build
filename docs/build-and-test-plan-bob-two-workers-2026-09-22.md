@@ -31,17 +31,17 @@
 | Phase | Exit |
 |-------|------|
 | P0 | FR + this plan + issue; skill text for pair spawn + idle + webhook |
-| P1 | Bob can spawn/reuse two workers for one repo; persist; idle-stop |
+| P1 | Bob MUST start pair with IRC+build skills and direct JOIN IRC; persist; idle-stop |
 | P2 | Implementer/MRB split + next-PR handoff |
 | P3 | Worker `working_on` POST; digest reads it |
 | P4 | Bob reports digest states (dev complete / MRB complete) to #bobiverse |
 | P5 | Channel description = assigned repo name; update on repo change |
 | P6 | Bob chair UAT via new UAT skill (not worker stamp) |
 | P7 | Workers do own work; no nested agent invoke |
-| P8 | Bob monitors in-flight processes; restart if deaf |
-| P9 | Bob assigns MRB vs dev tasks |
+| P8 | Bob monitors in-flight; shop ping every 15 min; restart/intervene if stalled |
+| P9 | Bob assigns MRB vs dev; any bobiverse agent idle > 20s |
 | P10 | Bob checks outstanding tickets every 2 hours during business hours and assigns |
-| P11 | Dev cheap Cursor model; MRB expensive reasoning (FRs + tests) |
+| P11 | Dynamic models: dev=less, MRB=medium, UAT=more |
 | P12 | MRB merges dups, closes finished issues, merges PASS-nits PRs |
 | P13 | Each bob webhooks identity + local grok remaining |
 | P14 | Each bob reports account Cursor values; take the lesser of variance |

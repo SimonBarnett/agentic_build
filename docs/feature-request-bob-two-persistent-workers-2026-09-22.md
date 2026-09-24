@@ -13,11 +13,13 @@ flowchart TB
   TIX["Bob also checks outstanding tickets\nevery 2 hours during business hours\nand assigns them"]
   TIX --> ASSIGN
   CHAIR --> DESC["#channel description = assigned repo\nchange when the repo changes"]
-  CHAIR --> PAIR["Spawn 2 persistent workers\nbuild + IRC skills"]
-  CHAIR --> ASSIGN["Bob orders and assigns\nMRB vs dev tasks"]
+  CHAIR --> PAIR["Bob MUST start agents with\nIRC + build skills\nBob directs them to JOIN IRC"]
+  CHAIR --> ASSIGN["Bob orders and assigns MRB vs dev\ncan assign any idle over 20s agent on bobiverse"]
+  CHAIR --> IDLEMRB["If Bob not responding:\nidle worker MRBs the open PR"]
   CHAIR --> RT["Bob decides which to invoke:\nlocal agent vs agent.com"]
   RT --> PAIR
   CHAIR --> MON["Bob monitors processes in flight\nrestart if they stop responding"]
+  CHAIR --> PING15["Every 15 min Bob pings own shop\ncheck connections / online\nintervene if workers stalled"]
   CHAIR --> USE["Each bob webhooks identity +\nreal pools only: grok chat / high cost / low cost\n+ local xAI grok weekly\nNOT Club Madeira or Smart Catalogue pools"]
   USE --> MIN["Each pool: remaining % + next period start\n0 is 0 not n/a; n/a only if unavailable\nMUST webhook; lesser of Cursor variance"]
   CHAIR --> JEEVES["Every time Bob calls !bobiverse:\nif Cursor or local xAI changed, POST webhook"]
@@ -25,8 +27,8 @@ flowchart TB
   MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ncheap Cursor model composer-2.5\nelse local xAI if Cursor tokens out"]
-    WB["Worker B: MRB that PR\nexpensive reasoning grok-4.6\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
+    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
   end
 
   PAIR --> WA
@@ -40,13 +42,14 @@ flowchart TB
   WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
   SWAP --> WA
-  NEXT -->|both idle a few minutes| STOP["Bob may terminate the pair"]
+  NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
+  HARV --> STOP["Bob may terminate the pair"]
 
   WA --> POST["Workers MUST POST working_on to webhook\nNO channel PRIVMSG — webhook only"]
   WB --> POST
   POST --> DIG["Digest updates"]
   DIG --> SAY["Bob reads digest\ndev complete / MRB complete\nreports to #bobiverse"]
-  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nworkers never stamp UAT"]
+  NEXT -->|PASS-nits and ready| UAT["Bob chair only: UAT skill\nUAT model: MORE\nworkers never stamp UAT"]
 ```
 
 ## Ask (LOCKED)
@@ -70,7 +73,7 @@ Change how Bob works:
 15. **Bob monitors** worker processes **during flight** and **restarts** them if they stop responding.
 16. **Bob orders and assigns** MRB vs dev tasks (chair assigns the role; worker executes it).
 17. FRs **usually turn up**. Bob is also responsible for **checking outstanding tickets** and **assigning** them — **every 2 hours during business hours**.
-18. **Same fuel as before:** build/dev is a **cheap Cursor model** (`composer-2.5`). **MRB is more expensive** (`grok-4.6`) because that is where we want **reasoning** to add new FRs and tests.
+18. **Workers dynamically switch model by role:** **dev = less**, **MRB = medium**, **UAT = more**. Cursor first; local xAI if tokens out. Never Other Models.
 19. **MRB also:** merge **duplicate issues**, **close** issues that are done/superseded, and **merge PRs if PASS-nits**.
 20. **Each bob** sends a **webhook to identify itself** and **how much local grok is left** on its account.
 21. **Each bob** also reports the **Cursor values it sees for the whole account**. **Take the lesser of any variance.**
@@ -85,6 +88,13 @@ Change how Bob works:
 26. **Every time Bob calls `!bobiverse`**, he **POSTs the webhook if anything changed** on **Cursor or local xAI** (change-only).
 27. **`bob-{machine}` is ops in their own shop channel.** **Jeeves is ops in `#bobiverse`.**
 28. **Update the control systray** to the **proper Cursor metrics** (grok chat / high cost / low cost — remaining % + next period; 0 is 0). Not seat-nickname pools.
+29. Model pick is **dynamic per task kind** (dev/MRB/UAT → less/medium/more), not a single model for the pair.
+30. **Bob MUST start agents with the IRC and build skills.**
+31. **Bob must direct them to JOIN IRC.**
+32. **Every 15 minutes** Bob **pings in his own shop** to check **connections / online**, and **intervenes if workers are stalled**.
+33. **Bob can assign to any idle (>20 sec) agent on the bobiverse.**
+34. **If Bob is not responding**, find an **idle worker to MRB your PR**.
+35. **Bob must remind workers to harvest their skills before dismissing them.**
 22. **Workers do not send to the channel.** They **report only through the webhook**.
 
 ## Gap vs current tree (`be8cb6f`)
@@ -115,13 +125,14 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | U3 | How this replaces vs wraps `Start-BobBuildLoop` on the same SHA. |
 | U4 | New-repo path vs existing `bob-spec-intake` create-repo. |
 | U5 | Business-hours window (tz + start/end). Cadence LOCKED: every 2 hours. |
+| U6 | Exact Cursor/xAI slugs for less / medium / more (dev / MRB / UAT). |
 
 ## Acceptance
 
 | ID | Check |
 |----|--------|
 | A1 | Skill/docs: `bob-{machine}` = grok chair; two workers per assigned repo. |
-| A2 | Spawn path: Bob starts workers with build + IRC skills; they JOIN shop (and fleet policy). |
+| A2 | Bob MUST start workers with IRC + build skills and **direct them to JOIN IRC**. |
 | A3 | Persist until Bob stops them after idle timeout (U1). |
 | A4 | Implementer cannot MRB that PR; the other worker MRBs; implementer takes next PR. |
 | A5 | Worker `working_on` POSTs to webhook; digest shows the description. |
@@ -129,10 +140,10 @@ Do not break: hostile MRB (not own PR), no UAT stamp by workers, no `!bobiverse`
 | A7 | Shop/channel **description** = current repo name; update when the assigned repo changes. |
 | A8 | Bob chair approves UAT via the new UAT skill; workers never stamp UAT. |
 | A9 | Workers implement/MRB/FIX themselves; they do not invoke another agent. |
-| A10 | Bob monitors in-flight processes and restarts if deaf. |
-| A11 | Bob assigns MRB vs dev; workers do not self-dispatch the other role. |
+| A10 | Bob monitors in-flight processes and restarts if deaf. Shop ping every 15 min; intervene if stalled. |
+| A11 | Bob assigns MRB vs dev; can assign any bobiverse agent idle > 20s. |
 | A12 | Bob checks outstanding tickets every 2 hours during business hours and assigns them (FRs also arrive). |
-| A13 | Dev = cheap Cursor model; MRB = expensive reasoning model (new FRs + tests). |
+| A13 | Dynamic models: dev=less, MRB=medium, UAT=more (Cursor then local xAI). |
 | A14 | MRB merges duplicate issues, closes finished/superseded issues, merges PASS-nits PRs. |
 | A15 | Each bob webhooks identity + local grok remaining. |
 | A16 | Each bob reports account-wide Cursor values; fleet uses the lesser if they differ. |

@@ -46,8 +46,10 @@ Export-ModuleMember -Function @(
     'Get-BobTrayBarFillRgb',
     'Get-BobTrayAlertKind',
     'Get-BobTrayTitle',
+    'Get-BobTrayCursorGroupHelpTooltip',
     'Get-BobWeeklyRemaining',
     'Get-BobCursorAgentWeeklyRemaining',
+    'Get-BobCursorSpendingFromApiFixture',
     'Get-BobTrayTipPlacement',
     'Get-BobFleetRegistry',
     'ConvertTo-BobIrcPoint',
@@ -57,8 +59,12 @@ Export-ModuleMember -Function @(
     'Import-BobIrcPeerTranscript',
     'Import-BobIrcTrayPull',
     'Request-BobIrcBobiversePull',
+    'Sync-BobDigestWebhookAfterBobiversePull',
     'ConvertFrom-BobIrcTrayLine',
     'Get-BobJobRepoStamp',
+    'Get-BobIrcShopChannel',
+    'Get-BobIrcBuilderChannels',
+    'Get-BobWorkerIrcNick',
     'Compact-BobIrcOutbox',
     'Write-BobJobAuditLine',
     'Write-BobJobAuditFromPacket',
@@ -83,5 +89,8 @@ Export-ModuleMember -Function @(
     'Register-BobRepoPairMrbComplete',
     'Get-BobRepoPairBobiverseReport',
     'Set-BobShopChannelRepoDescription',
-    'Invoke-BobDigestWebhookPost'
+    'Invoke-BobDigestWebhookPost',
+    'Invoke-BobRepoPairChairUsageWebhookIfChanged',
+    'Start-BobRepoPairMrbReview',
+    'Test-BobRepoPairTicketCadenceDue'
 )
