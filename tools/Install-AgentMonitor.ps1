@@ -62,4 +62,14 @@ if (Test-Path $skillsSrc) {
 $cmd = Join-Path $dest 'Watch-AgentHealth.cmd'
 if (-not (Test-Path $cmd)) { throw "AgentMonitor deploy incomplete: missing $cmd" }
 
-Write-SetupLog ("AgentMonitor ready (agent=$Agent). Launch: `"$cmd`" <cursor|grok> [new] [off]")
+# Desktop + repo shortcuts: always -New; IconLocation = agent .exe (visible icons).
+$pub = Join-Path $dest 'tools\Publish-DesktopShortcuts.ps1'
+if (Test-Path -LiteralPath $pub) {
+    Write-SetupLog 'publish Desktop shortcuts (always -New, exe icons)'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $pub -MonitorDir $dest
+}
+else {
+    Write-SetupLog 'Publish-DesktopShortcuts.ps1 missing - skip shortcut refresh'
+}
+
+Write-SetupLog ("AgentMonitor ready (agent=$Agent). Launch: `"$cmd`" <cursor|grok> [new|resume] [off] — default is new")

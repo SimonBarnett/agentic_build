@@ -61,9 +61,10 @@ Driver: `tools/Start-BobBuildLoop.ps1` / `tools/run-bob-build-loop.ps1`
 (skill `bob-job-loop`). Launch it and wait for `DONE`. It starts the PR
 worker if needed, hands off MRB to a **new** `-Kind mrb` agent, retries
 failed cursor/grok jobs, reads Required fixes on FAIL, back-links boards,
-and exits on PASS-nits. On FAIL, or when open `feature-request` issues
-remain after DONE / Missing features, pass each to a **new** worker. Do
-not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix` by hand unless
+and exits on PASS-nits. On FAIL, FIX stays on this FR. After DONE, start
+**one** `bob-job-loop` for the **next** queued FR (receive order;
+`bob-job-loop`). Do not retype `Start-BobMrbHandoff` / `Start-BobBuild -Fix`
+by hand unless
 the driver cannot start. Do not resume the implementer to review their
 own PR.
 Board state: `Get-BobMrbBoard` in `tools/Bob-BuildLoop.ps1`.

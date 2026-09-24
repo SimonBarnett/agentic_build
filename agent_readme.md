@@ -49,6 +49,15 @@ The pull worker `tools\Watch-BobJobs.ps1` (logon task) claims **this** machineâ€
 | `bob-hostile-mrb` / `cursor-mrb-dev` | Hand off MRB; FAIL â†’ FIX; PASS-nits merges |
 | `grok-build-fleet` | Start/monitor/stop; picker; heal `Watch-BobJobs` |
 | `bob-build-loop` | Pointer to the rows above |
+| `bob-repo-pair` | Two persistent dev+MRB workers per repo (#175); chair `bob-{machine}` |
+
+## Repo pair (optional path, #175)
+
+When Bob owns a repo with two shop workers instead of one-shot jobs:
+
+`Start-BobRepoPair`, `Get-BobRepoPair`, `Update-BobRepoWorkerWorkingOn`,
+`Invoke-BobRepoPairTick`, `Test-BobRepoPairSelfMrb`, `Get-BobRepoPairBobiverseReport`.
+Skill `bob-repo-pair`. v1 `Start-BobBuildLoop` stays until Simon switches the repo.
 
 ## Start a build
 

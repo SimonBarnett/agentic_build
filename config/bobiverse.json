@@ -1,4 +1,4 @@
-{
+﻿{
   "channel": "#bobiverse",
   "mode": "free",
   "mootId": "b0b1be15e0000001",
@@ -6,6 +6,14 @@
   "docs": "docs/bobiverse.md",
   "host": "irc.ntsa.uk",
   "port": 6697,
+  "reportUrl": "https://irc.ntsa.uk:7700/bob/v1/report",
+  "reportPort": 7700,
+  "shortids": {
+    "flamingo": "fl",
+    "marchhare": "mh",
+    "ionos": "io",
+    "ce-priority-dev1": "d1"
+  },
   "nicks": {
     "flamingo": "bob-flamingo",
     "marchhare": "bob-marchhare",
