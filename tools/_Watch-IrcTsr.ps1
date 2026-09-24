@@ -1,4 +1,4 @@
-# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
+﻿# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
 # IRC TSR watchdog wrapper. Scheduled task _Watch-IrcTsr-<machineId> runs this
 # or a per-machine copy. Not Watch-Bobiverse — no grok reasoning here.
 [CmdletBinding()]

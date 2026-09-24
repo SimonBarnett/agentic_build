@@ -1,4 +1,4 @@
-function Test-SameCwd {
+﻿function Test-SameCwd {
     param(
         [Parameter(Mandatory)][string]$Cwd,
         $Overlay

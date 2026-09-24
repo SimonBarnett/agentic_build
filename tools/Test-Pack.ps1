@@ -1,4 +1,4 @@
-# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
@@ -179,6 +179,101 @@ Invoke-Case 'BT0 skills' {
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
 
+# --- BT0plan visionary sync ---
+Invoke-Case 'BT0plan visionary sync git stderr' {
+    param($bridgeRoot)
+    # Tray Plan -> "Could not sync skills-visionary: Install-VisionarySkills failed (exit 1)".
+    # Windows PowerShell 5.1 + ErrorActionPreference Stop + `git pull ... 2>$null`: git's
+    # "From <url>" stderr line (printed on EVERY pull) became a terminating NativeCommandError.
+    # Run the installer exactly like the tray: powershell.exe -NoProfile -File ... -Pull, 2>&1.
+    $installer = Join-Path $RepoRoot 'tools\Install-VisionarySkills.ps1'
+    $vis = Join-Path $bridgeRoot 'vis'
+    $bare = Join-Path $vis 'origin.git'
+    $seed = Join-Path $vis 'seed'
+    $clone = Join-Path $vis 'skills-visionary'
+    $fakeHome = Join-Path $vis 'home'
+    New-Item -ItemType Directory -Force -Path $vis, $fakeHome | Out-Null
+    function Invoke-Bt0VisGit {
+        param([string[]]$A)
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $o = @(& git -c user.name=bt0 -c user.email=bt0@example.invalid @A 2>&1 | ForEach-Object { [string]$_ })
+            $c = $LASTEXITCODE
+        }
+        finally { $ErrorActionPreference = $prev }
+        if ($c -ne 0) { throw ("git {0} failed: {1}" -f ($A -join ' '), ($o -join ' | ')) }
+    }
+    function Invoke-Bt0VisInstaller {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $savedProfile = $env:USERPROFILE
+        try {
+            $env:USERPROFILE = $fakeHome
+            $o = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -Pull -CloneRoot $clone 2>&1 | ForEach-Object { [string]$_ })
+            $c = $LASTEXITCODE
+        }
+        finally {
+            $env:USERPROFILE = $savedProfile
+            $ErrorActionPreference = $prev
+        }
+        return [pscustomobject]@{ Code = $c; Text = ($o -join "`n") }
+    }
+    $skillRel = '.grok\skills\visionary\SKILL.md'
+    Invoke-Bt0VisGit @('init', '-q', '--bare', $bare)
+    Invoke-Bt0VisGit @('--git-dir', $bare, 'symbolic-ref', 'HEAD', 'refs/heads/main')
+    Invoke-Bt0VisGit @('init', '-q', $seed)
+    Invoke-Bt0VisGit @('-C', $seed, 'checkout', '-q', '-b', 'main')
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent (Join-Path $seed $skillRel)) | Out-Null
+    Set-Content -LiteralPath (Join-Path $seed $skillRel) -Value "---`nname: visionary`n---`nbt0 v1"
+    Invoke-Bt0VisGit @('-C', $seed, 'add', '-A')
+    Invoke-Bt0VisGit @('-C', $seed, 'commit', '-q', '-m', 'v1')
+    Invoke-Bt0VisGit @('-C', $seed, 'push', '-q', $bare, 'main')
+    Invoke-Bt0VisGit @('clone', '-q', $bare, $clone)
+    Set-Content -LiteralPath (Join-Path $seed $skillRel) -Value "---`nname: visionary`n---`nbt0 v2"
+    Invoke-Bt0VisGit @('-C', $seed, 'commit', '-q', '-am', 'v2')
+    Invoke-Bt0VisGit @('-C', $seed, 'push', '-q', $bare, 'main')
+
+    # 1) clean clone, upstream moved: git prints "From ..." on stderr -> must exit 0 and copy v2
+    $r = Invoke-Bt0VisInstaller
+    if ($r.Code -ne 0) { throw ("installer exit {0} on a clean pull (git stderr must not be fatal): {1}" -f $r.Code, $r.Text) }
+    if ($r.Text -notmatch 'pulled:\s+True') { throw "pull must succeed: $($r.Text)" }
+    $copied = Join-Path $fakeHome $skillRel
+    if (-not (Test-Path -LiteralPath $copied) -or (Get-Content -LiteralPath $copied -Raw) -notmatch 'bt0 v2') { throw 'visionary SKILL.md v2 must be copied into ~/.grok/skills' }
+    # 2) origin unreachable: warn, keep the existing copy, exit 0 (Plan must not be blocked)
+    Invoke-Bt0VisGit @('-C', $clone, 'remote', 'set-url', 'origin', (Join-Path $vis 'missing.git'))
+    $r = Invoke-Bt0VisInstaller
+    if ($r.Code -ne 0) { throw ("unreachable origin must warn, not fail (exit {0}): {1}" -f $r.Code, $r.Text) }
+    if ($r.Text -notmatch 'warning: git pull failed' -or $r.Text -notmatch 'pulled:\s+False') { throw "pull failure must be reported as a warning: $($r.Text)" }
+    if (-not (Test-Path -LiteralPath $copied)) { throw 'existing skills copy must remain' }
+    # 3) no `git ... 2>$null` left under ErrorActionPreference Stop
+    $src = Get-Content -LiteralPath $installer -Raw
+    if ($src -match '&\s*git\b[^\r\n]*2>\$null') { throw 'Install-VisionarySkills must not run git with 2>$null under ErrorActionPreference Stop' }
+
+    # 4) tray: sync failed but a previous clone exists -> launch with a warning; none -> dialog error with the reason
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Sync-BobTrayVisionarySkills' }, $true)
+    if (-not $fn) { throw 'Watch-BobTray must define Sync-BobTrayVisionarySkills' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $trayLog = New-Object System.Collections.ArrayList
+    function Write-TrayLog([string]$m) { [void]$trayLog.Add($m) }
+    $fakeRepo = Join-Path $vis 'repo'
+    New-Item -ItemType Directory -Force -Path (Join-Path $fakeRepo 'tools') | Out-Null
+    Set-Content -LiteralPath (Join-Path $fakeRepo 'tools\Install-VisionarySkills.ps1') -Value "Write-Output 'bt0 sync boom'`nexit 1"
+    $RepoRoot = $fakeRepo
+    function Get-BobTrayVisionaryCloneRoot { return $clone }
+    $got = $null
+    try { $got = Sync-BobTrayVisionarySkills } catch { throw "failed sync with an existing copy must not block Plan: $($_.Exception.Message)" }
+    if ($got -ne $clone) { throw "failed sync with an existing copy must return that copy, got '$got'" }
+    if (@($trayLog | Where-Object { $_ -match 'WARNING visionary sync failed \(exit 1\)' }).Count -eq 0) { throw 'tray must log the sync warning' }
+    function Get-BobTrayVisionaryCloneRoot { return $null }
+    $msg = $null
+    try { [void](Sync-BobTrayVisionarySkills) } catch { $msg = $_.Exception.Message }
+    if ($msg -notmatch 'Install-VisionarySkills failed \(exit 1\): bt0 sync boom') { throw "no copy must raise the dialog error with the reason, got '$msg'" }
+}
+
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
     $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |
@@ -197,6 +292,28 @@ Invoke-Case 'BT0 parse' {
     }
     if ($bad.Count -gt 0) {
         throw ("{0} file(s) do not parse under this PowerShell (save non-ASCII scripts as UTF-8 with BOM): {1}" -f $bad.Count, ($bad -join ' | '))
+    }
+}
+
+# --- BT0 encoding ---
+Invoke-Case 'BT0 encoding utf8 bom' {
+    # Windows PowerShell 5.1 reads BOM-less scripts as ANSI (cp1252): UTF-8 em dash / arrow bytes turn
+    # into mojibake, and a trailing 0x94 / 0x9D byte can act as a curly quote inside strings (#322).
+    # Every tracked PowerShell file that contains non-ASCII bytes must be UTF-8 with BOM.
+    $tracked = @(& git -C $RepoRoot ls-files -- '*.ps1' '*.psm1' '*.psd1')
+    if ($tracked.Count -eq 0) { throw 'git ls-files returned no PowerShell files' }
+    $latin1 = [Text.Encoding]::GetEncoding(28591)
+    $bad = @()
+    foreach ($rel in $tracked) {
+        if ($rel -match '(^|/)tests/fixtures/') { continue }
+        $p = Join-Path $RepoRoot $rel
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        $b = [IO.File]::ReadAllBytes($p)
+        if ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) { continue }
+        if ($latin1.GetString($b) -match '[^\x00-\x7F]') { $bad += $rel }
+    }
+    if ($bad.Count -gt 0) {
+        throw ("{0} PowerShell file(s) have non-ASCII bytes but no UTF-8 BOM (save as UTF-8 with BOM): {1}" -f $bad.Count, ($bad -join ', '))
     }
 }
 

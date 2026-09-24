@@ -1,4 +1,4 @@
-# WP0 — record official grok surfaces. Do not guess flags.
+﻿# WP0 — record official grok surfaces. Do not guess flags.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
