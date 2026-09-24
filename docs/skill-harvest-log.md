@@ -1,4 +1,4 @@
-# Skill harvest log
+﻿# Skill harvest log
 
 ## 2026-09-23 — cleanup-orphans
 
@@ -10,9 +10,17 @@ Related: `killproc` (named hung seat), `bob-fleet-tray` (tray recycle).
 
 ## 2026-09-23 — land quiet-talk park doc (#36 FIX)
 
-Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.
+Simon: bare `pip install aider-chat` on MarchHare hit `WinError 5` on
+`_cffi_backend*.pyd` (locked by bob-marchhare / other Python), then `aider`
+not on PATH. Preferred install is a dedicated user venv + User PATH; document
+temp-dir warnings and free-model env. Home: `setup-bob-aider`. Fuel id
+`aider-free`.
 
-## 2026-09-23 — preferred IRC wake = Watch-AgentHealth
+## 2026-09-23 â€” land quiet-talk park doc (#36 FIX)
+
+Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file â†’ #74 / agentic_irc#6. No implementation in this FIX.
+
+## 2026-09-23 â€” preferred IRC wake = Watch-AgentHealth
 
 Simon: do not arm in-session `listen.stdout.log` `^FROM ` TSR (burns
 tokens on `#bobiverse` spam). Preferred: Watch-AgentHealth /
@@ -20,14 +28,14 @@ AgentMonitor forwards FROM. Harvested `watch-agent-health` into this
 repo; updated `agent-monitor-setup`, `bob-irc` stub. Sister
 `agentic_irc` skills `agentic-irc` + `bob-irc` Listener + wake CAST IRON.
 
-## 2026-09-23 — intake must run validate-vision-pack
+## 2026-09-23 â€” intake must run validate-vision-pack
 
 skills-visionary #6 / PR #7 (`2c98dfd`) shipped
 `tools/validate-vision-pack.py`. `bob-spec-intake` and `visionary` now
 refuse park/dispatch unless that command exits 0 (product `tools/` else
 sister clone). Home: `bob-spec-intake`, `visionary`.
 
-## 2026-09-23 — visionary at new-product intake
+## 2026-09-23 â€” visionary at new-product intake
 
 Simon: high-reasoning skill for the long-term strategy of a new product
 (measurable success, service/website/app, stack, architecture, HTML
@@ -35,13 +43,13 @@ mocks). Required before park/dispatch. Feature requests skip it. Homes:
 `visionary`, `docs/templates/vision.md`, `bob-spec-intake` New product
 step 0.
 
-## 2026-09-23 — bob-spec-intake: Grant script opens settings/installations
+## 2026-09-23 â€” bob-spec-intake: Grant script opens settings/installations
 
 `bob-spec-intake` New GitHub repo step 3: `Grant-CursorGitHubApp.ps1` opens
 Configure existing at https://github.com/settings/installations, not
 `/apps/cursor/installations/new`. Home: `bob-spec-intake`.
 
-## 2026-09-23 — All repos already set: disconnect/reconnect, then local gh
+## 2026-09-23 â€” All repos already set: disconnect/reconnect, then local gh
 
 Simon: Cursor GitHub App already has All repositories plus the full
 permission list (code + pull requests write). receive-pack still
@@ -50,7 +58,7 @@ token, not another GitHub click. Disconnect+Connect at
 cursor.com/dashboard/integrations as SimonBarnett. If still 403,
 use local gh / fleet cursor-agent. Home: `setup-github-cursor`.
 
-## 2026-09-23 — Cursor app permission list is enough; 403 is repo access
+## 2026-09-23 â€” Cursor app permission list is enough; 403 is repo access
 
 Simon pasted the Cursor GitHub App permissions: Read on administration,
 commit statuses, deployments, metadata, packages, pages; Read and write
@@ -59,7 +67,7 @@ requests, workflows. That is the correct grant (`code` = Contents).
 A receive-pack 403 with that list is Repository access (All vs
 Selected), not missing scopes. Home: `setup-github-cursor`.
 
-## 2026-09-23 — Configure existing Cursor install; do not /installations/new
+## 2026-09-23 â€” Configure existing Cursor install; do not /installations/new
 
 Simon: Cursor Web still 403 on PRs after the grant pages. `cursor[bot]`
 receive-pack is the pusher; `cursoragent` is only the git author
@@ -69,7 +77,7 @@ drop agentic_build. Use https://github.com/settings/installations
 Configure -> All repositories, then dashboard Integrations reconnect.
 Do not add cursoragent as a collaborator. Home: `setup-github-cursor`.
 
-## 2026-09-23 — cursor[bot] is not a collaborator; gh cannot prove the grant
+## 2026-09-23 â€” cursor[bot] is not a collaborator; gh cannot prove the grant
 
 Simon: try-now after the Cursor app page. A TUI `gh` seat cannot replay
 `git-receive-pack` as `cursor[bot]`. `PUT collaborators/cursor[bot]` is
@@ -80,7 +88,7 @@ on a classic user token. Real test is Cursor Web push. Pages:
 `settings/installations`, `cursor.com/dashboard/integrations`. Home:
 `setup-github-cursor` + `tools/Grant-CursorGitHubApp.ps1`.
 
-## 2026-09-23 — Cursor GitHub App on every git (All repositories)
+## 2026-09-23 â€” Cursor GitHub App on every git (All repositories)
 
 Simon: Cursor Web 403 on PRs was `cursor[bot]` denied
 `git-receive-pack` on agentic_build. Public repos already allow human
@@ -89,7 +97,7 @@ fork PRs. Fix is the Cursor GitHub App = **All repositories** (Contents
 checklist: public + webhook + this app. Homes: `setup-github-cursor`,
 `bob-spec-intake` New GitHub repo, `tools/Grant-CursorGitHubApp.ps1`.
 
-## 2026-09-23 — leftover FAIL after another worker merged
+## 2026-09-23 â€” leftover FAIL after another worker merged
 
 AgentMonitor #22: MRB of `7d49dd0` posted PASS-nits, then `gh pr merge`
 failed because the PR head moved. Worker voided and opened FAIL. A
@@ -97,7 +105,7 @@ second seat had already merged the later head. Leftover FAIL must
 close with the merged PR URL; do not FIX a MERGED PR. Home:
 `bob-hostile-mrb`.
 
-## 2026-09-23 — new repo is public PRs plus the git webhook
+## 2026-09-23 â€” new repo is public PRs plus the git webhook
 
 Simon: creating a new repo must leave it public so anyone can open a
 PR, and must add the GitHub hook in the same turn. Home:
@@ -105,14 +113,14 @@ PR, and must add the GitHub hook in the same turn. Home:
 `setup-github-webhooks` (`https://irc.ntsa.uk/bob/v1/git`, events
 push / pull_request / issues, no secret).
 
-## 2026-09-23 — split setup-github-webhooks + setup-ssl-certs
+## 2026-09-23 â€” split setup-github-webhooks + setup-ssl-certs
 
 Simon: one skill that shows how to set up webhooks on git, one on
 setting up SSL certs. Homes: `setup-github-webhooks` (gh hook JSON,
 all repos, 204) and `setup-ssl-certs` (win-acme IIS, do not touch
 Ergo PEM). `github-irc-webhooks` is a pointer only.
 
-## 2026-09-23 — GitHub webhooks + IIS HTTPS on irc.ntsa.uk
+## 2026-09-23 â€” GitHub webhooks + IIS HTTPS on irc.ntsa.uk
 
 Ionos IIS `irc-ntsa` has Let's Encrypt (win-acme renewal
 `IIS irc-ntsa webhook`). Default GitHub hook on every SimonBarnett
@@ -122,19 +130,19 @@ the hook added (no user-account default). Do not replace the Ergo
 PEM renewal. Home: `github-irc-webhooks`. Jeeves announce stays
 agentic_irc `jeeves-git-webhook`.
 
-## 2026-09-23 — harvest as a PR, not main
+## 2026-09-23 â€” harvest as a PR, not main
 
-Simon `#bobiverse`: update builder skills — send skills harvest as a
+Simon `#bobiverse`: update builder skills â€” send skills harvest as a
 PR, NOT a commit to main. Home: `harvest-agent-skills` +
 `Harvest-AgentSkills.ps1`.
 
-## 2026-09-23 — FR you parked is a bob job
+## 2026-09-23 â€” FR you parked is a bob job
 
 Simon `#bobiverse`: `Standing rule if you get a FR, you bob job it`.
 Park (`bob-spec-intake`) then `bob-job-loop` unless he said park-only.
 Homes: `bob-spec-intake` + `bob-job-loop`.
 
-## 2026-09-22 — PASS-nits merge-in-progress + no gh `merged` field
+## 2026-09-22 â€” PASS-nits merge-in-progress + no gh `merged` field
 
 `gh pr view --json state,merged` fails (unknown field `merged`).
 `Test-BobGhPrIsMerged` then always returned false, so PASS-nits finish
@@ -143,44 +151,44 @@ without closing boards (agentic_irc #135 / PR #145). Query
 `state,mergedAt`. If merge stderr is in-progress but `state` is MERGED,
 treat merged and close. Home: `bob-job-loop` + `tools/Bob-BuildLoop.ps1`.
 
-## 2026-09-22 — talk seats own bob jobs
+## 2026-09-22 â€” talk seats own bob jobs
 
 Simon `#bobiverse`: `no - the bob jobs are YOURS`. Idle talk seats run
 `bob-job-loop` on unowned open issues. Do not leave the queue to
 `bob-*` / Watch. Home: `bob-job-loop`.
 
-## 2026-09-22 — bob-job checks open issues as well as FRs
+## 2026-09-22 â€” bob-job checks open issues as well as FRs
 
 Simon `#bobiverse`: bob-job must scan **all open issues** (and open PRs),
 not only `--label feature-request`. Skip pure MRB meta boards. Unlabeled
 / other-label open issues are work (intake then loop). Homes:
 `bob-job-loop` + `bob-hostile-mrb`.
 
-## 2026-09-22 — CAST IRON: harvest back to the relevant repo
+## 2026-09-22 â€” CAST IRON: harvest back to the relevant repo
 
 Simon `#bobiverse`: every skill repo has a harvest skill as foundation
 (like `harvest-agent-skills` here). If you learn something new, harvest
 it back to the **relevant** repo immediately. `harvest-agent-skills` +
 `bob-spec-intake` (new skill packs LOCK a harvest skill in P0).
 
-## 2026-09-22 — gh pr merge must pass --merge (non-interactive)
+## 2026-09-22 â€” gh pr merge must pass --merge (non-interactive)
 
 ehf #5 PASS-nits finish FAILED: `gh pr merge` without `--merge`/`--rebase`/`--squash` when not a TTY. PR #10 was MERGED a moment later; treat DONE. Driver `Invoke-BobGhMergePrIfOpen` now passes `--merge`.
 
-## 2026-09-22 — MRB no-Bob: find next seat, do not sit
+## 2026-09-22 â€” MRB no-Bob: find next seat, do not sit
 
 Simon `#bobiverse`: if you MRB and there is no Bob but open issues
-remain, find someone to take the next dev — do not let it sit. Add to
+remain, find someone to take the next dev â€” do not let it sit. Add to
 skills and harvest. `bob-hostile-mrb` + `bob-job-loop`.
 
-## 2026-09-22 — MRB MUST close, merge, and pull completed PRs
+## 2026-09-22 â€” MRB MUST close, merge, and pull completed PRs
 
 Simon `#bobiverse`: VERY important. After PASS-nits, MRB must close
 finished issues, merge the pull request, and pull completed PRs so the
 next job is not on stale main. `bob-hostile-mrb` + `bob-job-loop`.
 Detailed FRs are also meant to be done at MRB (not park-only).
 
-## 2026-09-22 — harvest before dismiss + PASS-nits merge race
+## 2026-09-22 â€” harvest before dismiss + PASS-nits merge race
 
 Simon `#bobiverse`: Bob must remind workers to harvest skills before
 dismissing them. `harvest-agent-skills` + `bob-job-loop` On wakeup.
@@ -188,13 +196,13 @@ dismissing them. `harvest-agent-skills` + `bob-job-loop` On wakeup.
 if the PR is MERGED and the FR is CLOSED / PASS-nits, treat DONE; do
 not relaunch a build (marchhare irc-skill #1).
 
-## 2026-09-22 — Watch must not enqueue !bobiverse (Simon go-for-it)
+## 2026-09-22 â€” Watch must not enqueue !bobiverse (Simon go-for-it)
 
 Simon on #bobiverse: go for it. `!bobiverse` answer is Jeeves-only.
 `Request-BobIrcBobiversePull` no longer enqueues channel `!bobiverse`
 unless `BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1`. Talk seats never answer it.
 
-## 2026-09-23 — bob-* must call !bobiverse again (#196)
+## 2026-09-23 â€” bob-* must call !bobiverse again (#196)
 
 Simon #bobiverse / issue #196: each `bob-<machine>` on `Watch-Bobiverse`
 enqueues `!bobiverse` on the ~120s cadence again. `Test-BobIrcBobiversePullSeat`
@@ -203,19 +211,19 @@ digest ingest, `Sync-BobDigestWebhookAfterBobiversePull` POSTs only when local
 fuel/jobs/online differs from the chair digest machine row (`_chair-digest-peers.json`;
 #141 change-only).
 
-## 2026-09-22 — fleet harvest irc skill + failed-pong restart
+## 2026-09-22 â€” fleet harvest irc skill + failed-pong restart
 
 Simon `#bobiverse`: `everyone harvest your irc skill`; live seat on a
 box restarts a nick that fails to pong. Triggers added to
 `harvest-agent-skills` and `killproc`. IRC body lives in `agentic_irc`.
 
-## 2026-09-22 — killproc -Roll shop channel from nick
+## 2026-09-22 â€” killproc -Roll shop channel from nick
 
 Marchhare-20280: killproc -Roll joined #flamingo on marchhare-23624.
 `Stop-HungAgent` now sets `--channel #bobiverse,#<machine>` from the
 nick (marchhare-23624 -> #marchhare). Do not hardcode #flamingo.
 
-## 2026-09-22 — killproc: -IrcHome, working seat, new cursor-agent
+## 2026-09-22 â€” killproc: -IrcHome, working seat, new cursor-agent
 
 Simon: harvest the second-seat night. Param is `-IrcHome` (never `-Home`;
 `$Home` is read-only). Working live seat killproc-rolls the hung *other*
@@ -224,7 +232,7 @@ until a Cursor TSR. After close: new `cursor-agent.ps1` with prompt file
 (`--trust --force --model grok-4.6`); no `cmd.exe /c` prompt; no Halloy
 SendKeys. Skill `killproc`. Talk-seat nick/home stay `agentic-irc`.
 
-## 2026-09-22 — killproc (end hung agents)
+## 2026-09-22 â€” killproc (end hung agents)
 
 Simon: create a new killproc skill to end hung (jung) agents.
 `Stop-HungAgent.ps1 -IrcHome <seat> -Nick <nick> -Roll` kills only
@@ -266,14 +274,14 @@ posting PASS-nits. If `gh pr merge` then fails, void that pass board and
 open a new FAIL issue on the same SHA. Learned on open-tts PR #87 /
 SHA `86cabf9` (issues #134 then #135).
 
-## 2026-09-21 — MRB worker: isolate review SHA; CONFLICTING is FAIL
+## 2026-09-21 â€” MRB worker: isolate review SHA; CONFLICTING is FAIL
 
 `bob-hostile-mrb` worker steps: if the shared checkout HEAD is another
 job, use a detached worktree at the review SHA (do not reset that
 branch). A GitHub `CONFLICTING` PR is FAIL even when acceptance is
-green in isolation — PASS-nits includes merge.
+green in isolation â€” PASS-nits includes merge.
 
-## 2026-09-21 — bob-job launchers + MRB remaining-FR rule
+## 2026-09-21 â€” bob-job launchers + MRB remaining-FR rule
 
 Harvest from live bob-job loops:
 
@@ -288,7 +296,7 @@ Harvest from live bob-job loops:
 - FIX #112: `ConvertFrom-BobGhJsonList` keeps issue `body`; restore `-Pr`
   to `Start-BobMrbHandoff`; Test-Pack BT0loop10/11. Audit write must not
   abort DONE.
-## 2026-09-21 â€” running Bob jobs (dispatcher playbook)
+## 2026-09-21 Ã¢â‚¬â€ running Bob jobs (dispatcher playbook)
 
 Fleet runs of `bob-job-loop` across agentic_build / agentic_irc / open-tts.
 Promote: `tools/run-bob-build-loop.ps1` (credential-manager GH_TOKEN first),
@@ -298,7 +306,7 @@ cursor-agent status stderr non-fatal, Add-Content log lock fallback.
 `bob-job-loop` skill owns the dispatcher hard rules. Driver files:
 `Start-BobBuildLoop.ps1`, `Bob-BuildLoop.ps1`, `Start-BobCursor.ps1`.
 
-## 2026-09-20 â€” build/MRB loop driver (notify on PASS-nits)
+## 2026-09-20 Ã¢â‚¬â€ build/MRB loop driver (notify on PASS-nits)
 
 `bob-job-loop` / `tools/Start-BobBuildLoop.ps1`: dispatcher launches one
 program; stdout `DONE` on MRB PASS-nits. Starts the PR worker, hands MRB
@@ -307,7 +315,7 @@ attempts per phase), reads Required fixes on FAIL, back-links boards.
 State under `$BOB_BRIDGE_HOME/loops`. Does not stamp UAT. FR:
 `docs/feature-request-mrb-loop-automation-2026-09-20.md`.
 
-## 2026-09-20 â€” dispatcher hands every worker PR to a different MRB worker
+## 2026-09-20 Ã¢â‚¬â€ dispatcher hands every worker PR to a different MRB worker
 
 When a worker opens a PR, the dispatcher immediately `Start-BobMrbHandoff`
 (`-Kind mrb`, new job, isolated worktree). Never the implementer. Never
@@ -315,7 +323,7 @@ resume the Composer session. FAIL still spawns a FIX worker who opens a
 new PR; that PR is MRBd by yet another worker. Home: `bob-build-loop`.
 Pointers: `cursor-mrb-dev`, `bob-hostile-mrb`.
 
-## 2026-09-20 â€” PR/MRB transaction: Cursor Models then grok
+## 2026-09-20 Ã¢â‚¬â€ PR/MRB transaction: Cursor Models then grok
 
 Simon: Cursor Models (Cursor Grok + Composer) for MRBs and PRs until that
 pool is empty, then grok.exe. Never Other Models. Tray/capacity must show
@@ -326,11 +334,11 @@ worker. Table + mermaid in `bob-build-loop` / README. `models.mrbCursor`
 is Cursor Grok `grok-4.6`, not `claude-opus-5-thinking-high`. FR:
 `docs/feature-request-pr-mrb-cursor-models-transaction-2026-09-20.md`.
 
-## 2026-09-20 â€” customer paid their bill
+## 2026-09-20 Ã¢â‚¬â€ customer paid their bill
 
-Standalone `cursor-sand-billing`: Grok Bot deaf â†’ Sand 100% / Stripe `NEEDS_AUTH` / Open invoices at `cursor.com/dashboard/billing` (not Spending). After Paid, one ping. Do not Recreate. `box-usage` still owns the numbers.
+Standalone `cursor-sand-billing`: Grok Bot deaf Ã¢â€ â€™ Sand 100% / Stripe `NEEDS_AUTH` / Open invoices at `cursor.com/dashboard/billing` (not Spending). After Paid, one ping. Do not Recreate. `box-usage` still owns the numbers.
 
-## 2026-09-20 â€” Cursor MRB/FIX until PASS-nits
+## 2026-09-20 Ã¢â‚¬â€ Cursor MRB/FIX until PASS-nits
 
 `cursor-mrb-dev`: hand off Cursor MRB (reasoning model) then Cursor
 builder (`composer-2.5`) until a new `MRB FAIL|PASS-nits` issue on the
@@ -339,7 +347,7 @@ new SHA. `start-bob-cursor` owns login, `-Kind`, in-process `-Goal`,
 `bob-hostile-mrb`: new MRB issue per SHA; do not reuse the old FAIL as
 the board. `bob-build-loop` points here; fuel is Cursor then Grok.
 
-## 2026-09-20 â€” bob-irc canonical in agentic_irc
+## 2026-09-20 Ã¢â‚¬â€ bob-irc canonical in agentic_irc
 
 All IRC playbooks (client, SEAL, moot, file, dumb, invite-airc, Ergo
 start/firewall, Watch-Bobiverse recycle, Halloy) live in
@@ -348,46 +356,46 @@ keeps a `bob-irc` stub (Test-Pack / Install-BobFleet) plus
 `config/bobiverse.json` and `docs/bobiverse*.md`. `harvest-agent-skills`
 routes IRC harvests to agentic_irc.
 
-## 2026-09-20 â€” unpaid Open Cursor invoices silence Grok Bot
+## 2026-09-20 Ã¢â‚¬â€ unpaid Open Cursor invoices silence Grok Bot
 
 Cursor dashboard: "You may have an unpaid invoice" plus invoice Status Open (20 Sep mid-month cycle starting 16 Sep; 16 Sep cycle starting 14 Sep). Same as Stripe `NEEDS_AUTH` + Sand 100%. Pay Open rows, then one Bob ping. `box-usage`.
 
-## 2026-09-20 â€” Stripe Link NEEDS_AUTH blocks Sand on-demand
+## 2026-09-20 Ã¢â‚¬â€ Stripe Link NEEDS_AUTH blocks Sand on-demand
 
 `ListGrokBotStripeLinkPaymentMethods` returned `GROK_BOT_STRIPE_LINK_PAYMENT_METHODS_OUTCOME_NEEDS_AUTH` while `GetSandUsageStatus` was 100% with on-demand enabled. Box send 503. Human must finish payment method in Grok Bot Settings > Usage. `box-usage` + `unstick-grok-bot` step 3.
 
-## 2026-09-20 â€” Sand usagePercent 100 silences Grok Bot
+## 2026-09-20 Ã¢â‚¬â€ Sand usagePercent 100 silences Grok Bot
 
 Dashboard `GetSandUsageStatus` `usagePercent: 100` (reset `nextResetTimestampUtc`). Turns `ACCEPTED_TEMPORAL` with no `send-message` and no limit banner. On-demand enabled / `hasAvailableUsage: true` still silent; box harness 503. Check this **before** RecreateSandBox. `box-usage` owns the Sand numbers; `unstick-grok-bot` step 3 points here.
 
-## 2026-09-20 â€” cursor-agent prompt must not look like CLI flags
+## 2026-09-20 Ã¢â‚¬â€ cursor-agent prompt must not look like CLI flags
 
 Node `cursor-agent` treats unquoted prompt tokens as options
 (`unknown option '-join'`). Launch with `--` before the prompt, and do
 not put PowerShell `-join` or raw double-quotes in the goal string.
 
-## 2026-09-20 â€” Start-BobCursor must leave the grok Job Object
+## 2026-09-20 Ã¢â‚¬â€ Start-BobCursor must leave the grok Job Object
 
 `Start-Process` children are killed when the grok.exe shell that called
 `Start-BobCursor.ps1` exits. Use `Win32_Process.Create` so cursor-agent
 outlives the dispatcher. Combined with no `RedirectStandardOutput` on
 the parent (PS 5.1 wait bug).
 
-## 2026-09-20 â€” Start-BobCursor must not wait on the agent
+## 2026-09-20 Ã¢â‚¬â€ Start-BobCursor must not wait on the agent
 
 `Start-Process -RedirectStandardOutput -PassThru` in Windows PowerShell
 5.1 still waited for cursor-agent (handoff `ConvertTo-Json` returned
 after 843s when pid 11464 exited). Redirect inside `launch.ps1` instead;
 parent Start-Process is Hidden + PassThru only.
 
-## 2026-09-20 â€” cursor-agent prompt via launch.ps1
+## 2026-09-20 Ã¢â‚¬â€ cursor-agent prompt via launch.ps1
 
 `Start-Process -ArgumentList` mangles a multiline MRB prompt (quotes
 split the node argv). Write `cursor-agent-<job>.prompt.txt` and a
 `launch.ps1` that reads it and passes one argument to `cursor-agent.ps1`.
 Skip empty Docs/Plan so the prompt is not `Read  and .`.
 
-## 2026-09-20 â€” grok.exe has no build0.1; resolve equivalent
+## 2026-09-20 Ã¢â‚¬â€ grok.exe has no build0.1; resolve equivalent
 
 `grok models` on 1.0.34 is only `grok-4.6` / `grok-4.5` (`-m build0.1` is
 unknown model id). Keep `models.buildGrok=build0.1`. `Resolve-BobGrokCliModel`
@@ -396,58 +404,58 @@ When the catalog lists `build0.1`, the preferred id is used as-is.
 Cursor builders stay `composer-2.5`; MRB stays `grok-4.6` /
 `claude-opus-5-thinking-high`. `-m grok-4.6` already bills `grok-4.6-build`.
 
-## 2026-09-20 â€” MRB reasoning vs build0.1
+## 2026-09-20 Ã¢â‚¬â€ MRB reasoning vs build0.1
 
 MRB jobs use the latest reasoning model (`models.mrbCursor` /
 `models.mrbGrok`). Build workers use `build0.1` or Cursor `composer-2.5`.
 `Get-BobJobModel`; grok.exe `-m`; cursor-agent `--model`.
 
-## 2026-09-20 â€” MRB fuel is Cursor then Grok
+## 2026-09-20 Ã¢â‚¬â€ MRB fuel is Cursor then Grok
 
 `Start-BobMrbHandoff` / picker default: `cursor-models` then `grok-build`. Copilot only with `-AllowCopilot`. `Start-BobCursor` must not launch `~\.grok\bin\agent.exe` (that is grok.exe).
 
-## 2026-09-20 â€” Bob hands off MRBs
+## 2026-09-20 Ã¢â‚¬â€ Bob hands off MRBs
 
 Bob does not write the hostile review in-session. `tools/Start-BobMrbHandoff.ps1` posts `@copilot` on the feature-request issue (CCA if enabled) or `-Fleet` git-task. Worker: FAIL / PASS-nits only. Only Bob stamps ready for human UAT. Missing-features check stays in `bob-hostile-mrb`.
 
-## 2026-09-20 â€” MRB requests missing features
+## 2026-09-20 Ã¢â‚¬â€ MRB requests missing features
 
 `bob-hostile-mrb`: every board walks this FR's acceptance **and** holes with no parked request. Red acceptance stays Required fixes. Unspecified holes / issues with no intake doc are **requested** (`bob-spec-intake` issue + `docs/feature-request-*.md`), not implemented in the MRB job. Body section **Missing features**.
 
 
-## 2026-09-20 â€” PRs #5 and #6 not merged (stale drafts)
+## 2026-09-20 Ã¢â‚¬â€ PRs #5 and #6 not merged (stale drafts)
 
 Checked both open drafts vs `main`. Merging either would rewind later tray/git-task work (PR #5) or restore hover/iconProbe/hideTip (PR #6, issue #3). Pulled the unique bits that `main` lacked: per-machine `_Watch-Bobiverse-*.ps1` wrappers (kept ionos env-specific wrapper) and the native P+ idle chip screenshot. Closed the PRs as superseded.
 
-## 2026-09-20 â€” action GitHub issues #1 #3 #4 #7 #8
+## 2026-09-20 Ã¢â‚¬â€ action GitHub issues #1 #3 #4 #7 #8
 
 - `setup-remote-grok-bot`: flamingo remote CLI+desktop playbook (Mode 3 put+spawn, no-GPU, window-state 0x0). Temporal hangs stay `unstick-grok-bot`.
 - `reinstall-agentic-build-skills` + `tools/Reinstall-AgentSkills.ps1`: copy `.grok/skills` to `~/.grok/skills`; optional single-instance tray recycle (issue #3).
 - `start-bob-cursor` + `Select-BobGitWorker` / `Get-BobCapacity`: git-task dispatch is `(machine, fuel)`. Cursor Models is the shared top bar, not a machine named cursor. DUMB/2012 is not a git worker.
 - Tray issue #3: do not merge PR #5 (it would drop seat labels / GBP overage). BT0n now asserts click-only / no hover; `Install-BobFleet` registers `_Watch-Bobiverse-<id>` without double-starting an already-running moot.
 
-## 2026-09-20 â€” unstick: new Temporal agent also hung
+## 2026-09-20 Ã¢â‚¬â€ unstick: new Temporal agent also hung
 
 Created throwaway `Builder` (`CreateGrokBotTemporalAgent`). Its `grok-bot-turn-<newId>` ACCEPTED a PONG with no send-message, same as Bob and Haitch. `SendGrokBotUserMessage isFork` still returns Bob's old workflow id. Stop Recreate.
 
-## 2026-09-20 â€” unstick: account-wide Temporal
+## 2026-09-20 Ã¢â‚¬â€ unstick: account-wide Temporal
 
 If Haitch (or any idle agent) also ACCEPTED_TEMPORAL with no send-message, RecreateSandBox cannot fix it. Probe a second agent before more Recreate. `window-state.json` x/y ~-32000 w/h 0 is a separate Electron blank; kill, rewrite bounds, relaunch `--disable-gpu`.
 
-## 2026-09-20 â€” unstick wait for new podId
+## 2026-09-20 Ã¢â‚¬â€ unstick wait for new podId
 
 RecreateSandBox `started: true` is not success. Poll EnsureSandBox until `podId` changes (1-3 min; API can timeout mid-transfer). Two 30s samples of the **old** id mean the box has not rotated.
 
-## 2026-09-20 â€” harvest during the job
+## 2026-09-20 Ã¢â‚¬â€ harvest during the job
 
 `harvest-agent-skills` now fires in-session: if a build/fleet job learns a repeatable procedure, write the skill, log, commit, push `origin/main`. Hourly `BobSkillHarvest-*` is backup. `grok-build-fleet` points here.
 
-## 2026-09-20 â€” unstick: shared sandbox + Waiting to send
+## 2026-09-20 Ã¢â‚¬â€ unstick: shared sandbox + Waiting to send
 
 - Recreate once per shared Grok Bot sandbox, not per agent. Wait for transfer toast / stable `podId` before any ping.
 - UI **Waiting to send** = PENDING. Preferred recovery ping is the Grok Bot UI. `GrokBotApi.py --wait` looks for a new assistant `send-message` in the transcript, not roster `lastActivityAt`.
 
-## 2026-09-20 â€” private Ergo + unstick agentId (ionos)
+## 2026-09-20 Ã¢â‚¬â€ private Ergo + unstick agentId (ionos)
 
 - New skill `bob-irc`: fleet `#bobiverse` is Ergo `irc.ntsa.uk:6697`, not Libera. Join/recycle Watch-Bobiverse only; connect file path not value. Docs remain `docs/bobiverse.md` / `docs/bobiverse-ionos-ircd.md`.
 - `grok-build-fleet` Bobiverse section points at Ergo + `bob-irc`.
@@ -461,7 +469,7 @@ MRB is a GitHub issue (`Start-BobMrb.ps1`, skill `bob-hostile-mrb`). No MRB PDFs
 
 Harvested `start-bob-copilot`: Grok starts GitHub Copilot cloud agent via `tools/Start-BobCopilot.ps1` (`gh api` user token). Fleet prompt passes that skill so a build `grok.exe` offloads GitHub repo work instead of burning Cursor weekly usage.
 
-## 2026-09-20 â€” bob-fleet-tray diagnostics harvest (ionos)
+## 2026-09-20 Ã¢â‚¬â€ bob-fleet-tray diagnostics harvest (ionos)
 
 Promoted live tray diagnostics into `.grok/skills/bob-fleet-tray/SKILL.md`:
 click-only TipForm (no hover), blank NotifyIcon.Text, `#Bobiverse (machine)`
@@ -471,16 +479,16 @@ ntsa (marchhare + ce-priority-dev1), cursor overage as red negative pounds from
 mutex + Restart watcher kill-all. Trigger: recycle Watch-BobTray only after
 card/hover changes.
 
-## 2026-09-20 â€” bob-fleet-tray blank-card + real GBP overage (ionos UAT)
+## 2026-09-20 Ã¢â‚¬â€ bob-fleet-tray blank-card + real GBP overage (ionos UAT)
 
 - Dropped WM_SETREDRAW from Suspend/Resume-BobTrayPaint (SuspendLayout only).
 - Rebuild-BobTrayTiles formats cursor/seat labels before Controls.Clear.
 - Inline overage-red check (no Test-BobCursorOverageLabel from tray).
-- Get-CursorAgentUsage.py: spendLimitUsage.individualUsed â†’ GBP via er-api.
+- Get-CursorAgentUsage.py: spendLimitUsage.individualUsed Ã¢â€ â€™ GBP via er-api.
 - Skill rewritten with diagnose steps for blank card + no-dialog compile fail.
 
 
-## 2026-09-20 â€” ionos Ergo outbox POINT flood
+## 2026-09-20 Ã¢â‚¬â€ ionos Ergo outbox POINT flood
 
 `Write-BobIrcStatus` appending a POINT every Watch tick filled
 `~\.agentic-irc-bobiverse\outbox.txt` (~1831 lines). `irc_agent.py` drain
@@ -490,7 +498,7 @@ backlog over 32KB on Start/Install; treat `127.0.0.1` as private Ergo
 (not stale/Libera); do not default ionos to loopback without SNI.
 Owner: `docs/bobiverse.md` + `bob-irc` stub.
 
-## 2026-09-20 â€” cursor/xAI remaining + reset dates
+## 2026-09-20 Ã¢â‚¬â€ cursor/xAI remaining + reset dates
 
 - Harvested into `box-usage` and `bob-fleet-tray`: Get-BobWeeklyRemaining / Get-BobCursorAgentWeeklyRemaining / Format-BobResetLabel / IRC reset= / TipForm headings.
 - Import-BobIrcPeerTranscript keeps prior period_end when POINT lacks reset=.
