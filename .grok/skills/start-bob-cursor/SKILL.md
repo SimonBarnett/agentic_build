@@ -4,7 +4,8 @@ description: >
   Hand a git task to Cursor Agent (cursor-models fuel) on a live fleet box.
   Use when Select-BobGitWorker / Start-BobBuild -Task git picked cursor-models,
   the operator passed -Fuel cursor-models, /start-bob-cursor, or a
-  cursor-mrb-dev FIX/MRB launch.
+  cursor-mrb-dev FIX/MRB launch. Before start, pass the digest fuel gate
+  (bob-token-handoff). Do not invent remaining %.
 ---
 
 # Start Bob Cursor
@@ -18,6 +19,14 @@ Transaction: `bob-build-loop`.
 ## When
 
 Picker selected `cursor-models`, `Start-BobBuild -Task git -Fuel cursor-models`, `Start-BobMrbHandoff`, or `cursor-mrb-dev`.
+
+## Digest fuel gate (before start)
+
+Follow `bob-token-handoff` first. GET `https://irc.ntsa.uk/bob/v1/report` and read `pcent.cursor-models`.
+
+- Remaining > 0: start this script.
+- Remaining 0 or the key is missing: do not start cursor-agent. Fall through to grok-build. Do not invent a percent. MarchHare has no Cursor login; do not treat a local Cursor miss there as "empty" without the digest.
+- Tier: PR/build = low (`composer-2.5`). MRB = medium (`grok-4.6`). UAT is not this script (Bob assigns; high tier). Never Other Models.
 
 ## Login
 

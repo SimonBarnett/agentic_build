@@ -1,5 +1,15 @@
 # Skill harvest log
 
+## 2026-09-24 -- digest pcent, TipForm consume, fuel handoff, Jeeves chair
+
+Simon: token efficiency. Future Bob runs follow these recipes. Do not invent usage numbers. TipForm code is PR #306; this harvest is skills only.
+
+- `bob-fleet-tray`: MarchHare has no Cursor login. Bars come from digest `cursor_pools` + peer `pcent` at `https://irc.ntsa.uk/bob/v1/report`. Three bars (grok chat / high cost models / auto). Overspend header, no on-demand bar. Recycle: kill all Watch-BobTray, one CreateNoWindow start via `_Watch-BobTray-<seat>.ps1`.
+- `box-usage`: digest webhook is the peer source of truth. curl checklist. `Write-BobIrcStatus` publishes `pcent`. `overage_gbp` may be null on the digest; prefer local `spendLimitUsage` when present.
+- `bob-irc`: reportUrl HTTPS; every bob-* POSTs pcent; clear `_digest-webhook-posted.json` when the fingerprint blocks; Watch-Bobiverse recycle only; BobJeeves depends on BobIrcd; chairNick Jeeves; `BOB_DIGEST_HOME` vs `--home`.
+- `bob-build-dispatch`, `bob-job-loop`, `start-bob-cursor`, `start-bob-copilot`, `cursor-mrb-dev`: fuel from the live digest first. PR=low, MRB=medium, UAT=high. Bob listens and assigns only. Cursor Models remaining > 0 else Grok. Never Other Models.
+- New: `bob-digest-webhook`, `bob-jeeves-chair`, `bob-token-handoff`.
+
 ## 2026-09-23 — land quiet-talk park doc (#36 FIX)
 
 Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.
