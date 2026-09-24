@@ -561,7 +561,7 @@ function Disconnect-WatchIrc {
     if ($ctrlPy) {
         $py = (Get-Command python -ErrorAction SilentlyContinue)
         if ($py) {
-            Start-Process -FilePath $py.Source -ArgumentList @('-u', $ctrlPy, '--home', $resolved, '--reason', $why, '--request-only') -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
+            Start-Process -FilePath $py.Source -ArgumentList (ConvertTo-WatchProcessArgumentString -ArgumentList @('-u', $ctrlPy, '--home', $resolved, '--reason', $why, '--request-only')) -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
         }
     }
     Write-WatchLog ("irc graceful PART+QUIT requested ({0}) home={1}" -f $why, $resolved)
@@ -605,6 +605,38 @@ function Get-AgentPrompt {
         'On each wake: treat the payload as the task; reply on outbox if addressed or Simon asked the box; ping -> pong on that target. Then end turn.'
         'Do not stamp UAT. Bob/Simon only. No invented secrets. Do not gut cards or docs.'
     ) -join ' '
+}
+
+function ConvertTo-WatchProcessArgumentString {
+    # Windows PowerShell 5.1 Start-Process joins -ArgumentList with spaces and does NOT
+    # quote elements, so '--rules', 'Skills live at ...' and the multi-line prompt reached
+    # grok agent.exe as dozens of words -> "error: unexpected argument 'at' found" and the
+    # TUI exited before it was visible. Quote per CommandLineToArgvW rules instead.
+    param([string[]]$ArgumentList)
+    $parts = @()
+    foreach ($a in @($ArgumentList)) {
+        $s = [string]$a
+        if ($s -eq '') { $parts += '""'; continue }
+        if ($s -notmatch '[\s"]') { $parts += $s; continue }
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.Append('"')
+        $bs = 0
+        foreach ($ch in $s.ToCharArray()) {
+            if ($ch -eq [char]'\') { $bs++; continue }
+            if ($ch -eq [char]'"') {
+                [void]$sb.Append(('\' * ($bs * 2 + 1)))
+                [void]$sb.Append('"')
+                $bs = 0
+                continue
+            }
+            if ($bs -gt 0) { [void]$sb.Append(('\' * $bs)); $bs = 0 }
+            [void]$sb.Append($ch)
+        }
+        if ($bs -gt 0) { [void]$sb.Append(('\' * ($bs * 2))) }
+        [void]$sb.Append('"')
+        $parts += $sb.ToString()
+    }
+    return ($parts -join ' ')
 }
 
 function Get-GrokRules {
@@ -696,7 +728,7 @@ function Send-IrcLineToSession {
     if ($Grok) {
         $exe = Get-GrokAgentPath
         $args = @('--no-auto-update', '--no-alt-screen', '--cwd', $cwdFull, '-r', $sid, '-p', $text)
-        Start-Process -FilePath $exe -ArgumentList $args -WorkingDirectory $cwdFull -WindowStyle Hidden | Out-Null
+        Start-Process -FilePath $exe -ArgumentList (ConvertTo-WatchProcessArgumentString -ArgumentList $args) -WorkingDirectory $cwdFull -WindowStyle Hidden | Out-Null
         $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue $Line -Force
         Write-WatchLog ('forward grok session={0} {1}' -f $sid, $text.Substring(0, [Math]::Min(80, $text.Length)))
         return $State
@@ -1021,7 +1053,7 @@ function Start-WatchedAgent {
             $argList += @('-s', [string]$State.sessionId, '--rules', (Get-GrokRules))
         }
         $argList += $prompt
-        $started = Start-Process -FilePath $exe -ArgumentList $argList -WorkingDirectory $cwdFull -PassThru -WindowStyle $script:AgentTuiWindowStyle
+        $started = Start-Process -FilePath $exe -ArgumentList (ConvertTo-WatchProcessArgumentString -ArgumentList $argList) -WorkingDirectory $cwdFull -PassThru -WindowStyle $script:AgentTuiWindowStyle
         $State.seenSession = $true
         $State.rootPid = [int]$started.Id
         return [pscustomobject]@{ Kind = 'grok'; Exe = $exe; Process = $started; RootPid = [int]$started.Id; State = $State }
