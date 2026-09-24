@@ -138,6 +138,8 @@ Invoke-Case 'BT0 skills' {
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
         if ($raw -notmatch ('(?m)^name:\s*' + [regex]::Escape($n))) { throw "name mismatch $n" }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'https://github\.com/SimonBarnett/agentic_build') { throw 'harvest-agent-skills must name home GitHub' }
+        if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'honesty box') { throw 'harvest-agent-skills must keep the honesty box' }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
         if ($n -eq 'cleanup-orphans' -and $raw -notmatch 'Cleanup-OrphanAgents') { throw 'cleanup-orphans skill must document Cleanup-OrphanAgents.ps1' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }

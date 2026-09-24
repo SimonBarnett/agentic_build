@@ -10,6 +10,8 @@ description: >
 
 # Bobiverse IRC
 
+Foundation: harvest-agent-skills (honesty box) -> report back to https://github.com/SimonBarnett/agentic_build.
+
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
 else `C:\src\...`). Nicks/host/`reportUrl` live in this repo's
