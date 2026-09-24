@@ -58,6 +58,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\In
 
 `Install-BobIrc.ps1` is **one-shot** (genkey, JOIN/OPEN). After that, `tools\Watch-Bobiverse.ps1` is a hidden ~30s loop: local peer JSON, optional channel talk, `!bobiverse` tray pull ~120s, keep `irc_agent.py` joined. **No grok.exe. No reasoning. Not `Invoke-BobFleetTick`.** The tray only reads those JSON files. `Watch-BobTray` starts the loop the same way it starts `Watch-BobJobs`.
 
+The watcher takes `$env:BOB_MACHINE_ID`, else the computer name, then calls public `Resolve-BobiverseMachineId` so a nick (`bob-ionos`, `bob-dev1`) becomes the machine id in `config/bobiverse.json` `nicks` before it picks `bob-*` and the shop channel. BobBridge exports that command from `BobBridge.psd1` and `Export-ModuleMember`. Leaving it private makes every tick throw before `irc_agent` starts. `Get-ThisMachineId` is only this box (`BOB_MACHINE_ID` or `machine.json`); it does not replace that nick map.
+
 Do not open IRC from CI. Ergo `PASS` is `~\.grok\ergo\connect.password` (env `AGENTIC_IRC_PASSWORD`); do not commit it. Prefer `host=irc.ntsa.uk`. `$env:BOB_IRC_HOST` overrides `--host` when set. `127.0.0.1` is a valid private Ergo host; do not kill loopback `irc_agent` as stale/Libera.
 
 ## Outbox backlog (Ergo disconnect loop)

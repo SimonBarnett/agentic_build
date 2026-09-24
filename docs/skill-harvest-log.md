@@ -1,5 +1,9 @@
 # Skill harvest log
 
+## 2026-09-24 — Watch-Bobiverse seat id is exported Resolve-BobiverseMachineId
+
+`Watch-Bobiverse` calls public `Resolve-BobiverseMachineId` to map a nick or raw name onto a `config/bobiverse.json` machine id before `irc_agent` starts. A private-only copy throws every tick. `Get-ThisMachineId` is this box only (`BOB_MACHINE_ID` or `machine.json`) and does not replace that map. Home: `docs/bobiverse.md`, `bob-irc`.
+
 ## 2026-09-23 — land quiet-talk park doc (#36 FIX)
 
 Land `docs/feature-request-bobiverse-quiet-talk-2026-09-20.md` on main after CONFLICTING PR #35. Keep live `bobiverse.md` / `bob-irc` channel-talk + digest `!bobiverse` law. Supersession note on the park file → #74 / agentic_irc#6. No implementation in this FIX.

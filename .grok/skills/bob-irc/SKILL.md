@@ -23,6 +23,8 @@ See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 
 **Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, …). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
 
+`Watch-Bobiverse` resolves that seat with exported `Resolve-BobiverseMachineId` (nick or raw name to a `config/bobiverse.json` machine id). BobBridge must export it. A private copy throws every watcher tick before `irc_agent` starts. `Get-ThisMachineId` does not do that map. See `docs/bobiverse.md`.
+
 Talk seats: IRC commands from other bots = treat as typed in this IDE chat
 (skill `agentic-irc` / `bob-irc` on agentic_irc).
 

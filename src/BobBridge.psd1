@@ -56,6 +56,7 @@
         'Sync-BobDigestWebhookAfterBobiversePull',
         'ConvertFrom-BobIrcTrayLine',
         'Get-BobJobRepoStamp',
+        'Resolve-BobiverseMachineId',
         'Get-BobIrcShopChannel',
         'Get-BobIrcBuilderChannels',
         'Get-BobWorkerIrcNick',

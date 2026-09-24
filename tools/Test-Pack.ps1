@@ -1113,12 +1113,32 @@ Invoke-Case 'BT0o bobiverse irc' {
             'Import-BobIrcTrayPull',
             'Sync-BobDigestWebhookAfterBobiversePull',
             'Import-BobIrcPeerTranscript',
-            'Compact-BobIrcOutbox'
+            'Compact-BobIrcOutbox',
+            'Get-BobIrcBuilderChannels',
+            'Resolve-BobiverseMachineId'
         )) {
+        if ($watchBv -notmatch ('\b' + [regex]::Escape($watchCmd) + '\b')) {
+            throw "Watch-Bobiverse must call $watchCmd"
+        }
+        $quoted = "'" + $watchCmd + "'"
+        if ($psd1Bv -notmatch [regex]::Escape($quoted)) {
+            throw "BobBridge.psd1 FunctionsToExport missing $watchCmd"
+        }
+        if ($psm1Bv -notmatch [regex]::Escape($quoted)) {
+            throw "BobBridge.psm1 Export-ModuleMember missing $watchCmd"
+        }
         if (-not (Get-Command $watchCmd -ErrorAction SilentlyContinue)) {
             throw "Watch-Bobiverse module surface missing $watchCmd (#255)"
         }
     }
+    if ($watchBv -match 'Get-Command\s+Resolve-BobiverseMachineId') {
+        throw 'Watch-Bobiverse must call Resolve-BobiverseMachineId directly so a missing export fails the tick'
+    }
+    if ((Resolve-BobiverseMachineId 'ionos') -ne 'ionos') { throw 'Resolve-BobiverseMachineId ionos' }
+    if ((Resolve-BobiverseMachineId 'BOB-IONOS') -ne 'ionos') { throw 'Resolve-BobiverseMachineId must map nick bob-ionos to ionos' }
+    if ((Resolve-BobiverseMachineId 'bob-dev1') -ne 'ce-priority-dev1') { throw 'Resolve-BobiverseMachineId must map bob-dev1 to ce-priority-dev1' }
+    $unknownSeat = Resolve-BobiverseMachineId 'not-a-seat'
+    if ($unknownSeat) { throw "Resolve-BobiverseMachineId unknown seat returned $unknownSeat" }
     if ($watchBv -match 'Get-BobIrcChairDigestPeerForMachine') {
         if (-not (Get-Command Get-BobIrcChairDigestPeerForMachine -ErrorAction SilentlyContinue)) {
             throw 'Watch calls Get-BobIrcChairDigestPeerForMachine but it is not exported (#255)'
@@ -1143,6 +1163,9 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($docsBv -notmatch 'Outbox backlog') { throw 'docs/bobiverse.md must note outbox backlog disconnect loop' }
     if ($docsBv -notmatch 'BOB TRAY v1') { throw 'docs/bobiverse.md must document tray pull dialect' }
     if ($docsBv -notmatch 'BOB DIGEST v1') { throw 'docs/bobiverse.md must document BOB DIGEST v1 JSON pull' }
+    if ($docsBv -notmatch 'Resolve-BobiverseMachineId') { throw 'docs/bobiverse.md must document exported Resolve-BobiverseMachineId' }
+    $skillIrcWatch = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-irc\SKILL.md') -Raw
+    if ($skillIrcWatch -notmatch 'Resolve-BobiverseMachineId') { throw 'bob-irc skill must name exported Resolve-BobiverseMachineId' }
 
     $trayLine = 'BOB TRAY v1 id=ionos weekly=4 running=1 queued=0 repo=SimonBarnett/agentic_build kind=worker model=CursorModels lastSeen=2026-09-21T00:00:00Z jobs=SimonBarnett/agentic_build:running'
     $parsedTray = ConvertFrom-BobIrcTrayLine $trayLine
