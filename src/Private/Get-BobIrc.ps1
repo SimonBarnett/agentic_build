@@ -2151,6 +2151,14 @@ function Write-BobIrcStatus {
         responding             = $responding
         source                 = 'irc'
     }
+    try {
+        $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @())
+        if ($poolRows.Count -gt 0) {
+            $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($poolRows) -Force
+            Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($poolRows)
+        }
+    }
+    catch { }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $peerPath = Join-Path $dir ($id + '.json')
