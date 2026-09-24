@@ -232,6 +232,32 @@ Simon: create a new killproc skill to end hung (jung) agents.
 Do not spray Stop-Process. Named Grok Bot remains `unstick-grok-bot`.
 Skill `killproc`.
 
+## 2026-09-21 — IRC TSR: Start-IrcTsr.ps1 + Watch-CursorIrc
+
+`tools/Start-IrcTsr.ps1`, `_Start-IrcTsr-ionos.ps1`; wake
+`^AGENT_LOOP_WAKE_irc-tsr`; `Watch-CursorIrc` starts TSR not bare listen.
+Skills `agentic-irc`, `bob-irc`.
+
+## 2026-09-21 — IRC: ALWAYS listen + Watch-CursorIrc
+
+`agentic-irc` / `bob-irc`: `irc_listen.py` must stay up on fleet Cursor seats
+(`cursor-<machine-id>`, `~/.agentic-irc-cursor`). `tools/Watch-CursorIrc.ps1`,
+`_Watch-CursorIrc-ionos.ps1`. Still MUST reply via outbox same turn.
+
+## 2026-09-21 — FR queue: receive order until PASS-nits
+
+One FR at a time per repo: user-stated sequence or lowest open
+`feature-request` #; do not start the next loop until the current board is
+`phase=pass` (MRB PASS-nits). Replaces “fan out all open FRs after DONE”.
+Skills: `bob-job-loop`, `bob-build-loop`, `bob-hostile-mrb`, `cursor-mrb-dev`.
+
+## 2026-09-21 — GitHub hygiene scripts + PASS-nits merge gate
+
+`Start-BobMrb.ps1` requires `-PrUrl`; merges with `gh pr merge --merge`
+before posting PASS-nits. Operator: `Close-BobMrbPassedIssues.ps1`,
+`Close-BobSupersededGithub.ps1`, `Merge-BobMrbPassOpenPrs.ps1`. Skills:
+`bob-job-loop`, `bob-hostile-mrb`, `bob-build-loop`.
+
 ## 2026-09-21 — MRB: re-read mergeable immediately before PASS-nits
 
 `bob-hostile-mrb`: GitHub `CLEAN` can flip to `CONFLICTING` while the
@@ -254,12 +280,11 @@ Harvest from live bob-job loops:
 - `tools/run-bob-build-loop.ps1` and `tools/start-bob-build-loop-issue.ps1`:
   GCM / credential-manager for `GH_TOKEN` (do not rely on interactive
   `git credential fill` when `gh` is the helper).
-- `bob-job-loop`: unique LogPath, recover missed PR, after DONE hand
-  remaining open `feature-request` issues to new workers.
-- **New MRB rule:** pass to a **new** worker on MRB FAIL **or** when any
-  open feature-request / Missing-features issues remain. Homes:
-  `bob-hostile-mrb`, `bob-job-loop`, pointer `bob-build-loop`,
-  `cursor-mrb-dev`.
+- `bob-job-loop`: unique LogPath, recover missed PR; after DONE start **next**
+  queued FR only (see 2026-09-21 FR queue harvest).
+- **MRB rule:** new worker on MRB FAIL (FIX). After PASS-nits, **one** next FR
+  in receive order — not parallel FR loops. Homes: `bob-hostile-mrb`,
+  `bob-job-loop`, `bob-build-loop`, `cursor-mrb-dev`.
 - FIX #112: `ConvertFrom-BobGhJsonList` keeps issue `body`; restore `-Pr`
   to `Start-BobMrbHandoff`; Test-Pack BT0loop10/11. Audit write must not
   abort DONE.

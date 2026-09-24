@@ -158,9 +158,10 @@ main. Do not claim you merged unless your `gh pr merge` succeeded.
 1. Diff the PR against the parked feature request and plan.
 2. Run the missing-features check. File any new FRs before or with the MRB post.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
-4. Post with `tools/Start-BobMrb.ps1`:
-   - Title: `MRB FAIL|PASS-nits: <feature slug> <sha>`
-   - Labels: `mrb` plus `mrb-fail` or `mrb-pass`
+4. Post **only** with `tools/Start-BobMrb.ps1` (never `gh issue create`):
+   - `-Verdict FAIL` or `PASS-nits`; title slug + `-Sha`; body sections as below.
+   - **PASS-nits requires `-PrUrl`** — the script **merges that PR before** creating the
+     `mrb-pass` issue. If merge fails, post **FAIL** instead.
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
 5. **FAIL:** do not merge. Required fixes only. Dispatcher starts a **new**
