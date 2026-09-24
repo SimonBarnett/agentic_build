@@ -43,6 +43,49 @@ function Resolve-BobiverseMachineId {
     return $null
 }
 
+function Get-BobIrcShopChannel {
+    param([Parameter(Mandatory)][string]$MachineId)
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) {
+        $t = [string]$MachineId.Trim().ToLowerInvariant()
+        if ($t -eq 'dev1') { $mid = 'ce-priority-dev1' }
+        else { $mid = [string]$MachineId.Trim() }
+    }
+    if ($mid -eq 'dev1') { $mid = 'ce-priority-dev1' }
+    return '#' + $mid
+}
+
+function Get-BobIrcBuilderChannels {
+    param([Parameter(Mandatory)][string]$MachineId)
+    $cfg = Get-BobiverseConfig
+    $fleet = '#bobiverse'
+    if ($cfg -and $cfg.channel) {
+        $c = [string]$cfg.channel
+        if ($c) { $fleet = $c }
+    }
+    $shop = Get-BobIrcShopChannel -MachineId $MachineId
+    return ($fleet + ',' + $shop)
+}
+
+function Get-BobWorkerIrcNick {
+    param(
+        [Parameter(Mandatory)][string]$MachineId,
+        [Parameter(Mandatory)][int]$WorkerPid
+    )
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { throw "bad machine id: $MachineId" }
+    $shortByMid = @{
+        flamingo           = 'fl'
+        marchhare          = 'mh'
+        ionos              = 'io'
+        'ce-priority-dev1' = 'd1'
+    }
+    $short = $shortByMid[$mid]
+    if (-not $short) { throw "bad machine id: $MachineId" }
+    if ($WorkerPid -le 0) { throw 'WorkerPid must be positive' }
+    return "w-$short-$WorkerPid"
+}
+
 function Resolve-BobiverseMachineFromIrcNick {
     param([string]$Nick)
     if (-not $Nick) { return $null }
@@ -307,7 +350,45 @@ function Save-BobCursorPoolForSeat {
     try { Write-JsonFile $p $out } catch { }
 }
 
+function Get-BobDigestUrl {
+    foreach ($cand in @($env:AGENTIC_IRC_DIGEST_URL, $env:BOB_DIGEST_URL)) {
+        if ($cand -and [string]$cand.Trim()) { return [string]$cand.Trim() }
+    }
+    return 'https://irc.ntsa.uk/bob/v1/report'
+}
+
+function Read-BobReportDigestHttp {
+    <#
+      Public GET digest (#174 / agentic_irc#179). Cache 60s so tray can poll
+      every minute without hammering the callback host.
+    #>
+    $now = [datetime]::UtcNow
+    if ($script:BobDigestHttpCache -and $script:BobDigestHttpCacheAt) {
+        $age = ($now - [datetime]$script:BobDigestHttpCacheAt).TotalSeconds
+        if ($age -ge 0 -and $age -lt 60 -and $script:BobDigestHttpCache) {
+            return $script:BobDigestHttpCache
+        }
+    }
+    $url = Get-BobDigestUrl
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Method GET -UseBasicParsing -TimeoutSec 15 -Headers @{ Accept = 'application/json' }
+        if (-not $resp -or [int]$resp.StatusCode -lt 200 -or [int]$resp.StatusCode -ge 300) { return $null }
+        $j = $resp.Content | ConvertFrom-Json
+        if (-not $j) { return $null }
+        $script:BobDigestHttpCache = $j
+        $script:BobDigestHttpCacheAt = $now
+        return $j
+    }
+    catch {
+        return $null
+    }
+}
+
 function Read-BobReportDigest {
+    # Prefer live HTTP digest (agentic_irc #174/#179); fall back to local peer file.
+    $http = $null
+    try { $http = Read-BobReportDigestHttp } catch { $http = $null }
+    if ($http) { return $http }
     $home = $null
     try { $home = Get-BobIrcHome } catch { }
     if (-not $home) { return $null }
@@ -411,6 +492,33 @@ function Save-BobSeatPeriodEnd {
     try { Write-JsonFile $p $doc } catch { }
 }
 
+
+function Merge-BobIrcPeerRemaining {
+    param($Prev, $Incoming)
+    if (-not $Incoming) { return $Incoming }
+    $keys = @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')
+    $rem = $null
+    foreach ($k in $keys) {
+        $names = @($Incoming.PSObject.Properties.Name)
+        if ($names -contains $k -and $null -ne $Incoming.$k -and [string]$Incoming.$k -ne '') {
+            try { $rem = [int]$Incoming.$k; break } catch { }
+        }
+    }
+    if ($null -eq $rem -and $Prev) {
+        foreach ($k in $keys) {
+            $pnames = @($Prev.PSObject.Properties.Name)
+            if ($pnames -contains $k -and $null -ne $Prev.$k -and [string]$Prev.$k -ne '') {
+                try { $rem = [int]$Prev.$k; break } catch { }
+            }
+        }
+    }
+    if ($null -eq $rem) { return $Incoming }
+    foreach ($k in $keys) {
+        $Incoming | Add-Member -NotePropertyName $k -NotePropertyValue $rem -Force
+    }
+    return $Incoming
+}
+
 function ConvertTo-BobIrcPoint {
     param($Doc)
     $mid = [string]$Doc.id
@@ -449,7 +557,17 @@ function ConvertTo-BobIrcPoint {
             $crst = $cd.ToUniversalTime().ToString('yyyy-MM-dd')
         } catch { $crst = '-' }
     }
-    $line = "BOB v1 id=$mid weekly=$w reset=$reset cur=$cur crst=$crst running=$run queued=$q lastSeen=$seen jobs=$jobs"
+    $remPart = ''
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        $rnames = @($Doc.PSObject.Properties.Name)
+        if ($rnames -contains $rk -and $null -ne $Doc.$rk -and [string]$Doc.$rk -ne '') {
+            try {
+                $remPart = (' remaining={0}' -f [int]$Doc.$rk)
+                break
+            } catch { }
+        }
+    }
+    $line = "BOB v1 id=$mid weekly=$w reset=$reset cur=$cur crst=$crst running=$run queued=$q lastSeen=$seen jobs=$jobs$remPart"
     if ($line.Length -gt 350) { $line = $line.Substring(0, 349) + '-' }
     return $line
 }
@@ -497,7 +615,13 @@ function ConvertFrom-BobIrcPoint {
     if ($kv.ContainsKey('crst') -and [string]$kv['crst'] -ne '-') {
         $cursorPeriodEnd = [string]$kv['crst']
     }
-    return [pscustomobject]@{
+    $remainingPct = $null
+    foreach ($rk in @('remaining', 'remaining_pct', 'crem')) {
+        if ($kv.ContainsKey($rk) -and [string]$kv[$rk] -ne '-' -and [string]$kv[$rk] -ne '') {
+            try { $remainingPct = [int]$kv[$rk]; break } catch { $remainingPct = $null }
+        }
+    }
+    $out = [pscustomobject]@{
         ok                = $true
         id                = $mid
         weekly            = $weekly
@@ -510,6 +634,12 @@ function ConvertFrom-BobIrcPoint {
         jobs              = $jobs
         source            = 'irc'
     }
+    if ($null -ne $remainingPct) {
+        $out | Add-Member -NotePropertyName remaining_pct -NotePropertyValue $remainingPct -Force
+        $out | Add-Member -NotePropertyName account_remaining_pct -NotePropertyValue $remainingPct -Force
+        $out | Add-Member -NotePropertyName cursor_remaining_pct -NotePropertyValue $remainingPct -Force
+    }
+    return $out
 }
 
 function Read-BobIrcPeer {
@@ -1029,21 +1159,30 @@ function Resolve-BobCursorPoolSeatId {
 
 function Normalize-BobCursorSpendingGroupId {
     param([string]$Raw)
-    if (-not $Raw) { return 'low-cost-models' }
+    if (-not $Raw) { return 'auto' }
     $s = [string]$Raw.Trim().ToLowerInvariant()
     switch ($s) {
         'grok-chat' { return 'grok-chat' }
         'grok_chat' { return 'grok-chat' }
+        'grok-weekly' { return 'grok-chat' }
+        'grok_weekly' { return 'grok-chat' }
+        'sand' { return 'grok-chat' }
         'high-cost-models' { return 'high-cost-models' }
         'high_cost_models' { return 'high-cost-models' }
-        'low-cost-models' { return 'low-cost-models' }
-        'low_cost_models' { return 'low-cost-models' }
-        'cursor-models' { return 'low-cost-models' }
+        'other-models' { return 'high-cost-models' }
+        'other_models' { return 'high-cost-models' }
+        'auto' { return 'auto' }
+        'low-cost-models' { return 'auto' }
+        'low_cost_models' { return 'auto' }
+        'cursor-models' { return 'auto' }
+        'on-demand' { return 'auto' }
+        'ondemand' { return 'auto' }
+        'overage' { return 'auto' }
         default {
-            if ($s -match 'grok\s*chat') { return 'grok-chat' }
-            if ($s -match 'high') { return 'high-cost-models' }
-            if ($s -match 'low') { return 'low-cost-models' }
-            return 'low-cost-models'
+            if ($s -match 'grok') { return 'grok-chat' }
+            if ($s -match 'high|other') { return 'high-cost-models' }
+            if ($s -match 'auto|low|cursor|on[- ]?demand|overage|spend') { return 'auto' }
+            return 'auto'
         }
     }
 }
@@ -1078,11 +1217,26 @@ function Apply-BobIrcDigestCursorPools {
         if ($pool.group) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group) }
         elseif ($pool.group_id) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group_id) }
         elseif ($label) { $groupId = Normalize-BobCursorSpendingGroupId $label }
-        if ($groupId) {
-            Save-BobCursorPoolGroupForSeat -SeatId $seatId -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
+        # Cursor spending groups are fleet-shared (MarchHare has no local Cursor login).
+        # Digest pool ids are cursor-models/other-models/grok-weekly - fan out to every seat.
+        $seatTargets = @()
+        if ($seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
+            $seatTargets += ,$seatId
         }
-        if (-not $groupId -or $groupId -eq 'low-cost-models') {
-            Save-BobCursorPoolForSeat -SeatId $seatId -RemainingPct $rem -PeriodEnd $period -Label $label
+        else {
+            foreach ($seat in @(Get-BobSeatConfig)) {
+                if ($seat -and $seat.id) { $seatTargets += ,[string]$seat.id }
+            }
+            if ($seatTargets.Count -eq 0 -and $seatId) { $seatTargets += ,$seatId }
+        }
+        foreach ($sid in $seatTargets) {
+            if (-not $sid) { continue }
+            if ($groupId) {
+                Save-BobCursorPoolGroupForSeat -SeatId $sid -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
+            }
+            if (-not $groupId -or $groupId -eq 'low-cost-models' -or $groupId -eq 'auto') {
+                Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $rem -PeriodEnd $period -Label $label
+            }
         }
     }
 }
@@ -1132,6 +1286,14 @@ function Merge-BobIrcDigestPeerWithPrevious {
     }
     if ($names -notcontains 'cursor_period_end' -and $Prev.cursor_period_end) {
         $Doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$Prev.cursor_period_end) -Force
+    }
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        if ($names -notcontains $rk) {
+            $pv = $Prev.$rk
+            if ($null -ne $pv -and [string]$pv -ne '') {
+                try { $Doc | Add-Member -NotePropertyName $rk -NotePropertyValue ([int]$pv) -Force } catch { }
+            }
+        }
     }
     if (-not (Test-BobIrcDigestMachineHasJobPayload $Ent)) {
         $prevJobs = @()
@@ -1226,6 +1388,9 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
         period_end        = $periodEnd
         cursor_label      = $(if ($names -contains 'cursor_label' -and $Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
         cursor_period_end = $(if ($names -contains 'cursor_period_end' -and $Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
+        remaining_pct     = $(if ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
+        account_remaining_pct = $(if ($names -contains 'account_remaining_pct' -and $null -ne $Ent.account_remaining_pct -and [string]$Ent.account_remaining_pct -ne '') { try { [int]$Ent.account_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
+        cursor_remaining_pct  = $(if ($names -contains 'cursor_remaining_pct' -and $null -ne $Ent.cursor_remaining_pct -and [string]$Ent.cursor_remaining_pct -ne '') { try { [int]$Ent.cursor_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
         running           = $(try { [int]$Ent.running } catch { 0 })
         queued            = $(try { [int]$Ent.queued } catch { 0 })
         lastSeen          = $(if ($Ent.lastSeen) { [string]$Ent.lastSeen } else { $null })
@@ -1377,6 +1542,7 @@ function Import-BobIrcDigestJson {
         $doc = ConvertTo-BobIrcPeerFromDigestMachine -MachineId ([string]$prop.Name) -Ent $prop.Value
         if (-not $doc) { continue }
         $resolved = [string]$doc.id
+        Save-BobIrcChairDigestPeer -MachineId $resolved -ChairPeer $doc
         $peerPath = Join-Path $dir ($resolved + '.json')
         $prev = $null
         if (Test-Path $peerPath) {
@@ -1418,9 +1584,99 @@ function Import-BobIrcDigestWhisperBody {
     return @(Import-BobIrcDigestJson -DigestObj $obj)
 }
 
+function Test-BobIrcBobiversePullSeat {
+    # bob-* builders on Watch-Bobiverse only (#196). Talk seats and shop workers never pull.
+    if ($env:BOB_IRC_SKIP_BOBIVERSE_PULL -eq '1') { return $false }
+    $cfg = Get-BobiverseConfig
+    if ($cfg -and $cfg.chairNick) {
+        $cn = [string]$cfg.chairNick
+        if ($cn.Trim()) {
+            $active = $null
+            if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $active = $env:BOB_IRC_NICK.Trim() }
+            else {
+                $id = Get-ThisMachineId
+                if ($id) { $active = Get-BobIrcNick $cfg $id }
+            }
+            if ($active -and $active -eq $cn.Trim()) { return $false }
+        }
+    }
+    $id = Get-ThisMachineId
+    $nick = $null
+    if ($env:BOB_IRC_NICK -and $env:BOB_IRC_NICK.Trim()) { $nick = $env:BOB_IRC_NICK.Trim() }
+    elseif ($cfg -and $id) { $nick = Get-BobIrcNick $cfg $id }
+    if (-not $nick) { return $false }
+    $nl = $nick.ToLowerInvariant()
+    if ($nl -match '^w-[a-z0-9]+-\d+$') { return $false }
+    foreach ($mid in @(Get-BobiverseMachineIds)) {
+        $ml = $mid.ToLowerInvariant()
+        if ($nl -eq $ml -or $nl -match ('^' + [regex]::Escape($ml) + '-\d+$')) { return $false }
+    }
+    if ($cfg -and $cfg.nicks) {
+        foreach ($p in @($cfg.nicks.PSObject.Properties)) {
+            if ([string]$p.Value -eq $nick) { return $true }
+        }
+    }
+    if ($nl -match '^bob-') {
+        $tail = $nl.Substring(4)
+        if (Resolve-BobiverseMachineId $tail) { return $true }
+    }
+    return $false
+}
+
+function Get-BobIrcChairDigestPeersPath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_chair-digest-peers.json')
+}
+
+function Save-BobIrcChairDigestPeer {
+    param(
+        [string]$MachineId,
+        [Parameter(Mandatory)]$ChairPeer
+    )
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid -or -not $ChairPeer) { return }
+    $p = Get-BobIrcChairDigestPeersPath
+    $map = @{}
+    if (Test-Path -LiteralPath $p) {
+        try {
+            $j = Read-JsonFile $p
+            foreach ($prop in @($j.PSObject.Properties)) {
+                $map[[string]$prop.Name] = $prop.Value
+            }
+        }
+        catch { }
+    }
+    $map[$mid] = $ChairPeer
+    try { Write-JsonFile $p ([pscustomobject]$map) } catch { }
+}
+
+function Get-BobIrcChairDigestPeerForMachine {
+    param([string]$MachineId)
+    $mid = Resolve-BobiverseMachineId $MachineId
+    if (-not $mid) { return $null }
+    $p = Get-BobIrcChairDigestPeersPath
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
+    try {
+        $j = Read-JsonFile $p
+        if (-not $j) { return $null }
+        $peer = $j.$mid
+        if (-not $peer) { return $null }
+        return $peer
+    }
+    catch { return $null }
+}
+
+function Sync-BobDigestWebhookAfterBobiversePull {
+    param([Parameter(Mandatory)]$LocalDoc)
+    if (-not $LocalDoc) { return }
+    $mid = [string]$LocalDoc.id
+    if (-not $mid) { return }
+    $chair = Get-BobIrcChairDigestPeerForMachine -MachineId $mid
+    Send-BobDigestWebhookIfChanged -Doc $LocalDoc -Before $chair | Out-Null
+}
+
 function Request-BobIrcBobiversePull {
-    param([int]$MinIntervalSec = 120)
-    $home = Get-BobIrcHome
+    param([int]$MinIntervalSec = 60)
+    if (-not (Test-BobIrcBobiversePullSeat)) { return $false }
     $stampPath = Get-BobIrcBobiverseLastPath
     $now = [DateTime]::UtcNow
     if (Test-Path $stampPath) {
@@ -1430,16 +1686,21 @@ function Request-BobIrcBobiversePull {
         }
         catch { }
     }
-    # Simon 2026-09-22: !bobiverse answer is Jeeves-only. Watch must not enqueue
-    # channel !bobiverse (tray digest via whisper/webhook). Opt-in old pull:
-    # BOB_IRC_ENQUEUE_BOBIVERSE_PULL=1
-    if ($env:BOB_IRC_ENQUEUE_BOBIVERSE_PULL -ne '1') {
-        Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-        return $false
+    # Prefer HTTP digest GET (#174/#179). Do not PRIVMSG !bobiverse.
+    $doc = $null
+    try { $doc = Read-BobReportDigestHttp } catch { $doc = $null }
+    if (-not $doc) {
+        try { $doc = Read-BobReportDigest } catch { $doc = $null }
     }
-    Add-BobIrcOutboxChannelLine '!bobiverse'
+    if ($doc) {
+        try {
+            Import-BobIrcDigestJson -DigestObj $doc | Out-Null
+        } catch {
+            # Best-effort ingest; still stamp so we do not spam.
+        }
+    }
     Set-Content -Path $stampPath -Value $now.ToString('o') -Encoding utf8 -NoNewline
-    return $true
+    return [bool]$doc
 }
 
 
@@ -1514,6 +1775,11 @@ function Import-BobIrcTrayPull {
             catch { }
         }
         Save-BobSeatPeriodEnd -MachineId $resolved -PeriodEnd $(if ($doc.period_end) { [string]$doc.period_end } else { $null }) -Weekly $doc.weekly
+        $prevTray = $null
+        if (Test-Path $peerPath) {
+            try { $prevTray = Read-JsonFile $peerPath } catch { }
+        }
+        $doc = Merge-BobIrcPeerRemaining -Prev $prevTray -Incoming $doc
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
@@ -1521,7 +1787,237 @@ function Import-BobIrcTrayPull {
     return $updated
 }
 
+function Get-BobDigestWebhookPostStatePath {
+    Join-Path (Get-BobIrcHome) (Join-Path 'bob-peers' '_digest-webhook-posted.json')
+}
+
+function Get-BobDigestReportUrl {
+    $cfg = Get-BobiverseConfig
+    $url = ''
+    if ($cfg -and $cfg.reportUrl) { $url = [string]$cfg.reportUrl }
+    if (-not $url.Trim()) { $url = [string]$env:BOB_REPORT_URL }
+    if (-not $url.Trim()) { $url = [string]$env:AGENTIC_IRC_REPORT_URL }
+    $url = $url.Trim()
+    if ($url) { return $url }
+    return $null
+}
+
+function Get-BobDigestReportSecret {
+    $s = [string]$env:BOB_REPORT_SECRET
+    if ($s.Trim()) { return $s.Trim() }
+    $p = Join-Path $env:USERPROFILE '.grok\bob\report.secret'
+    if (Test-Path $p) {
+        try { return (Get-Content -LiteralPath $p -Raw).Trim() } catch { }
+    }
+    return $null
+}
+
+function Get-BobDigestWebhookJobsFingerprint {
+    param($Doc)
+    $jobsNorm = @()
+    foreach ($j in @($Doc.jobs)) {
+        if (-not $j) { continue }
+        $jobsNorm += ,([ordered]@{ repo = [string]$j.repo; state = [string]$j.state })
+    }
+    if ($jobsNorm.Count -eq 0) { return '[]' }
+    return ($jobsNorm | ConvertTo-Json -Compress -Depth 4)
+}
+
+function Test-BobIrcDigestWebhookChairInSync {
+    param($Chair, $Local)
+    if (-not $Chair -or -not $Local) { return $false }
+    if ([string]$Chair.source -ne 'irc-digest') {
+        return (Get-BobDigestWebhookFingerprint $Chair) -eq (Get-BobDigestWebhookFingerprint $Local)
+    }
+    if ([int]$Chair.running -ne [int]$Local.running) { return $false }
+    if ([int]$Chair.queued -ne [int]$Local.queued) { return $false }
+    if ($null -ne $Chair.weekly -and [string]$Chair.weekly -ne '' -and [string]$Chair.weekly -ne [string]$Local.weekly) {
+        return $false
+    }
+    foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
+        $cv = $Chair.$rk
+        $lv = $Local.$rk
+        if ($null -eq $cv -or [string]$cv -eq '') { continue }
+        if ($null -eq $lv -or [string]$lv -eq '') { return $false }
+        if ([int]$cv -ne [int]$lv) { return $false }
+    }
+    if ($Chair.cursor_label -and [string]$Chair.cursor_label -ne '' -and [string]$Chair.cursor_label -ne [string]$Local.cursor_label) {
+        return $false
+    }
+    if ($Chair.cursor_period_end -and [string]$Chair.cursor_period_end -ne [string]$Local.cursor_period_end) { return $false }
+    if ($Chair.period_end -and [string]$Chair.period_end -ne [string]$Local.period_end) { return $false }
+    if ($Chair.model -and [string]$Chair.model -ne [string]$Local.model) { return $false }
+    if ($Chair.kind -and [string]$Chair.kind -ne [string]$Local.kind) { return $false }
+    if ($Chair.repo -and [string]$Chair.repo -ne [string]$Local.repo) { return $false }
+    if ($Chair.sha -and [string]$Chair.sha -ne [string]$Local.sha) { return $false }
+    if ($Chair.fuel -and [string]$Chair.fuel -ne [string]$Local.fuel) { return $false }
+    if ($Chair.working_on -and [string]$Chair.working_on -ne [string]$Local.working_on) { return $false }
+    if ($null -ne $Chair.online -and [string]$Chair.online -ne [string]$Local.online) { return $false }
+    if ($Chair.status -and [string]$Chair.status -ne [string]$Local.status) { return $false }
+    if ($null -ne $Chair.responding -and [string]$Chair.responding -ne [string]$Local.responding) { return $false }
+    $chairJobs = @($Chair.jobs)
+    $localJobs = @($Local.jobs)
+    if ($chairJobs.Count -gt 0 -or $localJobs.Count -gt 0) {
+        $chairFp = Get-BobDigestWebhookJobsFingerprint $Chair
+        $localFp = Get-BobDigestWebhookJobsFingerprint $Local
+        if ($chairFp -ne $localFp) {
+            if ($localFp -eq '[]' -and $chairJobs.Count -eq 1) {
+                $sj = $chairJobs[0]
+                if ([string]$sj.repo -eq 'irc' -and [string]$sj.state -match '^(?i)START$') {
+                    return $true
+                }
+            }
+            return $false
+        }
+    }
+    return $true
+}
+
+function Get-BobDigestWebhookFingerprint {
+    param($Doc)
+    if (-not $Doc) { return '' }
+    $jobsNorm = @()
+    foreach ($j in @($Doc.jobs)) {
+        if (-not $j) { continue }
+        $jobsNorm += ,([ordered]@{ repo = [string]$j.repo; state = [string]$j.state })
+    }
+    $jobsJson = '[]'
+    if ($jobsNorm.Count -gt 0) {
+        $jobsJson = ($jobsNorm | ConvertTo-Json -Compress -Depth 4)
+    }
+    $parts = @(
+        [string]([int]$Doc.running)
+        [string]([int]$Doc.queued)
+        [string]$Doc.weekly
+        [string]$Doc.cursor_label
+        [string]$Doc.cursor_period_end
+        [string]$Doc.period_end
+        [string]$Doc.model
+        [string]$Doc.kind
+        [string]$Doc.repo
+        [string]$Doc.sha
+        [string]$Doc.fuel
+        [string]$Doc.working_on
+        [string]$Doc.online
+        [string]$Doc.status
+        [string]$Doc.responding
+        [string]$Doc.remaining_pct
+        $(if ($Doc.pcent) { ($Doc.pcent | ConvertTo-Json -Compress -Depth 5) } else { '' })
+        $jobsJson
+    )
+    return ($parts -join '|')
+}
+
+function Build-BobDigestWebhookMergePayload {
+    param($Doc)
+    $id = [string]$Doc.id
+    if (-not $id) { return $null }
+    $payload = [ordered]@{
+        op      = 'merge'
+        machine = $id
+        online  = $true
+        status  = 'I am online'
+    }
+    if ($null -ne $Doc.weekly -and [string]$Doc.weekly -ne '') { $payload.weekly = [int]$Doc.weekly }
+    if ($Doc.cursor_label) { $payload.cursor_label = [string]$Doc.cursor_label }
+    if ($Doc.cursor_period_end) { $payload.cursor_period_end = [string]$Doc.cursor_period_end }
+    if ($Doc.period_end) { $payload.period_end = [string]$Doc.period_end }
+    if ($Doc.model) { $payload.model = [string]$Doc.model }
+    if ($Doc.kind) { $payload.kind = [string]$Doc.kind }
+    if ($Doc.repo) { $payload.repo = [string]$Doc.repo }
+    if ($Doc.sha) { $payload.sha = [string]$Doc.sha }
+    if ($Doc.fuel) { $payload.fuel = $Doc.fuel }
+    if ($Doc.working_on) { $payload.working_on = [string]$Doc.working_on }
+    if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
+    if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
+    if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
+    if ($Doc.pcent) { $payload.pcent = $Doc.pcent }
+    return [pscustomobject]$payload
+}
+
+function Test-BobDigestWebhookPayloadSecretFree {
+    param([string]$Json)
+    if (-not $Json) { return $true }
+    $lower = $Json.ToLowerInvariant()
+    foreach ($m in @('password=', 'xai_api_key=', 'x-bob-secret', 'report.secret', 'connect.password', 'bob_report_secret')) {
+        if ($lower.Contains($m)) { return $false }
+    }
+    return $true
+}
+
+function Invoke-BobDigestWebhookPost {
+    param([Parameter(Mandatory)]$Payload)
+    $capture = [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE
+    $body = $Payload | ConvertTo-Json -Depth 8 -Compress
+    if (-not (Test-BobDigestWebhookPayloadSecretFree $body)) { return $null }
+    if ($capture.Trim()) {
+        $capPath = $capture.Trim()
+        $capDir = Split-Path $capPath -Parent
+        if ($capDir -and -not (Test-Path $capDir)) {
+            New-Item -ItemType Directory -Force -Path $capDir | Out-Null
+        }
+        Add-Content -LiteralPath $capPath -Value $body -Encoding utf8
+        return 204
+    }
+    $url = Get-BobDigestReportUrl
+    if (-not $url) { return $null }
+    $secret = Get-BobDigestReportSecret
+    if (-not $secret) { return $null }
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Method POST -Body $body -ContentType 'application/json' `
+            -Headers @{ 'X-Bob-Secret' = $secret } -UseBasicParsing -TimeoutSec 15
+        return [int]$resp.StatusCode
+    }
+    catch {
+        if ($_.Exception.Response) {
+            try { return [int]$_.Exception.Response.StatusCode.value__ } catch { }
+        }
+        return $null
+    }
+}
+
+function Send-BobDigestWebhookIfChanged {
+    param(
+        [Parameter(Mandatory)]$Doc,
+        $Before
+    )
+    if ($Before) {
+        if (Test-BobIrcDigestWebhookChairInSync -Chair $Before -Local $Doc) {
+            return $null
+        }
+    }
+    $fp = Get-BobDigestWebhookFingerprint $Doc
+    $mid = [string]$Doc.id
+    if (-not $mid) { return $null }
+    $posted = @{}
+    $statePath = Get-BobDigestWebhookPostStatePath
+    if (Test-Path $statePath) {
+        try {
+            $j = Read-JsonFile $statePath
+            foreach ($p in @($j.PSObject.Properties)) { $posted[[string]$p.Name] = [string]$p.Value }
+        }
+        catch { }
+    }
+    if ($posted.ContainsKey($mid) -and [string]$posted[$mid] -eq $fp) { return $null }
+    if (-not (Get-BobDigestReportUrl) -and -not [string]$env:BOB_DIGEST_WEBHOOK_CAPTURE.Trim()) {
+        return $null
+    }
+    $payload = Build-BobDigestWebhookMergePayload $Doc
+    if (-not $payload) { return $null }
+    $code = Invoke-BobDigestWebhookPost -Payload $payload
+    if ($null -ne $code -and $code -ge 200 -and $code -lt 300) {
+        $posted[$mid] = $fp
+        try { Write-JsonFile $statePath ([pscustomobject]$posted) } catch { }
+        return $code
+    }
+    return $null
+}
+
 function Write-BobIrcStatus {
+    param(
+        [switch]$SkipDigestWebhook,
+        [switch]$PassThru
+    )
     $id = Get-ThisMachineId
     if (-not $id) { return }
     $cfg = Get-BobiverseConfig
@@ -1572,9 +2068,11 @@ function Write-BobIrcStatus {
     Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd -Weekly $week
     $cursorLabel = $null
     $cursorPeriodEnd = $null
+    $cursorRemainingPct = $null
     try {
         $cw = Get-BobCursorAgentWeeklyRemaining
         if ($cw) {
+            if ($null -ne $cw.remaining_pct) { $cursorRemainingPct = [int]$cw.remaining_pct }
             $cursorLabel = Format-BobCursorAccountLabel -RemainingPct $cw.remaining_pct -UsedPct $cw.used_pct
             if ($cursorLabel -eq 'empty') {
                 $gbp = $null
@@ -1605,24 +2103,53 @@ function Write-BobIrcStatus {
         if ($primary.claimedAt) { $startedAt = [string]$primary.claimedAt }
         elseif ($primary.createdAt) { $startedAt = [string]$primary.createdAt }
     }
+    $pcent = $null
+    try {
+        if ($cw -and $cw.cursor_spending_groups) {
+            $pcentMap = [ordered]@{}
+            foreach ($g in @($cw.cursor_spending_groups)) {
+                if (-not $g) { continue }
+                $gid = [string]$g.id
+                if (-not $gid) { continue }
+                $key = $gid
+                if ($gid -eq 'auto' -or $gid -eq 'low-cost-models') { $key = 'cursor-models' }
+                elseif ($gid -eq 'high-cost-models') { $key = 'high-cost-models' }
+                elseif ($gid -eq 'grok-chat') { $key = 'grok-chat' }
+                if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+                    $pcentMap[$key] = [int]$g.remaining_pct
+                }
+            }
+            if ($null -ne $cw.sand_remaining_pct -and [string]$cw.sand_remaining_pct -ne '') {
+                $pcentMap['grok-chat'] = [int]$cw.sand_remaining_pct
+            }
+            if ($null -ne $cw.on_demand_remaining_pct -and [string]$cw.on_demand_remaining_pct -ne '') {
+                $pcentMap['on-demand'] = [int]$cw.on_demand_remaining_pct
+            }
+            if ($pcentMap.Count -gt 0) { $pcent = [pscustomobject]$pcentMap }
+        }
+    } catch { $pcent = $null }
     $doc = [pscustomobject]@{
-        ok                = $true
-        id                = $id
-        weekly            = $week
-        period_end        = $periodEnd
-        cursor_label      = $cursorLabel
-        cursor_period_end = $cursorPeriodEnd
-        running           = @($running).Count + $liveN
-        queued            = @($inbox).Count
-        lastSeen          = $seen
-        jobs              = $jobs
-        model             = $model
-        kind              = $kind
-        repo              = $topRepo
-        sha               = $sha
-        started_at        = $startedAt
-        responding        = $responding
-        source            = 'irc'
+        ok                     = $true
+        id                     = $id
+        weekly                 = $week
+        period_end             = $periodEnd
+        cursor_label           = $cursorLabel
+        cursor_period_end      = $cursorPeriodEnd
+        remaining_pct          = $cursorRemainingPct
+        account_remaining_pct  = $cursorRemainingPct
+        cursor_remaining_pct   = $cursorRemainingPct
+        pcent                  = $pcent
+        running                = @($running).Count + $liveN
+        queued                 = @($inbox).Count
+        lastSeen               = $seen
+        jobs                   = $jobs
+        model                  = $model
+        kind                   = $kind
+        repo                   = $topRepo
+        sha                    = $sha
+        started_at             = $startedAt
+        responding             = $responding
+        source                 = 'irc'
     }
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -1636,6 +2163,10 @@ function Write-BobIrcStatus {
     if ($talk) { Add-BobIrcOutboxChannelLine $talk }
     $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
     if ($warn) { Add-BobIrcOutboxChannelLine $warn }
+    if (-not $SkipDigestWebhook) {
+        Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
+    }
+    if ($PassThru) { return $doc }
 }
 
 function Import-BobIrcPeerTranscript {
@@ -1678,6 +2209,7 @@ function Import-BobIrcPeerTranscript {
         if ($doc.cursor_label -and [string]$doc.cursor_label -ne 'empty') {
             Save-BobCursorAccountCache -Label ([string]$doc.cursor_label) -PeriodEnd $(if ($doc.cursor_period_end) { [string]$doc.cursor_period_end } else { $null })
         }
+        $doc = Merge-BobIrcPeerRemaining -Prev $prev -Incoming $doc
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }

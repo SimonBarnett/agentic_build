@@ -109,7 +109,7 @@ Machines cannot see each other's `bridgeHome`. Status is a MODE2 **free** moot o
 
 ## Skill harvest
 
-When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, commit, push). Do not harvest `tools/_Watch-*.ps1` (install wrappers). IRC client harvests go to `https://github.com/SimonBarnett/agentic_irc`.
+When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, branch + PR). Do not push harvest to main. Do not harvest `tools/_Watch-*.ps1` (install wrappers). IRC client harvests go to `https://github.com/SimonBarnett/agentic_irc`.
 
 `tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
 

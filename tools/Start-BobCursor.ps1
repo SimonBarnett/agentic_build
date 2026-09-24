@@ -183,6 +183,11 @@ Set-Location -LiteralPath '$($Cwd.Replace("'","''"))'
         }
         $started = $true
         $packet.pid = [int]$created.ProcessId
+        # #70 MUST 2: shop-only worker irc_agent (w-io-<pid> on ionos, etc.)
+        try {
+            Start-BobWorkerIrcAgent -WorkerPid ([int]$packet.pid)
+        }
+        catch { }
     }
     catch {
         $startError = $_.Exception.Message
