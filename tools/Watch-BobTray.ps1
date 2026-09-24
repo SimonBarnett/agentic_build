@@ -1237,9 +1237,37 @@ function Start-BobiverseMootWrapper {
         -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
 }
 
+function Select-BobTraySingleWatcher {
+    # Idempotent tray start: keep ONE watcher (oldest root process), stop duplicates.
+    # A hit whose parent is also a hit is the same watcher tree (wrapper -> inner), not a duplicate.
+    param([object[]]$Hits, [string]$Label)
+    $all = @($Hits | Where-Object { $null -ne $_ })
+    if ($all.Count -eq 0) { return $null }
+    $ids = @{}
+    foreach ($h in $all) { $ids[[int]$h.ProcessId] = $true }
+    $roots = @($all | Where-Object { -not $ids.ContainsKey([int]$_.ParentProcessId) } | Sort-Object CreationDate, ProcessId)
+    if ($roots.Count -eq 0) { $roots = @($all | Sort-Object CreationDate, ProcessId) }
+    $keep = $roots[0]
+    foreach ($extra in @($roots | Select-Object -Skip 1)) {
+        try {
+            Stop-Process -Id ([int]$extra.ProcessId) -Force -ErrorAction SilentlyContinue
+            Write-TrayLog ('{0}: stopped duplicate pid={1} (keeping pid={2})' -f $Label, $extra.ProcessId, $keep.ProcessId)
+        }
+        catch { }
+    }
+    return $keep
+}
+
 function Start-IrcWatcher {
-    $hits = Test-BobiverseWatcherUp
-    if ($hits.Count -gt 0) { return }
+    # PS 5.1: a one-element array returned from Test-BobiverseWatcherUp unrolls to a bare
+    # CimInstance whose .Count is $null, so "$hits.Count -gt 0" was false and every tray
+    # (re)start spawned a SECOND Watch-Bobiverse ear. Always wrap in @(...).
+    $hits = @(Test-BobiverseWatcherUp)
+    if ($hits.Count -gt 0) {
+        $keep = Select-BobTraySingleWatcher -Hits $hits -Label 'irc watcher'
+        Write-TrayLog ('irc watcher: reuse existing Watch-Bobiverse pid={0}' -f $keep.ProcessId)
+        return
+    }
     Start-BobiverseMootWrapper
 }
 
@@ -1256,9 +1284,12 @@ function Restart-BobTrayWatcher {
 }
 
 function Start-JobsWatcher {
-    $hits = Test-JobsWatcherUp
+    # Same PS 5.1 unroll bug as Start-IrcWatcher: wrap in @(...) so one existing
+    # Watch-BobJobs is reused instead of spawning a duplicate on every tray start.
+    $hits = @(Test-JobsWatcherUp)
     if ($hits.Count -gt 0) {
-        $script:jobsPid = [int]$hits[0].ProcessId
+        $keep = Select-BobTraySingleWatcher -Hits $hits -Label 'jobs watcher'
+        $script:jobsPid = [int]$keep.ProcessId
         $script:jobsOwned = $false
         return
     }
