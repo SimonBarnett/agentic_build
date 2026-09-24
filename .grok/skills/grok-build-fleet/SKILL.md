@@ -36,6 +36,18 @@ Import-Module "$repo\src\BobBridge.psd1"
 
 Local-exec if this box is the target; otherwise enqueue and that machine's watcher claims it. Never WinRM. Never a Windows service.
 
+## Fleet activity digest (`reportUrl`)
+
+`Watch-Bobiverse` calls `Write-BobIrcStatus` (~30s). That publishes this
+machine's **live** fleet lanes (running/inbox with a real process or fresh
+claim) to `bob-peers\<id>.json` and change-only POSTs
+`https://irc.ntsa.uk/bob/v1/report` (`config/bobiverse.json` `reportUrl`,
+header `X-Bob-Secret`). When a git/Copilot/Cursor job finishes, fails, or is
+stopped, the next tick must **clear** the chair: `jobs=[]`, `running=0`,
+`queued=0`, empty `working_on`, no top-level `repo`/`sha`/`model`. Stale
+`fleet\running` JSON without a live process is ignored (orphan age-out). Tray
+tiles read the merged digest — do not leave ghost START rows on the server.
+
 ## Cmdlets (job surface only)
 
 Do not document tray paint or IRC POINT cmdlets here — use `bob-fleet-tray` and `bob-irc`.
