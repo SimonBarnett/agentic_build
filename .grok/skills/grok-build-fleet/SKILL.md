@@ -8,6 +8,7 @@ description: >
   Watch-BobAgents, stalled watcher, or /grok-build-fleet. Named Grok Bot silent
   -> also load unstick-grok-bot. Grok Bot desktop is on every build machine;
   grok.exe is the Windows logon user (MSSQL integrated auth).
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # Grok Build fleet
@@ -20,18 +21,18 @@ If a **named Grok Bot** (Bob, Haitch, ...) is silent in chat, follow `unstick-gr
 
 | id | Clone path (this house) |
 |---|---|
-| `ionos` | `C:\ai\agentic_build` |
-| `marchhare` | `D:\ai\agentic_build` |
-| `flamingo` | `C:\src\agentic_build` |
-| `ce-priority-dev1` | `C:\src\agentic_build` |
+| `ionos` | `C:\\ai\\agentic_build` |
+| `marchhare` | `D:\\ai\\agentic_build` |
+| `flamingo` | `C:\\src\\agentic_build` |
+| `ce-priority-dev1` | `C:\\src\\agentic_build` |
 
 `-Machine` is an id from `config/fleet-registry.json`, not a hostname.
 
 ## Load (local-exec on the target computer)
 
 ```powershell
-$repo = if (Test-Path 'D:\ai\agentic_build') { 'D:\ai\agentic_build' } elseif (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } else { 'C:\src\agentic_build' }
-Import-Module "$repo\src\BobBridge.psd1"
+$repo = if (Test-Path 'D:\\ai\\agentic_build') { 'D:\\ai\\agentic_build' } elseif (Test-Path 'C:\\ai\\agentic_build') { 'C:\\ai\\agentic_build' } else { 'C:\\src\\agentic_build' }
+Import-Module "$repo\\src\\BobBridge.psd1"
 ```
 
 Local-exec if this box is the target; otherwise enqueue and that machine's watcher claims it. Never WinRM. Never a Windows service.
@@ -72,8 +73,8 @@ Human watcher UI: `bob-fleet-tray`. Stall monitor on a build box: `bob-fleet-mon
 ## Spec
 
 GitHub repo work: picker may choose `copilot` (`start-bob-copilot` /
-`tools\Start-BobCopilot.ps1`) or `cursor-models` (`start-bob-cursor` /
-`tools\Start-BobCursor.ps1`). Fleet `grok.exe` jobs still get the copilot
+`tools\\Start-BobCopilot.ps1`) or `cursor-models` (`start-bob-cursor` /
+`tools\\Start-BobCursor.ps1`). Fleet `grok.exe` jobs still get the copilot
 constraint in `New-FleetPrompt`. Do not implement GitHub-only work on Grok
 Bot weekly usage. Formprep / MSSQL stays `-Fuel grok-build` on `ce-priority-dev1`.
 
@@ -92,7 +93,7 @@ Poll `Get-BobBuild`. Worker pings `reply_channel` (Grok Bot name) queued/running
 A `BobFleet-<id>` task that is `Ready` with LastRunTime 1932 / result 267011 **never started** (registered after this logon).
 
 ```powershell
-powershell -NoProfile -File "$repo\tools\Install-BobFleet.ps1" -MachineId <id> -CwdRoots <roots>
+powershell -NoProfile -File "$repo\\tools\\Install-BobFleet.ps1" -MachineId <id> -CwdRoots <roots>
 # Install demand-starts the task and sets ExecutionTimeLimit 0 (the poll loop is infinite; 72h would kill it).
 Start-ScheduledTask -TaskName "BobFleet-<id>"   # if already registered
 ```
@@ -105,17 +106,17 @@ See `bob-fleet-monitor` and `bob-fleet-tray`.
 
 ## Bobiverse (IRC, not SMB)
 
-Machines cannot see each other's `bridgeHome`. Status is a MODE2 **free** moot on `#bobiverse` over private Ergo `irc.ntsa.uk:6697`. Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. Skill `bob-irc` lives in **agentic_irc** (stub here). Docs `docs/bobiverse.md`. One-shot: `Install-BobIrc.ps1`. Ongoing: `Watch-Bobiverse.ps1` (30s loop, **no grok.exe**) POINTs local BOB v1 into `bob-peers\`. Tray only reads those files.
+Machines cannot see each other's `bridgeHome`. Status is a MODE2 **free** moot on `#bobiverse` over private Ergo `irc.ntsa.uk:6697`. Nicks `bob-flamingo`, `bob-marchhare`, `bob-ionos`, `bob-dev1`. Skill `bob-irc` lives in **agentic_irc** (stub here). Docs `docs/bobiverse.md`. One-shot: `Install-BobIrc.ps1`. Ongoing: `Watch-Bobiverse.ps1` (30s loop, **no grok.exe**) POINTs local BOB v1 into `bob-peers\\`. Tray only reads those files.
 
 ## Skill harvest
 
 When you learn a repeatable fleet/build fact in this job, follow `harvest-agent-skills` immediately (edit `.grok/skills`, harvest log, branch + PR). Do not push harvest to main. Do not harvest `tools/_Watch-*.ps1` (install wrappers). IRC client harvests go to `https://github.com/SimonBarnett/agentic_irc`.
 
-`tools\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
+`tools\\Install-SkillHarvest.ps1` registers `BobSkillHarvest-<id>` (hourly, not a Windows service). It enqueues `harvest-agent-skills`. Skip if a harvest job is already inbox/running.
 
 ## Spec / MRB loop
 
-Park: `bob-spec-intake`. Plan + enqueue: `bob-build-dispatch`. Driver: `bob-job-loop` (`Start-BobBuildLoop.ps1`). MRB handoff: `bob-hostile-mrb` / `cursor-mrb-dev`. Do not load `bob-build-loop` as a second orchestrator.
+Park: `bob-spec-intake`. Plan + enqueue: `bob-build-dispatch`. Driver: `bob-job-loop` (`Start-BobBuildLoop.ps1`). MRB handoff: `bob-hostile-mrb` / `cursor-mrb-dev`. STANDARD worker process: `bob-mrb-worker`. Do not load `bob-build-loop` as a second orchestrator.
 
 ## Long builds (do not kill early)
 
