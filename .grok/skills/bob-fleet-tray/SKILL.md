@@ -43,20 +43,24 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor spending groups (per seat)
+## Cursor spending groups (control systray)
 
-**Three RTFM groups per Cursor seat** from `config/bob-seats.json` (Smart
-Catalogue, Club Madeira, ntsa, …):
+**Three RTFM groups** for **this machine's Cursor account** (not xAI seat
+nicknames like Smart Catalogue / Club Madeira as pool names):
 
-1. `{seat}  grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
-2. `{seat}  high cost models  {N%|n/a}` — `planUsage.apiPercentUsed`
-3. `{seat}  low cost models  {N%|n/a}` — `planUsage.autoPercentUsed` (+ reset
-   on this row). MRB/PR fuel gate reads **low cost models** only.
+1. `grok chat  {N%|n/a}  reset DD Mon` — Sand (`GetSandUsageStatus.usagePercent`)
+2. `high cost models  {N%|n/a}  reset DD Mon` — `planUsage.apiPercentUsed`
+3. `low cost models  {N%|n/a}  reset DD Mon` — `planUsage.autoPercentUsed`.
+   MRB/PR fuel gate reads **low cost models** only.
 
-Do **not** collapse seats or groups into one `Cursor Models` strip. Local
+**0 shows `0%`, not `n/a`.** `n/a` only when that pool is unavailable on this
+box. Each group shows **remaining %** and **next period start** (Sand reset for
+grok chat; Cursor billing cycle for high/low).
+
+Do **not** collapse groups into one `Cursor Models` strip. Local
 `Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
-host's seat; fleet `cursor-pools.json` + digest `cursor_pools` / `pcent` fill
-peers.
+host's meters; fleet digest `pcent` / `cursor_pools` refresh cache for the
+local seat only on the control card.
 `!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
 refresh a pool without a redraw storm.
 
@@ -96,9 +100,11 @@ Show weekly reset next to the meter, not only in digests:
 - Durable cache: `~\\.grok\\bob-bridge\\seat-period-end.json` (by_machine + by_seat) so TipForm keeps peer reset dates when IRC peer JSON is wiped. Import must **not** wipe
   an existing peer `period_end` when an older POINT lacks `reset=`.
 
-Example headings:
+Example control headings:
 
-`Smart Catalogue  low cost models  9%  reset 23 Sep`
+`grok chat  9%  reset 23 Sep`
+
+`low cost models  9%  reset 23 Sep`
 
 `flamingo  -  Club Madeira (15%) - reset 27 Sep`
 

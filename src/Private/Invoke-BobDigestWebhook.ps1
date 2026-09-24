@@ -163,10 +163,10 @@ function Build-BobChairUsageWebhookPayload {
         }
     }
     if ($poolRows.Count -eq 0) {
-        foreach ($gid in @('grok-chat', 'high-cost-models', 'low-cost-models')) {
+        foreach ($grp in @(Get-BobCursorSpendingGroupCatalog)) {
             $poolRows += ,[pscustomobject]@{
-                group_id      = $gid
-                group_label   = $gid
+                group_id      = [string]$grp.id
+                group_label   = [string]$grp.label
                 remaining_pct = $null
                 period_end    = $null
                 pct_label     = 'n/a'

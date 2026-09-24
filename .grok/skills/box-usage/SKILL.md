@@ -57,8 +57,10 @@ TipForm (Simon labels; RTFM API fields in `tools/Get-CursorAgentUsage.py`):
 | **low cost models** | `GetCurrentPeriodUsage.planUsage.autoPercentUsed` | `cursor-models` for MRB and PRs (`Get-BobCapacity.cursor_models.remaining_pct`) |
 
 Per Cursor seat (`config/bob-seats.json`), TipForm paints **three labelled
-bars** (`{seat}  grok chat|high cost models|low cost models  N%`). Hover JSON:
-`cursor_groups` + `cursor_pools` (one row per seat per group). Do not collapse
+bars** (`grok chat|high cost models|low cost models  N%` on the control
+systray). Hover JSON:
+`cursor_groups` + `cursor_pools` (three control rows: grok chat / high / low).
+Do not collapse
 into a single `Cursor Models` strip.
 
 Legacy names (docs before Sep 2026): Cursor Models ≈ low cost models; Other
