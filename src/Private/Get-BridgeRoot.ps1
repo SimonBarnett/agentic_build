@@ -29,6 +29,9 @@ function Initialize-BridgeRoot {
     if (-not (Test-Path (Join-Path $root 'audit.jsonl'))) {
         [IO.File]::WriteAllText((Join-Path $root 'audit.jsonl'), '')
     }
+    if (-not (Test-Path (Join-Path $root 'job-audit.jsonl'))) {
+        [IO.File]::WriteAllText((Join-Path $root 'job-audit.jsonl'), '')
+    }
     return $root
 }
 

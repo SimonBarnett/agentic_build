@@ -31,6 +31,29 @@ function Get-BobFuelModelConfig {
     return [pscustomobject]@{ fuelModelFamilies = $fuelMap; modelFamilies = $families }
 }
 
+function Test-BobPacketMissingFuel {
+    [CmdletBinding()]
+    param(
+        [string]$Fuel,
+        [string]$Model
+    )
+    $fuel = [string]$Fuel
+    if ($fuel) {
+        return [pscustomobject]@{ ok = $true; summary = $null }
+    }
+    $model = [string]$Model
+    if ([string]::IsNullOrWhiteSpace($model)) {
+        return [pscustomobject]@{
+            ok      = $false
+            summary = 'missing_fuel_and_model'
+        }
+    }
+    return [pscustomobject]@{
+        ok      = $false
+        summary = "missing_fuel model=$model"
+    }
+}
+
 function Test-BobFuelModelCompatible {
     [CmdletBinding()]
     param(

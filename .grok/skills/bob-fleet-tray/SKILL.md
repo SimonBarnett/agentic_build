@@ -43,25 +43,47 @@ conservative (lowest) known remaining for that seat.
 Never set `XAI_API_KEY` on DEV1; both ntsa boxes use OIDC session
 (`si@ntsa.uk`).
 
-## Cursor Models remaining (top bar)
+## Cursor spending groups (this host's Cursor account)
 
-Top account row is **Cursor Models remaining %** (shared pool: Cursor Grok
-+ Composer). That number is the MRB/PR fuel gate (`bob-build-loop`). It is
-not a machine named cursor. Machine rows are Grok Build weekly + which
-fuels that box can strike (`cursor-models`, `grok-build`, `copilot`,
-`grok-bot`). A tile labelled cursor with a Bot reset date is **Grok Bot
-weekly on that glass**, not the top bar.
+**Three groups** on the card (not xAI seat names — Smart Catalogue /
+Club Madeira / ntsa are Grok Build seats only; issue #151):
 
-- Known Cursor Models remaining: `Cursor Models (N%)` in normal foreground,
-  where N matches Spending "Cursor Models · Includes Cursor Grok and
-  Composer" remaining (100 - used). 20 Sep 2026 21:25 this was ~99% (1%
-  used), not the Sand overage.
+1. `grok chat  {N%|n/a}` — Sand (`GetSandUsageStatus.usagePercent`)
+2. `high cost models  {N%|n/a}` — `planUsage.apiPercentUsed` (named / Other Models)
+3. `auto  {N%|n/a}` — `planUsage.autoPercentUsed` (**Auto** model picker /
+   Cursor Models / `autoBucketModels`). MRB/PR fuel gate. Reset + `?` help
+   on every row.
+
+Do **not** paint an **on-demand** bar. On-demand is spend-limit pay-as-you-go
+after included; header **overspend £…** (right-aligned in the tile host) is
+enough for that signal. When the model is Auto, the meter is **auto**, not
+on-demand.
+
+Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
+those rows with xAI seat labels. Local
+`Get-BobCursorAgentWeeklyRemaining` + `cursor_spending_groups` fill this
+host; digest `pcent` / `cursor_pools` update `cursor-pools.json` cache but
+the tray paints **one set of bars for this machine's Cursor login**.
+`!report PCENT` (irc #36 digest in `bob-peers/_report-digest.json`) can
+refresh a pool without a redraw storm.
+
+Fleet peer freshness: `Watch-Bobiverse` polls `!bobiverse` (~120s). Chair
+whispers **`BOB DIGEST v1`** JSON (`i/n` chunks when large); `Import-BobIrcTrayPull`
+writes tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
+cache — not POINT, not a presence-only digest.
+
+`account_remaining_pct` on `Get-BobTrayHover` is this host's **auto**
+remaining (MRB fuel gate). Machine rows are Grok Build weekly + fuels
+(`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
+
+- Known remaining: each group bar shows N% from Spending (see `box-usage`), not
+  Sand overage mislabelled as auto.
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage
   GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents
   → GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overage,
   not as the fuel remaining figure.
-- Empty Cursor Models remaining (0%): then fuel falls through to grok.exe.
-  Sand 100% does not by itself mean Cursor Models is empty.
+- Empty auto remaining (0%): then fuel falls through to grok.exe.
+  Sand 100% does not by itself mean auto is empty.
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining
   (`creditUsagePercent` on `billing: fetched credits config`).
 - Numbers: `box-usage`.
@@ -71,9 +93,10 @@ weekly on that glass**, not the top bar.
 
 Show weekly reset next to the meter, not only in digests:
 
-- **Cursor Models** row: `reset DD Mon` from the Cursor Models period
-  (`period_end` → `account_reset_label`). Do not use Grok Bot Sand reset
-  as a stand-in when the Cursor Models bar is what the fuel gate reads.
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `auto`):
+  `reset DD Mon` on that row. `grok chat` uses Sand
+  `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor
+  Spending billing cycle end. Do not leave reset only on auto.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from
   `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`).
   Same-seat machines share one reset date (and one remaining %).
@@ -83,9 +106,30 @@ Show weekly reset next to the meter, not only in digests:
 
 Example headings:
 
-`Cursor Models (99%) - reset 16 Oct`
+`grok chat  0%  reset 23 Sep`
 
-`flamingo - Club Madeira (15%) - reset 27 Sep`
+`high cost models  0%  reset 16 Oct`
+
+`auto  9%  reset 16 Oct`
+
+`flamingo  -  Club Madeira (15%) - reset 27 Sep`
+
+TipForm layout (Simon 2026-09-23):
+
+- Cursor spending rows are **indented** like machine tiles under Grok accounts.
+- Overspend (`overspend £N.NN`) is **right-aligned inside the tile host**
+  (not past the tip edge).
+- First IRC peer write after connect announces `{machine} is operational.`
+  Digest webhook `status` is `operational`.
+
+Job lines under a machine (local jobs or `!report` digest):
+
+`START  SimonBarnett/agentic_irc  395c499  composer-2.5  report digest  1m52s`
+
+No `grok.exe ? running` when repo/sha exist on the packet. When digest
+`workers` / `working_on` or live `bob-*` / `{machine}-{seatPid}` nicks are on
+IRC, paint a **START** line (not `no jobs`). Idle machine with no IRC workers:
+`no jobs`.
 
 Do not show `Cursor Models (-GBP x.xx)` as the remaining figure. That was
 Sand overage mislabelled (20 Sep 2026 tray vs Spending).
@@ -152,6 +196,42 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
    labels before Clear; ResumeLayout + Refresh always.
 8. If card flashes on poll: verify SuspendLayout/ResumeLayout wraps
    `Rebuild-BobTrayTiles` (no SetRedraw).
+
+## Agents menu
+
+The context menu has an **Agents** submenu (the two watch-seat agents as one
+menu; select which). TipForm Cursor/Grok section headers are the same links.
+Each entry uses a **visible** agent icon (`ExtractAssociatedIcon` plated on a
+light chip, else a bright C/G badge). Not installed -> greyed icon, click
+**initialises setup** (`tools/Install-AgentMonitor.ps1`); installed -> click
+launches `Watch-AgentHealth.ps1 -WatchWorker -Cursor|-Grok **-New**` (always a
+fresh session + skills + prompt — never resume). Cursor also gets
+`-Model auto`. Owner skill: `agent-monitor-setup`.
+
+### Agent shortcut icons (CAST IRON — Simon 2026-09-23)
+
+Tray Agents / TipForm icons must match the Desktop agent shortcuts. Resolver
+order in `Watch-BobTray.ps1` (`Resolve-BobTrayAgentIconExe` /
+`Resolve-BobTrayDesktopShortcutExe` / `Get-BobTrayAgentExeCandidates`):
+
+1. **Desktop / Public Desktop `.lnk`** — `Cursor.lnk`, `Grok Bot.lnk` (also
+   `Grok.lnk`). Prefer `IconLocation` (path before comma); if empty, use
+   `TargetPath`. Cursor Desktop `.lnk` often has empty IconLocation; TargetPath
+   to `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` is enough for
+   `ExtractAssociatedIcon`.
+2. **Grok Bot branded exe** (before CLI `grok.exe`):
+   - `%ProgramFiles%\Grok Bot\Grok Bot.exe` (common on ionos / fleet MSI)
+   - `%ProgramFiles(x86)%\Grok Bot\Grok Bot.exe`
+   - `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe`
+3. **Cursor exe**: `%LOCALAPPDATA%\Programs\cursor\Cursor.exe` (and
+   `Programs\Cursor\`, `%ProgramFiles%\Cursor\`).
+4. Badge fallback only when no exe exists (bright C / G chip).
+
+Do **not** resolve Grok icons only under LocalAppData — that misses Program
+Files installs and leaves the Agents menu without a real icon. After changing
+resolver paths, recycle the tray (`Stop` Watch-BobTray + relaunch) so the menu
+rebuilds. `Install-AgentMonitor` refreshes Desktop `.lnk` IconLocation via
+AgentMonitor `Publish-DesktopShortcuts.ps1`.
 
 ## Hard rules
 

@@ -1,5 +1,5 @@
 # Private Ergo for #bobiverse on this ionos box as a Windows service (NSSM).
-# Requires C:\ai\ergo (Ergo 2.19.1+) and ircd.yaml already present.
+# Requires C:\ai\ergo (Ergo 2.19.1+), ircd.yaml, and nssm.exe in Ergo root.
 # Replaces the old AtLogOn task BobIrcd-ionos. Do not register that task again.
 [CmdletBinding()]
 param(
@@ -15,12 +15,8 @@ $logDir = Join-Path $ErgoRoot 'logs'
 $stdout = Join-Path $logDir 'service.log'
 if (-not (Test-Path $exe)) { throw "missing $exe" }
 if (-not (Test-Path $conf)) { throw "missing $conf" }
+if (-not (Test-Path $nssm)) { throw "missing $nssm (NSSM must live in Ergo root; do not copy from other products)" }
 
-$nssmSrc = 'C:\Program Files\filebrowser\nssm.exe'
-if (-not (Test-Path $nssm)) {
-    if (-not (Test-Path $nssmSrc)) { throw "missing NSSM ($nssm and $nssmSrc)" }
-    Copy-Item $nssmSrc $nssm -Force
-}
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
 $oldTask = 'BobIrcd-ionos'
@@ -30,9 +26,8 @@ Unregister-ScheduledTask -TaskName $oldTask -Confirm:$false -ErrorAction Silentl
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing -and $existing.Status -eq 'Running') {
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
 }
-Get-Process ergo -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
 
 $binPath = "`"$nssm`""
 $display = 'Bobiverse IRC (Ergo)'

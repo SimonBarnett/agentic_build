@@ -32,5 +32,8 @@ function Test-PromptSecrets {
     if ($Prompt -match '(?i)(?:\$env:)?XAI_API_KEY\s*=\s*\S') {
         return $true
     }
+    if ($Prompt -match '(?i)export\s+(?:\$env:)?XAI_API_KEY\s+\S') {
+        return $true
+    }
     return $false
 }

@@ -1,3 +1,4 @@
+# DO NOT EDIT — per-machine wrapper from Install-BobFleet.ps1 (marchhare).
 # marchhare #bobiverse moot wrapper. Same contract as _Watch-Bobiverse-ionos.
 [CmdletBinding()]
 param(
