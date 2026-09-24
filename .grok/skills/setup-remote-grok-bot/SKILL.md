@@ -5,6 +5,7 @@ description: >
   recover a blank, frozen, off-screen, or signed-in-but-unusable Grok Bot window;
   use Mode 3 DUMB put+spawn when desktop tools are down. Use when the user says
   remote Grok Bot install, blank Grok Bot, flamingo onboarding, or /setup-remote-grok-bot.
+github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # Setup remote Grok Bot (Windows)
@@ -36,11 +37,11 @@ DUMB argv:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `error: jail` | literal `https://` / `//` or `\\` / `..` in argv | URLs only inside put files |
-| `error: bin` | meta chars `\|><^` or non-allowlisted argv0 | no pipes/redirects/background `&` in argv; put scripts |
+| `error: bin` | meta chars `\\|><^` or non-allowlisted argv0 | no pipes/redirects/background `&` in argv; put scripts |
 | `timeout` | foreground install >60s | spawn detached; poll log |
-| false MISSING after install | `if exist "%LOCALAPPDATA%\Programs\Grok Bot\..."` with spaces | `Test-Path -LiteralPath` in a put script |
+| false MISSING after install | `if exist "%LOCALAPPDATA%\\Programs\\Grok Bot\\..."` with spaces | `Test-Path -LiteralPath` in a put script |
 
-CLI lands at `%USERPROFILE%\.grok\bin`. Desktop: `%LOCALAPPDATA%\Programs\Grok Bot\Grok Bot.exe`.
+CLI lands at `%USERPROFILE%\\.grok\\bin`. Desktop: `%LOCALAPPDATA%\\Programs\\Grok Bot\\Grok Bot.exe`.
 
 ## Never launch Grok Bot GUI via Mode 3 for sign-in
 
@@ -52,7 +53,7 @@ CLI lands at `%USERPROFILE%\.grok\bin`. Desktop: `%LOCALAPPDATA%\Programs\Grok B
 
 ## Blank / frozen window (Electron)
 
-`%APPDATA%\Grok Bot\`:
+`%APPDATA%\\Grok Bot\\`:
 
 | File | Signal |
 |---|---|
@@ -77,7 +78,7 @@ Get-Process | Where-Object { $_.ProcessName -eq 'Grok Bot' } | ForEach-Object { 
 On the elder box, no new PIN:
 
 ```
-cd /d C:\airc
+cd /d C:\\airc
 airc-moot-thin.exe
 ```
 
@@ -86,6 +87,14 @@ Zero-arg self-heal. Chair must already be joined. Fresh PIN only if the pair is 
 ## Fleet registration lag
 
 After sign-in, `ListMachines` may show `connected: false` briefly while Grok Bot processes run and Mode 3 works. Retry; keep the desktop app open. Do not declare "no access" until Mode 3 smoke **and** `connected: true`.
+
+## CAST IRON — harvest MRB process into free agents (Simon 2026-09-24)
+
+When setting up a **free agent** (new Grok Bot / talk seat / shop worker that
+may do MRB), harvest the STANDARD MRB process into that agent's
+instruction/context: link skill `bob-mrb-worker` (tests-first; PASS merge;
+FAIL one fix PR then merge both). So the next seat follows the same standard.
+Foundation honesty box: `harvest-agent-skills`.
 
 ## Dual control planes
 
