@@ -715,6 +715,63 @@ function ConvertTo-BobTrayProcessArgumentString {
     return ($parts -join ' ')
 }
 
+function Get-BobTrayGrokSessionRoot {
+    return (Join-Path ([IO.Path]::GetTempPath()) 'bob-grok-session')
+}
+
+function New-BobTrayGrokSessionEnv {
+    # grok >= 1.0.41 resolves the OAuth session in ~/.grok/auth.json BEFORE XAI_API_KEY, so a
+    # session key from the #314 dialog was silently ignored on any signed-in machine.
+    # GROK_AUTH_PATH -> a fresh per-start temp path with no auth.json makes the child resolve
+    # auth_type=ApiKey (skills/config under ~/.grok stay as-is). The key stays child-env only:
+    # never User/Machine env, never written to disk by the tray.
+    param([Parameter(Mandatory = $true)][string]$ApiKey)
+    try { Clear-BobTrayGrokSessionDirs } catch { }
+    $dir = Join-Path (Get-BobTrayGrokSessionRoot) ([guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    return @{
+        XAI_API_KEY    = $ApiKey
+        GROK_AUTH_PATH = (Join-Path $dir 'auth.json')
+    }
+}
+
+function Register-BobTrayGrokSession {
+    param($Process, [hashtable]$SessionEnv)
+    if (-not $SessionEnv -or -not $SessionEnv.ContainsKey('GROK_AUTH_PATH')) { return }
+    $dir = Split-Path -Parent ([string]$SessionEnv['GROK_AUTH_PATH'])
+    $script:bobTrayGrokSessions = @(@($script:bobTrayGrokSessions | Where-Object { $_ }) + @([pscustomobject]@{ Process = $Process; Dir = $dir }))
+}
+
+function Clear-BobTrayGrokSessionDirs {
+    # If the session key is rejected, grok's TUI can fall back to a browser sign-in and save an
+    # auth.json into the session dir. Remove each session dir once its child exits, and sweep
+    # untracked leftovers (e.g. from a previous tray) older than MaxAgeHours.
+    param([int]$MaxAgeHours = 24)
+    $keep = @()
+    foreach ($s in @($script:bobTrayGrokSessions | Where-Object { $_ })) {
+        $exited = $true
+        try { if ($s.Process) { $exited = [bool]$s.Process.HasExited } } catch { $exited = $true }
+        if (-not $exited) { $keep += $s; continue }
+        try {
+            if (Test-Path -LiteralPath $s.Dir) { Remove-Item -LiteralPath $s.Dir -Recurse -Force -ErrorAction Stop }
+            Write-TrayLog ('grok session: removed session auth dir ' + $s.Dir)
+        }
+        catch { $keep += $s }
+    }
+    $script:bobTrayGrokSessions = @($keep)
+    $root = Get-BobTrayGrokSessionRoot
+    if (-not (Test-Path -LiteralPath $root)) { return }
+    $live = @{}
+    foreach ($s in $script:bobTrayGrokSessions) { $live[[string]$s.Dir] = $true }
+    $cutoff = (Get-Date).AddHours(-$MaxAgeHours)
+    foreach ($d in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+        if ($live.ContainsKey($d.FullName)) { continue }
+        if ($d.LastWriteTime -lt $cutoff) {
+            try { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction Stop } catch { }
+        }
+    }
+}
+
 function Start-BobTrayProcessWithSessionEnv {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -739,7 +796,8 @@ function Start-BobTrayProcessWithSessionEnv {
     foreach ($k in @($SessionEnv.Keys)) {
         $psi.EnvironmentVariables[[string]$k] = [string]$SessionEnv[$k]
     }
-    [void][System.Diagnostics.Process]::Start($psi)
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    Register-BobTrayGrokSession -Process $proc -SessionEnv $SessionEnv
 }
 
 function Get-BobTrayFuelLocalMachineId {
@@ -890,7 +948,8 @@ function Start-BobTrayAgentWatch {
                 return
             }
             # agent.exe reads XAI_API_KEY; pass only to the Watch-AgentHealth child (inherits to agent.exe).
-            $sessionEnv = @{ XAI_API_KEY = $key }
+            # GROK_AUTH_PATH isolates the OAuth auth.json so the key is actually used (grok 1.0.41).
+            $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
         }
         elseif ($kind -eq 'cursor') {
             # cursor-agent supports --api-key / CURSOR_API_KEY (session BYOK).
@@ -1001,7 +1060,8 @@ function Start-BobTrayVisibleProcessWithSessionEnv {
     foreach ($k in @($SessionEnv.Keys)) {
         $psi.EnvironmentVariables[[string]$k] = [string]$SessionEnv[$k]
     }
-    [void][System.Diagnostics.Process]::Start($psi)
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    Register-BobTrayGrokSession -Process $proc -SessionEnv $SessionEnv
 }
 
 function Start-BobTrayPlanAgent {
@@ -1031,7 +1091,7 @@ function Start-BobTrayPlanAgent {
             Write-TrayLog 'plan: grok fuel 0 - session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok plan session API key' -Prompt "No Grok tokens remaining.`r`nEnter XAI_API_KEY for this Plan start only (not saved)."
             if (-not $key) { Write-TrayLog 'plan: grok aborted (no key)'; return }
-            $sessionEnv = @{ XAI_API_KEY = $key }
+            $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
         }
         else {
             Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
@@ -1120,6 +1180,7 @@ function Build-BobTrayPlanMenu {
 }
 
 $script:attention = $false
+$script:bobTrayGrokSessions = @()
 $script:flashOn = $false
 $script:lastAlerts = @()
 $script:jobsPid = $null
@@ -1970,6 +2031,7 @@ $flash.Add_Tick({
 $poll = New-Object System.Windows.Forms.Timer
 $poll.Interval = [Math]::Max(5000, $PollSec * 1000)
 $poll.Add_Tick({
+        try { Clear-BobTrayGrokSessionDirs } catch { }
         try {
             Start-JobsWatcher
             $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $StallSec -HeartbeatStaleSec $HeartbeatStaleSec)
@@ -1997,6 +2059,7 @@ $pulse.Add_Tick({
         $pulseOff.Stop(); $pulseOff.Start()
     })
 
+try { Clear-BobTrayGrokSessionDirs } catch { }
 Start-JobsWatcher
 try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
