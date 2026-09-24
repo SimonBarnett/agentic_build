@@ -4350,8 +4350,8 @@ Invoke-Case 'BT0p21 control systray cursor meters' {
     $h = Get-BobTrayHover
     $txt = [string]$h.jobs_text
     if (@($h.cursor_pools).Count -ne 3) { throw "cursor_pools count=$(@($h.cursor_pools).Count) want 3 control groups" }
-    if ($txt -notmatch '(?m)^[ ]+low cost models  0%') { throw "ntsa box must show 0% not n/a: $txt" }
-    if ($txt -match '(?m)low cost models  n/a') { throw "zero remaining must not render n/a: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+(low cost models|auto)  0%') { throw "ntsa box must show 0% not n/a: $txt" }
+    if ($txt -match '(?m)(low cost models|auto)  n/a') { throw "zero remaining must not render n/a: $txt" }
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
     if ($hoverSrc -notmatch 'Format-BobCursorControlPoolHeading') { throw 'hover must format control Cursor pool headings' }
 
@@ -4538,6 +4538,88 @@ Invoke-Case 'BT0pair175 repo pair spawn idle webhook' {
     }
     $tick2 = Invoke-BobRepoPairTick
     if (@($tick2.restarted) -notcontains 'dev') { throw "deaf tick must restart dev: $($tick2.restarted -join ',')" }
+}
+
+Invoke-Case 'BT0house no duplicate module function names' {
+    param($bridgeRoot)
+    # Dot-sourced Private/Public files share one scope: a later same-named function
+    # silently replaces an earlier one (Invoke-BobDigestWebhookPost -Payload regression).
+    $defs = @{}
+    foreach ($f in @(Get-ChildItem (Join-Path $RepoRoot 'src') -Recurse -Filter '*.ps1')) {
+        $tok = $null; $err = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$tok, [ref]$err)
+        foreach ($st in @($ast.EndBlock.Statements)) {
+            if ($st -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { continue }
+            if (-not $defs.ContainsKey($st.Name)) { $defs[$st.Name] = @() }
+            $defs[$st.Name] += ('{0}:{1}' -f $f.Name, $st.Extent.StartLineNumber)
+        }
+    }
+    $dups = @($defs.GetEnumerator() | Where-Object { @($_.Value).Count -gt 1 } | ForEach-Object { '{0} -> {1}' -f $_.Key, (@($_.Value) -join ', ') })
+    if ($dups.Count -gt 0) { throw "duplicate top-level functions: $($dups -join ' ; ')" }
+}
+
+Invoke-Case 'BT0tip hover pcent rows no remaining_pct crash' {
+    param($bridgeRoot)
+    $m = Get-Module BobBridge
+    $rows = @(
+        [pscustomobject]@{ source = 'cursor-models'; pct = 0; machine = 'ionos' }
+        [pscustomobject]@{ source = 'grok-chat'; pct = 68; machine = 'flamingo' }
+    )
+    $pools = & $m { param($r) @(Get-BobCursorPoolsForTray -MachineId 'testhost' -LocalCursorDoc $null -PcentRows $r) } $rows
+    if (@($pools | Where-Object { $null -eq $_ }).Count -gt 0) { throw 'pools must not contain null rows' }
+    $auto = @($pools | Where-Object { [string]$_.group_id -eq 'auto' })[0]
+    if (-not $auto -or [string]$auto.remaining_pct -ne '0') { throw "auto pool remaining_pct=$($auto.remaining_pct) (0 is real)" }
+    $chat = @($pools | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
+    if (-not $chat -or [int]$chat.remaining_pct -ne 68) { throw "grok-chat pool remaining_pct=$($chat.remaining_pct)" }
+    # Set-BobCursorControlPoolRow tolerates null, digest `remaining` shape, and hashtables.
+    & $m { Set-BobCursorControlPoolRow -Pool $null -RemainingPct 5 -PeriodEnd '2026-10-16T17:23:01Z' }
+    $digestPool = [pscustomobject]@{ id = 'cursor-models'; label = 'Cursor Models'; remaining = 9; group_label = 'auto' }
+    & $m { param($p) Set-BobCursorControlPoolRow -Pool $p -RemainingPct 7 -PeriodEnd '2026-10-16T17:23:01Z' } $digestPool
+    if ([int]$digestPool.remaining_pct -ne 7 -or [int]$digestPool.remaining -ne 7) { throw "digest pool remaining=$($digestPool.remaining) remaining_pct=$($digestPool.remaining_pct)" }
+    $ht = @{ group_label = 'auto'; remaining = 3 }
+    & $m { param($p) Set-BobCursorControlPoolRow -Pool $p -RemainingPct 4 -PeriodEnd $null } $ht
+    if ([int]$ht['remaining_pct'] -ne 4 -or [int]$ht['remaining'] -ne 4) { throw 'hashtable pool not updated' }
+}
+
+Invoke-Case 'BT0tip digest webhook merge post lastSeen heartbeat' {
+    param($bridgeRoot)
+    $m = Get-Module BobBridge
+    $cap = Join-Path $bridgeRoot 'digest-webhook-heartbeat.ndjson'
+    $env:BOB_DIGEST_WEBHOOK_CAPTURE = $cap
+    $env:BOB_DIGEST_WEBHOOK_HEARTBEAT_SEC = $null
+    try {
+        $doc1 = [pscustomobject]@{ id = 'testhost'; online = $true; status = 'operational'; weekly = 50; running = 0; queued = 0; jobs = @(); lastSeen = '2026-09-24T19:00:00.0000000Z'; source = 'irc' }
+        $doc2 = [pscustomobject]@{ id = 'testhost'; online = $true; status = 'operational'; weekly = 50; running = 0; queued = 0; jobs = @(); lastSeen = '2026-09-24T19:01:00.0000000Z'; source = 'irc' }
+        $code = & $m { param($d) Send-BobDigestWebhookIfChanged -Doc $d } $doc1
+        if ($code -ne 204) { throw "first merge POST status=$code (Invoke-BobDigestWebhookMergePost -Payload must bind)" }
+        $lines = @(Get-Content $cap | Where-Object { $_ })
+        if ($lines.Count -ne 1) { throw "first POST count=$($lines.Count)" }
+        if (($lines[0] | ConvertFrom-Json).lastSeen -ne '2026-09-24T19:00:00.0000000Z') { throw "merge payload must carry lastSeen: $($lines[0])" }
+        $null = & $m { param($d, $b) Send-BobDigestWebhookIfChanged -Doc $d -Before $b } $doc2 $doc1
+        $lines = @(Get-Content $cap | Where-Object { $_ })
+        if ($lines.Count -ne 1) { throw "lastSeen-only within heartbeat must not POST: count=$($lines.Count)" }
+        $statePath = & $m { Get-BobDigestWebhookPostStatePath }
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        if (-not $st.'testhost@posted_at') { throw 'state must record testhost@posted_at' }
+        $st.'testhost@posted_at' = [string]([DateTimeOffset]::UtcNow.AddSeconds(-600).ToUnixTimeSeconds())
+        ($st | ConvertTo-Json -Compress) | Set-Content -Path $statePath -Encoding utf8
+        $code = & $m { param($d, $b) Send-BobDigestWebhookIfChanged -Doc $d -Before $b } $doc2 $doc1
+        if ($code -ne 204) { throw "stale posted_at must heartbeat POST: status=$code" }
+        $lines = @(Get-Content $cap | Where-Object { $_ })
+        if ($lines.Count -ne 2) { throw "heartbeat POST count=$($lines.Count)" }
+        if (($lines[1] | ConvertFrom-Json).lastSeen -ne '2026-09-24T19:01:00.0000000Z') { throw "heartbeat must advance lastSeen: $($lines[1])" }
+        $env:BOB_DIGEST_WEBHOOK_HEARTBEAT_SEC = '0'
+        $st = Get-Content $statePath -Raw | ConvertFrom-Json
+        $st.'testhost@posted_at' = [string]([DateTimeOffset]::UtcNow.AddSeconds(-600).ToUnixTimeSeconds())
+        ($st | ConvertTo-Json -Compress) | Set-Content -Path $statePath -Encoding utf8
+        $null = & $m { param($d, $b) Send-BobDigestWebhookIfChanged -Doc $d -Before $b } $doc2 $doc1
+        $lines = @(Get-Content $cap | Where-Object { $_ })
+        if ($lines.Count -ne 2) { throw "HEARTBEAT_SEC=0 must disable heartbeat: count=$($lines.Count)" }
+    }
+    finally {
+        $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+        $env:BOB_DIGEST_WEBHOOK_HEARTBEAT_SEC = $null
+    }
 }
 
 Write-Host ''

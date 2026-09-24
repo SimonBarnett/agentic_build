@@ -1164,13 +1164,32 @@ function Resolve-BobCursorPcentRowMapping {
 
 function Set-BobCursorControlPoolRow {
     param($Pool, $RemainingPct, [string]$PeriodEnd)
+    # Null pool is a no-op: an unbound $row here crashed every tray hover with
+    # "The property 'remaining_pct' cannot be found on this object" (empty TipForm).
+    if ($null -eq $Pool) { return }
     $resetLabel = Format-BobResetLabel $PeriodEnd
     $pctLabel = Format-BobCursorControlPoolPctLabel $RemainingPct
-    $Pool.remaining_pct = $RemainingPct
-    $Pool.period_end = $PeriodEnd
-    $Pool.reset_label = $resetLabel
-    $Pool.pct_label = $pctLabel
-    $Pool.heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
+    $heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
+    # Digest pools expose `remaining` (not remaining_pct); tray rows expose remaining_pct.
+    # Assign tolerantly so either shape (hashtable or PSCustomObject) works.
+    $values = [ordered]@{
+        remaining_pct = $RemainingPct
+        period_end    = $PeriodEnd
+        reset_label   = $resetLabel
+        pct_label     = $pctLabel
+        heading       = $heading
+    }
+    if ($Pool -is [System.Collections.IDictionary]) {
+        foreach ($k in $values.Keys) { $Pool[$k] = $values[$k] }
+        if ($Pool.Contains('remaining')) { $Pool['remaining'] = $RemainingPct }
+        return
+    }
+    foreach ($k in $values.Keys) {
+        $Pool | Add-Member -NotePropertyName $k -NotePropertyValue $values[$k] -Force
+    }
+    if ($null -ne $Pool.PSObject.Properties['remaining']) {
+        $Pool | Add-Member -NotePropertyName remaining -NotePropertyValue $RemainingPct -Force
+    }
 }
 
 function Get-BobCursorPoolsForTray {
@@ -1301,8 +1320,6 @@ function Get-BobCursorPoolsForTray {
                 Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $pct
             }
         }
-        Set-BobCursorControlPoolRow -Pool $row -RemainingPct $remain -PeriodEnd $periodEnd
-        $pools += ,$row
     }
     return $pools
 }
