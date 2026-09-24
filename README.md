@@ -137,6 +137,89 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
 
+## Bob Fleet process diagrams
+
+These mirror the saved Bob Fleet skills. The pair-model chart under **Flow** above is still the `#175` proposal; the charts below are the current per-skill processes.
+
+### 1. MRB worker review steps (`bob-mrb-worker`)
+
+An MRB worker checks out the PR, adds new tests, runs every test, reviews hard, then merges on PASS or ships exactly one fix PR on FAIL.
+
+```mermaid
+flowchart TD
+  A[Get MRB: repo + PR] --> B[Checkout PR branch]
+  B --> C[Read intent + changed files + source issue/FR]
+  C --> D[Add NEW tests appropriate to this PR]
+  D --> E[Run existing + new tests]
+  E --> F[Hostile review of the change]
+  F --> G{Verdict}
+  G -->|PASS| H[Merge PR to main]
+  H --> I[Close source issue / FR]
+  I --> L[Jeeves announces → separate UAT worker]
+  G -->|FAIL| J[One fix branch/PR with the fix]
+  J --> K[Merge original PR + fix PR]
+  K --> M[Jeeves announces — issue stays open, no UAT]
+```
+
+### 2. Idle worker `!bored` → addressed offer → accept-on-ack (`bob-git-accept-claim`)
+
+A worker idle for more than 2 minutes must say `!bored`. Jeeves offers the top job to that nick, and the job is only marked accepted once the worker acknowledges it.
+
+```mermaid
+flowchart TD
+  A[Worker idle] --> B{Idle > 2 min?}
+  B -->|yes| C[MUST !bored]
+  C --> D[Jeeves offers TOP job TO this nick]
+  D --> E{Ack receipt?}
+  E -->|yes| F[Mark accepted → FR/MRB/UAT]
+  E -->|no| G[Stays unaccepted]
+  F --> H[Clear working_on when done]
+  H --> A
+```
+
+### 3. Jeeves chair: unaccepted queue digest, `#bobiverse` announces, `!bored` offers (`bob-jeeves-chair`)
+
+Jeeves reads the webhook's unaccepted queue, announces GIT work on `#bobiverse`, and offers the top job to whichever worker says `!bored`.
+
+```mermaid
+flowchart TD
+  A[Digest webhook unaccepted queue] --> B[Jeeves]
+  B --> C["Announce GIT to bobs on #bobiverse only"]
+  D[Worker: !bored] --> E[Jeeves offers TOP job]
+  E --> F[Offer addressed to that !bored nick]
+  F --> G{Worker acks receipt?}
+  G -->|yes| H[Mark accepted]
+  G -->|no| I[Stays unaccepted]
+  H --> J[That worker runs the mode]
+```
+
+### 4. FR → MRB → UAT handoff
+
+An issue or FR is announced by Jeeves, assigned in the shop channel (or claimed by an idle worker with `!BORED`), built as a PR, reviewed by a different worker where possible, then either merged and sent to a separate UAT worker for Bob to stamp, or fixed with one extra PR while the issue stays open.
+
+```mermaid
+flowchart TD
+  A["Issue / FR opened"] --> B["Jeeves announces on #bobiverse"]
+  B --> C{"How is it assigned?"}
+  C -->|"normal"| D["bob-* ear in shop #{machine} assigns a worker"]
+  C -->|"Sand empty: deterministic path"| E["Idle worker says !BORED in shop #{machine}"]
+  E --> F["Jeeves hands over the top job from the webhook unaccepted queue"]
+  D --> G["FR worker implements and opens a PR"]
+  F --> G
+  G --> H["Jeeves announces the PR on #bobiverse"]
+  H --> I{"2 or more workers available?"}
+  I -->|yes| J["MRB by a different worker"]
+  I -->|no| K["Same seat may continue into MRB"]
+  J --> L{"MRB verdict"}
+  K --> L
+  L -->|PASS| M["Merge PR and close the issue"]
+  M --> N["Separate UAT worker runs UAT"]
+  N --> O["Only Bob stamps UAT"]
+  L -->|FAIL| P["Open exactly one fix PR"]
+  P --> Q["Merge original PR and fix PR"]
+  Q --> R["Issue stays open, no UAT"]
+```
+
 ## Off-DEV (no real grok)
 
 ```powershell
