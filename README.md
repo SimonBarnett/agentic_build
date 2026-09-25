@@ -100,7 +100,7 @@ flowchart TB
   ASSIGN --> WB
   MON -.-> PAIRBOX
   WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
-  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: exactly one fix PR; merge original + fix"| FIX["A FIXes its own PR\nthen B re-MRBs"]
   FIX --> WA
   WB -->|"PASS-nits: docs OK or one docs PR merged"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
