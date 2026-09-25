@@ -46,9 +46,14 @@ function Test-TsrHealthy {
     $rid = Get-TsrRunnerPid
     $proc = $null
     if ($rid -gt 0) { $proc = Get-Process -Id $rid -ErrorAction SilentlyContinue }
-    $listen = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.CommandLine -and $_.CommandLine -match 'irc_listen\.py' -and $_.CommandLine -match [regex]::Escape($ircHome)
-        })
+    # Only a listen whose parent IS the live runner counts; orphans from old
+    # runners used to satisfy this and hide the leak.
+    $procs = Get-IrcTsrProcessList
+    $listenUp = Test-IrcTsrListenChildOf -Processes $procs -IrcHome $ircHome -RunnerPid $rid
+    if ($proc) {
+        $reaped = Stop-IrcTsrStaleListens -IrcHome $ircHome -KeepRunnerPid $rid -Processes $procs
+        if ($reaped -gt 0) { Write-TsrWatchLog "reaped $reaped orphan irc_listen (runner $rid)" }
+    }
     $age = 0
     if ($proc -and $proc.StartTime) {
         $age = [int]((Get-Date) - $proc.StartTime).TotalSeconds
@@ -56,7 +61,7 @@ function Test-TsrHealthy {
     $wakeStale = Test-IrcTsrWakeSilenceStale -WakePath $wakePath -SilenceSec $SilenceSec
     return (Test-IrcTsrRunnerHealthyCore `
             -RunnerAlive ($null -ne $proc) `
-            -ListenChildUp ($listen.Count -gt 0) `
+            -ListenChildUp $listenUp `
             -RunnerAgeSec $age `
             -RestartAfterSec $RestartAfterSec `
             -WakeSilenceStale $wakeStale)

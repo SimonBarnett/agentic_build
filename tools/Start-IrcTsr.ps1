@@ -31,6 +31,7 @@ $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $pidFile = Join-Path $logDir "irc-tsr-$nick.pid"
 $runner = Join-Path $PSScriptRoot 'Irc-Tsr-Runner.ps1'
+. (Join-Path $PSScriptRoot 'Irc-Tsr-Health.ps1')
 
 if (Test-Path $pidFile) {
     try {
@@ -39,6 +40,10 @@ if (Test-Path $pidFile) {
     }
     catch { }
 }
+# Killing the runner leaves its irc_listen.py child alive (Windows has no
+# process-group kill). Reap every listen for this home before the new runner.
+$reaped = Stop-IrcTsrStaleListens -IrcHome $IrcHome -KeepRunnerPid 0
+if ($reaped -gt 0) { Write-Output "IRC TSR: reaped $reaped stale irc_listen for $IrcHome" }
 
 $p = Start-Process powershell.exe -PassThru -WindowStyle Hidden -ArgumentList @(
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $runner,

@@ -3907,6 +3907,71 @@ Invoke-Case 'BT0irtsr wake silence matrix' {
     if ($watch -match 'irc\.log') { throw 'Watch-IrcTsr must not gate on irc.log mtime' }
 }
 
+Invoke-Case 'BT0irtsr listen leak' {
+    # ionos 25/09: Start-IrcTsr killed only the runner; each 600s recycle orphaned irc_listen.py (148).
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    $h = 'C:\Users\x\.agentic-irc-cursor'
+    $procs = @(
+        [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; CommandLine = 'powershell.exe -File Irc-Tsr-Runner.ps1 -IrcHome C:\Users\x\.agentic-irc-cursor' },
+        [pscustomobject]@{ ProcessId = 101; ParentProcessId = 100; CommandLine = 'python.exe -u C:\ai\agentic_irc\scripts\irc_listen.py --home C:\Users\x\.agentic-irc-cursor' },
+        [pscustomobject]@{ ProcessId = 55; ParentProcessId = 999; CommandLine = 'python.exe -u C:\ai\agentic_irc\scripts\irc_listen.py --home C:\Users\x\.agentic-irc-cursor' },
+        [pscustomobject]@{ ProcessId = 77; ParentProcessId = 5; CommandLine = 'python.exe -u irc_listen.py --home C:\Users\x\.agentic-irc-bobiverse' },
+        [pscustomobject]@{ ProcessId = 88; ParentProcessId = 5; CommandLine = 'python.exe -u irc_listen.py --home "C:\Users\x\.agentic-irc-cursor2"' },
+        [pscustomobject]@{ ProcessId = 66; ParentProcessId = 5; CommandLine = 'python.exe -u irc_agent.py --home C:\Users\x\.agentic-irc-cursor' }
+    )
+    $mine = @(Select-IrcTsrListenProcesses -Processes $procs -IrcHome $h | ForEach-Object { $_.ProcessId } | Sort-Object)
+    if (($mine -join ',') -ne '55,101') { throw "listens for home: got $($mine -join ',')" }
+    $stale = @(Select-IrcTsrStaleListens -Processes $procs -IrcHome $h -KeepRunnerPid 100 | ForEach-Object { $_.ProcessId })
+    if (($stale -join ',') -ne '55') { throw "orphan must be stale, runner child kept: got $($stale -join ',')" }
+    $all = @(Select-IrcTsrStaleListens -Processes $procs -IrcHome $h -KeepRunnerPid 0 | ForEach-Object { $_.ProcessId } | Sort-Object)
+    if (($all -join ',') -ne '55,101') { throw "restart must reap every listen for home: got $($all -join ',')" }
+    if (-not (Test-IrcTsrListenChildOf -Processes $procs -IrcHome $h -RunnerPid 100)) { throw 'runner child listen must count' }
+    if (Test-IrcTsrListenChildOf -Processes $procs -IrcHome $h -RunnerPid 200) { throw 'live runner 200 without its own listen must not borrow the orphan' }
+    if (Test-IrcTsrListenChildOf -Processes @($procs[2]) -IrcHome $h -RunnerPid 100) { throw 'orphan-only must not look healthy' }
+    $start = Get-Content (Join-Path $RepoRoot 'tools\Start-IrcTsr.ps1') -Raw
+    $iReap = $start.IndexOf('Stop-IrcTsrStaleListens')
+    $iLaunch = $start.IndexOf('Start-Process powershell.exe')
+    if ($iReap -lt 0 -or $iReap -gt $iLaunch) { throw 'Start-IrcTsr must reap listens before launching the new runner' }
+    $watch = Get-Content (Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1') -Raw
+    if ($watch -match '\$listen\.Count -gt 0') { throw 'Watch-IrcTsr must not treat any listen (orphans) as the runner child' }
+    if ($watch -notmatch 'Test-IrcTsrListenChildOf') { throw 'Watch-IrcTsr must check the listen is a child of the runner' }
+}
+
+Invoke-Case 'BT0irtsr listen leak mrb hostile' {
+    # MRB #326: home match edge cases + watch tick reaps orphans while keeping runner child.
+    . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
+    $h = 'C:\Users\x\.agentic-irc-cursor'
+    $procs = @(
+        [pscustomobject]@{ ProcessId = 100; ParentProcessId = 1; CommandLine = 'powershell.exe -File runner.ps1' },
+        [pscustomobject]@{ ProcessId = 101; ParentProcessId = 100; CommandLine = 'python.exe irc_listen.py --home=C:\Users\x\.agentic-irc-cursor' },
+        [pscustomobject]@{ ProcessId = 102; ParentProcessId = 100; CommandLine = 'python.exe irc_listen.py --home "C:\Users\x\.agentic-irc-cursor\"' },
+        [pscustomobject]@{ ProcessId = 55; ParentProcessId = 999; CommandLine = 'python.exe irc_listen.py --home C:\Users\x\.agentic-irc-cursor' },
+        [pscustomobject]@{ ProcessId = 88; ParentProcessId = 5; CommandLine = 'python.exe irc_listen.py --home C:\Users\x\.agentic-irc-cursor2' },
+        [pscustomobject]@{ ProcessId = 66; ParentProcessId = 100; CommandLine = 'python.exe irc_agent.py --home C:\Users\x\.agentic-irc-cursor' }
+    )
+    $mine = @(Select-IrcTsrListenProcesses -Processes $procs -IrcHome $h | ForEach-Object { $_.ProcessId } | Sort-Object)
+    if (($mine -join ',') -ne '55,101,102') { throw "home match (= / quoted slash): got $($mine -join ',')" }
+    if (Select-IrcTsrListenProcesses -Processes $procs -IrcHome $h | Where-Object { $_.ProcessId -eq 66 }) {
+        throw 'irc_agent must not count as irc_listen'
+    }
+    if (Select-IrcTsrListenProcesses -Processes $procs -IrcHome $h | Where-Object { $_.ProcessId -eq 88 }) {
+        throw 'cursor2 home must not match cursor home'
+    }
+    $stale = @(Select-IrcTsrStaleListens -Processes $procs -IrcHome $h -KeepRunnerPid 100 | ForEach-Object { $_.ProcessId } | Sort-Object)
+    if (($stale -join ',') -ne '55') { throw "only orphan 55 stale under keep 100: got $($stale -join ',')" }
+    if (-not (Test-IrcTsrListenChildOf -Processes $procs -IrcHome $h -RunnerPid 100)) {
+        throw 'equals-home listen child of runner must count'
+    }
+    if (Test-IrcTsrListenChildOf -Processes $procs -IrcHome $h -RunnerPid 0) {
+        throw 'RunnerPid 0 must never look healthy'
+    }
+    $watch = Get-Content (Join-Path $RepoRoot 'tools\Watch-IrcTsr.ps1') -Raw
+    if ($watch -notmatch 'Stop-IrcTsrStaleListens') { throw 'Watch-IrcTsr must reap orphans each tick' }
+    if ($watch -notmatch 'KeepRunnerPid \$rid') { throw 'Watch-IrcTsr must keep the live runner listen while reaping' }
+    $start = Get-Content (Join-Path $RepoRoot 'tools\Start-IrcTsr.ps1') -Raw
+    if ($start -notmatch 'KeepRunnerPid 0') { throw 'Start-IrcTsr must reap all listens for home before launch' }
+}
+
 Invoke-Case 'BT0irtsr runner core matrix' {
     . (Join-Path $RepoRoot 'tools\Irc-Tsr-Health.ps1')
     if (-not (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $false)) {
