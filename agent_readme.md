@@ -11,10 +11,10 @@ Canonical machine table (must match `README.md` and `config/fleet-registry.json`
 
 | id | Role | Clone path (this house) |
 |---|---|---|
-| `ionos` | VPS; Ergo host; pull worker | `C:\\ai\\agentic_build` |
-| `marchhare` | Dual-homed build box | `D:\\ai\\agentic_build` |
-| `flamingo` | Club Madeira seat | `C:\\src\\agentic_build` |
-| `ce-priority-dev1` | Form Prep / Priority Azure | `C:\\src\\agentic_build` |
+| `ionos` | VPS; Ergo host; pull worker | `C:\ai\agentic_build` |
+| `marchhare` | Dual-homed build box | `D:\ai\agentic_build` |
+| `flamingo` | Club Madeira seat | `C:\src\agentic_build` |
+| `ce-priority-dev1` | Form Prep / Priority Azure | `C:\src\agentic_build` |
 
 `-Machine` is a registry **id**, not a hostname. IRC status nick for `ce-priority-dev1` is `bob-dev1` on `#bobiverse`.
 
@@ -27,11 +27,11 @@ Private Ergo `irc.ntsa.uk:6697`, channel `#bobiverse`. Skill stub `bob-irc` (can
 ## Load (local-exec on the target computer)
 
 ```powershell
-$repo = if (Test-Path 'D:\\ai\\agentic_build') { 'D:\\ai\\agentic_build' } elseif (Test-Path 'C:\\ai\\agentic_build') { 'C:\\ai\\agentic_build' } else { 'C:\\src\\agentic_build' }
-Import-Module "$repo\\src\\BobBridge.psd1"
+$repo = if (Test-Path 'D:\ai\agentic_build') { 'D:\ai\agentic_build' } elseif (Test-Path 'C:\ai\agentic_build') { 'C:\ai\agentic_build' } else { 'C:\src\agentic_build' }
+Import-Module "$repo\src\BobBridge.psd1"
 ```
 
-The pull worker `tools\\Watch-BobJobs.ps1` (logon task) claims **this** machine’s inbox and runs the build. If you enqueue for another id, that machine’s watcher runs it.
+The pull worker `tools\Watch-BobJobs.ps1` (logon task) claims **this** machine’s inbox and runs the build. If you enqueue for another id, that machine’s watcher runs it.
 
 ## BobBridge exports (agents)
 
@@ -83,7 +83,7 @@ Get-BobBuilds -Machine marchhare
 
 `lane` is `inbox` → `running` → `outbox`. `state` is `running` / `done` / `failed` / `blocked` / `stopped`. Outbox includes `completion.status` (`ok`/`failed`/`blocked`/`stopped`) and `completion.summary`.
 
-**Job audit:** each fleet outbox completion appends one JSON line to `{BOB_BRIDGE_HOME}\\job-audit.jsonl` with `jobId`, `machine`, `fuel`, `model`, `kind`, `prUrl`, `mrbIssue`, `sha`, `status` (fields may be empty on Fake-Grok). `Start-BobBuildLoop.ps1` appends again on MRB PASS-nits.
+**Job audit:** each fleet outbox completion appends one JSON line to `{BOB_BRIDGE_HOME}\job-audit.jsonl` with `jobId`, `machine`, `fuel`, `model`, `kind`, `prUrl`, `mrbIssue`, `sha`, `status` (fields may be empty on Fake-Grok). `Start-BobBuildLoop.ps1` appends again on MRB PASS-nits.
 
 Follow-up spec on a live job:
 
@@ -127,5 +127,5 @@ Point `cwd` at a repo the target machine can see, under that machine’s `cwdRoo
 - `--always-approve` or `--yolo` on formprep.
 - SQL passwords, `XAI_API_KEY=`, or `password=` assignments in packets.
 - Claim a machine by hostname; use the id.
-- Touch `%USERPROFILE%\\.grok\\bob-bridge` from Fake-Grok tests.
+- Touch `%USERPROFILE%\.grok\bob-bridge` from Fake-Grok tests.
 - Mark **ready for human UAT** (Bob only).
