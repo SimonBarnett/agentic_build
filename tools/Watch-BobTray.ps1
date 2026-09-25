@@ -1231,9 +1231,9 @@ function Start-BobTrayAgentWatch {
     Watch-BobTrayAgentWatchEarlyExit -Process $child -Seconds 10 -BootstrapLog (Join-Path $env:TEMP 'Watch-AgentHealth-start.log')
     # Async verify (do not block tray UI long): background job checks identity
     $verifyScript = {
-        param($Kind, $Slot, $Home, $Helpers, $RepoRoot)
+        param($Kind, $Slot, $SeatIrcHome, $Helpers, $RepoRoot)
         . $Helpers
-        $v = Test-BobWatchSeatIdentityOk -Kind $Kind -Slot $Slot -ExpectedHome $Home -TimeoutSec 60
+        $v = Test-BobWatchSeatIdentityOk -Kind $Kind -Slot $Slot -ExpectedHome $SeatIrcHome -TimeoutSec 60
         $logLine = if ($v.ok) {
             'tray-verify-ok'
         }
@@ -1243,12 +1243,12 @@ function Start-BobTrayAgentWatch {
         Write-BobTrayStartLog -Action $logLine -Fields @{
             kind   = $Kind
             slot   = $Slot
-            home   = $Home
+            home   = $SeatIrcHome
             nick   = $v.nick
             reason = $v.reason
         }
         if (-not $v.ok) {
-            $null = Stop-BobWatchSeatByHome -IrcHome $Home -Reason ('tray-verify-fail: ' + $v.reason)
+            $null = Stop-BobWatchSeatByHome -IrcHome $SeatIrcHome -Reason ('tray-verify-fail: ' + $v.reason)
         }
         return $v
     }
@@ -1286,14 +1286,14 @@ function Stop-BobTrayAgentWatchSeat {
         return
     }
     . $slotHelpers
-    $home = Get-BobWatchSeatHomePath -Kind $Kind -Slot $Slot
+    $seatHomePath = Get-BobWatchSeatHomePath -Kind $Kind -Slot $Slot
     $st = Read-BobWatchSeatState -StatePath (Get-BobWatchSeatStatePath -Kind $Kind -Slot $Slot)
-    if ($st -and $st.ircHome) { $home = [string]$st.ircHome }
-    $stop = Stop-BobWatchSeatByHome -IrcHome $home -Reason 'tray-stop'
+    if ($st -and $st.ircHome) { $seatHomePath = [string]$st.ircHome }
+    $stop = Stop-BobWatchSeatByHome -IrcHome $seatHomePath -Reason 'tray-stop'
     Write-BobTrayStartLog -Action 'tray-stop' -Fields @{
         kind   = $Kind
         slot   = $Slot
-        home   = $home
+        home   = $seatHomePath
         ok     = $stop.ok
         killed = $stop.killed
         reason = $stop.reason
