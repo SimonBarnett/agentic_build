@@ -1,4 +1,4 @@
-# Join #bobiverse (MODE2 free moot) as this machine's builder nick.
+﻿# Join #bobiverse (MODE2 free moot) as this machine's builder nick.
 # Not a Windows service. Starts hidden irc_agent.py; OPEN (chair) or JOIN.
 [CmdletBinding()]
 param(
@@ -73,31 +73,25 @@ $req = Join-Path $IrcRoot 'requirements.txt'
 if ($LASTEXITCODE -ne 0) { throw 'pip install cryptography failed' }
 
 $agent = Join-Path $IrcRoot 'scripts\irc_agent.py'
-$already = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine -and $_.CommandLine -match 'irc_agent\.py' -and $_.CommandLine -match [regex]::Escape($nick)
-    })
-if ($already.Count -eq 0) {
-    $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    # Password / debug go to the irc_agent child only (session-only rule): restore after Start-Process
-    # so the caller's shell (Install-BobFleet runs this in-process) does not keep the secret.
-    $savedIrcEnv = @{ pw = $env:AGENTIC_IRC_PASSWORD; dbg = $env:AGENTIC_IRC_DEBUG }
-    $env:AGENTIC_IRC_DEBUG = '1'
-    $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
-    if (-not (Test-Path $pwFile)) {
-        throw 'missing ~/.grok/ergo/connect.password (copy from ionos; never commit it)'
-    }
-    $env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
-    Start-Process -FilePath $py -ArgumentList @(
-        '-u', $agent,
-        '--host', $ircHost,
-        '--port', "$ircPort",
-        '--nick', $nick,
-        '--channel', $agentChannels,
-        '--home', $ircHome,
-        '--announce-key',
-        '--hello', "$MachineId-builder"
-    ) -WorkingDirectory $IrcRoot -WindowStyle Hidden | Out-Null
+# FR #328: singleton ensure via supervisor (start if missing, cull extras). Does not restart a healthy single agent.
+. (Join-Path $RepoRoot 'tools\Bob-IrcAgentSupervisor.ps1')
+$logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$savedIrcEnv = @{ pw = $env:AGENTIC_IRC_PASSWORD; dbg = $env:AGENTIC_IRC_DEBUG }
+$env:AGENTIC_IRC_DEBUG = '1'
+$pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
+if (-not (Test-Path $pwFile)) {
+    throw 'missing ~/.grok/ergo/connect.password (copy from ionos; never commit it)'
+}
+$env:AGENTIC_IRC_PASSWORD = (Get-Content $pwFile -Raw).Trim()
+try {
+    $ensureResult = Invoke-BobIrcAgentEnsure -Nick $nick -IrcHome $ircHome -Python $py -AgentPath $agent `
+        -IrcRoot $IrcRoot -IrcHost $ircHost -IrcPort $ircPort -Channels $agentChannels -Hello "$MachineId-builder"
+    Write-Host "Bob irc_agent ensure: $ensureResult"
+    $health = Get-BobIrcAgentHealth -Nick $nick -IrcHome $ircHome -IrcRoot $IrcRoot
+    Write-Host (Write-BobIrcAgentHealthLine -Health $health)
+}
+finally {
     $env:AGENTIC_IRC_PASSWORD = $savedIrcEnv.pw
     $env:AGENTIC_IRC_DEBUG = $savedIrcEnv.dbg
 }
