@@ -256,6 +256,8 @@ Invoke-Case 'BT0plan seat own console mrb hostile' {
     if ($tray -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'hidden watch path must remain' }
 
 
+}
+
 # --- BT0plan visionary sync ---
 Invoke-Case 'BT0plan visionary sync git stderr' {
     param($bridgeRoot)
@@ -349,7 +351,7 @@ Invoke-Case 'BT0plan visionary sync git stderr' {
     $msg = $null
     try { [void](Sync-BobTrayVisionarySkills) } catch { $msg = $_.Exception.Message }
     if ($msg -notmatch 'Install-VisionarySkills failed \(exit 1\): bt0 sync boom') { throw "no copy must raise the dialog error with the reason, got '$msg'" }
-
+}
 
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
