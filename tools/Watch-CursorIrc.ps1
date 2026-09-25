@@ -46,20 +46,11 @@ if (-not $ircRoot) {
     exit 1
 }
 
-function Get-CursorCoordinatorNick {
-    param([string]$MachineId, [string]$IrcHomeDir, [switch]$Renew)
-    $pidPath = Join-Path $IrcHomeDir 'coordinator.pid'
-    if ($Renew -or -not (Test-Path $pidPath)) {
-        $coord = $PID
-        Set-Content -Path $pidPath -Value $coord -NoNewline -Encoding utf8
-    }
-    else {
-        try { $coord = [int](Get-Content $pidPath -Raw).Trim() } catch { $coord = $PID }
-    }
-    return ('{0}-{1}' -f $MachineId, $coord)
-}
-
-$nick = Get-CursorCoordinatorNick -MachineId $mid -IrcHomeDir $ircHome
+. (Join-Path $PSScriptRoot 'Irc-Tsr-Coordinator.ps1')
+# Shared parser with Start-IrcTsr / Watch-IrcTsr (coordinator.pid may be key=value from a talk
+# seat). The old [int] parse fell back to this watcher's $PID, so its nick never matched.
+[void](Initialize-IrcTsrCoordinatorPid -IrcHome $ircHome -CoordinatorId $PID)
+$nick = Get-IrcTsrCoordinatorNick -MachineId $mid -IrcHome $ircHome
 
 $pwFile = Join-Path $env:USERPROFILE '.grok\ergo\connect.password'
 if (-not (Test-Path $pwFile)) {
@@ -150,11 +141,25 @@ if (-not $py) {
 }
 
 Write-CursorIrcLog "watch start pid=$PID nick=$nick pollSec=$PollSec"
+$agentStarts = 0; $agentNextAt = [datetime]::MinValue
+$tsrStarts = 0; $tsrNextAt = [datetime]::MinValue
 while ($true) {
     try {
         New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
-        Start-CursorIrcAgent -Py $py -Nick $nick -IrcHomeDir $ircHome
-        Start-CursorIrcListen -Py $py -IrcHomeDir $ircHome
+        $nick = Get-IrcTsrCoordinatorNick -MachineId $mid -IrcHome $ircHome
+        # Backoff: an irc_agent / TSR that dies at once must not be respawned every PollSec.
+        if (Test-CursorIrcAgentUp -ExpectedNick $nick -IrcHomeDir $ircHome) { $agentStarts = 0 }
+        elseif ([datetime]::Now -ge $agentNextAt) {
+            Start-CursorIrcAgent -Py $py -Nick $nick -IrcHomeDir $ircHome
+            $agentStarts++
+            $agentNextAt = [datetime]::Now.AddSeconds((Get-IrcTsrRestartDelaySec -ConsecutiveRestarts $agentStarts -BaseSec $PollSec -MaxSec 600))
+        }
+        if (Test-CursorIrcTsrUp) { $tsrStarts = 0 }
+        elseif ([datetime]::Now -ge $tsrNextAt) {
+            Start-CursorIrcListen -Py $py -IrcHomeDir $ircHome
+            $tsrStarts++
+            $tsrNextAt = [datetime]::Now.AddSeconds((Get-IrcTsrRestartDelaySec -ConsecutiveRestarts $tsrStarts -BaseSec $PollSec -MaxSec 600))
+        }
     }
     catch {
         Write-CursorIrcLog ('tick error: ' + $_.Exception.Message)

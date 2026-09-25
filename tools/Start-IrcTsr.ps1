@@ -20,18 +20,17 @@ if (-not $IrcRoot) {
 }
 if (-not $IrcRoot) { throw 'agentic_irc checkout not found' }
 
-$pidPath = Join-Path $IrcHome 'coordinator.pid'
-if (-not (Test-Path $pidPath)) {
-    Set-Content -Path $pidPath -Value $PID -NoNewline -Encoding utf8
-}
-try { $coord = [int](Get-Content $pidPath -Raw).Trim() } catch { $coord = $PID }
-$nick = '{0}-{1}' -f $MachineId, $coord
+. (Join-Path $PSScriptRoot 'Irc-Tsr-Health.ps1')
+. (Join-Path $PSScriptRoot 'Irc-Tsr-Coordinator.ps1')
+# Shared parser: coordinator.pid may be a bare pid OR talk-seat key=value lines. Never fall back
+# to this process's $PID (that made the runner nick differ from Watch-IrcTsr's -> restart loop).
+[void](Initialize-IrcTsrCoordinatorPid -IrcHome $IrcHome -CoordinatorId $PID)
+$nick = Get-IrcTsrCoordinatorNick -MachineId $MachineId -IrcHome $IrcHome
 
 $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $pidFile = Join-Path $logDir "irc-tsr-$nick.pid"
 $runner = Join-Path $PSScriptRoot 'Irc-Tsr-Runner.ps1'
-. (Join-Path $PSScriptRoot 'Irc-Tsr-Health.ps1')
 
 if (Test-Path $pidFile) {
     try {
