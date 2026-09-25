@@ -1,4 +1,4 @@
-# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
@@ -237,6 +237,23 @@ Start-Sleep -Seconds 6
     }
     $traySrc = Get-Content -LiteralPath $trayPath -Raw
     if ($traySrc -notmatch "-Title 'Grok plan seat \(visionary\)'" -or $traySrc -notmatch "-Title 'Cursor plan seat \(visionary\)'") { throw 'Plan Grok/Cursor must launch via the own-console launcher with a seat title' }
+}
+
+Invoke-Case 'BT0plan seat own console mrb hostile' {
+    $tray = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch 'function Initialize-BobTrayConsoleLauncher') { throw 'missing Initialize-BobTrayConsoleLauncher' }
+    if ($tray -notmatch 'CREATE_NEW_CONSOLE') { throw 'must CreateProcess with CREATE_NEW_CONSOLE' }
+    if ($tray -notmatch 'CREATE_UNICODE_ENVIRONMENT') { throw 'must pass Unicode env block' }
+    if ($tray -notmatch 'function ConvertTo-BobTrayProcessArgumentString') { throw 'Windows-quoted args required' }
+    if ($tray -notmatch 'function Start-BobTrayVisibleProcessWithSessionEnv') { throw 'visible plan path required' }
+    if ($tray -notmatch 'own console') { throw 'must log own console' }
+    # .cmd via cmd.exe /d /s /c
+    if ($tray -notmatch 'cmd\.exe' -or $tray -notmatch '/d' -or $tray -notmatch '/s') { throw 'cmd.bat path must use cmd.exe /d /s /c' }
+    # session key must not be written to User/Machine env in this path
+    if ($tray -match 'SetEnvironmentVariable\([^\)]*Machine') { throw 'must not set Machine env for session key' }
+    if ($tray -match '\[Environment\]::SetEnvironmentVariable') { throw 'must not persist session key via SetEnvironmentVariable' }
+    # hidden watch path unchanged marker
+    if ($tray -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'hidden watch path must remain' }
 }
 
 # --- BT0 parse ---
@@ -2078,7 +2095,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
 Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
-    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend £N.NN' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend Â£N.NN' }
     if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
     if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
     if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
@@ -2097,7 +2114,7 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
-        # formatter must omit zero — contract checked via source branch on $v -le 0
+        # formatter must omit zero â€” contract checked via source branch on $v -le 0
         if ($traySrc -notmatch '\$v -le 0') { throw 'Format-BobTrayCursorOverspendLine must omit zero overspend' }
     }
     $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
@@ -2408,7 +2425,7 @@ Invoke-Case 'BT0q3 invalid git kind enqueue' {
     }
 }
 
-# --- BT0râ€“BT0u Start-BobMrb / gh preflight (issue #13) ---
+# --- BT0rÃ¢â‚¬â€œBT0u Start-BobMrb / gh preflight (issue #13) ---
 Invoke-Case 'BT0r mrb body-file' {
     param($bridgeRoot)
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
@@ -3984,7 +4001,7 @@ Invoke-Case 'BT0irtsr runner core matrix' {
     if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $true) {
         throw 'stale wake must fail'
     }
-    # #173 fix 5: quiet channel — fresh process heartbeat, idle/old/missing irc.log, no FROM → no recycle
+    # #173 fix 5: quiet channel â€” fresh process heartbeat, idle/old/missing irc.log, no FROM â†’ no recycle
     $now = [datetime]'2026-09-22T12:00:00'
     $wakeQuiet = Join-Path $bridgeRoot 'irc-tsr-fix5-wake.jsonl'
     $hbFix5 = ($now.AddSeconds(-20).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
