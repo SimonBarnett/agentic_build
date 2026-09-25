@@ -1144,6 +1144,17 @@ function Start-BobTrayAgentWatch {
         Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
         return
     }
+    $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+    }
+    if (Test-Path -LiteralPath $slotHelpers) {
+        . $slotHelpers
+    }
+    else {
+        Write-TrayLog 'agents: missing Bob-WatchSeatSlot.ps1 (FR #345)'
+        return
+    }
     $kind = ([string]$Agent.kind).ToLowerInvariant()
     $sessionEnv = $null
     if ($kind -eq 'grok') {
@@ -1192,18 +1203,108 @@ function Start-BobTrayAgentWatch {
         }
     }
     $ps = (Get-Command powershell.exe).Source
-    $kindFlag = if ($kind -eq 'grok') { '-Grok' } else { '-Cursor' }
-    # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
-    # Cursor always --model auto (Simon 2026-09-23).
-    # FR #102: always pass -Cwd so the seat never guesses optical/network drives.
-    $cwd = Get-BobTrayWatchWorkspace -FallbackRoot $script:agentMonitorDir
-    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New', '-Cwd', $cwd)
-    if ($kind -eq 'cursor') {
-        $launchArgs += @('-Model', 'auto')
+    # FR #345: explicit next free slot + -IrcHome (pairs AgentMonitor #97)
+    try {
+        $pick = Resolve-BobWatchNextFreeSlot -Kind $kind -ExcludePid $PID
     }
-    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} cwd={2} model={3} sessionKey={4}' -f $Agent.kind, $ps1, $cwd, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    catch {
+        Write-TrayLog ('agents: no free slot: ' + $_.Exception.Message)
+        try {
+            $script:notifyIcon.ShowBalloonTip(8000, 'Bob Fleet Agents', ('No free {0} watch slot' -f $kind), [System.Windows.Forms.ToolTipIcon]::Error)
+        }
+        catch { }
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $pick.IrcHome | Out-Null
+    # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
+    # FR #102: always pass -Cwd; FR #345: explicit slot + -IrcHome.
+    $cwd = Get-BobTrayWatchWorkspace -FallbackRoot $script:agentMonitorDir
+    $launchArgs = Build-BobWatchSeatLaunchArgs -ScriptPath $ps1 -Kind $kind -Slot $pick.Slot -IrcHome $pick.IrcHome -New -Cwd $cwd
+    Write-TrayLog ('agents: launch {0} NEW slot={1} home={2} cwd={3} model={4} sessionKey={5}' -f $Agent.kind, $pick.Slot, $pick.IrcHome, $cwd, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    Write-BobTrayStartLog -Action 'tray-start' -Fields @{
+        kind = $kind
+        slot = $pick.Slot
+        home = $pick.IrcHome
+        cwd  = $cwd
+    }
     $child = Start-BobTrayProcessWithSessionEnv -FilePath $ps -ArgumentList $launchArgs -WorkingDirectory $script:agentMonitorDir -SessionEnv $sessionEnv
     Watch-BobTrayAgentWatchEarlyExit -Process $child -Seconds 10 -BootstrapLog (Join-Path $env:TEMP 'Watch-AgentHealth-start.log')
+    # Async verify (do not block tray UI long): background job checks identity
+    $verifyScript = {
+        param($Kind, $Slot, $Home, $Helpers, $RepoRoot)
+        . $Helpers
+        $v = Test-BobWatchSeatIdentityOk -Kind $Kind -Slot $Slot -ExpectedHome $Home -TimeoutSec 60
+        $logLine = if ($v.ok) {
+            'tray-verify-ok'
+        }
+        else {
+            'tray-verify-fail'
+        }
+        Write-BobTrayStartLog -Action $logLine -Fields @{
+            kind   = $Kind
+            slot   = $Slot
+            home   = $Home
+            nick   = $v.nick
+            reason = $v.reason
+        }
+        if (-not $v.ok) {
+            $null = Stop-BobWatchSeatByHome -IrcHome $Home -Reason ('tray-verify-fail: ' + $v.reason)
+        }
+        return $v
+    }
+    try {
+        Start-Job -ScriptBlock $verifyScript -ArgumentList @($kind, $pick.Slot, $pick.IrcHome, $slotHelpers, $RepoRoot) | Out-Null
+    }
+    catch {
+        # Fallback synchronous short wait if jobs blocked
+        $v = Test-BobWatchSeatIdentityOk -Kind $kind -Slot $pick.Slot -ExpectedHome $pick.IrcHome -TimeoutSec 15
+        if (-not $v.ok) {
+            Write-TrayLog ('agents: verify fail slot={0} {1}' -f $pick.Slot, $v.reason)
+            try {
+                $script:notifyIcon.ShowBalloonTip(10000, 'Bob Fleet Agents', ('Seat {0} identity failed: {1}' -f $pick.Slot, $v.reason), [System.Windows.Forms.ToolTipIcon]::Error)
+            }
+            catch { }
+            [void](Stop-BobWatchSeatByHome -IrcHome $pick.IrcHome -Reason $v.reason)
+        }
+        else {
+            Write-TrayLog ('agents: verify ok slot={0} nick={1}' -f $pick.Slot, $v.nick)
+        }
+    }
+}
+
+function Stop-BobTrayAgentWatchSeat {
+    param(
+        [ValidateSet('cursor', 'grok')][string]$Kind,
+        [int]$Slot
+    )
+    $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+    }
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        Write-TrayLog 'agents: stop missing Bob-WatchSeatSlot.ps1'
+        return
+    }
+    . $slotHelpers
+    $home = Get-BobWatchSeatHomePath -Kind $Kind -Slot $Slot
+    $st = Read-BobWatchSeatState -StatePath (Get-BobWatchSeatStatePath -Kind $Kind -Slot $Slot)
+    if ($st -and $st.ircHome) { $home = [string]$st.ircHome }
+    $stop = Stop-BobWatchSeatByHome -IrcHome $home -Reason 'tray-stop'
+    Write-BobTrayStartLog -Action 'tray-stop' -Fields @{
+        kind   = $Kind
+        slot   = $Slot
+        home   = $home
+        ok     = $stop.ok
+        killed = $stop.killed
+        reason = $stop.reason
+    }
+    Write-TrayLog ('agents: stop {0} slot={1} ok={2} killed={3} {4}' -f $Kind, $Slot, $stop.ok, $stop.killed, $stop.reason)
+    if (-not $stop.ok) {
+        try {
+            $script:notifyIcon.ShowBalloonTip(8000, 'Bob Fleet Agents', $stop.reason, [System.Windows.Forms.ToolTipIcon]::Warning)
+        }
+        catch { }
+    }
 }
 
 function Invoke-BobTrayAgent {
@@ -1499,6 +1600,35 @@ function Build-BobTrayAgentsMenu {
         $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
         [void]$Parent.DropDownItems.Add($item)
     }
+    # FR #345: list each live seat separately (nick + slot) so two seats are obvious
+    try {
+        $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+        if (-not (Test-Path -LiteralPath $slotHelpers)) {
+            $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+        }
+        if (Test-Path -LiteralPath $slotHelpers) {
+            . $slotHelpers
+            $seats = @(Get-BobWatchLiveSeatSummaries -Kind all)
+            if ($seats.Count -gt 0) {
+                [void]$Parent.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+                foreach ($s in $seats) {
+                    $label = '{0} seat {1}: {2}' -f $s.kind, $s.slot, $(if ($s.nick) { $s.nick } else { '(no nick yet)' })
+                    $si = New-Object System.Windows.Forms.ToolStripMenuItem
+                    $si.Text = $label
+                    $si.Tag = $s
+                    $si.Add_Click({
+                            param($sender, $e)
+                            $t = $sender.Tag
+                            if ($t) { Stop-BobTrayAgentWatchSeat -Kind $t.kind -Slot ([int]$t.slot) }
+                        })
+                    [void]$Parent.DropDownItems.Add($si)
+                }
+            }
+        }
+    }
+    catch {
+        Write-TrayLog ('agents: seat list error ' + $_.Exception.Message)
+    }
 }
 
 function Build-BobTrayPlanMenu {
@@ -1715,6 +1845,24 @@ function Update-Hover {
     try {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
+        # FR #345: list each watch seat separately (nick + slot) on tooltip body
+        try {
+            $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+            if (-not (Test-Path -LiteralPath $slotHelpers)) {
+                $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+            }
+            if (Test-Path -LiteralPath $slotHelpers) {
+                . $slotHelpers
+                $seatLines = @()
+                foreach ($s in @(Get-BobWatchLiveSeatSummaries -Kind all)) {
+                    $seatLines += ('seat {0}/{1}: {2}' -f $s.kind, $s.slot, $(if ($s.nick) { $s.nick } else { '(starting)' }))
+                }
+                if ($seatLines.Count -gt 0) {
+                    $script:hoverBody = ($script:hoverBody + "`r`n" + ($seatLines -join "`r`n")).Trim()
+                }
+            }
+        }
+        catch { }
         $script:hoverTitle = [string]$h.title
         if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }
