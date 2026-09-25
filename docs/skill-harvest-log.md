@@ -246,6 +246,13 @@ Skill `killproc`.
 `^AGENT_LOOP_WAKE_irc-tsr`; `Watch-CursorIrc` starts TSR not bare listen.
 Skills `agentic-irc`, `bob-irc`.
 
+## 2026-09-25 — IRC TSR: coordinator.pid nick drift (PR #334)
+
+flamingo: talk-seat key=value `coordinator.pid` broke per-script `[int]` parse →
+Start/Watch nick mismatch → Start-IrcTsr every 30s (pre-#326: 1833 orphan listens).
+`tools/Irc-Tsr-Coordinator.ps1` shared parser + respawn backoff; test
+`tests/BT0irtsr-coordinator-nick.ps1`. Do not touch flamingo from implementer seats.
+
 ## 2026-09-21 — IRC: ALWAYS listen + Watch-CursorIrc
 
 `agentic-irc` / `bob-irc`: `irc_listen.py` must stay up on fleet Cursor seats

@@ -21,6 +21,12 @@
 2. Add TSR runner/start/watch scripts and `_Watch-*` wrappers (per-machine ionos copies set `BOB_MACHINE_ID`).
 3. Extend `tools/Install-BobFleet.ps1` for IRC TSR and Cursor IRC scheduled tasks.
 4. Test-Pack `BT0irtsr*` cases for wake matrix, install wiring, and Watch-Bobiverse isolation.
+5. **PR #334 (flamingo 24–25/09):** shared `tools/Irc-Tsr-Coordinator.ps1` so `Start-IrcTsr` / `Watch-IrcTsr` / `Watch-CursorIrc` agree on `irc-tsr-<nick>.pid`.
+   - `coordinator.pid` is **two formats**: bare PID **or** talk-seat key=value (`nick=` / `agent=` / `seat=`). Never `[int](Get-Content -Raw)` and never fall back to the caller's `$PID` (that nick drift restarted TSR every `PollSec` → 1833 orphaned `irc_listen` on flamingo before #326 orphan reap).
+   - `Get-IrcTsrCoordinatorNick` → `<machine>-<id>` or `<machine>-coord` when unknown.
+   - `Initialize-IrcTsrCoordinatorPid` writes a bare id only when the file is **missing** (never overwrites a seat file).
+   - `Get-IrcTsrRestartDelaySec` exponential respawn backoff (base×2^n, cap 600s) when restarts never turn healthy; healthy tick resets.
+   - `Watch-IrcTsr` re-resolves nick each tick (`Update-TsrWatchPaths`).
 
 ## Tests (off-DEV)
 
@@ -29,7 +35,9 @@
 | BT0irtsr1 | wake silence matrix | AC2/AC3 healthy vs stale wake; idle irc.log does not affect wake-only gate |
 | BT0irtsr2 | runner core matrix | AC2 dead runner / missing listen / age cap |
 | BT0irtsr3 | install + bobiverse | AC1 wiring; Watch-Bobiverse unchanged |
+| BT0irtsr-coordinator-nick | coordinator.pid nick + backoff (PR #334) | flamingo key=value fixture; old `[int]` throws; shared parser; no `$PID` fallback; backoff series; static wiring on Start/Watch scripts |
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Test-Pack.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tests\BT0irtsr-coordinator-nick.ps1
 ```
