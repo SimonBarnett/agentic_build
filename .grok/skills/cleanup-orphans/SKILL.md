@@ -37,6 +37,16 @@ build.
 - Duplicate `npx` / `@xeroapi/xero-mcp-server` pairs (keep newest).
 - Bare `powershell.exe` with no `-File` / no useful CommandLine.
 
+## IRC TSR restart loop (PR #334)
+
+If hundreds of orphan `irc_listen` appear every ~30s, check that
+`Start-IrcTsr` / `Watch-IrcTsr` / `Watch-CursorIrc` share
+`tools/Irc-Tsr-Coordinator.ps1` (bare **or** talk-seat key=value
+`coordinator.pid`). Do not `[int]`-parse that file or fall back to the
+watcher's `$PID`. After #326 orphans are reaped; after #334 nick drift
+no longer respawns every `PollSec`. Sweep orphans here; do not remote
+into flamingo from another box unless assigned.
+
 ## Command
 
 ```powershell
