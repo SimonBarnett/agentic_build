@@ -1,4 +1,4 @@
-function Start-BobWorker {
+﻿function Start-BobWorker {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Cwd,

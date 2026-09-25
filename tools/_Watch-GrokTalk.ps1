@@ -1,4 +1,4 @@
-# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
+﻿# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
 # Grok-talk inbox poller wrapper. Scheduled task _Watch-GrokTalk-<machineId> runs this
 # or a per-machine copy. Not Watch-Bobiverse — no IRC moot loop here.
 [CmdletBinding()]

@@ -1,4 +1,4 @@
-# Hand a git-task packet to Cursor Agent (cursor-models fuel).
+﻿# Hand a git-task packet to Cursor Agent (cursor-models fuel).
 # Never use ~/.grok/bin/agent.exe — that is grok.exe. Look for cursor-agent.
 # Does not scrape Cursor cookies. Does not mark UAT. Bob chairs MRB.
 [CmdletBinding()]
