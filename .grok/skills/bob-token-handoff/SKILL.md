@@ -11,7 +11,9 @@ description: >
 
 # Token handoff
 
-Bob listens and assigns. Bob does not implement the PR and does not write
+Bob listens and assigns fleet work (fuel + machine). Shop job claim is
+separate: **Jeeves assigns** on worker `!bored` (gh-Jeeves FR #106 / K10;
+gh-Jeeves README is SoT). Bob does not implement the PR and does not write
 the MRB. Follow this order. Do not re-reason it from chat memory.
 
 ## 1. Fuel number from the live digest

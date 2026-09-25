@@ -54,6 +54,14 @@ GitHub delivers to `https://irc.ntsa.uk/bob/v1/git` (`setup-github-webhooks`). J
 
 Digest merges go to `/bob/v1/report`, not `/bob/v1/git`.
 
+## `!bored` → assign (FR #106)
+
+In every `#{machine}`, a trusted `{machine}-<pid>` worker says `!bored`.
+**Jeeves assigns** the next job (`<nick>: <TYPE> <repo>#<n> <url>`, `!focus`
+order). ACK → accepted + busy; DONE → done + idle + supersede. The ear OFFER
+path is retired. Worker pack: `bob-git-accept`. Source of truth:
+[gh-Jeeves README](https://github.com/SimonBarnett/gh-Jeeves#readme).
+
 ## !recycle
 
 Jeeves is the ionos notify path for `!recycle`. Implementer PR workers do **not** send live `!recycle` (`bob-hostile-mrb`). Bob or the merger on ionos runs recycle after merge to main.
