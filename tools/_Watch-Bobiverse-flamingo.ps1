@@ -1,4 +1,4 @@
-# DO NOT EDIT — per-machine wrapper from Install-BobFleet.ps1 (flamingo).
+﻿# DO NOT EDIT — per-machine wrapper from Install-BobFleet.ps1 (flamingo).
 # flamingo #bobiverse moot wrapper. Same contract as _Watch-Bobiverse-ionos
 # (Restart watcher). Sets BOB_MACHINE_ID; IRC home comes from Install-BobIrc.
 [CmdletBinding()]

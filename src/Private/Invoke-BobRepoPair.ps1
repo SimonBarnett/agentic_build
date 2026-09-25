@@ -1,4 +1,4 @@
-function Get-BobRepoPairStatePath {
+﻿function Get-BobRepoPairStatePath {
     Join-Path (Get-BridgeRoot) 'repo-pair.json'
 }
 

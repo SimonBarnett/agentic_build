@@ -1,4 +1,4 @@
-# Off-DEV testable TSR watchdog health (PROCESS_HEARTBEAT in wake jsonl — not irc.log / FROM mtime).
+﻿# Off-DEV testable TSR watchdog health (PROCESS_HEARTBEAT in wake jsonl — not irc.log / FROM mtime).
 
 function Get-IrcTsrLastProcessHeartbeatTime {
     param([Parameter(Mandatory)][string]$WakePath)

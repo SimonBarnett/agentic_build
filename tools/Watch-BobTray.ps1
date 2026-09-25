@@ -1,4 +1,4 @@
-# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
+﻿# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
 # Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
@@ -987,6 +987,15 @@ function Invoke-BobTrayAgent {
     Start-BobTrayAgentWatch $Agent
 }
 
+function Get-BobTrayVisionaryCloneRoot {
+    foreach ($c in @('D:\ai\skills-visionary', 'C:\ai\skills-visionary', 'C:\src\skills-visionary')) {
+        if (Test-Path -LiteralPath (Join-Path $c '.grok\skills\visionary\SKILL.md')) {
+            return [IO.Path]::GetFullPath($c)
+        }
+    }
+    return $null
+}
+
 function Sync-BobTrayVisionarySkills {
     # Plan seats load visionary ONLY from https://github.com/SimonBarnett/skills-visionary
     # (sister pack may include git-setup slice; do not pull agentic_build skills here).
@@ -998,12 +1007,19 @@ function Sync-BobTrayVisionarySkills {
     $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $installer -Pull 2>&1
     $code = $LASTEXITCODE
     foreach ($line in @($out)) { Write-TrayLog ('visionary: ' + $line) }
-    if ($code -ne 0) { throw "Install-VisionarySkills failed (exit $code)" }
-    foreach ($c in @('D:\ai\skills-visionary', 'C:\ai\skills-visionary', 'C:\src\skills-visionary')) {
-        if (Test-Path -LiteralPath (Join-Path $c '.grok\skills\visionary\SKILL.md')) {
-            return [IO.Path]::GetFullPath($c)
+    $root = Get-BobTrayVisionaryCloneRoot
+    if ($code -ne 0) {
+        # A failed refresh must not block Plan when a previous skills-visionary copy exists:
+        # launch with that copy and log the warning (the dialog is only for "nothing to load").
+        if ($root) {
+            Write-TrayLog ('plan: WARNING visionary sync failed (exit {0}); launching with existing copy {1}' -f $code, $root)
+            return $root
         }
+        $why = @(@($out) | ForEach-Object { [string]$_ } | Where-Object { $_ -match '\S' } | Select-Object -First 1)
+        $detail = if ($why.Count) { ': ' + ([string]$why[0]).Trim() } else { '' }
+        throw ('Install-VisionarySkills failed (exit {0}){1}' -f $code, $detail)
     }
+    if ($root) { return $root }
     throw 'skills-visionary clone not found after sync'
 }
 

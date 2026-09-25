@@ -1,4 +1,4 @@
-# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
+﻿# DO NOT EDIT — generated template from Install-BobFleet.ps1 (customize per host only on box).
 # Cursor IRC seat wrapper (irc_agent + Start-IrcTsr). Task _Watch-CursorIrc-<machineId>.
 [CmdletBinding()]
 param(

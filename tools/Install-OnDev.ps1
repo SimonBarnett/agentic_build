@@ -1,4 +1,4 @@
-# WP4 — copy/register the adapter on this machine. No SCM / Windows service.
+﻿# WP4 — copy/register the adapter on this machine. No SCM / Windows service.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,

@@ -1,4 +1,4 @@
-# Dumb #bobiverse publisher/poller. Not a Grok session. No reasoning.
+﻿# Dumb #bobiverse publisher/poller. Not a Grok session. No reasoning.
 # Refresh local bob-peers JSON; channel talk on real change; tray pull via !bobiverse ~120s.
 # keep irc_agent.py joined. Tray only reads those files.
 [CmdletBinding()]

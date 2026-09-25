@@ -1,4 +1,4 @@
-function Get-BobiverseConfigPath {
+﻿function Get-BobiverseConfigPath {
     $envp = [string]$env:BOB_IRC_CONFIG
     if ($envp -and $envp.Trim() -and (Test-Path $envp.Trim())) { return $envp.Trim() }
     Join-Path (Get-ModuleRoot) 'config\bobiverse.json'

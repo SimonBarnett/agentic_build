@@ -1,4 +1,4 @@
-function Test-BobTrayLooksLikeSha {
+﻿function Test-BobTrayLooksLikeSha {
     param([string]$Value)
     if (-not $Value) { return $true }
     $s = [string]$Value.Trim()
