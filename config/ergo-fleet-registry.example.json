@@ -1,0 +1,15 @@
+{
+  "_comment": "FR #327 non-secret fleet registry. Copy to ~/.grok/ergo/fleet-registry.json on ionos (and any box that grants simon +o). Map TLS client cert fingerprints (no colons, lower-case) to machine names. Never commit real fingerprints if treated as sensitive in your threat model; example values are fake.",
+  "certfp": {
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "marchhare",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "flamingo",
+    "cccccccccccccccccccccccccccccccccccccccc": "ionos",
+    "dddddddddddddddddddddddddddddddddddddddd": "ce-priority-dev1"
+  },
+  "bob_cloaks": {
+    "marchhare": "thvzqfwjnt7bn.irc",
+    "flamingo": "thvzqfwjnt7bn.irc",
+    "ionos": "example-ionos-cloak.irc",
+    "ce-priority-dev1": "example-dev1-cloak.irc"
+  }
+}

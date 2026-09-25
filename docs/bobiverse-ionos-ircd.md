@@ -43,8 +43,35 @@ The IONOS **hardware** firewall (Cloud Panel: Network > Firewall Policies) defau
 
 Copy `~\.grok\ergo\connect.password` to flamingo / marchhare / DEV1 out of band (same path). Pull `agentic_build` + `agentic_irc` (`PASS` support). Recycle **Watch-Bobiverse only** on those boxes. Never commit the password.
 
+## Channel registration and durable ops (FR #327)
+
+LOCKED 27 / A23 needs durable op: `bob-{machine}` in `#{machine}`, `Jeeves` in
+`#bobiverse`. Ergo must have **channel registration on** and public **account**
+registration **off**.
+
+| | |
+|---|---|
+| Patch | `tools/Set-BobIrcdChannelRegistration.ps1` (also called from `Install-BobIrcd.ps1`) sets `channels.registration.enabled: true` and keeps `accounts.registration.enabled: false` |
+| Decision helper | `tools/Ergo-FleetChannelOps.ps1` — `Test-BobErgoShouldOp` / `Test-BobErgoStandingBotOp` (pure; unit-tested) |
+| Fleet registry | `config/ergo-fleet-registry.example.json` → copy to `~\.grok\ergo\fleet-registry.json` (certfp → machine; not secrets in git) |
+| Bots | SASL via existing `AGENTIC_IRC_SASL_USER` / `AGENTIC_IRC_SASL_PASSWORD` (provisioned per box outside git, same class as connect password) |
+| Standing +o | After oper `NS SAREGISTER` + nick reservation: ChanServ founder/AMODE +o for `Jeeves` on `#bobiverse` and each `bob-{machine}` on `#{machine}` |
+| simon | **No standing AMODE.** +o only when (a) logged into account `simon` and (b) TLS client certfp is in the fleet registry for a machine. Shared NAT cloak alone is **not** enough (marchhare and flamingo share a cloak). Grant is done by the channel op bot; revoke if the check fails. |
+| Live ionos | Operator-only after review. CI and agents **must not** change live Ergo on ionos without Simon. |
+
+```powershell
+# On ionos (operator), after reviewing the yaml diff:
+powershell -NoProfile -File C:\ai\agentic_build\tools\Set-BobIrcdChannelRegistration.ps1 -ErgoRoot C:\ai\ergo
+# Then oper steps (NS SAREGISTER / CERT ADD / CS AMODE) using secrets outside git.
+Restart-Service BobIrcd
+Start-Service BobJeeves
+```
+
 ## Do not
 
 - Point `irc_agent` at `irc.libera.chat`
 - Open public `:6667`
 - Run two Watch-Bobiverse processes (Libera banned the reconnect flood)
+- Put SASL passwords, connect passwords, or real client private keys in git
+- Grant simon standing ChanServ op on any channel
+- Treat Ergo IP cloak alone as proof of a fleet machine

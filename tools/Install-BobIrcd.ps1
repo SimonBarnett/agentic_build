@@ -19,6 +19,14 @@ if (-not (Test-Path $nssm)) { throw "missing $nssm (NSSM must live in Ergo root;
 
 New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
+# FR #327: ensure channels.registration.enabled (idempotent yaml patch). Does not
+# invent secrets or register nicks; operator still runs NS SAREGISTER / AMODE offline.
+$regPatch = Join-Path $PSScriptRoot 'Set-BobIrcdChannelRegistration.ps1'
+if (Test-Path -LiteralPath $regPatch) {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $regPatch -ErgoRoot $ErgoRoot
+    if ($LASTEXITCODE -ne 0) { throw "Set-BobIrcdChannelRegistration failed ($LASTEXITCODE)" }
+}
+
 $oldTask = 'BobIrcd-ionos'
 try { Stop-ScheduledTask -TaskName $oldTask -ErrorAction SilentlyContinue } catch { }
 Unregister-ScheduledTask -TaskName $oldTask -Confirm:$false -ErrorAction SilentlyContinue

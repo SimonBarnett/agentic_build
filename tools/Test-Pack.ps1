@@ -5241,6 +5241,84 @@ Invoke-Case 'BT0install bobfleet idempotent' {
 }
 
 Write-Host ''
+# BT0ergo cases for FR #327 - appended by mrb
+Invoke-Case 'BT0ergo fleet should_op matrix' {
+    . (Join-Path $RepoRoot 'tools\Ergo-FleetChannelOps.ps1')
+    $reg = @{
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' = 'marchhare'
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' = 'flamingo'
+    }
+    $cloaks = @{ marchhare = 'thvzqfwjnt7bn.irc'; flamingo = 'thvzqfwjnt7bn.irc' }
+
+    if (-not (Test-BobErgoStandingBotOp -Channel '#marchhare' -Nick 'bob-marchhare')) { throw 'bob-marchhare must stand +o in #marchhare' }
+    if (Test-BobErgoStandingBotOp -Channel '#flamingo' -Nick 'bob-marchhare') { throw 'bob-marchhare must not stand in #flamingo' }
+    if (-not (Test-BobErgoStandingBotOp -Channel '#bobiverse' -Nick 'Jeeves')) { throw 'Jeeves must stand in #bobiverse' }
+    if (Test-BobErgoStandingBotOp -Channel '#bobiverse' -Nick 'simon') { throw 'simon never standing' }
+
+    if (-not (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'bob-marchhare' -Account 'bob-marchhare' -FleetRegistry $reg)) {
+        throw 'bob standing path'
+    }
+
+    $fpMh = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    if (-not (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account 'simon' -CertFp $fpMh -IrcHost 'thvzqfwjnt7bn.irc' -FleetRegistry $reg -BobCloaks $cloaks -RequireCloakMatch:$true)) {
+        throw 'simon+fleet cert must op #marchhare'
+    }
+    if (-not (Test-BobErgoShouldOp -Channel '#bobiverse' -Nick 'simon' -Account 'simon' -CertFp $fpMh -FleetRegistry $reg)) {
+        throw 'simon+fleet cert must op #bobiverse'
+    }
+    if (Test-BobErgoShouldOp -Channel '#flamingo' -Nick 'simon' -Account 'simon' -CertFp $fpMh -FleetRegistry $reg) {
+        throw 'marchhare cert must not op #flamingo'
+    }
+
+    if (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account 'simon' -CertFp '' -IrcHost 'thvzqfwjnt7bn.irc' -FleetRegistry $reg) {
+        throw 'password SASL simon without cert must not op'
+    }
+    if (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account 'simon' -CertFp 'ffffffffffffffffffffffffffffffffffffffff' -IrcHost 'thvzqfwjnt7bn.irc' -FleetRegistry $reg) {
+        throw 'unknown certfp must not op even on fleet cloak'
+    }
+
+    if (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account '' -CertFp $fpMh -FleetRegistry $reg) {
+        throw 'unauthenticated nick simon must not op'
+    }
+    if (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account 'other' -CertFp $fpMh -FleetRegistry $reg) {
+        throw 'wrong account must not op'
+    }
+
+    $fpColon = 'aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa'
+    if (-not (Test-BobErgoShouldOp -Channel '#marchhare' -Nick 'simon' -Account 'simon' -CertFp $fpColon -FleetRegistry $reg)) {
+        throw 'certfp with colons must match registry'
+    }
+}
+
+Invoke-Case 'BT0ergo channel registration yaml patch' {
+    $script = Join-Path $RepoRoot 'tools\Set-BobIrcdChannelRegistration.ps1'
+    $dir = Join-Path $env:TEMP ('ergo-fr327-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    try {
+        $conf = Join-Path $dir 'ircd.yaml'
+        $yaml = "server:`n    name: test`naccounts:`n    registration:`n        enabled: true`nchannels:`n    registration:`n        enabled: false`n"
+        [System.IO.File]::WriteAllText($conf, $yaml, (New-Object System.Text.UTF8Encoding $false))
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -ConfPath $conf
+        if ($LASTEXITCODE -ne 0) { throw "patch exit $LASTEXITCODE" }
+        $t = Get-Content -LiteralPath $conf -Raw
+        if ($t -notmatch '(?ms)channels:.*?registration:.*?enabled:\s*true') { throw "channels.registration not enabled: $t" }
+        if ($t -notmatch '(?ms)accounts:.*?registration:.*?enabled:\s*false') { throw "accounts.registration must stay false: $t" }
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -ConfPath $conf
+        if ($LASTEXITCODE -ne 0) { throw 'second patch failed' }
+        $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrcd.ps1') -Raw
+        if ($inst -notmatch 'Set-BobIrcdChannelRegistration') { throw 'Install-BobIrcd must call registration patch' }
+        $doc = Get-Content (Join-Path $RepoRoot 'docs\bobiverse-ionos-ircd.md') -Raw
+        if ($doc -notmatch 'FR #327' -or $doc -notmatch 'Test-BobErgoShouldOp') { throw 'docs must cover FR #327' }
+        if ($doc -notmatch 'standing') { throw 'docs must cover simon standing op ban' }
+        $ex = Join-Path $RepoRoot 'config\ergo-fleet-registry.example.json'
+        if (-not (Test-Path $ex)) { throw 'missing fleet registry example' }
+    }
+    finally {
+        Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+    }
+}
+
+
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
 exit 0
