@@ -1,4 +1,5 @@
 ﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+# FR #329: never join live fleet Ergo from tests (no w-* orphans on #marchhare).
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
@@ -13,6 +14,9 @@ $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
 $src = Join-Path $RepoRoot 'src\BobBridge.psd1'
 $fake = Join-Path $RepoRoot 'tools\Fake-Grok.ps1'
 $schemaDir = Join-Path $RepoRoot 'schemas'
+
+# CAST IRON (FR #329): refuse live irc.ntsa.uk worker spawns for the whole pack.
+$env:BOB_TEST_NO_LIVE_IRC = '1'
 
 function New-TestRoot {
     $d = Join-Path $env:TEMP ('bob-bridge-test-' + [guid]::NewGuid().ToString('N'))
@@ -53,6 +57,7 @@ function Import-Bridge {
     Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
     $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/bob/v1/digest'
     $env:BOB_SKIP_LIVE_GROK = '1'
+    $env:BOB_TEST_NO_LIVE_IRC = '1'
     $env:BOB_FLEET_BUNDLED = '0'
     $env:BOB_FLEET_REGISTRY = $null
     $env:BOB_FLEET_SHARE = $null
@@ -5422,6 +5427,81 @@ Invoke-Case 'BT0bob irc agent supervisor restart' {
 }
 
 
+Invoke-Case 'BT0test pack no live IRC guard' {
+    # FR #329: BOB_TEST_NO_LIVE_IRC refuses live Ergo worker spawn.
+    . (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1')
+    $env:BOB_TEST_NO_LIVE_IRC = '1'
+    $g = Test-BobLiveIrcSpawnAllowed -HostName 'irc.ntsa.uk'
+    if ($g.Allowed) { throw 'guard must refuse irc.ntsa.uk when BOB_TEST_NO_LIVE_IRC=1' }
+    if ($g.Reason -ne 'BOB_TEST_NO_LIVE_IRC') { throw "reason=$($g.Reason)" }
+    Remove-Item Env:BOB_TEST_NO_LIVE_IRC -ErrorAction SilentlyContinue
+    $g2 = Test-BobLiveIrcSpawnAllowed -HostName 'irc.ntsa.uk' -HomePath (Join-Path $env:TEMP 'bob-bridge-test-deadbeef\irc-home')
+    if ($g2.Allowed) { throw 'bob-bridge-test home must refuse live host even without env' }
+    if ($g2.Reason -ne 'bob-bridge-test-home') { throw "reason=$($g2.Reason)" }
+    $g3 = Test-BobLiveIrcSpawnAllowed -HostName '127.0.0.1' -HomePath (Join-Path $env:TEMP 'bob-bridge-test-x')
+    # loopback host is not in the live-host list; allowed unless env set
+    $env:BOB_TEST_NO_LIVE_IRC = '1'
+    $g4 = Test-BobLiveIrcSpawnAllowed -HostName '127.0.0.1'
+    if ($g4.Allowed) { throw 'env guard must refuse any host' }
+    # Start-BobWorkerIrcAgent must no-op under guard (no throw)
+    Start-BobWorkerIrcAgent -WorkerPid 41124 -MachineId 'marchhare'
+    $src = Get-Content (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1') -Raw
+    if ($src -notmatch 'BOB_TEST_NO_LIVE_IRC') { throw 'Start-BobWorkerIrcAgent must check BOB_TEST_NO_LIVE_IRC' }
+    if ($src -notmatch 'Stop-BobBridgeTestIrcOrphans') { throw 'reap helper required' }
+    $pack = Get-Content (Join-Path $RepoRoot 'tools\Test-Pack.ps1') -Raw
+    if ($pack -notmatch "BOB_TEST_NO_LIVE_IRC\s*=\s*'1'") { throw 'Test-Pack must set BOB_TEST_NO_LIVE_IRC=1' }
+    if ($pack -notmatch 'Stop-BobBridgeTestIrcOrphans') { throw 'Test-Pack finally must reap orphans' }
+}
+
+Invoke-Case 'BT0test pack reap bob-bridge-test irc orphans' {
+    . (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1')
+    $temp = [IO.Path]::GetTempPath().TrimEnd('\')
+    $testHome = Join-Path $temp ('bob-bridge-test-orphanfixture' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $stopped = New-Object System.Collections.Generic.List[int]
+    $stopFn = { param($procId) [void]$stopped.Add([int]$procId) }
+    $procs = @(
+        [pscustomobject]@{
+            ProcessId       = 34048
+            ParentProcessId = 1
+            CommandLine     = "python -u irc_agent.py --host irc.ntsa.uk --channel #marchhare --home $testHome\irc-home\workers\marchhare\41124 --nick w-mh-41124"
+        },
+        [pscustomobject]@{
+            ProcessId       = 39300
+            ParentProcessId = 2
+            CommandLine     = "python -u irc_agent.py --host irc.ntsa.uk --home C:\Users\Administrator\.agentic-irc-bobiverse --nick bob-marchhare"
+        },
+        [pscustomobject]@{
+            ProcessId       = 111
+            ParentProcessId = 2
+            CommandLine     = "python -u irc_agent.py --home $temp\bob-bridge-test-aliveparent\x --nick w-mh-1"
+        }
+    )
+    # parent 2 "alive" via RequireDeadParent + StopFn only stops dead-parent rows when we simulate
+    $killed = Stop-BobBridgeTestIrcOrphans -Processes $procs -StopFn $stopFn
+    if ($killed -notcontains 34048) { throw 'must kill bob-bridge-test orphan 34048' }
+    if ($killed -contains 39300) { throw 'must not kill real bobiverse home agent' }
+    # without RequireDeadParent, both test homes killed
+    $stopped.Clear()
+    $killed2 = Stop-BobBridgeTestIrcOrphans -Processes $procs -StopFn $stopFn
+    if ($killed2 -notcontains 111) { throw 'must kill other bob-bridge-test agent' }
+    if ($killed2 -contains 39300) { throw 'must never kill ~/.agentic-irc-bobiverse' }
+}
+
+try {
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
 exit 0
+}
+finally {
+    # FR #329: reap any leaked test irc_agents under %TEMP%\bob-bridge-test-*
+    try {
+        . (Join-Path $RepoRoot 'src\Private\Start-BobWorkerIrcAgent.ps1')
+        $n = @(Stop-BobBridgeTestIrcOrphans)
+        if ($n.Count -gt 0) {
+            Write-Host ("BT0 reap: stopped {0} bob-bridge-test irc_agent(s): {1}" -f $n.Count, ($n -join ','))
+        }
+    }
+    catch {
+        Write-Host ("BT0 reap skipped: $($_.Exception.Message)")
+    }
+}
