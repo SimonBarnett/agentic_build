@@ -1714,6 +1714,90 @@ Invoke-Case 'BT0o bobiverse irc' {
     if ($traySrc -match 'Start-IrcWatcher[\s\S]{0,400}Install-BobIrc') { throw 'tray must not run Install-BobIrc on every poll' }
 }
 
+# --- FR #341: bob-* ears must not IRC-announce idle/busy (digest webhook only) ---
+Invoke-Case 'BT0fr341 no irc idle busy status talk' {
+    param($bridgeRoot)
+    Import-Bridge $bridgeRoot
+    $ircHome = Join-Path $bridgeRoot 'irc-home-fr341'
+    New-Item -ItemType Directory -Force -Path $ircHome | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:BOB_MACHINE_ID = 'marchhare'
+    $env:BOB_IRC_NICK = 'bob-marchhare'
+    $outbox = Join-Path $ircHome 'outbox.txt'
+    if (Test-Path $outbox) { Remove-Item -LiteralPath $outbox -Force }
+
+    # static: talk helpers never return status lines
+    if (Format-BobIrcPeerTalkLine @{ id = 'marchhare'; running = 0; queued = 0 }) {
+        throw 'Format-BobIrcPeerTalkLine must be null (FR #341)'
+    }
+    if (Format-BobIrcPeerTalkLine @{ id = 'marchhare'; running = 1; queued = 0; model = 'Cursor Models'; kind = 'mrb'; repo = 'a/b' }) {
+        throw 'Format-BobIrcPeerTalkLine must stay null when busy'
+    }
+    if (Get-BobIrcChangeTalkLine -Before $null -After @{ id = 'marchhare'; running = 0 }) {
+        throw 'Get-BobIrcChangeTalkLine must not announce operational'
+    }
+    if (Get-BobIrcLongRunningTalkLine -Doc @{ id = 'x' } -PrimaryJob @{ id = 'j1'; claimedAt = '2000-01-01T00:00:00Z' }) {
+        throw 'Get-BobIrcLongRunningTalkLine must not IRC-warn'
+    }
+    $src = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($src -match 'Add-BobIrcOutboxChannelLine \$talk') {
+        throw 'Write-BobIrcStatus must not append change talk to outbox'
+    }
+    if ($src -match 'return "\$mid is idle\."') { throw 'must not return is idle (FR #341)' }
+    if ($src -match 'return "\$mid is busy\."') { throw 'must not return is busy (FR #341)' }
+    if ($src -match 'return "\$mid is operational\."') { throw 'must not return is operational (FR #341)' }|is busy\.|is operational\.') {
+        throw 'Get-BobIrc.ps1 must not contain idle/busy/operational talk strings'
+    }
+
+    # idle write
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    # busy peer json then flip via jobs folder
+    $runDir = Join-Path $bridgeRoot (Join-Path 'fleet' (Join-Path 'running' 'marchhare'))
+    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+    $job = @{
+        id        = 'fr341-busy-1'
+        machine   = 'marchhare'
+        cwd       = $RepoRoot
+        repo      = 'SimonBarnett/agentic_build'
+        kind      = 'git'
+        fuel      = 'cursor-models'
+        claimedAt = ([DateTime]::UtcNow.ToString('o'))
+        state     = 'START'
+    } | ConvertTo-Json -Compress
+    Set-Content -Path (Join-Path $runDir 'busy.json') -Value $job -Encoding utf8
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    # back to idle
+    Remove-Item -LiteralPath (Join-Path $runDir 'busy.json') -Force -ErrorAction SilentlyContinue
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+    Write-BobIrcStatus -SkipDigestWebhook | Out-Null
+
+    if (Test-Path $outbox) {
+        $ob = @(Get-Content -LiteralPath $outbox -ErrorAction SilentlyContinue | Where-Object { $_ })
+        $bad = @($ob | Where-Object {
+                $_ -match '(?i)\bis idle\b|\bis busy\b|\bis operational\b|is on .+ now\.|Working on |That''s an MRB|That''s UAT|That''s a worker|has been on .+ for '
+            })
+        if ($bad.Count -gt 0) {
+            throw "FR #341 outbox gained status talk: $($bad -join ' | ')"
+        }
+    }
+    $peer = Read-BobIrcPeer -Id marchhare
+    if (-not $peer) { throw 'Write-BobIrcStatus must still write bob-peers json' }
+
+    # Legitimate traffic still allowed through Add-BobIrcOutboxChannelLine
+    Add-BobIrcOutboxChannelLine 'PRIVMSG #marchhare :w-mh-1: ASSIGN SimonBarnett/agentic_build FR #341'
+    Add-BobIrcBobiversePrivmsg '!bored helper keep'
+    $ob2 = @(Get-Content -LiteralPath $outbox | Where-Object { $_ })
+    if (-not ($ob2 | Where-Object { $_ -match 'ASSIGN SimonBarnett/agentic_build FR #341' })) {
+        throw 'ASSIGN line must still append to outbox'
+    }
+    if (-not ($ob2 | Where-Object { $_ -match 'PRIVMSG #bobiverse :!bored helper keep' -or $_ -match '!bored helper keep' })) {
+        throw 'PRIVMSG helper lines must still append'
+    }
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_IRC_NICK = $null
+}
+
 # --- BT0o2 Cursor Models spending meter vs Sand (issue #21 / #25) ---
 Invoke-Case 'BT0o2 cursor models spending meter' {
     param($bridgeRoot)
@@ -2255,8 +2339,12 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($pos -ne ('overspend {0}12.34' -f [char]0x00A3)) { throw "overspend format sample=$pos" }
 
     $ircSrc = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
-    if ($ircSrc -notmatch 'is operational') { throw 'first IRC peer write must announce machine is operational' }
+    # FR #341: ears must not IRC-announce idle/busy/operational; webhook status=operational stays.
+    if ($ircSrc -match 'return "\$mid is idle\."') { throw 'Format-BobIrcPeerTalkLine must not emit is idle (FR #341)' }
+    if ($ircSrc -match 'return "\$mid is busy\."') { throw 'Format-BobIrcPeerTalkLine must not emit is busy (FR #341)' }
+    if ($ircSrc -match 'return "\$mid is operational\."') { throw 'Get-BobIrcChangeTalkLine must not emit is operational on IRC (FR #341)' }
     if ($ircSrc -notmatch "status\s*=\s*'operational'") { throw 'digest webhook status must be operational' }
+    if ($ircSrc -notmatch 'FR #341') { throw 'Get-BobIrc must document FR #341 no-IRC-status rule' }
 
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
     if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
