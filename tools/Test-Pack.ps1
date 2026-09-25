@@ -179,6 +179,66 @@ Invoke-Case 'BT0 skills' {
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
 
+# --- BT0plan seat own console ---
+Invoke-Case 'BT0plan seat own console' {
+    param($bridgeRoot)
+    # Tray Plan -> Grok launched agent.exe (log: "plan: launch grok plan seat ... sessionKey=yes") but
+    # no window appeared: ProcessStartInfo UseShellExecute=false + CreateNoWindow=false attaches the
+    # child to the tray's HIDDEN console (tray runs powershell -WindowStyle Hidden). The no-key path
+    # used Start-Process, which joins -ArgumentList unquoted on PS 5.1 (splits --rules).
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('ConvertTo-BobTrayProcessArgumentString', 'Initialize-BobTrayConsoleLauncher', 'Start-BobTrayVisibleProcessWithSessionEnv')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if ($fn) { . ([scriptblock]::Create($fn.Extent.Text)) }
+        elseif ($name -ne 'Initialize-BobTrayConsoleLauncher') { throw "Watch-BobTray must define $name" }
+    }
+    function Write-TrayLog([string]$m) { }
+    function Register-BobTrayGrokSession { param($Process, $SessionEnv) }
+    $child = Join-Path $bridgeRoot 'plan-child.ps1'
+    Set-Content -LiteralPath $child -Value @'
+param([string]$Out)
+[IO.File]::WriteAllText($Out, ('{0}|{1}|{2}|{3}' -f $PID, [string]$env:BT0_PLAN_SESSION, $args.Count, ($args -join '#')))
+Start-Sleep -Seconds 6
+'@
+    $ps = (Get-Command powershell.exe).Source
+    $rules = 'PLAN SEAT ONLY. Follow the visionary skill book (skills-visionary). Workspace: D:\ai\skills-visionary'
+    $started = @()
+    try {
+        foreach ($mode in @('session', 'nokey')) {
+            $out = Join-Path $bridgeRoot "plan-child-$mode.txt"
+            $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $child, $out, $rules, 'second')
+            $sess = $null
+            if ($mode -eq 'session') { $sess = @{ BT0_PLAN_SESSION = 'bt0-session-not-a-key' } }
+            Start-BobTrayVisibleProcessWithSessionEnv -FilePath $ps -ArgumentList $argv -WorkingDirectory $bridgeRoot -SessionEnv $sess
+            $deadline = (Get-Date).AddSeconds(20)
+            while (-not (Test-Path -LiteralPath $out) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path -LiteralPath $out)) { throw "$mode plan child did not start" }
+            Start-Sleep -Milliseconds 300
+            $f = (Get-Content -LiteralPath $out -Raw).Split('|')
+            $childPid = [int]$f[0]
+            $started += $childPid
+            $conhost = $null
+            $deadline = (Get-Date).AddSeconds(4)
+            while (-not $conhost -and (Get-Date) -lt $deadline) {
+                $conhost = @(Get-CimInstance Win32_Process -Filter "Name='conhost.exe' AND ParentProcessId=$childPid" -ErrorAction SilentlyContinue)[0]
+                if (-not $conhost) { Start-Sleep -Milliseconds 200 }
+            }
+            if (-not $conhost) { throw "$mode plan seat must get its OWN console (no conhost.exe child of pid ${childPid}; it inherited the tray's hidden console)" }
+            $want = if ($mode -eq 'session') { 'bt0-session-not-a-key' } else { '' }
+            if ($f[1] -ne $want) { throw "$mode child env BT0_PLAN_SESSION='$($f[1])' (want '$want')" }
+            if ($f[2] -ne '2' -or $f[3] -ne ($rules + '#second')) { throw "$mode args not preserved (count=$($f[2])): $($f[3])" }
+        }
+        if ($env:BT0_PLAN_SESSION) { throw 'session value must not leak into the launching (tray) process env' }
+    }
+    finally {
+        foreach ($p in $started) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
+    }
+    $traySrc = Get-Content -LiteralPath $trayPath -Raw
+    if ($traySrc -notmatch "-Title 'Grok plan seat \(visionary\)'" -or $traySrc -notmatch "-Title 'Cursor plan seat \(visionary\)'") { throw 'Plan Grok/Cursor must launch via the own-console launcher with a seat title' }
+}
+
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
     $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |
