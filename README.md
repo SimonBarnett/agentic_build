@@ -31,7 +31,7 @@ When another agent cannot complete a task, they write a **functional specificati
 
 **Fuel (no judgment):** if Cursor Models remaining > 0, use Cursor Models (Cursor Grok + Composer). If remaining is 0, use grok.exe. Never Other Models. Copilot only with `-AllowCopilot`. Tray top bar must show that Cursor Models remaining %.
 
-**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Every worker opens a **PR**. STANDARD MRB: `bob-mrb-worker` — after tests and hostile review PASS, review docs for stale behavior; open exactly **one** docs PR against `main` when needed and merge it with the original, otherwise merge as before. FAIL: exactly **one** fix PR then merge original + fix. Only Bob stamps UAT.
+**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Every worker opens a **PR**. **FR mode never self-merges** (FR #343). STANDARD MRB: `bob-mrb-worker` on a **different** seat — after tests and hostile review PASS, review docs for stale behavior; open exactly **one** docs PR against `main` when needed and merge it with the original, otherwise merge as before. FAIL: exactly **one** fix PR then merge original + fix. Only Bob stamps UAT.
 
 ### Fleet machines (registry ids)
 
@@ -52,9 +52,9 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 2. Commit the functional specification under `/docs`.
 3. From the spec, write a **full detailed build and test plan** a build agent can execute; commit it under `/docs`.
 4. `Start-BobBuildLoop.ps1` (skill `bob-job-loop`) starts the git worker, hands off MRB, retries failed cursor/grok jobs, and prints `DONE` on PASS-nits. Or `Start-BobBuild -Task git` (picker: Cursor Models remaining > 0, else grok-build) and hand each row yourself.
-5. Worker implements on `work/<job>` and **opens a PR**. Never push `main`. Never merge.
-6. Bob **hands off** hostile MRB on that PR (`Start-BobBuildLoop.ps1` or `tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
-7. MRB follows `bob-mrb-worker`: use `gh pr checkout` in a temp worktree; read intent; add NEW tests before testing; run the tests; then hostile review. After a PASS, review README, skills, `docs/`, mermaid diagrams, and usage/help text for stale behavior. If stale, open exactly **one** docs PR against `main` and merge it with the original; if docs are fine, merge as before. **FAIL:** open exactly **one** fix PR with the fix, then merge original + fix (not multiple fix PRs). Jeeves announces. Close the source issue/FR after PASS, hand off to a separate UAT worker, and only **Bob** stamps **ready for human UAT**.
+5. Worker implements on `work/<job>` and **opens a PR**. Never push `main`. Never merge (**FR #343** FR mode: open PR → stop; other seat MRBs).
+6. Bob **hands off** hostile MRB on that PR (`Start-BobBuildLoop.ps1` or `tools/Start-BobMrbHandoff.ps1`) to a **different** seat (or fresh MRB session). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
+7. MRB follows `bob-mrb-worker`: use `gh pr checkout` in a temp worktree; read intent; add NEW tests before testing; run the tests; then hostile review. After a PASS, review README, skills, `docs/`, mermaid diagrams, and usage/help text for stale behavior. If stale, open exactly **one** docs PR against `main` and merge it with the original; if docs are fine, merge as before. **FAIL:** open exactly **one** fix PR with the fix, then merge original + fix (not multiple fix PRs). Jeeves announces. Close the source issue/FR after PASS, hand off to a separate UAT worker, and only **Bob** stamps **ready for human UAT**. Pack: `docs/fr-mode-no-self-merge.md`. Guard: `tools/fr_self_merge_guard.py`.
 
 ### Feature request (extends existing repo)
 
@@ -90,8 +90,8 @@ flowchart TB
   MIN --> TRAY["Control systray shows proper Cursor meters\ngrok chat / high cost / low cost\nremaining % + next period; 0 is 0"]
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
-    WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
-    WB["MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nPASS: review docs\nmerge one docs PR if stale\nclose finished issues"]
+    WA["Worker A: implement next PR\nopen PR only — never self-merge\nFR #343\ndev model: LESS"]
+    WB["Worker B: MRB that PR (other seat)\nMRB model: MEDIUM\nPASS: review docs\nmerge one docs PR if stale\nFAIL: one fix PR\nbob-mrb-worker"]
   end
 
   PAIR --> WA

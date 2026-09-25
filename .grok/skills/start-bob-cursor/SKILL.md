@@ -68,7 +68,13 @@ Writes a packet JSON. Starts **cursor-agent** (`-p --model`) via `launch.ps1` th
 Do not put the prompt on `Start-Process -ArgumentList` (Windows splits quotes). Do not `Start-Process -RedirectStandardOutput` (PS 5.1 waits for the agent). Start with `Win32_Process.Create` so the agent outlives the grok.exe Job Object. Redirect inside `launch.ps1`. Skip empty Docs/Plan so the prompt is not `Read  and .`.
 
 Watch **GitHub** (PR + MRB issue), not the redirected `.log` (stdout is
-often empty until exit). Build kind: open a PR, do not merge. MRB kind: follow `bob-mrb-worker` — PASS merge that PR; FAIL open exactly
+often empty until exit).
+
+**FR #343 / FR mode (build kind):** open a PR and **do not merge**. Stop
+after the PR URL is posted. A **different** seat (or fresh MRB session)
+runs MRB. Pack: `docs/worker-pack-fr-mode.md`.
+
+**MRB kind:** follow `bob-mrb-worker` — PASS merge that PR; FAIL open exactly
 one fix PR then merge both. Does not scrape Cursor cookies.
 Does not mark ready for human UAT.
 

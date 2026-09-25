@@ -32,7 +32,9 @@ On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
-The implementer does not review their own PR. Dispatcher runs
+The implementer does not review their own PR (**FR #343**: FR mode opens
+the PR and **never** `gh pr merge`; MRB is a **different** seat or fresh
+session — `docs/fr-mode-no-self-merge.md`). Dispatcher runs
 `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`) or, for a single
 SHA, starts a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`) as
 soon as the PR exists. The driver comments the new URL on the prior FAIL
