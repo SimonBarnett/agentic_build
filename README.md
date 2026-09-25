@@ -161,63 +161,61 @@ flowchart TD
   K --> M[Jeeves announces — issue stays open, no UAT]
 ```
 
-### 2. Idle worker `!bored` → addressed offer → accept-on-ack (`bob-git-accept-claim`)
+### 2. Idle worker `!bored` → Jeeves assigns → accept-on-ACK (`bob-git-accept`)
 
-A worker idle for more than 2 minutes must say `!bored`. Jeeves offers the top job to that nick, and the job is only marked accepted once the worker acknowledges it.
+A worker idle for more than 2 minutes must say `!bored` in its own `#{machine}`. **Jeeves assigns** the next job to that nick (`<nick>: <TYPE> <repo>#<n> <url>`, `!focus` order). The job is marked accepted only when the worker ACKs. Source of truth: [gh-Jeeves README](https://github.com/SimonBarnett/gh-Jeeves#readme) (FR #106).
 
 ```mermaid
 flowchart TD
   A[Worker idle] --> B{Idle > 2 min?}
-  B -->|yes| C[MUST !bored]
-  C --> D[Jeeves offers TOP job TO this nick]
-  D --> E{Ack receipt?}
-  E -->|yes| F[Mark accepted → FR/MRB/UAT]
+  B -->|yes| C[MUST !bored in #machine]
+  C --> D[Jeeves assigns next job TO this nick]
+  D --> E{Worker ACK?}
+  E -->|yes| F[Mark accepted + busy → FR/MRB/UAT]
   E -->|no| G[Stays unaccepted]
-  F --> H[Clear working_on when done]
+  F --> H[DONE → done + idle; clear working_on]
   H --> A
 ```
 
-### 3. Jeeves chair: unaccepted queue digest, `#bobiverse` announces, `!bored` offers (`bob-jeeves-chair`)
+### 3. Jeeves chair: unaccepted queue digest, `#bobiverse` announces, `!bored` → assign (`bob-jeeves-chair`)
 
-Jeeves reads the webhook's unaccepted queue, announces GIT work on `#bobiverse`, and offers the top job to whichever worker says `!bored`.
+Jeeves reads the webhook's unaccepted queue, announces GIT work on `#bobiverse`, and **assigns** the next job to whichever trusted `{machine}-<pid>` worker says `!bored` in that shop. Ear OFFER path is retired (FR #106).
 
 ```mermaid
 flowchart TD
   A[Digest webhook unaccepted queue] --> B[Jeeves]
   B --> C["Announce GIT to bobs on #bobiverse only"]
-  D[Worker: !bored] --> E[Jeeves offers TOP job]
-  E --> F[Offer addressed to that !bored nick]
-  F --> G{Worker acks receipt?}
-  G -->|yes| H[Mark accepted]
+  D[Worker: !bored in #machine] --> E[Jeeves assigns next job]
+  E --> F["One line: nick: TYPE repo#n url"]
+  F --> G{Worker ACK?}
+  G -->|yes| H[Mark accepted + busy]
   G -->|no| I[Stays unaccepted]
   H --> J[That worker runs the mode]
 ```
 
 ### 4. FR → MRB → UAT handoff
 
-An issue or FR is announced by Jeeves, assigned in the shop channel (or claimed by an idle worker with `!BORED`), built as a PR, reviewed by a different worker where possible, then either merged and sent to a separate UAT worker for Bob to stamp, or fixed with one extra PR while the issue stays open.
+An issue or FR is announced by Jeeves, assigned when a shop worker says `!bored` (Jeeves assigns; scripts-only / Sand-empty path is the same), built as a PR, reviewed by a different worker where possible, then either merged and sent to a separate UAT worker for Bob to stamp, or fixed with one extra PR while the issue stays open.
 
 ```mermaid
 flowchart TD
   A["Issue / FR opened"] --> B["Jeeves announces on #bobiverse"]
-  B --> C{"How is it assigned?"}
-  C -->|"normal"| D["bob-* ear in shop #{machine} assigns a worker"]
-  C -->|"Sand empty: deterministic path"| E["Idle worker says !BORED in shop #{machine}"]
-  E --> F["Jeeves hands over the top job from the webhook unaccepted queue"]
-  D --> G["FR worker implements and opens a PR"]
-  F --> G
-  G --> H["Jeeves announces the PR on #bobiverse"]
-  H --> I{"2 or more workers available?"}
-  I -->|yes| J["MRB by a different worker"]
-  I -->|no| K["Same seat may continue into MRB"]
-  J --> L{"MRB verdict"}
-  K --> L
-  L -->|PASS| M["Merge PR and close the issue"]
-  M --> N["Separate UAT worker runs UAT"]
-  N --> O["Only Bob stamps UAT"]
-  L -->|FAIL| P["Open exactly one fix PR"]
-  P --> Q["Merge original PR and fix PR"]
-  Q --> R["Issue stays open, no UAT"]
+  B --> C["Idle worker !bored in shop #machine"]
+  C --> D["Jeeves assigns next job from unaccepted queue"]
+  D --> E["Worker ACK → accepted + busy"]
+  E --> F["FR worker implements and opens a PR"]
+  F --> G["Jeeves announces the PR on #bobiverse"]
+  G --> H{"2 or more workers available?"}
+  H -->|yes| I["MRB by a different worker"]
+  H -->|no| J["Same seat may continue into MRB"]
+  I --> K{"MRB verdict"}
+  J --> K
+  K -->|PASS| L["Merge PR and close the issue"]
+  L --> M["Separate UAT worker runs UAT"]
+  M --> N["Only Bob stamps UAT"]
+  K -->|FAIL| O["Open exactly one fix PR"]
+  O --> P["Merge original PR and fix PR"]
+  P --> Q["Issue stays open, no UAT"]
 ```
 
 ## Off-DEV (no real grok)
