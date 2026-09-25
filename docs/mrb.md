@@ -2,7 +2,7 @@
 
 Hostile Material Review Board is a **GitHub issue** on the product repo,
 linked to the **feature-request issue**, `docs/feature-request-*.md`, and
- the **worker PR**.
+the **worker PR**.
 
 Do **not** write `docs/mrb-*.pdf`. Git is the source of truth.
 
