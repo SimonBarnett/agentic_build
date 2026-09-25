@@ -1054,29 +1054,104 @@ function Resolve-BobTrayCursorAgentCmd {
     return $null
 }
 
+function Initialize-BobTrayConsoleLauncher {
+    # CreateProcess + CREATE_NEW_CONSOLE with an explicit child environment block.
+    # .NET ProcessStartInfo cannot ask for a NEW console when UseShellExecute=false (needed for
+    # child-only env), and Start-Process has no -Environment on PS 5.1.
+    if ('BobTray.ConsoleLauncher' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace BobTray {
+public static class ConsoleLauncher {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct STARTUPINFO {
+        public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
+        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
+        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_INFORMATION { public IntPtr hProcess, hThread; public int dwProcessId, dwThreadId; }
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool CreateProcessW(string app, StringBuilder cmd, IntPtr pa, IntPtr ta, bool inherit,
+        uint flags, IntPtr env, string cwd, ref STARTUPINFO si, out PROCESS_INFORMATION pi);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    const uint CREATE_NEW_CONSOLE = 0x00000010;
+    const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+    public static int Start(string app, string commandLine, string cwd, string title, IDictionary overrides) {
+        var env = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry e in Environment.GetEnvironmentVariables()) { env[(string)e.Key] = (string)e.Value; }
+        if (overrides != null) {
+            foreach (DictionaryEntry e in overrides) {
+                string k = Convert.ToString(e.Key);
+                if (e.Value == null) { env.Remove(k); } else { env[k] = Convert.ToString(e.Value); }
+            }
+        }
+        var sb = new StringBuilder();
+        foreach (var kv in env) { sb.Append(kv.Key).Append('=').Append(kv.Value).Append('\0'); }
+        sb.Append('\0');
+        IntPtr block = Marshal.StringToHGlobalUni(sb.ToString());
+        sb.Clear();
+        try {
+            var si = new STARTUPINFO();
+            si.cb = Marshal.SizeOf(typeof(STARTUPINFO));
+            si.lpTitle = string.IsNullOrEmpty(title) ? null : title;
+            PROCESS_INFORMATION pi;
+            if (!CreateProcessW(app, new StringBuilder(commandLine), IntPtr.Zero, IntPtr.Zero, false,
+                    CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT, block,
+                    string.IsNullOrEmpty(cwd) ? null : cwd, ref si, out pi)) {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+            return pi.dwProcessId;
+        }
+        finally { Marshal.FreeHGlobal(block); }
+    }
+}
+}
+'@
+}
+
 function Start-BobTrayVisibleProcessWithSessionEnv {
+    # Plan seats: the TUI needs its OWN visible console window. The tray is a hidden powershell
+    # (-WindowStyle Hidden) that owns a hidden console. ProcessStartInfo UseShellExecute=false +
+    # CreateNoWindow=false does not create a console: the plan agent.exe attached to the tray's
+    # hidden console and ran invisibly ("plan mode does not start"). Start-Process (no session key)
+    # joined -ArgumentList unquoted on PS 5.1, splitting --rules into words.
+    # Now: CreateProcess CREATE_NEW_CONSOLE, Windows-quoted args, session key only in the child's
+    # environment block (never tray / User / Machine env, never on disk).
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$ArgumentList,
         [string]$WorkingDirectory,
-        [hashtable]$SessionEnv
+        [hashtable]$SessionEnv,
+        [string]$Title = 'Plan seat'
     )
-    if (-not $SessionEnv -or $SessionEnv.Count -eq 0) {
-        Start-Process -FilePath $FilePath `
-            -ArgumentList $ArgumentList `
-            -WorkingDirectory $WorkingDirectory -WindowStyle Normal | Out-Null
-        return
+    Initialize-BobTrayConsoleLauncher
+    $argStr = ConvertTo-BobTrayProcessArgumentString -ArgumentList $ArgumentList
+    $app = $FilePath
+    $cmdLine = ('"{0}" {1}' -f $FilePath, $argStr)
+    if ([IO.Path]::GetExtension($FilePath) -match '^\.(cmd|bat)$') {
+        # CreateProcess cannot run a batch file directly: cmd.exe /d /s /c ""x.cmd" args"
+        $app = $env:ComSpec
+        if (-not $app) { $app = Join-Path $env:WINDIR 'System32\cmd.exe' }
+        $cmdLine = ('"{0}" /d /s /c ""{1}" {2}"' -f $app, $FilePath, $argStr)
     }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $FilePath
-    $psi.Arguments = ConvertTo-BobTrayProcessArgumentString -ArgumentList $ArgumentList
-    if ($WorkingDirectory) { $psi.WorkingDirectory = $WorkingDirectory }
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $false
-    foreach ($k in @($SessionEnv.Keys)) {
-        $psi.EnvironmentVariables[[string]$k] = [string]$SessionEnv[$k]
+    $overrides = @{}
+    if ($SessionEnv) {
+        foreach ($k in @($SessionEnv.Keys)) { $overrides[[string]$k] = [string]$SessionEnv[$k] }
     }
-    $proc = [System.Diagnostics.Process]::Start($psi)
+    $childPid = [BobTray.ConsoleLauncher]::Start($app, $cmdLine, $WorkingDirectory, $Title, $overrides)
+    $overrides = $null
+    $proc = $null
+    try { $proc = [System.Diagnostics.Process]::GetProcessById($childPid) }
+    catch { $proc = [pscustomobject]@{ Id = $childPid; HasExited = $true } }
+    Write-TrayLog ('plan: started pid={0} (own console) {1}' -f $childPid, (Split-Path -Leaf $FilePath))
     Register-BobTrayGrokSession -Process $proc -SessionEnv $SessionEnv
 }
 
@@ -1138,7 +1213,7 @@ function Start-BobTrayPlanAgent {
             $prompt
         )
         Write-TrayLog ('plan: launch grok plan seat cwd={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
-        Start-BobTrayVisibleProcessWithSessionEnv -FilePath $exe -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv
+        Start-BobTrayVisibleProcessWithSessionEnv -FilePath $exe -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv -Title 'Grok plan seat (visionary)'
         return
     }
     $cmd = Resolve-BobTrayCursorAgentCmd
@@ -1160,7 +1235,7 @@ function Start-BobTrayPlanAgent {
         $prompt
     )
     Write-TrayLog ('plan: launch cursor plan seat workspace={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
-    Start-BobTrayVisibleProcessWithSessionEnv -FilePath $cmd -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv
+    Start-BobTrayVisibleProcessWithSessionEnv -FilePath $cmd -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv -Title 'Cursor plan seat (visionary)'
 }
 
 function Build-BobTrayAgentsMenu {

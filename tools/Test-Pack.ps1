@@ -179,6 +179,83 @@ Invoke-Case 'BT0 skills' {
     if ($stopHung -match "'#bobiverse,#flamingo'") { throw 'Stop-HungAgent must derive shop channel from nick, not hardcode #flamingo' }
 }
 
+# --- BT0plan seat own console ---
+Invoke-Case 'BT0plan seat own console' {
+    param($bridgeRoot)
+    # Tray Plan -> Grok launched agent.exe (log: "plan: launch grok plan seat ... sessionKey=yes") but
+    # no window appeared: ProcessStartInfo UseShellExecute=false + CreateNoWindow=false attaches the
+    # child to the tray's HIDDEN console (tray runs powershell -WindowStyle Hidden). The no-key path
+    # used Start-Process, which joins -ArgumentList unquoted on PS 5.1 (splits --rules).
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('ConvertTo-BobTrayProcessArgumentString', 'Initialize-BobTrayConsoleLauncher', 'Start-BobTrayVisibleProcessWithSessionEnv')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if ($fn) { . ([scriptblock]::Create($fn.Extent.Text)) }
+        elseif ($name -ne 'Initialize-BobTrayConsoleLauncher') { throw "Watch-BobTray must define $name" }
+    }
+    function Write-TrayLog([string]$m) { }
+    function Register-BobTrayGrokSession { param($Process, $SessionEnv) }
+    $child = Join-Path $bridgeRoot 'plan-child.ps1'
+    Set-Content -LiteralPath $child -Value @'
+param([string]$Out)
+[IO.File]::WriteAllText($Out, ('{0}|{1}|{2}|{3}' -f $PID, [string]$env:BT0_PLAN_SESSION, $args.Count, ($args -join '#')))
+Start-Sleep -Seconds 6
+'@
+    $ps = (Get-Command powershell.exe).Source
+    $rules = 'PLAN SEAT ONLY. Follow the visionary skill book (skills-visionary). Workspace: D:\ai\skills-visionary'
+    $started = @()
+    try {
+        foreach ($mode in @('session', 'nokey')) {
+            $out = Join-Path $bridgeRoot "plan-child-$mode.txt"
+            $argv = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $child, $out, $rules, 'second')
+            $sess = $null
+            if ($mode -eq 'session') { $sess = @{ BT0_PLAN_SESSION = 'bt0-session-not-a-key' } }
+            Start-BobTrayVisibleProcessWithSessionEnv -FilePath $ps -ArgumentList $argv -WorkingDirectory $bridgeRoot -SessionEnv $sess
+            $deadline = (Get-Date).AddSeconds(20)
+            while (-not (Test-Path -LiteralPath $out) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
+            if (-not (Test-Path -LiteralPath $out)) { throw "$mode plan child did not start" }
+            Start-Sleep -Milliseconds 300
+            $f = (Get-Content -LiteralPath $out -Raw).Split('|')
+            $childPid = [int]$f[0]
+            $started += $childPid
+            $conhost = $null
+            $deadline = (Get-Date).AddSeconds(4)
+            while (-not $conhost -and (Get-Date) -lt $deadline) {
+                $conhost = @(Get-CimInstance Win32_Process -Filter "Name='conhost.exe' AND ParentProcessId=$childPid" -ErrorAction SilentlyContinue)[0]
+                if (-not $conhost) { Start-Sleep -Milliseconds 200 }
+            }
+            if (-not $conhost) { throw "$mode plan seat must get its OWN console (no conhost.exe child of pid ${childPid}; it inherited the tray's hidden console)" }
+            $want = if ($mode -eq 'session') { 'bt0-session-not-a-key' } else { '' }
+            if ($f[1] -ne $want) { throw "$mode child env BT0_PLAN_SESSION='$($f[1])' (want '$want')" }
+            if ($f[2] -ne '2' -or $f[3] -ne ($rules + '#second')) { throw "$mode args not preserved (count=$($f[2])): $($f[3])" }
+        }
+        if ($env:BT0_PLAN_SESSION) { throw 'session value must not leak into the launching (tray) process env' }
+    }
+    finally {
+        foreach ($p in $started) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }
+    }
+    $traySrc = Get-Content -LiteralPath $trayPath -Raw
+    if ($traySrc -notmatch "-Title 'Grok plan seat \(visionary\)'" -or $traySrc -notmatch "-Title 'Cursor plan seat \(visionary\)'") { throw 'Plan Grok/Cursor must launch via the own-console launcher with a seat title' }
+}
+
+Invoke-Case 'BT0plan seat own console mrb hostile' {
+    $tray = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch 'function Initialize-BobTrayConsoleLauncher') { throw 'missing Initialize-BobTrayConsoleLauncher' }
+    if ($tray -notmatch 'CREATE_NEW_CONSOLE') { throw 'must CreateProcess with CREATE_NEW_CONSOLE' }
+    if ($tray -notmatch 'CREATE_UNICODE_ENVIRONMENT') { throw 'must pass Unicode env block' }
+    if ($tray -notmatch 'function ConvertTo-BobTrayProcessArgumentString') { throw 'Windows-quoted args required' }
+    if ($tray -notmatch 'function Start-BobTrayVisibleProcessWithSessionEnv') { throw 'visible plan path required' }
+    if ($tray -notmatch 'own console') { throw 'must log own console' }
+    # .cmd via cmd.exe /d /s /c
+    if ($tray -notmatch 'cmd\.exe' -or $tray -notmatch '/d' -or $tray -notmatch '/s') { throw 'cmd.bat path must use cmd.exe /d /s /c' }
+    # session key must not be written to User/Machine env in this path
+    if ($tray -match 'SetEnvironmentVariable\([^\)]*Machine') { throw 'must not set Machine env for session key' }
+    if ($tray -match '\[Environment\]::SetEnvironmentVariable') { throw 'must not persist session key via SetEnvironmentVariable' }
+    # hidden watch path unchanged marker
+    if ($tray -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'hidden watch path must remain' }
+
+
 # --- BT0plan visionary sync ---
 Invoke-Case 'BT0plan visionary sync git stderr' {
     param($bridgeRoot)
@@ -272,7 +349,7 @@ Invoke-Case 'BT0plan visionary sync git stderr' {
     $msg = $null
     try { [void](Sync-BobTrayVisionarySkills) } catch { $msg = $_.Exception.Message }
     if ($msg -notmatch 'Install-VisionarySkills failed \(exit 1\): bt0 sync boom') { throw "no copy must raise the dialog error with the reason, got '$msg'" }
-}
+
 
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
@@ -2145,7 +2222,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
 Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
-    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend £N.NN' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend Â£N.NN' }
     if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
     if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
     if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
@@ -2164,7 +2241,7 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($traySrc -notmatch 'ToUpperInvariant') { throw 'machine names must render ALL CAPS' }
     $zero = 'overspend {0}{1:N2}' -f [char]0x00A3, 0.0
     if ($zero -match 'overspend') {
-        # formatter must omit zero — contract checked via source branch on $v -le 0
+        # formatter must omit zero â€” contract checked via source branch on $v -le 0
         if ($traySrc -notmatch '\$v -le 0') { throw 'Format-BobTrayCursorOverspendLine must omit zero overspend' }
     }
     $pos = 'overspend {0}{1:N2}' -f [char]0x00A3, 12.34
@@ -2475,7 +2552,7 @@ Invoke-Case 'BT0q3 invalid git kind enqueue' {
     }
 }
 
-# --- BT0râ€“BT0u Start-BobMrb / gh preflight (issue #13) ---
+# --- BT0rÃ¢â‚¬â€œBT0u Start-BobMrb / gh preflight (issue #13) ---
 Invoke-Case 'BT0r mrb body-file' {
     param($bridgeRoot)
     $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
@@ -4116,7 +4193,7 @@ Invoke-Case 'BT0irtsr runner core matrix' {
     if (Test-IrcTsrRunnerHealthyCore -RunnerAlive $true -ListenChildUp $true -RunnerAgeSec 10 -RestartAfterSec 600 -WakeSilenceStale $true) {
         throw 'stale wake must fail'
     }
-    # #173 fix 5: quiet channel — fresh process heartbeat, idle/old/missing irc.log, no FROM → no recycle
+    # #173 fix 5: quiet channel â€” fresh process heartbeat, idle/old/missing irc.log, no FROM â†’ no recycle
     $now = [datetime]'2026-09-22T12:00:00'
     $wakeQuiet = Join-Path $bridgeRoot 'irc-tsr-fix5-wake.jsonl'
     $hbFix5 = ($now.AddSeconds(-20).ToUniversalTime().ToString('o')) + ' PROCESS_HEARTBEAT'
