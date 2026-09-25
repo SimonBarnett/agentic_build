@@ -274,6 +274,29 @@ Invoke-Case 'BT0plan visionary sync git stderr' {
     if ($msg -notmatch 'Install-VisionarySkills failed \(exit 1\): bt0 sync boom') { throw "no copy must raise the dialog error with the reason, got '$msg'" }
 }
 
+Invoke-Case 'BT0plan visionary sync mrb hostile' {
+    # MRB #324: Invoke-BobVisionaryGit + tray fallback locks (no D:\ai live trees).
+    $installer = Join-Path $RepoRoot 'tools\Install-VisionarySkills.ps1'
+    $src = Get-Content -LiteralPath $installer -Raw
+    if ($src -notmatch 'function Invoke-BobVisionaryGit') { throw 'must define Invoke-BobVisionaryGit' }
+    if ($src -notmatch "ErrorActionPreference = 'Continue'") { throw 'git wrapper must use Continue around native git' }
+    if ($src -notmatch 'warning = \$pullWarning') { throw 'result object must expose warning field' }
+    if ($src -match '&\s*git\b[^\r\n]*2>&1' -and $src -notmatch 'Invoke-BobVisionaryGit') {
+        throw 'raw git 2>&1 under Stop must not remain outside the wrapper'
+    }
+    # No bare `& git` left outside Invoke-BobVisionaryGit (except comments)
+    $bareGit = [regex]::Matches($src, '(?m)^\s*&\s*git\b')
+    if ($bareGit.Count -gt 0) { throw 'all git invocations must go through Invoke-BobVisionaryGit' }
+    $tray = Get-Content -LiteralPath (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch 'function Get-BobTrayVisionaryCloneRoot') { throw 'tray must expose Get-BobTrayVisionaryCloneRoot for tests' }
+    if ($tray -notmatch 'WARNING visionary sync failed') { throw 'tray must log WARNING on soft sync fail' }
+    if ($tray -notmatch 'Install-VisionarySkills failed \(exit') { throw 'hard fail dialog must include exit code' }
+    # BOM gate still present
+    if ((Get-Content -LiteralPath (Join-Path $RepoRoot 'tools\Test-Pack.ps1') -Raw) -notmatch "BT0 encoding utf8 bom") {
+        throw 'BT0 encoding utf8 bom case required'
+    }
+}
+
 # --- BT0 parse ---
 Invoke-Case 'BT0 parse' {
     $files = Get-ChildItem $RepoRoot -Recurse -Include *.ps1, *.psm1, *.psd1 |
