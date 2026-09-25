@@ -1821,14 +1821,62 @@ function Start-IrcWatcher {
 }
 
 function Restart-BobTrayWatcher {
-    Write-TrayLog 'Restart watcher: rejoin #bobiverse then relaunch tray'
-    Stop-BobiverseMoot
-    Start-BobiverseMootWrapper
+    # FR #346: full local reinstall/update, then single-instance tray relaunch.
+    Write-TrayLog 'Restart watcher: full fleet reinstall (pull/deploy/skills) then tray relaunch'
+    $reinstall = Join-Path $RepoRoot 'tools\Invoke-BobFleetReinstall.ps1'
+    $summary = 'reinstall script missing'
+    if (Test-Path -LiteralPath $reinstall) {
+        try {
+            $ps = (Get-Command powershell.exe).Source
+            $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $reinstall -RepoRoot $RepoRoot -RelaunchTray 2>&1
+            $code = $LASTEXITCODE
+            $jsonLine = @($out | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
+            if ($jsonLine) {
+                try {
+                    $rep = $jsonLine | ConvertFrom-Json
+                    $summary = [string]$rep.summary
+                    if (-not $summary) { $summary = "reinstall exit=$code" }
+                }
+                catch {
+                    $summary = (@($out) | Select-Object -Last 3) -join ' '
+                }
+            }
+            else {
+                $summary = "reinstall exit=$code"
+            }
+            Write-TrayLog ('Restart watcher report: ' + $summary)
+        }
+        catch {
+            $summary = 'reinstall error: ' + $_.Exception.Message
+            Write-TrayLog $summary
+        }
+    }
+    else {
+        Write-TrayLog 'Restart watcher: Invoke-BobFleetReinstall.ps1 missing; fallback ear+tray only'
+        Stop-BobiverseMoot
+        Start-BobiverseMootWrapper
+    }
+    try {
+        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Fleet — Restart watcher', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
+    }
+    catch { }
+    # Ensure ear + jobs after reinstall
+    try { Start-IrcWatcher } catch { }
+    try { Start-JobsWatcher } catch { }
+    # Relaunch tray via single-instance helper (may no-op if already replaced)
+    $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
-    $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
-    Start-Process -FilePath $ps `
-        -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
-        -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    if (Test-Path -LiteralPath $startTray) {
+        Start-Process -FilePath $ps `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot) `
+            -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    }
+    else {
+        $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+        Start-Process -FilePath $ps `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
+            -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    }
     $ctx.ExitThread()
 }
 

@@ -1,0 +1,13 @@
+{
+  "comment": "FR #346: fleet repos pulled on Restart watcher (local machine only).",
+  "default_branch": "main",
+  "repos": [
+    { "name": "agentic_build", "path_env": "BOB_FLEET_ROOT", "path_default": "", "remote": "https://github.com/SimonBarnett/agentic_build.git" },
+    { "name": "agentic_irc", "path_candidates": ["C:\\ai\\agentic_irc", "D:\\ai\\agentic_irc", "E:\\ai\\agentic_irc"], "remote": "https://github.com/SimonBarnett/agentic_irc.git" },
+    { "name": "AgentMonitor", "path_candidates": ["%USERPROFILE%\\Desktop\\Watch-AgentHealth", "C:\\ai\\AgentMonitor", "D:\\ai\\AgentMonitor", "E:\\ai\\AgentMonitor"], "remote": "https://github.com/SimonBarnett/AgentMonitor.git" }
+  ],
+  "skill_books": [
+    { "name": "agentic_build", "skills_rel": ".grok/skills" },
+    { "name": "AgentMonitor", "skills_rel": ".grok/skills" }
+  ]
+}
