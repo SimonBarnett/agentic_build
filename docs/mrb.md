@@ -2,7 +2,7 @@
 
 Hostile Material Review Board is a **GitHub issue** on the product repo,
 linked to the **feature-request issue**, `docs/feature-request-*.md`, and
-the **worker PR**.
+ the **worker PR**.
 
 Do **not** write `docs/mrb-*.pdf`. Git is the source of truth.
 
@@ -12,10 +12,17 @@ Transaction (no judgment): `.grok/skills/bob-build-loop`.
 2. Bob hands off MRB with `tools/Start-BobBuildLoop.ps1` (skill
    `bob-job-loop`) or a single `tools/Start-BobMrbHandoff.ps1` (Cursor Models
    while remaining > 0, else grok.exe). Never Other Models.
-3. Worker posts `MRB FAIL|PASS-nits: <slug> <sha>` via `tools/Start-BobMrb.ps1`.
-4. **FAIL:** do not merge; dispatcher starts a FIX worker; new PR; re-MRB.
-5. **PASS-nits:** the MRB agent merges the PR. Nits do not block.
-6. Only Bob stamps **ready for human UAT**.
+3. In a temporary worktree, use `gh pr checkout`, read intent, add NEW tests,
+   run existing + new tests, and perform the hostile review.
+4. **PASS:** review README, skills, `docs/`, mermaid diagrams, and usage/help
+   text for stale behavior. If anything is stale, open exactly ONE docs PR
+   against `main` with the corrections and merge it together with the original;
+   if docs are fine, merge the original as before. Close the source issue/FR,
+   then hand off to a separate UAT worker. Only Bob stamps UAT.
+5. **FAIL:** open exactly ONE fix PR with the fix, then merge both the original
+   PR and the fix PR. Do not open multiple fix PRs.
+6. Worker posts `MRB FAIL|PASS-nits: <slug> <sha>` via
+   `tools/Start-BobMrb.ps1`. Jeeves announces whatever lands.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\ai\agentic_build\tools\Start-BobMrbHandoff.ps1 `

@@ -2,7 +2,8 @@
 name: cursor-mrb-dev
 description: >
   Hand off hostile MRB per bob-mrb-worker: Cursor Models while remaining > 0,
-  else grok.exe. Workers open PRs. PASS merges. FAIL → exactly one fix PR then
+  else grok.exe. Workers open PRs. After PASS, review docs and merge exactly
+  one docs PR with the original when stale. FAIL → exactly one fix PR then
   merge both (not a FIX-worker chain). Leftover FAIL after another seat already
   merged: close the board, no extra fix. Use when the user says cursor mrb,
   mrb until pass, cursor builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev.
@@ -16,8 +17,8 @@ github: https://github.com/SimonBarnett/agentic_build
 Foundation: `harvest-agent-skills` (honesty box) -> report back to
 https://github.com/SimonBarnett/agentic_build.
 
-**STANDARD process:** `bob-mrb-worker` (tests-first mermaid; PASS merge;
-FAIL one fix PR then merge both). Transaction pointer: `bob-build-loop`.
+**STANDARD process:** `bob-mrb-worker` (tests-first; PASS docs review then
+merge, with exactly one docs PR when stale; FAIL one fix PR then merge both). Transaction pointer: `bob-build-loop`.
 Bob does not write the MRB or the code. Hand off, watch GitHub, dispatch
 the next row.
 
