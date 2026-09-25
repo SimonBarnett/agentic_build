@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 . (Join-Path $PSScriptRoot 'Irc-Tsr-Health.ps1')
+. (Join-Path $PSScriptRoot 'Irc-Tsr-Coordinator.ps1')
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
 if (-not $MachineId) { $MachineId = $env:BOB_MACHINE_ID }
@@ -22,16 +23,21 @@ $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-cursor'
 if ($env:AGENTIC_IRC_CURSOR_HOME -and $env:AGENTIC_IRC_CURSOR_HOME.Trim()) {
     $ircHome = $env:AGENTIC_IRC_CURSOR_HOME.Trim()
 }
-$pidPath = Join-Path $ircHome 'coordinator.pid'
-try { $coord = [int](Get-Content $pidPath -Raw).Trim() } catch { $coord = 0 }
-$nick = if ($coord -gt 0) { '{0}-{1}' -f $MachineId, $coord } else { '{0}-coord' -f $MachineId }
-
 $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-$logPath = Join-Path $logDir "watch-irc-tsr-$nick.log"
-$tsrPidFile = Join-Path $logDir "irc-tsr-$nick.pid"
-$wakePath = Join-Path $logDir "irc-tsr-$nick-wake.jsonl"
 $startScript = Join-Path $RepoRoot 'tools\Start-IrcTsr.ps1'
+
+function Update-TsrWatchPaths {
+    # Same nick as Start-IrcTsr (shared parser), re-read every tick: Start-IrcTsr may create
+    # coordinator.pid after this watcher started, and a talk seat may rewrite it (key=value).
+    $script:nick = Get-IrcTsrCoordinatorNick -MachineId $MachineId -IrcHome $ircHome
+    $script:logPath = Join-Path $logDir "watch-irc-tsr-$($script:nick).log"
+    $script:tsrPidFile = Join-Path $logDir "irc-tsr-$($script:nick).pid"
+    $script:wakePath = Join-Path $logDir "irc-tsr-$($script:nick)-wake.jsonl"
+}
+Update-TsrWatchPaths
+$consecutiveRestarts = 0
+$nextStartAt = [datetime]::MinValue
 
 function Write-TsrWatchLog([string]$m) {
     Add-Content -Path $logPath -Value ('{0:o} {1}' -f [datetime]::UtcNow, $m) -ErrorAction SilentlyContinue
@@ -70,9 +76,20 @@ function Test-TsrHealthy {
 Write-TsrWatchLog "watch start poll=${PollSec}s silence=${SilenceSec}s restartAfter=${RestartAfterSec}s nick=$nick"
 while ($true) {
     try {
-        if (-not (Test-TsrHealthy)) {
+        Update-TsrWatchPaths
+        if (Test-TsrHealthy) {
+            $consecutiveRestarts = 0
+        }
+        elseif ([datetime]::Now -lt $nextStartAt) {
+            Write-TsrWatchLog ('TSR down; backoff until {0:o} ({1} restarts in a row)' -f $nextStartAt, $consecutiveRestarts)
+        }
+        else {
             Write-TsrWatchLog 'TSR down or stale; Start-IrcTsr'
             & $startScript -MachineId $MachineId -IrcHome $ircHome 2>&1 | Out-Null
+            $consecutiveRestarts++
+            # A restart that never turns healthy must not spawn a runner + listen every PollSec.
+            $delay = Get-IrcTsrRestartDelaySec -ConsecutiveRestarts $consecutiveRestarts -BaseSec $PollSec -MaxSec 600
+            $nextStartAt = [datetime]::Now.AddSeconds($delay)
         }
     }
     catch {
