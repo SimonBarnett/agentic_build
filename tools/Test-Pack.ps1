@@ -5319,6 +5319,109 @@ Invoke-Case 'BT0ergo channel registration yaml patch' {
 }
 
 
+Invoke-Case 'BT0bob irc agent supervisor ensure' {
+    . (Join-Path $RepoRoot 'tools\Bob-IrcAgentSupervisor.ps1')
+    $agentHome = Join-Path $env:TEMP ('bobirc-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $agentHome | Out-Null
+    try {
+        # stale quit cleared
+        [System.IO.File]::WriteAllText((Join-Path $agentHome 'agent.quit.request'), "old`n")
+        $rm = Clear-BobIrcStaleQuitRequest -IrcHome $agentHome
+        if ($rm -notcontains 'agent.quit.request') { throw 'stale quit not removed' }
+        if (Test-Path (Join-Path $agentHome 'agent.quit.request')) { throw 'quit file still present' }
+
+        $nick = 'bob-marchhare'
+        $started = [System.Collections.Generic.List[string]]::new()
+        $stopped = [System.Collections.Generic.List[int]]::new()
+        $startFn = { param($py, $argList, $cwd) $started.Add(($argList -join ' ')) | Out-Null }
+        $stopFn = { param($procId) $stopped.Add([int]$procId) | Out-Null }
+
+        # no agents -> start
+        $r = Invoke-BobIrcAgentEnsure -Nick $nick -IrcHome $agentHome -Python 'python.exe' -AgentPath 'C:\x\irc_agent.py' `
+            -IrcRoot 'C:\x' -IrcHost 'irc.ntsa.uk' -Channels '#bobiverse,#marchhare' -Hello 'marchhare-builder' `
+            -Processes @() -StartFn $startFn -StopFn $stopFn
+        if ($r -ne 'started') { throw "expected started got $r" }
+        if ($started.Count -ne 1) { throw 'expected one start' }
+        if ($started[0] -notmatch '--nick bob-marchhare') { throw 'start args missing nick' }
+        if ($started[0] -notmatch [regex]::Escape($IrcHome)) { throw 'start args missing home' }
+
+        # one agent -> unchanged
+        $started.Clear()
+        $procs = @([pscustomobject]@{ ProcessId = 10; CommandLine = "python -u C:\x\irc_agent.py --nick bob-marchhare --IrcHome $agentHome" })
+        $r2 = Invoke-BobIrcAgentEnsure -Nick $nick -IrcHome $agentHome -Python 'python.exe' -AgentPath 'C:\x\irc_agent.py' `
+            -IrcRoot 'C:\x' -IrcHost 'irc.ntsa.uk' -Processes $procs -StartFn $startFn -StopFn $stopFn
+        if ($r2 -ne 'unchanged') { throw "expected unchanged got $r2" }
+        if ($started.Count -ne 0) { throw 'must not start when one live' }
+
+        # two agents -> cull extra, keep lowest pid
+        $stopped.Clear()
+        $procs2 = @(
+            [pscustomobject]@{ ProcessId = 30; CommandLine = "python -u irc_agent.py --nick bob-marchhare --IrcHome $agentHome" },
+            [pscustomobject]@{ ProcessId = 20; CommandLine = "python -u irc_agent.py --nick bob-marchhare --IrcHome $agentHome" }
+        )
+        $r3 = Invoke-BobIrcAgentEnsure -Nick $nick -IrcHome $agentHome -Python 'python.exe' -AgentPath 'C:\x\irc_agent.py' `
+            -IrcRoot 'C:\x' -IrcHost 'irc.ntsa.uk' -Processes $procs2 -StartFn $startFn -StopFn $stopFn
+        if ($r3 -ne 'culled') { throw "expected culled got $r3" }
+        if ($stopped -notcontains 30) { throw 'must stop higher pid 30' }
+        if ($stopped -contains 20) { throw 'must keep lowest pid 20' }
+        if ($started.Count -ne 0) { throw 'cull must not start another' }
+
+        # health line
+        $h = Get-BobIrcAgentHealth -Nick $nick -IrcHome $agentHome -Processes $procs -Revision 'abc'
+        $line = Write-BobIrcAgentHealthLine -Health $h
+        if ($line -notmatch 'bob-irc-agent nick=bob-marchhare') { throw "bad health line $line" }
+        if ($line -notmatch 'pid=10') { throw "bad pid in $line" }
+    }
+    finally {
+        Remove-Item -Recurse -Force $agentHome -ErrorAction SilentlyContinue
+    }
+    $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-BobIrc.ps1') -Raw
+    if ($inst -notmatch 'Invoke-BobIrcAgentEnsure') { throw 'Install-BobIrc must call supervisor ensure' }
+    if ($inst -notmatch 'Bob-IrcAgentSupervisor') { throw 'Install-BobIrc must dot-source supervisor' }
+    $reg = Get-Content (Join-Path $RepoRoot 'tools\Register-BobIrcAgentTask.ps1') -Raw
+    if ($reg -notmatch 'Register-ScheduledTask') { throw 'Register-BobIrcAgentTask must register a task' }
+    if ($reg -notmatch 'Ensure-BobIrcAgent') { throw 'task must run Ensure-BobIrcAgent' }
+}
+
+Invoke-Case 'BT0bob irc agent supervisor restart' {
+    . (Join-Path $RepoRoot 'tools\Bob-IrcAgentSupervisor.ps1')
+    $agentHome = Join-Path $env:TEMP ('bobirc-r-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $agentHome | Out-Null
+    try {
+        $started = [System.Collections.Generic.List[string]]::new()
+        $stopped = [System.Collections.Generic.List[int]]::new()
+        $alive = @{ 55 = $true }
+        $startFn = { param($py, $argList, $cwd) $started.Add('start') | Out-Null; $script:aliveAfter = $true }
+        $stopFn = { param($procId) $stopped.Add([int]$procId) | Out-Null; $alive.Remove([int]$procId) | Out-Null }
+        $waitFn = {
+            param($pids)
+            @($pids | Where-Object { $alive.ContainsKey([int]$_) -and $alive[[int]$_] })
+        }
+        $procs = @([pscustomobject]@{ ProcessId = 55; CommandLine = 'python -u irc_agent.py --nick bob-flamingo --home X' })
+        # After quit wait empties, ensure starts with empty process list
+        $waitCalls = 0
+        $waitFn2 = {
+            param($pids)
+            $script:waitCalls++
+            if ($script:waitCalls -lt 2) { return @($pids) }
+            return @()
+        }
+        $r = Invoke-BobIrcAgentRestart -Nick 'bob-flamingo' -IrcHome $agentHome -Python 'python.exe' -AgentPath 'C:\x\irc_agent.py' `
+            -IrcRoot 'C:\x' -IrcHost 'irc.ntsa.uk' -Processes $procs -StartFn $startFn -StopFn $stopFn -WaitFn $waitFn2 -WaitSeconds 5
+        if ($r -ne 'started') { throw "restart ensure expected started got $r" }
+        if (-not (Test-Path (Join-Path $agentHome 'agent.quit.request')) -eq $false) {
+            # quit request should be cleared after restart
+            if (Test-Path (Join-Path $agentHome 'agent.quit.request')) { throw 'quit request must be cleared after restart' }
+        }
+        if ($started.Count -ne 1) { throw 'restart must start exactly once' }
+        # never two: only one start call
+    }
+    finally {
+        Remove-Item -Recurse -Force $agentHome -ErrorAction SilentlyContinue
+    }
+}
+
+
 Write-Host "BT0 summary: $($script:Pass) pass / $($script:Fail) fail"
 if ($script:Fail -gt 0) { exit 1 }
 exit 0
