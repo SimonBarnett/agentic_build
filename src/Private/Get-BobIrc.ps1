@@ -833,34 +833,17 @@ function Get-BobIrcTalkSignature {
 }
 
 function Format-BobIrcPeerTalkLine {
+    # FR #341: bob-* ears must not announce busy/idle/model/repo status on IRC.
+    # Worker state lives only on the digest webhook (Jeeves ACK/DONE). Kept as a
+    # no-op so callers and tests still resolve the name.
     param($Doc)
-    if (-not $Doc) { return $null }
-    $mid = Get-BobIrcDisplayMachineId ([string]$Doc.id)
-    $running = [int]$Doc.running
-    $queued = [int]$Doc.queued
-    $job = Get-BobIrcRunningJobFromDoc $Doc
-    $busy = ($running -gt 0) -or ($queued -gt 0) -or $null -ne $job
-    if (-not $busy) { return "$mid is idle." }
-    if ($Doc.model) { return "$mid is on $([string]$Doc.model) now." }
-    $repo = Get-BobIrcEffectiveRepo $Doc $job
-    $kind = [string]$Doc.kind
-    if ($kind -eq 'mrb' -and $repo) { return "That's an MRB of $repo." }
-    if ($kind -eq 'uat' -and $repo) { return "That's UAT on $repo." }
-    if ($kind -eq 'worker' -and $repo) { return "That's a worker on $repo." }
-    if ($repo) { return "Working on $repo." }
-    return "$mid is busy."
+    return $null
 }
 
 function Get-BobIrcChangeTalkLine {
+    # FR #341: never emit change talk (idle/busy/operational/model/repo) to IRC.
     param($Before, $After)
-    if (-not $After) { return $null }
-    # First peer write after connect / fresh deploy — announce operational (Simon 2026-09-23).
-    if (-not $Before) {
-        $mid = Get-BobIrcDisplayMachineId ([string]$After.id)
-        return "$mid is operational."
-    }
-    if ((Get-BobIrcTalkSignature $Before) -eq (Get-BobIrcTalkSignature $After)) { return $null }
-    return (Format-BobIrcPeerTalkLine $After)
+    return $null
 }
 
 function Get-BobIrcWarnStatePath {
@@ -868,47 +851,9 @@ function Get-BobIrcWarnStatePath {
 }
 
 function Get-BobIrcLongRunningTalkLine {
+    # FR #341: long-running warnings are status talk — do not IRC-emit.
     param($Doc, $PrimaryJob)
-    if (-not $Doc -or -not $PrimaryJob) { return $null }
-    $when = $PrimaryJob.claimedAt
-    if (-not $when) { $when = $PrimaryJob.createdAt }
-    if (-not $when) { return $null }
-    try {
-        $t = [datetime]::Parse([string]$when, $null, [Globalization.DateTimeStyles]::RoundtripKind)
-        $secs = [int]([datetime]::UtcNow - $t.ToUniversalTime()).TotalSeconds
-    }
-    catch { return $null }
-    $kind = Get-BobIrcKindFromJob $PrimaryJob
-    $bar = 1800
-    if ($kind -eq 'mrb' -or $kind -eq 'uat') { $bar = 1200 }
-    if ($secs -lt $bar) { return $null }
-    $warnPath = Get-BobIrcWarnStatePath
-    $warn = @{}
-    if (Test-Path $warnPath) {
-        try {
-            $wj = Read-JsonFile $warnPath
-            if ($wj) {
-                foreach ($p in $wj.PSObject.Properties) { $warn[$p.Name] = $p.Value }
-            }
-        }
-        catch { }
-    }
-    $key = [string]$PrimaryJob.id
-    if (-not $key) { $key = 'running' }
-    if ($warn.ContainsKey($key)) { return $null }
-    $mid = Get-BobIrcDisplayMachineId ([string]$Doc.id)
-    $repo = Get-BobIrcEffectiveRepo $Doc $PrimaryJob
-    $mins = $secs / 60
-    $dur = if ($mins -ge 90) { 'over an hour' } elseif ($mins -ge 60) { 'about an hour' } else { "$([int]$mins) minutes" }
-    $warn[$key] = [DateTime]::UtcNow.ToString('o')
-    try { Write-JsonFile $warnPath ([pscustomobject]$warn) } catch { }
-    if ($kind -eq 'mrb' -and $repo) {
-        return "$mid has been on that MRB of $repo for $dur - still responding, but that's a long time."
-    }
-    if ($repo) {
-        return "$mid has been on $repo for $dur - still responding, but that's a long time."
-    }
-    return "$mid has been running for $dur - still responding, but that's a long time."
+    return $null
 }
 
 function Add-BobIrcOutboxChannelLine {
@@ -2232,10 +2177,8 @@ function Write-BobIrcStatus {
         try { $before = Read-JsonFile $peerPath } catch { }
     }
     Write-JsonFile $peerPath $doc
-    $talk = Get-BobIrcChangeTalkLine -Before $before -After $doc
-    if ($talk) { Add-BobIrcOutboxChannelLine $talk }
-    $warn = Get-BobIrcLongRunningTalkLine -Doc $doc -PrimaryJob $primary
-    if ($warn) { Add-BobIrcOutboxChannelLine $warn }
+    # FR #341: never append idle/busy/operational/long-running status to outbox.
+    # Keep peer JSON + digest webhook only (Jeeves owns worker busy/idle via ACK/DONE).
     if (-not $SkipDigestWebhook) {
         Send-BobDigestWebhookIfChanged -Doc $doc -Before $before | Out-Null
     }
