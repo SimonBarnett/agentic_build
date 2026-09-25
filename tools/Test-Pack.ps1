@@ -296,6 +296,16 @@ Invoke-Case 'BT0 parse' {
 }
 
 # --- BT0 encoding ---
+
+Invoke-Case 'BT0plan visionary sync mrb hostile' {
+    $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-VisionarySkills.ps1') -Raw
+    if ($inst -notmatch 'function Invoke-BobVisionaryGit') { throw 'missing Invoke-BobVisionaryGit' }
+    if ($inst -match '&\s*git[^\r\n]*2>\$null') { throw 'git must not use 2>$null under Stop EAP' }
+    if ($inst -notmatch '\$ErrorActionPreference\s*=\s*''Continue''') { throw 'git helper must use Continue while capturing' }
+    $tray = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch 'function Get-BobTrayVisionaryCloneRoot') { throw 'Get-BobTrayVisionaryCloneRoot required' }
+    if ($tray -notmatch 'launching with existing copy') { throw 'tray must warn and launch with existing copy' }
+}
 Invoke-Case 'BT0 encoding utf8 bom' {
     # Windows PowerShell 5.1 reads BOM-less scripts as ANSI (cp1252): UTF-8 em dash / arrow bytes turn
     # into mojibake, and a trailing 0x94 / 0x9D byte can act as a curly quote inside strings (#322).
