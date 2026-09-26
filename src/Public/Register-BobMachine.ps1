@@ -35,6 +35,7 @@ function Register-BobMachine {
         kind         = $kindVal
         lastSeen     = [DateTime]::UtcNow.ToString('o')
     }
+    $record = Update-BobMachineGhPostingSnapshot -Record $record
     Write-JsonFile (Join-Path (Get-BridgeRoot) 'machine.json') $record
     $dir = Join-Path (Initialize-FleetRoot) 'machines'
     Write-JsonFile (Join-Path $dir ($mid + '.json')) $record

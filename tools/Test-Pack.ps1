@@ -1,4 +1,4 @@
-﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 # FR #329: never join live fleet Ergo from tests (no w-* orphans on #marchhare).
 [CmdletBinding()]
 param(
@@ -2385,7 +2385,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
 Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
-    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend Â£N.NN' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend currency+N.NN' }
     if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
     if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
     if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
@@ -5297,6 +5297,96 @@ Invoke-Case 'BT170e bulk-close bad MergedPrUrl refuses' {
     }
     catch { $threw = $true }
     if (-not $threw) { throw 'MergedPrUrl without /pull/N must refuse' }
+}
+
+Invoke-Case 'BT0gh1 gh readiness absent gh' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if ($r.present) { throw 'present must be false' }
+        if ($r.issue_posting_ready) { throw 'issue_posting_ready must be false' }
+        $h = Get-BobHealth
+        if ($h.gh_posting.issue_posting_ready) { throw 'health must not be ready' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+    }
+}
+
+Invoke-Case 'BT0gh2 gh readiness dead token' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'dead'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if ($r.present -ne $true) { throw 'present must be true with fake gh' }
+        if ($r.authenticated) { throw 'authenticated must be false on dead token' }
+        if ($r.issue_posting_ready) { throw 'issue_posting_ready must be false' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+    }
+}
+
+Invoke-Case 'BT0gh3 gh readiness ok fixture' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if (-not $r.issue_posting_ready) { throw "expected ready reason=$($r.reason)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+    }
+}
+
+Invoke-Case 'BT0gh4 mrb picker skips not-ready gh' {
+    param($bridgeRoot)
+    $fixture = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'notready'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 100 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+                gh_posting = [pscustomobject]@{ present = $true; authenticated = $false; issue_posting_ready = $false }
+            }
+            [pscustomobject]@{
+                id = 'ready'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+                gh_posting = [pscustomobject]@{ present = $true; authenticated = $true; issue_posting_ready = $true }
+            }
+        )
+    }
+    $mrb = Select-BobGitWorker -Capacity $fixture -Kind mrb -Fuel grok-build
+    if ($mrb.wait) { throw "mrb picker waited: $($mrb.reason)" }
+    if ($mrb.machine -ne 'ready') { throw "mrb machine=$($mrb.machine) expected ready" }
+    $build = Select-BobGitWorker -Capacity $fixture -Kind build -Fuel grok-build
+    if ($build.wait) { throw "build picker waited: $($build.reason)" }
+    if ($build.machine -ne 'notready') { throw "build should still pick notready (gh gate is mrb-only) machine=$($build.machine)" }
+}
+
+Invoke-Case 'BT0gh5 Install-BobFleet documents gh' {
+    param($bridgeRoot)
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch 'Install-BobGitHubCliIfMissing') { throw 'Install-BobFleet must call Install-BobGitHubCliIfMissing' }
+    if ($installSrc -notmatch 'GH_TOKEN') { throw 'Install-BobFleet must mention GH_TOKEN remediation' }
 }
 
 Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {

@@ -3,8 +3,9 @@ name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. STANDARD worker steps: bob-mrb-worker (tests-first; PASS merges;
-  FAIL → exactly one fix PR then merge both). No MRB PDFs. Use when the user
+  in-session. STANDARD worker steps: bob-mrb-worker (tests-first; after PASS review docs and
+  merge one docs PR with the original when needed; FAIL → exactly one fix PR
+  then merge both). No MRB PDFs. Use when the user
   says MRB, hostile review, review the push, ready for UAT, hand off MRB,
   missing features, or /bob-hostile-mrb. Loop table is bob-build-loop.
 github: https://github.com/SimonBarnett/agentic_build
@@ -18,7 +19,7 @@ https://github.com/SimonBarnett/agentic_build.
 Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`. **Worker process STANDARD:** `bob-mrb-worker` (mermaid +
-PASS merge / FAIL one-fix-PR).
+PASS docs review/merge / FAIL one-fix-PR).
 
 ## Shop IRC (every MRB worker)
 
@@ -31,7 +32,9 @@ On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
 ## Bob hands off (do this first)
 
 Bob **does not write** the review in Grok Bot / this grok.exe session.
-The implementer does not review their own PR. Dispatcher runs
+The implementer does not review their own PR (**FR #343**: FR mode opens
+the PR and **never** `gh pr merge`; MRB is a **different** seat or fresh
+session — `docs/fr-mode-no-self-merge.md`). Dispatcher runs
 `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`) or, for a single
 SHA, starts a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`) as
 soon as the PR exists. The driver comments the new URL on the prior FAIL
@@ -68,10 +71,14 @@ PASS **includes merge**. If the worker thinks it passed UAT, they write
 
 ## STANDARD worker process → `bob-mrb-worker`
 
-1. Checkout PR; read intent + changed files
+1. Use `gh pr checkout` in a temporary worktree; read intent + changed files
 2. BEFORE testing: add any NEW tests appropriate to the PR
 3. Run existing + new tests; hostile review
-4. PASS → merge that PR to main
+4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
+   for stale behavior. If anything is stale, open exactly ONE docs PR against
+   `main` and merge it together with the original; if docs are fine, merge the
+   original as before. Then close the source issue/FR and hand off to a separate
+   UAT worker; only Bob stamps UAT.
 5. FAIL → create exactly ONE fix PR with the fix, then merge both
    (original + fix). Not multiple fix PRs.
 6. Jeeves announces whatever happens (merge / fix+merge)
@@ -84,9 +91,12 @@ and free-agent harvest CAST IRON: `bob-mrb-worker`.
 A PASS that leaves git dirty is not finished. The MRB worker MUST,
 in this order, before the driver prints DONE:
 
-1. **Merge** the reviewed PR (`gh pr merge --merge` — non-interactive
-   `gh` requires a strategy). Do not claim merged unless that command
-   succeeded (or `gh pr view` is already MERGED).
+1. After PASS, review README, skills, `docs/`, mermaid diagrams, and
+   usage/help text against the new behavior. If stale, open exactly one docs
+   PR against `main`; merge that docs PR together with the reviewed PR. If
+   docs are fine, merge the reviewed PR as before (`gh pr merge --merge`).
+   Do not claim merged unless the required merge command succeeded (or
+   `gh pr view` is already MERGED).
 2. **Close finished issues**: the feature-request issue, **every** prior
    FAIL MRB board for this FR, and this PASS board. Each close
    comment links the merged PR URL.
@@ -190,10 +200,12 @@ unless this process created the merge commit.
    fix branch/PR with the fix (+ new tests). Merge **original PR + that
    one fix PR**. Jeeves announces both. Do not open multiple fix PRs.
    Do not reuse this FAIL issue as a second board for another fix cycle.
-7. **PASS:** merge the PR (`gh pr merge --merge`). Nits stay listed; they do
-   not block the merge. After merge succeeds, close the feature-request
-   issue, **every** prior FAIL MRB board for this FR, and this PASS
-   issue. Each close comment links the merged PR URL. Jeeves announces.
+7. **PASS:** complete the docs review above, merge the original plus any one
+   docs PR (`gh pr merge --merge`), and keep nits listed; they do not block
+   the merge. After merge succeeds, close the feature-request issue, **every**
+   prior FAIL MRB board for this FR, and this PASS issue. Each close comment
+   links the merged PR URL. Jeeves announces, then a separate UAT worker is
+   handed off; only Bob stamps UAT.
 8. **Remaining issues / feature requests:** after PASS or FAIL+merge, the
    dispatcher must pass work to **new** workers for **any other open
    actionable issues** — not only those labeled `feature-request` (Simon
@@ -215,7 +227,8 @@ unless this process created the merge commit.
 - Missing features either requested (issue+doc) or explicitly out of scope
 - Prior version folders intact on feature work
 - No secrets in repo or prompts
-- `/docs` markdown matches reality
+- README, skills, `/docs`, mermaid diagrams, and usage/help text match reality
+- Any stale docs are corrected in exactly one docs PR merged with the original
 - PR is merged by this MRB worker
 
 ## Fail bar (examples)
