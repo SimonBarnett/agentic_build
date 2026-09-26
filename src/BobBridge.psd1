@@ -24,6 +24,7 @@
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Test-BobQuotaFailureText',
+        'Sync-BobShopChannelRepoDescriptions',
         'Get-ThisMachineId',
         'Copy-BobProjectSkills',
         'Get-BobBuild',
