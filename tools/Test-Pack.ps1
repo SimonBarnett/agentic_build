@@ -5140,6 +5140,8 @@ Invoke-Case 'BT0fr355 peer transcript newest-first + mtime cache' {
     New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
     $env:BOB_IRC_HOME = $ircHome
     $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    # Self-machine POINTS are skipped; pin this box as marchhare so ionos/flamingo are peers.
+    $env:BOB_MACHINE_ID = 'marchhare'
     $script:BobIrcPeerTranscriptCache = @{}
     $cfg = Get-Content $env:BOB_IRC_CONFIG -Raw | ConvertFrom-Json
     $tp = Join-Path $ircHome (Join-Path 'moot' ($cfg.mootId + '.txt'))
