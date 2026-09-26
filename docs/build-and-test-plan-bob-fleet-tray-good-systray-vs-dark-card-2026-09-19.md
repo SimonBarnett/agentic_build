@@ -1,4 +1,4 @@
-﻿# Build-and-test plan: tray good tip vs dark card conflict
+# Build-and-test plan: tray good tip vs dark card conflict
 
 **FR:** `docs/feature-request-bob-fleet-tray-good-systray-vs-dark-card-2026-09-19.md`
 

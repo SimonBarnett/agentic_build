@@ -1,4 +1,4 @@
-﻿# Build-and-test plan: per-machine weekly bars + IRC fleet status
+# Build-and-test plan: per-machine weekly bars + IRC fleet status
 
 **FR:** `docs/feature-request-bob-fleet-tray-per-machine-weekly-bars-2026-09-20.md`
 

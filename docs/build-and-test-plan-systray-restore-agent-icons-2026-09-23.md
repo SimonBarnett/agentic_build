@@ -1,4 +1,4 @@
-﻿# Build/test plan: restore systray Cursor/Grok icons
+# Build/test plan: restore systray Cursor/Grok icons
 
 ## Phase 1
 1. Fix `Resolve-BobTrayAgentExe` to return `$null` when no candidate exists.

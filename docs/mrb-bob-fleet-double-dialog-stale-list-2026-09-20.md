@@ -1,4 +1,4 @@
-﻿# MRB FAIL: Bob Fleet double dialog + stale job list (2026-09-20)
+# MRB FAIL: Bob Fleet double dialog + stale job list (2026-09-20)
 
 GitHub: https://github.com/SimonBarnett/agentic_build/issues/3
 

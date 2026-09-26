@@ -1,4 +1,4 @@
-﻿# FR: systray start agent — watcher hidden, TUI visible
+# FR: systray start agent — watcher hidden, TUI visible
 
 ## Summary
 Simon (agentic_irc #181, 2026-09-23): when Agents menu starts Cursor/Grok from the box systray, the **agent watcher must stay hidden** but the **TUI agent console must be shown** so he can interact with it.

@@ -34,9 +34,15 @@ Jeeves / Bob may announce `MRB-pending: self-merge flag` when exit 2.
 
 GitHub ruleset guidance: require a second reviewer or block merge without `mrb-pass` label when practical; this repo ships the **detect+flag** script for CI/ops.
 
+## Encoding (FR #347)
+
+Same packs: UTF-8 **without BOM**. Helpers: `tools/Utf8NoBom.ps1`. Check: `python tools/check_utf8_mojibake.py --root .`. See `docs/utf8-no-bom.md`.
+
 ## Tests
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\BT0fr-no-self-merge-343.ps1
 python tools/fr_self_merge_guard.py --self-test
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\BT0utf8-no-bom-347.ps1
+python tools/check_utf8_mojibake.py --root .
 ```

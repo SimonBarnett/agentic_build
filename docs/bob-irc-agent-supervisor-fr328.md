@@ -1,4 +1,4 @@
-﻿# Bob irc_agent supervisor (FR #328)
+# Bob irc_agent supervisor (FR #328)
 
 `tools/Bob-IrcAgentSupervisor.ps1` — pure singleton logic (ensure / cull extras / graceful restart).
 `tools/Ensure-BobIrcAgent.ps1` — operator one-shot ensure or `-Restart` (writes `agent.quit.request`, waits, starts).
