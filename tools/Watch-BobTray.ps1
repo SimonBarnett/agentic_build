@@ -780,10 +780,9 @@ function Start-BobTrayProcessWithSessionEnv {
         [hashtable]$SessionEnv
     )
     if (-not $SessionEnv -or $SessionEnv.Count -eq 0) {
-        Start-Process -FilePath $FilePath `
-            -ArgumentList $ArgumentList `
-            -WorkingDirectory $WorkingDirectory -WindowStyle Hidden | Out-Null
-        return
+        return (Start-Process -FilePath $FilePath `
+                -ArgumentList $ArgumentList `
+                -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru)
     }
     # Child-only env: UseShellExecute=false + ProcessStartInfo.EnvironmentVariables.
     # Never persist API keys to User/Machine environment or rewrite auth.json.
@@ -798,6 +797,71 @@ function Start-BobTrayProcessWithSessionEnv {
     }
     $proc = [System.Diagnostics.Process]::Start($psi)
     Register-BobTrayGrokSession -Process $proc -SessionEnv $SessionEnv
+    return $proc
+}
+
+function Get-BobTrayWatchWorkspace {
+    # FR #102: pass explicit -Cwd to Watch-AgentHealth (C-first fixed \ai; never guess optical/network).
+    param([string]$FallbackRoot = '')
+    try {
+        $mid = Get-BobTrayMachineId
+        if (Get-Command Get-BobMachineRecord -ErrorAction SilentlyContinue) {
+            $rec = Get-BobMachineRecord -Id $mid -ErrorAction SilentlyContinue
+            if ($rec -and $rec.cwdRoots) {
+                $first = [string]@($rec.cwdRoots)[0]
+                if ($first -and (Test-Path -LiteralPath $first)) { return [IO.Path]::GetFullPath($first) }
+            }
+        }
+    }
+    catch { }
+    foreach ($letter in @('C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')) {
+        $cand = '{0}:\ai' -f $letter
+        if (Test-Path -LiteralPath $cand) {
+            # Prefer fixed local disks only
+            $disk = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}:'" -f $letter) -ErrorAction SilentlyContinue
+            if ($disk -and [int]$disk.DriveType -eq 3) { return [IO.Path]::GetFullPath($cand) }
+        }
+    }
+    if ($FallbackRoot -and (Test-Path -LiteralPath $FallbackRoot)) {
+        return [IO.Path]::GetFullPath($FallbackRoot)
+    }
+    $cAi = 'C:\ai'
+    if (-not (Test-Path -LiteralPath $cAi)) {
+        New-Item -ItemType Directory -Force -Path $cAi | Out-Null
+    }
+    return [IO.Path]::GetFullPath($cAi)
+}
+
+function Watch-BobTrayAgentWatchEarlyExit {
+    # FR #102: if the watch worker dies within ~10s, surface it (log + balloon).
+    param(
+        $Process,
+        [int]$Seconds = 10,
+        [string]$BootstrapLog = ''
+    )
+    if (-not $Process) { return }
+    $pidWatch = 0
+    try { $pidWatch = [int]$Process.Id } catch { return }
+    $deadline = (Get-Date).AddSeconds([Math]::Max(3, $Seconds))
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        if ($Process.HasExited) { break }
+        if (-not (Get-Process -Id $pidWatch -ErrorAction SilentlyContinue)) { break }
+    }
+    $alive = Get-Process -Id $pidWatch -ErrorAction SilentlyContinue
+    if ($alive) { return }
+    $logHint = if ($BootstrapLog) { $BootstrapLog } else { (Join-Path $env:TEMP 'Watch-AgentHealth-start.log') }
+    $msg = ('agents: watch seat exited after early start (pid={0}; see {1})' -f $pidWatch, $logHint)
+    Write-TrayLog $msg
+    try {
+        if (Get-Command Show-BobTrayBalloon -ErrorAction SilentlyContinue) {
+            Show-BobTrayBalloon -Title 'Watch seat failed' -Text $msg
+        }
+        elseif ($script:NotifyIcon) {
+            $script:NotifyIcon.ShowBalloonTip(8000, 'Watch seat failed', $msg, [System.Windows.Forms.ToolTipIcon]::Error)
+        }
+    }
+    catch { }
 }
 
 function Get-BobTrayFuelLocalMachineId {
@@ -966,12 +1030,15 @@ function Start-BobTrayAgentWatch {
     $kindFlag = if ($kind -eq 'grok') { '-Grok' } else { '-Cursor' }
     # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
     # Cursor always --model auto (Simon 2026-09-23).
-    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New')
+    # FR #102: always pass -Cwd so the seat never guesses optical/network drives.
+    $cwd = Get-BobTrayWatchWorkspace -FallbackRoot $script:agentMonitorDir
+    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New', '-Cwd', $cwd)
     if ($kind -eq 'cursor') {
         $launchArgs += @('-Model', 'auto')
     }
-    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} model={2} sessionKey={3}' -f $Agent.kind, $ps1, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
-    Start-BobTrayProcessWithSessionEnv -FilePath $ps -ArgumentList $launchArgs -WorkingDirectory $script:agentMonitorDir -SessionEnv $sessionEnv
+    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} cwd={2} model={3} sessionKey={4}' -f $Agent.kind, $ps1, $cwd, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    $child = Start-BobTrayProcessWithSessionEnv -FilePath $ps -ArgumentList $launchArgs -WorkingDirectory $script:agentMonitorDir -SessionEnv $sessionEnv
+    Watch-BobTrayAgentWatchEarlyExit -Process $child -Seconds 10 -BootstrapLog (Join-Path $env:TEMP 'Watch-AgentHealth-start.log')
 }
 
 function Invoke-BobTrayAgent {
