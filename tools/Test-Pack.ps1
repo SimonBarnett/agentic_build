@@ -5286,6 +5286,19 @@ Invoke-Case 'BT170d bulk-close Repo has no agentic_irc default' {
     if ($src -notmatch 'Test-BobGhPrIsMerged') { throw 'must verify PR merged before close' }
 }
 
+Invoke-Case 'BT170e bulk-close bad MergedPrUrl refuses' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $threw = $false
+    try {
+        & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/issues/140' 2>&1 | Out-Null
+    }
+    catch { $threw = $true }
+    if (-not $threw) { throw 'MergedPrUrl without /pull/N must refuse' }
+}
+
 Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
     # FR #352: automated start refused with needs Simon: API key; quota text → no_tokens.
     Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
