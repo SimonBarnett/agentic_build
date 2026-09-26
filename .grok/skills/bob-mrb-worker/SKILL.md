@@ -45,6 +45,9 @@ Fuel / launch: `cursor-mrb-dev` / `start-bob-cursor`. Dispatcher: `bob-job-loop`
 7. FAIL â†’ create exactly ONE **separate** fix PR with the fix, then merge both
    (original + fix). Not multiple fix PRs.
 8. Jeeves announces whatever happens (merge / fix+merge)
+9. **CAST IRON keep-going:** after DONE, ensure `!bored` on `#{machine}`
+   (monitor within ~5s, or seat appends `PRIVMSG #{machine} :!bored` same turn).
+   Next assign → ACK → work. Do not park after one MRB.
 
 ```mermaid
 flowchart LR
@@ -57,6 +60,9 @@ flowchart LR
   E -->|docs stale| F[Separate docs/mrb-n PR]
   E -->|docs OK| G[Merge PR]
   F --> G
+  D -->|FAIL| H[One fix PR]
+  G --> I[!bored keep going]
+  H --> I
 ```
 
 _Caption: vision first; drift is a first-class FAIL; docs stay on a separate PR._
@@ -117,6 +123,10 @@ Same duty as `bob-hostile-mrb`: close finished boards, pull completed
 PRs onto product main, recycle-after-merge when merging `agentic_build`
 or `agentic_irc` (Bob/ionos recycle; implementer PR workers do not
 live-recycle).
+
+Then **DONE** on outbox and **`!bored`** so Jeeves feeds the next job
+(Simon 2026-09-26 CAST IRON — process MUST KEEP GOING). See
+`bob-git-accept` and AgentMonitor `watch-seat`.
 
 ## Free-agent harvest (CAST IRON)
 

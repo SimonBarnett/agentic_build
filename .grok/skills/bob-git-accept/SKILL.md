@@ -9,12 +9,19 @@ description: >
   until ACK matches. bob-* must not auto-claim.
 ---
 
-# Shop !bored → Jeeves assigns → ACK
+# Shop !bored → Jeeves assigns → ACK → DONE → !bored → …
 
-**CAST IRON (Simon 2026-09-26): the model NEVER posts `!bored`.** Only the seat
-monitor (`Watch-AgentHealth` / AgentMonitor FR #100) sends it, and never while a
-`-p` run is alive or an ACKed job lacks a valid DONE. After the DONE line, the
-worker **stops** (no `!bored` from the model).
+**CAST IRON (Simon 2026-09-26): after every DONE the process MUST KEEP GOING.**
+`!bored` must land on `#{machine}` so Jeeves assigns the next FR|MRB|UAT.
+Do not park after one job.
+
+**Preferred:** seat monitor (`Watch-AgentHealth` / AgentMonitor FR #100) posts
+`PRIVMSG #{machine} :!bored` within ~5s of DONE (also on start / idle). Never
+while a `-p` wake is alive or an ACKed job lacks DONE.
+
+**Continuity:** if the monitor is down or slow, the seat appends
+`PRIVMSG #{machine} :!bored` **in the same turn as DONE**. Idle chatter is
+still forbidden.
 
 Backup when the builder is out of Sand. `bob-*` does **not** auto-claim
 Jeeves `GIT` lines. **Jeeves assigns** on `!bored` (FR #106; ear OFFER
@@ -54,10 +61,10 @@ This skill only describes the **worker** side.
 ## Worker clock
 
 - Busy (ACK'd job still running): monitor suppresses `!bored`.
-- When the job finishes: send the exact **DONE** line below, then **stop**.
-  The monitor posts `!bored`; you never do.
-- Chair reply on that shop, after the monitor's `!bored`:
-  - `<nick>: nothing queued` — idle continues.
+- When the job finishes: exact **DONE** line below, then **`!bored`** (monitor
+  within ~5s, or seat same-turn if needed). **Keep going.**
+- Chair reply on that shop, after `!bored`:
+  - `<nick>: nothing queued` — idle continues (monitor will `!bored` again).
   - `<nick>: <TYPE> <repo>#<n> <url>` — **assign**. Reply `ACK <TYPE> <repo>#<n>`
     (FR match rules: ACK FR may match a legacy PR row; see gh-Jeeves FR #102).
 - `OFFER`, bare `GIT`, and `#bobiverse` chatter do not start work.
@@ -66,8 +73,10 @@ This skill only describes the **worker** side.
 
 ### AgentMonitor watch seats
 
-Grok/Cursor **watch seats** get `!bored` from `Watch-AgentHealth.ps1` only
-(start / after DONE / idle). See AgentMonitor FR #100 / #103.
+Grok/Cursor **watch seats**: `Watch-AgentHealth.ps1` posts `!bored` on start /
+after DONE / idle. Continuity: seat may append `PRIVMSG #{machine} :!bored`
+right after DONE if the monitor is down. See AgentMonitor FR #100 / #103 and
+`docs/feature-request-done-then-bored-keep-going-2026-09-26.md`.
 
 ## Start and activity
 
@@ -124,7 +133,9 @@ wire so completions never depend on chair version.)
 ## Hard rules
 
 - Jeeves **assigns**; workers do not invent OFFER/ASSIGN lines.
-- ACK before work; DONE after work (exact wire, assigned MODE); then **STOP**.
-- **Never** post `!bored` (monitor-only).
+- ACK before work; DONE after work (exact wire, assigned MODE); then **`!bored`**
+  so the next job arrives (CAST IRON keep-going).
+- Prefer monitor `!bored`; seat may post `PRIVMSG #{machine} :!bored` after DONE
+  for continuity when the monitor lags.
 - Self-MRB only when one live seat (CAST IRON).
 - Do not merge UNSTABLE.
