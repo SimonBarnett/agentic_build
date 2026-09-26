@@ -16,7 +16,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | bob-spec-intake | Park FR issue + `/docs` md |
 | bob-build-dispatch | Write plan + `Start-BobBuild -Task git` |
 | bob-job-loop | `Start-BobBuildLoop.ps1` retry + PASS notify |
-| bob-mrb-worker | STANDARD MRB process: tests-first; PASS merge; FAIL one fix PR |
+| bob-mrb-worker | STANDARD MRB process: tests-first; PASS docs review then merge; FAIL one fix PR |
 | bob-hostile-mrb / cursor-mrb-dev | Hand off MRB boards; worker steps -> bob-mrb-worker |
 | grok-build-fleet | Start/monitor/stop; picker; heal `Watch-BobJobs` |
 | bob-build-loop | Pointer to the five rows above (no separate ritual) |
@@ -31,7 +31,7 @@ When another agent cannot complete a task, they write a **functional specificati
 
 **Fuel (no judgment):** if Cursor Models remaining > 0, use Cursor Models (Cursor Grok + Composer). If remaining is 0, use grok.exe. Never Other Models. Copilot only with `-AllowCopilot`. Tray top bar must show that Cursor Models remaining %.
 
-**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Every worker opens a **PR**. STANDARD MRB: `bob-mrb-worker` — PASS: the MRB agent **merges**; FAIL: exactly **one** fix PR then merge original + fix. Only Bob stamps UAT.
+**PR workers:** Cursor **`composer-2.5`**, or grok.exe **`build0.1`** when listed else **`grok-4.5`**. **MRB:** Cursor Grok **`grok-4.6`** on cursor-agent, else grok.exe **`grok-4.6`**. Every worker opens a **PR**. STANDARD MRB: `bob-mrb-worker` — after tests and hostile review PASS, review docs for stale behavior; open exactly **one** docs PR against `main` when needed and merge it with the original, otherwise merge as before. FAIL: exactly **one** fix PR then merge original + fix. Only Bob stamps UAT.
 
 ### Fleet machines (registry ids)
 
@@ -54,7 +54,7 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 4. `Start-BobBuildLoop.ps1` (skill `bob-job-loop`) starts the git worker, hands off MRB, retries failed cursor/grok jobs, and prints `DONE` on PASS-nits. Or `Start-BobBuild -Task git` (picker: Cursor Models remaining > 0, else grok-build) and hand each row yourself.
 5. Worker implements on `work/<job>` and **opens a PR**. Never push `main`. Never merge.
 6. Bob **hands off** hostile MRB on that PR (`Start-BobBuildLoop.ps1` or `tools/Start-BobMrbHandoff.ps1`). The worker posts a **new** GitHub issue `MRB FAIL|PASS-nits: <slug> <sha>` (labels `mrb` + `mrb-fail` or `mrb-pass`). Missing features get parked as new FRs. No MRB PDF.
-7. MRB follows `bob-mrb-worker`: add NEW tests before testing; run existing + new; hostile review. **PASS:** merge the PR. **FAIL:** open exactly **one** fix PR with the fix, then merge original + fix (not multiple fix PRs). Jeeves announces. Only **Bob** stamps **ready for human UAT**.
+7. MRB follows `bob-mrb-worker`: use `gh pr checkout` in a temp worktree; read intent; add NEW tests before testing; run the tests; then hostile review. After a PASS, review README, skills, `docs/`, mermaid diagrams, and usage/help text for stale behavior. If stale, open exactly **one** docs PR against `main` and merge it with the original; if docs are fine, merge as before. **FAIL:** open exactly **one** fix PR with the fix, then merge original + fix (not multiple fix PRs). Jeeves announces. Close the source issue/FR after PASS, hand off to a separate UAT worker, and only **Bob** stamps **ready for human UAT**.
 
 ### Feature request (extends existing repo)
 
@@ -62,7 +62,7 @@ IRC status uses nick `bob-dev1` for `ce-priority-dev1`. Job audit lines: `docs/j
 2. Add new work in versioned folders such as `v2/`, `v3/` (keep prior folders intact).
 3. Park `docs/feature-request-<slug>-YYYY-MM-DD.md` plus a GitHub issue (`bob-spec-intake`).
 4. `Start-BobBuildLoop.ps1` (or `Start-BobBuild -Task git`) to implement and **open a PR**.
-5. Same PR/MRB transaction as above (new issue per PR head; `bob-mrb-worker` PASS merge / FAIL one fix PR then merge both; Bob stamps UAT). Git is the source of truth.
+5. Same PR/MRB transaction as above (new issue per PR head; `bob-mrb-worker` PASS docs review then merge, with exactly one docs PR when stale / FAIL one fix PR then merge both; Bob stamps UAT). Git is the source of truth.
 
 ### Flow
 
@@ -91,7 +91,7 @@ flowchart TB
 
   subgraph PAIRBOX["One repo, two workers — persist until idle a few minutes"]
     WA["Worker A: implement next PR\ndev model: LESS\nelse local xAI if Cursor tokens out"]
-    WB["Worker B: MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nmerge duplicate issues\nclose finished issues\nmerge PR if PASS-nits"]
+    WB["MRB that PR\nMRB model: MEDIUM\nelse local xAI if Cursor tokens out\nnew FRs + tests\nPASS: review docs\nmerge one docs PR if stale\nclose finished issues"]
   end
 
   PAIR --> WA
@@ -100,9 +100,9 @@ flowchart TB
   ASSIGN --> WB
   MON -.-> PAIRBOX
   WA -->|"A does the work itself\nopen PR; never invoke another agent"| WB
-  WB -->|"B MRBs itself; never invoke another agent\nFAIL: do not merge"| FIX["A FIXes its own PR\nthen B re-MRBs"]
+  WB -->|"B MRBs itself; never invoke another agent\nFAIL: exactly one fix PR; merge original + fix"| FIX["A FIXes its own PR\nthen B re-MRBs"]
   FIX --> WA
-  WB -->|"PASS-nits: MRB worker merges"| NEXT{"More PRs / FRs?"}
+  WB -->|"PASS-nits: docs OK or one docs PR merged"| NEXT{"More PRs / FRs?"}
   NEXT -->|yes| SWAP["Implementer moves to next PR\nother worker MRBs"]
   SWAP --> WA
   NEXT -->|both idle a few minutes| HARV["Bob reminds workers to harvest skills"]
@@ -132,7 +132,7 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 
 ### Guardrails
 
-- Bob orchestrates and stamps UAT. Workers open PRs. The dispatcher hands each PR to a **different** worker for MRB (`Start-BobMrbHandoff`, new job, `-Kind mrb`). The implementer never reviews or merges their own PR. PASS: that MRB agent merges. FAIL: exactly one fix PR then merge both (`bob-mrb-worker`). No in-session MRB or implementation.
+- Bob orchestrates and stamps UAT. Workers open PRs. The dispatcher hands each PR to a **different** worker for MRB (`Start-BobMrbHandoff`, new job, `-Kind mrb`). The implementer never reviews or merges their own PR. After tests and hostile review PASS, the MRB agent reviews docs; stale docs become exactly one docs PR against `main`, merged with the original, while docs OK merges as before. FAIL: exactly one fix PR then merge both (`bob-mrb-worker`). No in-session MRB or implementation.
 - Cursor Models remaining % is the tray top bar and the fuel gate, not a fleet machine id, not Grok Bot Sand, not Other Models.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
@@ -143,23 +143,21 @@ These mirror the saved Bob Fleet skills. The pair-model chart under **Flow** abo
 
 ### 1. MRB worker review steps (`bob-mrb-worker`)
 
-An MRB worker checks out the PR, adds new tests, runs every test, reviews hard, then merges on PASS or ships exactly one fix PR on FAIL.
+An MRB worker checks out the PR in a temporary worktree, adds new tests, runs every test, performs the hostile review, then checks documentation before merging a PASS.
 
 ```mermaid
-flowchart TD
-  A[Get MRB: repo + PR] --> B[Checkout PR branch]
-  B --> C[Read intent + changed files + source issue/FR]
-  C --> D[Add NEW tests appropriate to this PR]
-  D --> E[Run existing + new tests]
-  E --> F[Hostile review of the change]
-  F --> G{Verdict}
-  G -->|PASS| H[Merge PR to main]
-  H --> I[Close source issue / FR]
-  I --> L[Jeeves announces → separate UAT worker]
-  G -->|FAIL| J[One fix branch/PR with the fix]
-  J --> K[Merge original PR + fix PR]
-  K --> M[Jeeves announces — issue stays open, no UAT]
+flowchart LR
+  A[gh pr checkout<br/>temp worktree] --> B[Read PR intent]
+  B --> C[Add NEW tests]
+  C --> D[Run tests +<br/>hostile review]
+  D -->|PASS| E[Review docs vs<br/>new behaviour]
+  E -->|docs stale| F[One docs PR<br/>README, skills, diagrams]
+  E -->|docs OK| G[Merge PR]
+  F --> G
+  D -->|FAIL| H[One fix PR]
 ```
+
+_After a PASS, check whether any documentation still describes the old behaviour; if so, open one docs PR and merge it with the original._
 
 ### 2. Idle worker `!bored` → Jeeves assigns → accept-on-ACK (`bob-git-accept`)
 
@@ -197,7 +195,7 @@ flowchart TD
 
 ### 4. FR → MRB → UAT handoff
 
-An issue or FR is announced by Jeeves, assigned when a shop worker says `!bored` (Jeeves assigns; scripts-only / Sand-empty path is the same), built as a PR, reviewed by a different worker where possible, then either merged and sent to a separate UAT worker for Bob to stamp, or fixed with one extra PR while the issue stays open.
+An issue or FR is announced by Jeeves, assigned when a shop worker says `!bored` (Jeeves assigns; scripts-only / Sand-empty path is the same), built as a PR, reviewed by a different worker where possible, then after PASS its documentation is checked and any stale docs are corrected in one docs PR merged with the original before a separate UAT worker is handed off; or it is fixed with one extra PR while the issue stays open.
 
 ```mermaid
 flowchart TD
@@ -212,7 +210,7 @@ flowchart TD
   H -->|no| J["Same seat may continue into MRB"]
   I --> K{"MRB verdict"}
   J --> K
-  K -->|PASS| L["Merge PR and close the issue"]
+  K -->|PASS| L["Review docs; merge PR + one docs PR if stale; close issue"]
   L --> M["Separate UAT worker runs UAT"]
   M --> N["Only Bob stamps UAT"]
   K -->|FAIL| O["Open exactly one fix PR"]
