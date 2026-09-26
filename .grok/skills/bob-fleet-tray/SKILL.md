@@ -223,7 +223,7 @@ for Cursor):
 - **Cursor remaining 0**: same dialog for `CURSOR_API_KEY` (`cursor-agent --api-key`
   / env). Cancel aborts. Never persist.
 
-### Plan -> Grok / Cursor (Simon 2026-09-24)
+### Plan -> Grok / Cursor (Simon 2026-09-24; fresh folder PR #339)
 
 Top-level **Plan** menu (sibling of **Agents**, not nested under it) -> **Grok** | **Cursor**:
 
@@ -231,12 +231,17 @@ Top-level **Plan** menu (sibling of **Agents**, not nested under it) -> **Grok**
    `tools/Install-VisionarySkills.ps1` (clone/pull sister repo; copy
    `.grok/skills/*/SKILL.md` into `~/.grok/skills`). Visionary pack only —
    do not pull agentic_build skills into the Plan seat.
-2. **No IRC / no build**: does **not** launch `Watch-AgentHealth`, does not join
-   shop channels, does not start Watch-Bobiverse / bob ear. cwd/workspace is the
-   skills-visionary clone (not agentic_build / agentic_irc).
-3. **Plan mode**: Grok `agent.exe --permission-mode plan`; Cursor
-   `agent.cmd --plan` (`--mode plan`). Visible TUI.
-4. Reuses the same empty-fuel session API key dialogs as Start Agent.
+2. **New empty plan folder every click** (`New-BobTrayPlanWorkspace`):
+   `%USERPROFILE%\BobPlans\plan-yyyyMMdd-HHmmss` (suffix `-2`, `-3`… same second).
+   Fresh skill book via `git archive` (no leftover plans from the shared clone).
+   Previous BobPlans folders are never deleted.
+3. **No IRC / no build**: does **not** launch `Watch-AgentHealth`, does not join
+   shop channels, does not start Watch-Bobiverse / bob ear.
+4. **Plan mode**: Grok `agent.exe --permission-mode plan --session-id <new GUID>
+   --cwd <BobPlans folder>`; Cursor `agent.cmd --plan --model auto --workspace
+   <BobPlans folder>`. Never `-r` / `--resume` / `-c` / `--continue`. Visible TUI.
+5. Reuses the same empty-fuel session API key dialogs as Start Agent.
+   Test: `tests/BT0plan-new-session.ps1`.
 
 ### Agent shortcut icons (CAST IRON -- Simon 2026-09-23)
 
