@@ -1033,13 +1033,67 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
 
-# --- BT102 tray watch seat passes -Cwd (FR #102) ---
+# --- BT102 tray watch seat passes -Cwd (FR #102 / #369) ---
 Invoke-Case 'BT102 tray watch seat passes -Cwd' {
     $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
     $src = Get-Content -LiteralPath $tray -Raw
     if ($src -notmatch 'Get-BobTrayWatchWorkspace') { throw 'missing Get-BobTrayWatchWorkspace' }
     if ($src -notmatch '-Cwd') { throw 'Start-BobTrayAgentWatch must pass -Cwd' }
     if ($src -notmatch 'Watch-BobTrayAgentWatchEarlyExit') { throw 'missing early-exit watcher' }
+    if ($src -notmatch 'bob-seat-work') { throw 'Get-BobTrayWatchWorkspace must default under bob-seat-work' }
+    if ($src -notmatch 'BOB_SEAT_WORK') { throw 'seat work dir must be configurable via BOB_SEAT_WORK' }
+}
+
+# --- BT369 tray seat work dir never live \ai (FR #369) ---
+Invoke-Case 'BT369 tray seat work dir never live ai' {
+    param($bridgeRoot)
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('Get-BobTrayWatchWorkspace', 'Get-BobTrayMachineId')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "Watch-BobTray must define $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function script:Write-TrayLog([string]$m) { }
+
+    $parent = Join-Path $bridgeRoot 'bob-seat-work'
+    $exact = Join-Path $bridgeRoot 'exact-seat'
+    $aiLive = Join-Path $bridgeRoot 'ai'
+    New-Item -ItemType Directory -Force -Path $aiLive | Out-Null
+
+    $prevWork = $env:BOB_SEAT_WORK
+    $prevRoot = $env:BOB_SEAT_WORK_ROOT
+    $prevMid = $env:BOB_MACHINE_ID
+    try {
+        $env:BOB_MACHINE_ID = 'ionos'
+        Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue
+        $env:BOB_SEAT_WORK_ROOT = $parent
+        $got = Get-BobTrayWatchWorkspace -FallbackRoot $aiLive
+        $want = [IO.Path]::GetFullPath((Join-Path $parent 'ionos'))
+        if ($got -ne $want) { throw "default seat cwd=$got want=$want" }
+        if (-not (Test-Path -LiteralPath $got)) { throw 'seat work dir must be created' }
+        if ($got -match '(?i)[/\\]ai$') { throw 'must not resolve to \\ai' }
+
+        $env:BOB_SEAT_WORK = $exact
+        $got2 = Get-BobTrayWatchWorkspace
+        if ($got2 -ne [IO.Path]::GetFullPath($exact)) { throw "BOB_SEAT_WORK exact failed: $got2" }
+        if (-not (Test-Path -LiteralPath $got2)) { throw 'exact seat path must be created' }
+
+        Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue
+        $env:BOB_SEAT_WORK_ROOT = $aiLive
+        $got3 = Get-BobTrayWatchWorkspace
+        if ($got3 -match '(?i)[/\\]ai([/\\]|$)') { throw "ai parent must be refused, got $got3" }
+        if ($got3 -notmatch 'bob-seat-work') { throw "refused ai parent should fall back to bob-seat-work, got $got3" }
+
+        $src = Get-Content -LiteralPath $trayPath -Raw
+        if ($src.IndexOf("'-Cwd', `$cwd") -lt 0) { throw 'launchArgs must include -Cwd $cwd' }
+    }
+    finally {
+        if ($null -ne $prevWork) { $env:BOB_SEAT_WORK = $prevWork } else { Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue }
+        if ($null -ne $prevRoot) { $env:BOB_SEAT_WORK_ROOT = $prevRoot } else { Remove-Item Env:BOB_SEAT_WORK_ROOT -ErrorAction SilentlyContinue }
+        if ($null -ne $prevMid) { $env:BOB_MACHINE_ID = $prevMid } else { Remove-Item Env:BOB_MACHINE_ID -ErrorAction SilentlyContinue }
+    }
 }
 
 # --- BT354 Get-BobDigestUrl from reportUrl (FR #354) ---
