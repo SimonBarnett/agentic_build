@@ -19,9 +19,13 @@ MODE=FR
 MODE=MRB
 - You are a different seat than the PR author (or a fresh session if only one seat).
 - Follow bob-mrb-worker: NEW tests, run tests, hostile review.
-- PASS: merge the PR (+ docs review if needed).
-- FAIL: exactly one fix PR, then merge original + fix.
+- Never push commits to the PR under review (FR #348).
+- PASS: merge the PR. If docs are stale, open a SEPARATE docs/mrb-<n>-... PR
+  against main (references the original), then merge both. Do not commit onto
+  the feature branch. Label docs PR as MRB docs if no second reviewer.
+- FAIL: exactly one SEPARATE fix PR, then merge original + fix.
 - Never MRB a PR you authored in the same implementer session.
+- Guard: python tools/mrb_docs_branch_guard.py --repo OWNER/REPO --pr N
 ```
 
 ## Guard
