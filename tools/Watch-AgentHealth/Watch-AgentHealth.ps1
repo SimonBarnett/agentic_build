@@ -2190,9 +2190,76 @@ function Get-ProcessCpuSeconds {
     catch { return $null }
 }
 
+function Test-WatchQuotaFailureText {
+    # FR #352 (agentic_build): quota/402/429/credits → no_tokens (not hang rotate).
+    param([string]$Text)
+    $t = [string]$Text
+    if (-not $t) { return $false }
+    if ($t -match '(?i)\b402\b') { return $true }
+    if ($t -match '(?i)\b429\b') { return $true }
+    if ($t -match '(?i)out of credits|out of tokens|insufficient.?quota|quota.?exceeded|rate.?limit') { return $true }
+    if ($t -match '(?i)no tokens remaining|usage.?limit|payment.?required') { return $true }
+    return $false
+}
+
+function Get-WatchRecentAgentOutputText {
+    param($State, [int]$MaxChars = 8000)
+    $chunks = @()
+    try {
+        $home = [string]$State.ircHome
+        if ($home) {
+            foreach ($name in @('agent.stderr.log', 'agent.stdout.log', 'listen.stdout.log')) {
+                $p = Join-Path $home $name
+                if (Test-Path -LiteralPath $p) {
+                    $chunks += ,(Get-Content -LiteralPath $p -Tail 80 -ErrorAction SilentlyContinue | Out-String)
+                }
+            }
+        }
+    }
+    catch { }
+    try {
+        $sid = [string]$State.sessionId
+        $cwdFull = [IO.Path]::GetFullPath($Cwd)
+        $dir = Resolve-GrokSessionDir -SessionId $sid -WorkDir $cwdFull
+        if ($dir) {
+            Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Length -gt 0 -and $_.Length -lt 2MB } |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 3 |
+                ForEach-Object {
+                    $chunks += ,(Get-Content -LiteralPath $_.FullName -Tail 40 -ErrorAction SilentlyContinue | Out-String)
+                }
+        }
+    }
+    catch { }
+    $text = ($chunks -join "`n")
+    if ($text.Length -gt $MaxChars) { $text = $text.Substring($text.Length - $MaxChars) }
+    return $text
+}
+
+function Set-WatchNoTokensUnhealthy {
+    param($State, [string]$Detail)
+    $State | Add-Member -NotePropertyName 'seatUnhealthy' -NotePropertyValue $true -Force
+    $State | Add-Member -NotePropertyName 'noTokens' -NotePropertyValue $true -Force
+    $State | Add-Member -NotePropertyName 'lastNoTokensUtc' -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
+    Write-WatchLog ("no_tokens: {0} - stop; no retry; no session rotation" -f $Detail)
+    Write-WatchSessionHealthReport -Kind $(if ($Grok) { 'grok' } else { 'cursor' }) -Event 'no_tokens' -Fields @{
+        session = $State.sessionId
+        detail  = $Detail
+    }
+    try {
+        if (Get-Command Publish-BobTrayFuelMode -ErrorAction SilentlyContinue) {
+            Publish-BobTrayFuelMode -FuelMode 'unknown'
+        }
+    }
+    catch { }
+    return $State
+}
+
 function Update-WatchPendingForwardHang {
     param($State)
     # FR #99: if pending -p makes no CPU progress for SessionHangMinutes, kill once, rotate, redeliver once.
+    # FR #352: quota/402/429 → no_tokens (no rotate/retry).
     # Prefer pendingForwardPid; fall back to wakePid (FR #91).
     $fwdPid = 0
     if ($State.PSObject.Properties.Name -contains 'pendingForwardPid') {
@@ -2209,6 +2276,14 @@ function Update-WatchPendingForwardHang {
         $State.pendingForwardPid = 0
         if ($State.PSObject.Properties.Name -contains 'wakePid') { $State.wakePid = 0 }
         return $State
+    }
+    # FR #352: quota failure is not a hang — mark no_tokens and stop.
+    $recent = Get-WatchRecentAgentOutputText -State $State
+    if (Test-WatchQuotaFailureText -Text $recent) {
+        try { Stop-Process -Id $fwdPid -Force -ErrorAction SilentlyContinue } catch { }
+        $State.pendingForwardPid = 0
+        if ($State.PSObject.Properties.Name -contains 'wakePid') { $State.wakePid = 0 }
+        return (Set-WatchNoTokensUnhealthy -State $State -Detail 'quota/402/429 in agent output')
     }
     $cpu = Get-ProcessCpuSeconds -ProcessId $fwdPid
     $now = Get-Date
@@ -2369,6 +2444,10 @@ function Send-IrcLineToSession {
     $State = Update-WatchPendingForwardHang -State $State
     if ($State.PSObject.Properties.Name -contains 'seatUnhealthy' -and [bool]$State.seatUnhealthy) {
         Write-WatchLog 'forward skipped (seat unhealthy after hung wake)'
+        return $State
+    }
+    if ($State.PSObject.Properties.Name -contains 'noTokens' -and [bool]$State.noTokens) {
+        Write-WatchLog 'forward skipped (no_tokens - needs Simon: API key)'
         return $State
     }
     # FR #91: clear finished/timed-out wake before deciding to start or queue.

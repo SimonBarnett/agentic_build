@@ -5131,6 +5131,48 @@ public static class BobTestArgv {
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
 }
 
+Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
+    # FR #352: automated start refused with needs Simon: API key; quota text → no_tokens.
+    Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
+    $cap = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 0 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $true }
+        copilot       = [pscustomobject]@{ remaining_pct = 0; available = $true }
+        machines      = @(
+            [pscustomobject]@{
+                id           = 'flamingo'
+                alive        = $true
+                gitEligible  = $true
+                jobs         = @()
+                fuels        = @('cursor-models', 'grok-build', 'grok-bot')
+                grok_build   = [pscustomobject]@{ remaining_pct = 0 }
+                grok_bot     = [pscustomobject]@{ remaining_pct = 0 }
+            }
+        )
+    }
+    $sel = Select-BobGitWorker -Capacity $cap -AllowOnDemand
+    if (-not $sel.wait) { throw 'expected wait when all fuels 0' }
+    if ([string]$sel.reason -ne 'needs Simon: API key') { throw "reason=$($sel.reason)" }
+    if ([string]$sel.error -ne 'no_tokens') { throw "error=$($sel.error)" }
+
+    if (-not (Test-BobQuotaFailureText -Text 'HTTP 402 Payment Required')) { throw '402 must match' }
+    if (-not (Test-BobQuotaFailureText -Text 'rate limit 429')) { throw '429 must match' }
+    if (-not (Test-BobQuotaFailureText -Text 'out of credits on this account')) { throw 'credits must match' }
+    if (Test-BobQuotaFailureText -Text 'ACK FR SimonBarnett/x#1') { throw 'normal ACK must not match' }
+
+    $wah = Join-Path $RepoRoot 'tools\Watch-AgentHealth\Watch-AgentHealth.ps1'
+    $wahSrc = Get-Content $wah -Raw
+    if ($wahSrc -notmatch 'Test-WatchQuotaFailureText') { throw 'Watch-AgentHealth must detect quota failures' }
+    if ($wahSrc -notmatch 'Set-WatchNoTokensUnhealthy') { throw 'Watch-AgentHealth must mark no_tokens without rotate' }
+    if ($wahSrc -notmatch 'no_tokens') { throw 'no_tokens marker missing' }
+    if ($wahSrc -notmatch 'forward skipped \(no_tokens') { throw 'ear must stop offering when no_tokens' }
+
+    $tray = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch "no tokens") { throw 'tray cancel must surface no tokens' }
+    $hover = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hover -notmatch 'out of tokens, open with key') { throw 'TipForm must show out of tokens, open with key' }
+}
+
 Invoke-Case 'BT0agent FR356 grok fuel_mode at start' {
     # FR #356: pcent>0 => pool; 0 => session-key; blank/missing => unknown (stop).
     $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'

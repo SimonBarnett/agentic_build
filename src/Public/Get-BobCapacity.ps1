@@ -538,5 +538,51 @@ function Select-BobGitWorker {
         return [pscustomobject]@{ wait = $false; machine = [string]$pick.id; fuel = $fuelName }
     }
 
+    # FR #352: idle eligible machine(s) exist but every strike fuel is at 0% →
+    # "needs Simon: API key" (not a generic wait / silent hang).
+    $idleNoFuel = $false
+    foreach ($m in $rows) {
+        if ($wantMachine -and [string]$m.id.ToLowerInvariant() -ne $wantMachine) { continue }
+        if (-not (Test-BobGitEligibleMachine $m)) { continue }
+        $alive = $true
+        if ($null -ne $m.alive -and [string]$m.alive -ne '') {
+            try { $alive = [bool]$m.alive } catch { $alive = $true }
+        }
+        if (-not $alive) { continue }
+        if ((Get-BobMachineJobCount $m) -ne 0) { continue }
+        $hasAnyFuel = $false
+        foreach ($fuelName in @(Get-BobFuelOrder -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot)) {
+            if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $fuelName)) { continue }
+            if (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $fuelName -AllowOnDemand:$AllowOnDemand) {
+                $hasAnyFuel = $true
+                break
+            }
+        }
+        if (-not $hasAnyFuel) { $idleNoFuel = $true }
+    }
+    if ($idleNoFuel) {
+        return [pscustomobject]@{
+            wait    = $true
+            machine = $(if ($wantMachine) { $wantMachine } else { $null })
+            fuel    = $null
+            reason  = 'needs Simon: API key'
+            error   = 'no_tokens'
+        }
+    }
     return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'no eligible worker' }
+}
+
+function Test-BobQuotaFailureText {
+    <#
+      FR #352: detect provider quota / 402 / 429 / out-of-credits in agent output.
+      Distinct from no-progress hang (AgentMonitor #99).
+    #>
+    param([string]$Text)
+    $t = [string]$Text
+    if (-not $t) { return $false }
+    if ($t -match '(?i)\b402\b') { return $true }
+    if ($t -match '(?i)\b429\b') { return $true }
+    if ($t -match '(?i)out of credits|out.of.tokens|insufficient.?quota|quota.?exceeded|rate.?limit') { return $true }
+    if ($t -match '(?i)no tokens remaining|usage.?limit|billing|payment.?required') { return $true }
+    return $false
 }
