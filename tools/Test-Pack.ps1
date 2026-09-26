@@ -4460,6 +4460,12 @@ Invoke-Case 'BT0jeeves chair autostart' {
     if ($inst -notmatch '\.agentic-irc-jeeves') { throw 'Install-BobJeeves must keep the Jeeves IRC home' }
     if ($inst -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobJeeves must name the digest home' }
     if ($inst -match '--hello|--announce-key') { throw 'Install-BobJeeves must not pass hello or announce-key' }
+    # FR #330: legacy wrapper must point operators at gh-Jeeves canonical install
+    if ($inst -notmatch 'gh-Jeeves') { throw 'Install-BobJeeves must name gh-Jeeves as canonical (FR #330)' }
+    if ($inst -notmatch 'AllowLegacyAgenticIrc') { throw 'Install-BobJeeves must gate legacy path with -AllowLegacyAgenticIrc' }
+    $chairSkill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-jeeves-chair\SKILL.md') -Raw
+    if ($chairSkill -notmatch 'gh-Jeeves') { throw 'bob-jeeves-chair must document gh-Jeeves cutover (FR #330)' }
+    if ($chairSkill -notmatch 'token-less') { throw 'bob-jeeves-chair must name token-less gate (FR #330)' }
     $start = Get-Content (Join-Path $RepoRoot 'tools\Start-BobJeeves.ps1') -Raw
     if ($start -notmatch '\$env:BOB_DIGEST_HOME') { throw 'Start-BobJeeves must set BOB_DIGEST_HOME' }
     if ($start -notmatch '\.agentic-irc-jeeves') { throw 'Start-BobJeeves must default --home to .agentic-irc-jeeves' }

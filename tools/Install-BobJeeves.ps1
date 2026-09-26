@@ -1,5 +1,7 @@
-# Digest chair Jeeves as SCM service BobJeeves (NSSM), Automatic, depends on BobIrcd.
-# Boot: BobIrcd then BobJeeves. Restart-Service BobIrcd does not start dependents;
+# LEGACY digest chair Jeeves as SCM service BobJeeves (NSSM), Automatic, depends on BobIrcd.
+# FR agentic_build#330: canonical production install is SimonBarnett/gh-Jeeves
+#   tools/Install-BobJeeves.ps1  (python -m jeeves; token-less G1 gate).
+# Boot (legacy): BobIrcd then BobJeeves. Restart-Service BobIrcd does not start dependents;
 # follow with Start-Service BobJeeves.
 # --home is ~\.agentic-irc-jeeves. The service sets BOB_DIGEST_HOME to
 # ~\.agentic-irc-bobiverse (chair-outbox from bobcallback). Never the same path.
@@ -15,12 +17,34 @@ param(
     [string]$DigestHome,
     [string]$Nick,
     [string]$IrcHost,
-    [int]$IrcPort = 0
+    [int]$IrcPort = 0,
+    # FR #330: when sibling gh-Jeeves exists, refuse legacy install unless forced.
+    [switch]$AllowLegacyAgenticIrc
 )
 
 $ErrorActionPreference = 'Stop'
 if (-not $RepoRoot) { $RepoRoot = Split-Path $PSScriptRoot -Parent }
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+
+$ghCandidates = @(
+    (Join-Path (Split-Path $RepoRoot -Parent) 'gh-Jeeves\tools\Install-BobJeeves.ps1'),
+    'C:\ai\gh-Jeeves\tools\Install-BobJeeves.ps1',
+    'D:\ai\gh-Jeeves\tools\Install-BobJeeves.ps1'
+)
+$ghInstall = $null
+foreach ($c in $ghCandidates) {
+    if (Test-Path -LiteralPath $c) { $ghInstall = $c; break }
+}
+if ($ghInstall -and -not $AllowLegacyAgenticIrc) {
+    Write-Warning @"
+FR #330: canonical BobJeeves is gh-Jeeves (python -m jeeves), not this agentic_irc NSSM wrapper.
+Found: $ghInstall
+Run that installer instead, e.g.:
+  powershell -NoProfile -File `"$ghInstall`" -Apply -Production
+To force this legacy path: -AllowLegacyAgenticIrc
+"@
+    throw 'Refusing legacy Install-BobJeeves while gh-Jeeves is present (pass -AllowLegacyAgenticIrc to override).'
+}
 $cfgPath = Join-Path $RepoRoot 'config\bobiverse.json'
 $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
 if (-not $Nick) { $Nick = [string]$cfg.chairNick }

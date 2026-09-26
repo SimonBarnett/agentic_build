@@ -18,13 +18,14 @@ Let’s Encrypt for `irc.ntsa.uk` is live (issued 2026-09-20, HTTP-01). Ergo ser
 
 | | |
 |---|---|
-| Service | `BobJeeves` (Automatic, LocalSystem, NSSM). Depends on `BobIrcd`. |
-| Nick | `Jeeves` (`config/bobiverse.json` `chairNick`) |
+| Service | `BobJeeves` (Automatic). **Canonical:** gh-Jeeves `Install-BobJeeves.ps1` (`python -m jeeves`). **Legacy:** NSSM, depends on `BobIrcd`. |
+| Nick | `Jeeves` (exactly one; never `Jeeves_`) |
 | IRC home | `~\.agentic-irc-jeeves` (`--home`). Not the bob-ionos home. |
-| Digest home | `BOB_DIGEST_HOME` = `~\.agentic-irc-bobiverse` (`chair-outbox.txt`, same place `POST /bob/v1/git` writes) |
-| Command | `python -u scripts/irc_agent.py --host irc.ntsa.uk --port 6697 --nick Jeeves --channel #bobiverse --home <jeevesHome> --chair` |
-| Password | `AGENTIC_IRC_PASSWORD` from `~\.grok\ergo\connect.password` (path only; never git) |
-| Install | `tools/Install-BobJeeves.ps1` (or `tools/Install-BobChair.ps1`, which registers the same service) |
+| Digest home | `BOB_DIGEST_HOME` = `~\.agentic-irc-bobiverse` (`chair-outbox.txt` / queue; same place `POST /bob/v1/git` writes) |
+| Command (legacy) | `python -u scripts/irc_agent.py … --chair` via this repo’s NSSM wrapper |
+| Command (canonical) | `python -m jeeves` via [gh-Jeeves](https://github.com/SimonBarnett/gh-Jeeves) (FR #330 / gh-Jeeves #1 token-less gate) |
+| Password | From secure store / `connect.password` path only; never git; never printed |
+| Install | Prefer `gh-Jeeves/tools/Install-BobJeeves.ps1 -Apply -Production`. Legacy: `tools/Install-BobJeeves.ps1 -AllowLegacyAgenticIrc` |
 
 `fleet_digest_home()` uses `BOB_DIGEST_HOME`. The service sets it. A Jeeves process without that env drains `~\.agentic-irc-jeeves\chair-outbox.txt` and leaves GIT lines on the digest home.
 

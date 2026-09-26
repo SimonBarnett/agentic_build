@@ -1,9 +1,9 @@
 ---
 name: bob-jeeves-chair
 description: >
-  Digest chair Jeeves on ionos: auto-start, homes, NSSM service BobJeeves,
-  dependency on BobIrcd, !recycle, and GIT outbox. Use when the user says
-  Jeeves, chairNick, BobJeeves, digest chair, !recycle, GIT outbox,
+  Digest chair Jeeves on ionos: Windows service BobJeeves (canonical install in
+  SimonBarnett/gh-Jeeves), homes, !recycle, and GIT outbox. Use when the user
+  says Jeeves, chairNick, BobJeeves, digest chair, !recycle, GIT outbox,
   BOB_DIGEST_HOME, or /bob-jeeves-chair. Wire join/firewall stays agentic_irc
   bob-irc. Digest shape is bob-digest-webhook. Builders are not the chair.
 ---
@@ -13,30 +13,45 @@ description: >
 `!bobiverse` answers and `BOB DIGEST v1` whispers come from **Jeeves**, not
 from `bob-ionos` / `bob-flamingo` / `bob-marchhare` / `bob-dev1`.
 
+## Canonical product (FR agentic_build#330 → gh-Jeeves)
+
+**Production chair is [SimonBarnett/gh-Jeeves](https://github.com/SimonBarnett/gh-Jeeves).**
+Install / recycle with that repo's `tools/Install-BobJeeves.ps1` (`python -m jeeves`,
+combined chair+receiver, Automatic start, failure restart, disables
+`BobJeeves-chair` task). Headline acceptance: **token-less** GIT → announce →
+queue → `!bored` assign → ACK → DONE → supersede (gh-Jeeves FR #1 / G1 e2e).
+
+This agentic_build tree still ships a **legacy** NSSM + `agentic_irc` wrapper
+(`tools/Install-BobJeeves.ps1` / `Start-BobJeeves.ps1`) for older ionos boxes.
+Do not treat that as the FR #330 success path. Prefer sibling `C:\ai\gh-Jeeves`
+or `D:\ai\gh-Jeeves`.
+
 ## Identity
 
 | | |
 |---|---|
-| Nick | `Jeeves` (`config/bobiverse.json` key `chairNick`) |
-| Machine | `chairHome` = `ionos` |
-| Install once | `tools/Install-BobChair.ps1` sets `BOB_IRC_NICK` from `chairNick` and runs `Install-BobIrc.ps1 -MachineId ionos -Chair` |
-| Not the builder | `Watch-Bobiverse` must not become the chair. Header in `Install-BobChair.ps1`. |
+| Nick | `Jeeves` (exactly one; never `Jeeves_`) |
+| Machine | ionos chair home |
+| Install (canonical) | `gh-Jeeves/tools/Install-BobJeeves.ps1 -Apply -Production` |
+| Install (legacy) | `agentic_build/tools/Install-BobJeeves.ps1` (NSSM, depends on BobIrcd) |
+| Not the builder | `Watch-Bobiverse` must not become the chair. |
 
-Checked-in `chairNick` may still read `bob-chair` on an old tree. Live chair nick is **Jeeves**. Confirm the key before install. Do not start a second chair.
+Live chair nick is **Jeeves**. Do not start a second chair.
 
 ## Auto-start
 
-Jeeves is Windows service **`BobJeeves`** (NSSM, Automatic) on ionos. It depends on Ergo service **`BobIrcd`** (`tools/Install-BobIrcd.ps1`, NSSM wraps `C:\ai\ergo\ergo.exe`). Ergo must be Running before Jeeves. Do not start Jeeves from a grok.exe reasoning loop.
+Windows service **`BobJeeves`** (Automatic). Do not start Jeeves from a grok.exe
+reasoning loop. Do not re-create from scheduled task `BobJeeves-chair` (removed
+on install).
 
 | Need | Action |
 |---|---|
-| Ergo down | `Start-Service BobIrcd` or `Restart-Service BobIrcd`. Status Stopped / no `ergo.exe` means down. |
-| Chair down, Ergo up | `Restart-Service BobJeeves` only. |
-| Cert renewal | `tools/Install-BobIrcdCert.ps1` restarts **BobIrcd only**. Then confirm BobJeeves came back (dependency). |
-| Old task | Do not `Start-ScheduledTask BobIrcd-ionos`. That task is unregistered. |
+| Ergo / IRC down | Fix **BobIrcd** first (`Start-Service BobIrcd` / cert scripts). gh-Jeeves service does **not** SCM-depend on BobIrcd; still needs Ergo up to join. |
+| Chair down, IRC up | `Restart-Service BobJeeves` only. |
+| Cert renewal | `Install-BobIrcdCert.ps1` restarts BobIrcd; then confirm BobJeeves. |
+| Old task | Do not `Start-ScheduledTask BobJeeves-chair` / `BobIrcd-ionos`. |
 
-Do not `Stop-Process ergo`. Do not copy NSSM from another product. NSSM for Ergo lives in the Ergo root (`docs/bobiverse-ionos-ircd.md`).
-
+Do not `Stop-Process ergo`. Do not copy NSSM from another product.
 ## Homes (do not merge them)
 
 | Home | What it is |
