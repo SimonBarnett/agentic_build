@@ -49,9 +49,20 @@ flowchart LR
   D -->|FAIL| H[One fix PR]
 ```
 
+## FR mode vs MRB mode (FR #343 CAST IRON)
+
+| Mode | Who | Allowed | Forbidden |
+|------|-----|---------|-----------|
+| **FR / implementer** | Dev seat | Open one PR, post URL, stop | `gh pr merge`, self-approve+merge, close FR after self-merge |
+| **MRB** | **Different** seat (or **fresh session** if only one seat) | Tests-first review; PASS merge; FAIL one fix then merge both | Author MRB/merge of their own implementer PR in the same session |
+
+Pack text: `docs/fr-mode-no-self-merge.md`, `docs/worker-pack-fr-mode.md`.  
+Guard: `tools/fr_self_merge_guard.py` / `tools/Assert-FrPrNoSelfMerge.ps1` (flag self-merge within N minutes).
+
 ## Hard rules
 
 - **Different worker than author.** Never MRB your own implementer PR.
+- **FR authors never merge.** Opening the PR is the end of FR mode.
 - **Tests before verdict.** New tests land on the review branch (or the
   single fix branch) before you claim PASS or FAIL. Run existing + new.
 - **PASS → docs review, then merge.** After tests and hostile review PASS,

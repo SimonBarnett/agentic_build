@@ -539,3 +539,8 @@ Test-Pack BT0 list, no product dispatch (`grok-build-fleet` /
 pointer on `bob-irc` and `visionary` only.
 
 
+
+## 2026-09-25 — FR #343 no self-merge FR PRs
+
+docs/fr-mode-no-self-merge.md; tools/fr_self_merge_guard.py; packs FR mode open-PR-only.
+
