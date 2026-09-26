@@ -48,7 +48,7 @@ This skill only describes the **worker** side.
 
 ## Worker clock
 
-`Watch-Bobiverse` / watch-seat packs call the idle loop each tick.
+`Watch-Bobiverse` / shop packs call the idle loop each tick.
 
 - Busy (ACK'd job still running): no `!bored`. When the job finishes, send
   `DONE` then `!bored` again.
@@ -60,6 +60,14 @@ This skill only describes the **worker** side.
 - `OFFER`, bare `GIT`, and `#bobiverse` chatter do not start work.
 - On one box, the first seat to ACK owns the row. A sibling that sees the same
   assign no-ops.
+
+### AgentMonitor watch seats (FR AgentMonitor#100)
+
+Grok/Cursor **watch seats** do **not** rely on the LLM to post `!bored`.
+`Watch-AgentHealth.ps1` emits `PRIVMSG #{machine} :!bored` deterministically on
+seat start, right after `DONE`, and while idle (never while busy). The seat still
+ACKs Jeeves assignment lines itself. Vendored copy:
+`tools/Watch-AgentHealth/Watch-AgentHealth.ps1`.
 
 ## Start and activity
 
