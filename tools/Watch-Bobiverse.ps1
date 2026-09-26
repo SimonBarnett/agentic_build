@@ -17,6 +17,8 @@ if (-not (Test-Path $psd1)) { throw "missing $psd1" }
 Remove-Module BobBridge -ErrorAction SilentlyContinue
 Import-Module $psd1 -Force
 
+. (Join-Path $PSScriptRoot 'Bobiverse-Ear.ps1')
+
 $logDir = Join-Path $env:USERPROFILE '.grok\long-running-background-tasks'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir 'watch_bobiverse.log'
@@ -65,14 +67,24 @@ function Stop-StaleBobiverseIrcAgent {
 function Test-BobiverseIrcAgentUp {
     # Key on fleet bob-* nick — worker homes under .../workers/... contain
     # "bobiverse" in the path and must not count as the keep-alive agent (#70).
-    $hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -match 'irc_agent\.py' -and
-            $_.CommandLine -match '--nick\s+bob-' -and
-            (Test-BobiverseIrcPrivateErgoHost $_.CommandLine)
-        })
-    return ($hits.Count -gt 0)
+    # A failed process query is UNKNOWN, not "down": treating it as down started a second
+    # ear (bob-flamingo_l) on flamingo 25/09 when the box was out of resources.
+    $snap = Get-BobiverseProcessSnapshot
+    $ears = @(Select-BobiverseEarProcesses -Processes $snap.Processes)
+    $decision = Get-BobiverseEarSpawnDecision -QueryOk $snap.Ok -EarCount $ears.Count
+    if ($decision -eq 'unknown') {
+        Write-BobiverseLog ('ear check: process query failed ({0}); not starting irc_agent' -f $snap.Error)
+    }
+    return ($decision -ne 'spawn')
+}
+
+function Stop-BobiverseEarDuplicates {
+    $snap = Get-BobiverseProcessSnapshot
+    if (-not $snap.Ok) { return }
+    foreach ($p in @(Select-BobiverseEarDuplicates -Processes $snap.Processes)) {
+        Stop-Process -Id ([int]$p.ProcessId) -Force -ErrorAction SilentlyContinue
+        Write-BobiverseLog "stopped duplicate ear irc_agent pid=$($p.ProcessId) (keep oldest)"
+    }
 }
 
 function Start-BobiverseIrcAgent {
@@ -139,6 +151,7 @@ Write-BobiverseLog "poller start pid=$PID pollSec=$PollSec pullSec=$BobiversePul
 while ($true) {
     try {
         Stop-StaleBobiverseIrcAgent
+        Stop-BobiverseEarDuplicates
         Start-BobiverseIrcAgent
         $localDoc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
         Request-BobIrcBobiversePull -MinIntervalSec $BobiversePullSec | Out-Null
