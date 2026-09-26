@@ -1,4 +1,4 @@
-﻿# Hostile MRB - Bob tray dark card retest (2026-09-19)
+# Hostile MRB - Bob tray dark card retest (2026-09-19)
 
 **Tip:** fc3e61b Tray: show dark hover card on robot hover/click (NC-D01)
 **Prior FAIL:** docs/mrb-bob-fleet-tray-no-dialog-2026-09-19.md

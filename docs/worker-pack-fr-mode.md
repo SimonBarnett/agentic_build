@@ -1,4 +1,4 @@
-# Worker pack: FR mode vs MRB mode (FR #343)
+# Worker pack: FR mode vs MRB mode (FR #343) + UTF-8 no BOM (FR #347)
 
 Paste into Cursor / Grok / Aider / free-seat system prompts.
 
@@ -11,6 +11,10 @@ MODE=FR
 - Do NOT gh pr merge. Do NOT approve and merge your own PR.
 - Do NOT close the FR as DONE after a self-merge.
 - Stop after the PR is open. Another seat runs MRB.
+- Encoding (FR #347): read/write UTF-8 WITHOUT BOM.
+  PS5: [IO.File]::WriteAllText($p,$s,(New-Object Text.UTF8Encoding $false))
+  or . .\tools\Utf8NoBom.ps1 ; Write-Utf8NoBomFile ...
+  Never Get-Content | Set-Content without explicit encodings.
 ```
 
 ## MRB mode (review)
@@ -22,6 +26,8 @@ MODE=MRB
 - PASS: merge the PR (+ docs review if needed).
 - FAIL: exactly one fix PR, then merge original + fix.
 - Never MRB a PR you authored in the same implementer session.
+- Encoding: on changed *.md run python tools/check_utf8_mojibake.py --root . PATHS
+  Fail on UTF-8 BOM or mojibake ((mojibake) (mojibake) (mojibake) (mojibake)).
 ```
 
 ## Guard
@@ -30,3 +36,7 @@ MODE=MRB
 python tools/fr_self_merge_guard.py --repo OWNER/REPO --pr N --minutes 30 --json
 # exit 2 → MRB-pending self-merge flag
 ```
+
+## Encoding helpers
+
+See `docs/utf8-no-bom.md`. Check: `python tools/check_utf8_mojibake.py --root .`

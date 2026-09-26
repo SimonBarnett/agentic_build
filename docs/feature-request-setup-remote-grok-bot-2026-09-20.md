@@ -1,4 +1,4 @@
-﻿# Feature request: harvest skill — setup remote Grok Bot / agent on Windows (flamingo playbook)
+# Feature request: harvest skill — setup remote Grok Bot / agent on Windows (flamingo playbook)
 
 **Date:** 2026-09-20  
 **Repo:** https://github.com/SimonBarnett/agentic_build  

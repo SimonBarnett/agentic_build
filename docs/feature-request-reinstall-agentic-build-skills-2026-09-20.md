@@ -1,4 +1,4 @@
-﻿# Feature request: reinstall-agentic-build-skills (2026-09-20)
+# Feature request: reinstall-agentic-build-skills (2026-09-20)
 
 GitHub: https://github.com/SimonBarnett/agentic_build/issues/4
 

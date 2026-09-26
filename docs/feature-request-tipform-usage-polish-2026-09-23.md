@@ -1,4 +1,4 @@
-﻿# FR: TipForm usage dialog polish (systray)
+# FR: TipForm usage dialog polish (systray)
 
 ## Summary
 Simon (agentic_irc #186): usage dialog icons missing; ? does not show description/models; missing quota that still allows spend when any-model is 0%; move overspend next to Cursor logo on the right; machine names ALLCAPS.

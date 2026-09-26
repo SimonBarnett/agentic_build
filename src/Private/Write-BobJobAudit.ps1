@@ -28,6 +28,7 @@ function Write-BobJobAuditLine {
     if ($line -match 'XAI_API_KEY|password\s*=') {
         throw 'Refusing to write job-audit line that looks like a secret assignment'
     }
+    # FR #347: UTF-8 without BOM
     $utf8 = New-Object System.Text.UTF8Encoding $false
     [IO.File]::AppendAllText($path, $line + [Environment]::NewLine, $utf8)
 }
