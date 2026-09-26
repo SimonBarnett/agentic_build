@@ -801,35 +801,58 @@ function Start-BobTrayProcessWithSessionEnv {
 }
 
 function Get-BobTrayWatchWorkspace {
-    # FR #102: pass explicit -Cwd to Watch-AgentHealth (C-first fixed \ai; never guess optical/network).
+    # FR #369 / #102: explicit -Cwd for Watch-AgentHealth.
+    # Default per-machine seat work dir C:\bob-seat-work\<machine> — never live \ai trees.
+    # Config: BOB_SEAT_WORK (exact path) or BOB_SEAT_WORK_ROOT (parent; child = <machine>).
     param([string]$FallbackRoot = '')
-    try {
-        $mid = Get-BobTrayMachineId
-        if (Get-Command Get-BobMachineRecord -ErrorAction SilentlyContinue) {
-            $rec = Get-BobMachineRecord -Id $mid -ErrorAction SilentlyContinue
-            if ($rec -and $rec.cwdRoots) {
-                $first = [string]@($rec.cwdRoots)[0]
-                if ($first -and (Test-Path -LiteralPath $first)) { return [IO.Path]::GetFullPath($first) }
-            }
+    $exact = ([string]$env:BOB_SEAT_WORK).Trim()
+    if ($exact) {
+        $path = [IO.Path]::GetFullPath($exact)
+        if (-not (Test-Path -LiteralPath $path)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
         }
+        return $path
     }
-    catch { }
-    foreach ($letter in @('C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')) {
-        $cand = '{0}:\ai' -f $letter
-        if (Test-Path -LiteralPath $cand) {
-            # Prefer fixed local disks only
-            $disk = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}:'" -f $letter) -ErrorAction SilentlyContinue
-            if ($disk -and [int]$disk.DriveType -eq 3) { return [IO.Path]::GetFullPath($cand) }
+
+    $mid = $null
+    try { $mid = Get-BobTrayMachineId } catch { $mid = $null }
+    if (-not $mid) { $mid = ([string]$env:BOB_MACHINE_ID).Trim() }
+    if (-not $mid) { $mid = ([string]$env:COMPUTERNAME).Trim() }
+    if (-not $mid) { $mid = 'local' }
+    $mid = ($mid.ToLowerInvariant() -replace '[^a-z0-9_-]+', '-').Trim('-')
+    if (-not $mid) { $mid = 'local' }
+
+    $parent = ([string]$env:BOB_SEAT_WORK_ROOT).Trim()
+    if (-not $parent) {
+        $parent = 'C:\bob-seat-work'
+    }
+    else {
+        $parent = [IO.Path]::GetFullPath($parent)
+    }
+    # Refuse accidental config that points the seat at a live \ai root.
+    $parentLeaf = [IO.Path]::GetFileName($parent.TrimEnd('\', '/'))
+    if ($parentLeaf -eq 'ai' -or $parent -match '(?i)[/\\]ai$') {
+        $parent = 'C:\bob-seat-work'
+    }
+
+    $path = Join-Path $parent $mid
+    try {
+        if (-not (Test-Path -LiteralPath $path)) {
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
         }
+        return [IO.Path]::GetFullPath($path)
+    }
+    catch {
+        Write-TrayLog ("agents: seat work dir create failed {0}: {1}" -f $path, $_.Exception.Message)
     }
     if ($FallbackRoot -and (Test-Path -LiteralPath $FallbackRoot)) {
-        return [IO.Path]::GetFullPath($FallbackRoot)
+        $fb = [IO.Path]::GetFullPath($FallbackRoot)
+        if ($fb -notmatch '(?i)[/\\]ai$') { return $fb }
     }
-    $cAi = 'C:\ai'
-    if (-not (Test-Path -LiteralPath $cAi)) {
-        New-Item -ItemType Directory -Force -Path $cAi | Out-Null
-    }
-    return [IO.Path]::GetFullPath($cAi)
+    # Last resort: still prefer bob-seat-work\local over \ai
+    $last = 'C:\bob-seat-work\local'
+    New-Item -ItemType Directory -Force -Path $last | Out-Null
+    return [IO.Path]::GetFullPath($last)
 }
 
 function Watch-BobTrayAgentWatchEarlyExit {
@@ -1030,7 +1053,7 @@ function Start-BobTrayAgentWatch {
     $kindFlag = if ($kind -eq 'grok') { '-Grok' } else { '-Cursor' }
     # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
     # Cursor always --model auto (Simon 2026-09-23).
-    # FR #102: always pass -Cwd so the seat never guesses optical/network drives.
+    # FR #369 / #102: always pass -Cwd (per-machine bob-seat-work; never live \ai).
     $cwd = Get-BobTrayWatchWorkspace -FallbackRoot $script:agentMonitorDir
     $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New', '-Cwd', $cwd)
     if ($kind -eq 'cursor') {
