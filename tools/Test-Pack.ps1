@@ -4449,6 +4449,8 @@ Invoke-Case 'BT0jeeves chair autostart' {
     if ($chair -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobChair must point BOB_DIGEST_HOME at .agentic-irc-bobiverse' }
     if ($chair -match 'Install-BobIrc\.ps1') { throw 'Install-BobChair must not call Install-BobIrc' }
     if ($chair -match '--hello|--announce-key') { throw 'Install-BobChair must not pass hello or announce-key' }
+    if ($chair -notmatch 'gh-Jeeves') { throw 'Install-BobChair must name gh-Jeeves cutover (FR #330 / MRB #368)' }
+    if ($chair -notmatch 'AllowLegacyAgenticIrc') { throw 'Install-BobChair must support -AllowLegacyAgenticIrc' }
     $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-BobJeeves.ps1') -Raw
     if ($inst -notmatch "ServiceName = 'BobJeeves'") { throw 'Install-BobJeeves must default service BobJeeves' }
     if ($inst -notmatch "DependsOn = 'BobIrcd'") { throw 'BobJeeves must depend on BobIrcd' }
