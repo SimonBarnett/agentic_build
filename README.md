@@ -6,6 +6,7 @@ Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build
 - Pull worker `tools/Watch-BobJobs.ps1` (logon task, not a Windows service). Tray: `tools/Watch-BobTray.ps1`.
 - Named bots (`-Agent Bob`) still use the Grok Bot API. Form Prep stays `--rules`, never `--always-approve`, pin `-Fuel grok-build`.
 - Off-DEV Fake-Grok never touches live bots or GitHub. DUMB / 2012 is not a git-task worker.
+- **GitHub posting readiness (FR #11 / #34):** `Get-BobGhPostingReadiness` / `gh_posting` on health, capacity, tray, and box-usage. `Select-BobGitWorker -Kind mrb` skips machines with `issue_posting_ready=false`. Token contract: `GH_TOKEN` (or `GITHUB_TOKEN`) with `issues:write` + `pull_requests:write` — never commit secrets. `Install-BobFleet` provisions `gh` or reports not-ready.
 
 ## Bob functional-spec build loop
 
