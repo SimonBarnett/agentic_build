@@ -137,6 +137,12 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
 
+## Bob Fleet tray (FR #346)
+
+- **Restart watcher** (systray menu): full local reinstall via `tools/Invoke-BobFleetReinstall.ps1` (pull/stash/ff, tools, skills, deploy SHA, restart; busy seats wait by default). Scope is this machine only — not Ergo/Jeeves.
+- **Bob Fleet** Desktop/Start Menu shortcuts: `tools/Start-BobFleetTray.ps1` (single-instance; no second tray).
+- Skill: `bob-fleet-tray`. Tests: `tests/Test-BobFleetReinstall-FR346.ps1`.
+
 ## Bob Fleet process diagrams
 
 These mirror the saved Bob Fleet skills. The pair-model chart under **Flow** above is still the `#175` proposal; the charts below are the current per-skill processes.
