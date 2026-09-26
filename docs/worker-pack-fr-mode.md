@@ -22,11 +22,11 @@ MODE=FR
 ```
 MODE=MRB
 - You are a different seat than the PR author (or a fresh session if only one seat).
-- Follow bob-mrb-worker: NEW tests, run tests, hostile review.
+- Follow bob-mrb-worker: read vision (VISION.md / BRIEF / README / Three Laws),
+  NEW tests, run tests, hostile review + DRIFT check (FR #351).
+- Drift FAIL blocks merge like a test failure. Quote vision lines on the board.
 - Never push commits to the PR under review (FR #348).
-- PASS: merge the PR. If docs are stale, open a SEPARATE docs/mrb-<n>-... PR
-  against main (references the original), then merge both. Do not commit onto
-  the feature branch. Label docs PR as MRB docs if no second reviewer.
+- PASS: merge the PR. Stale docs -> separate docs/mrb-<n> PR, then merge both.
 - FAIL: exactly one SEPARATE fix PR, then merge original + fix.
 - Never MRB a PR you authored in the same implementer session.
 - Encoding: on changed *.md run python tools/check_utf8_mojibake.py --root . PATHS
@@ -38,7 +38,7 @@ MODE=MRB
 
 ```
 python tools/fr_self_merge_guard.py --repo OWNER/REPO --pr N --minutes 30 --json
-# exit 2 → MRB-pending self-merge flag
+# exit 2 -> MRB-pending self-merge flag
 ```
 
 ## Hung / slow seat (FR #353)
