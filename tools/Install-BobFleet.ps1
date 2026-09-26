@@ -32,6 +32,17 @@ $env:BOB_MACHINE_ID = $MachineId.ToLowerInvariant()
 $psd1 = Join-Path $RepoRoot 'src\BobBridge.psd1'
 Import-Module $psd1 -Force
 
+$ghInstall = Install-BobGitHubCliIfMissing
+Write-Host ("GitHub CLI: action={0} present={1} auth={2} issue_posting_ready={3}" -f `
+        $ghInstall.install_action, `
+        $ghInstall.readiness.present, `
+        $ghInstall.readiness.authenticated, `
+        $ghInstall.readiness.issue_posting_ready)
+if (-not $ghInstall.readiness.issue_posting_ready -and $ghInstall.readiness.reason) {
+    Write-Host ("GitHub CLI: {0}" -f $ghInstall.readiness.reason)
+    Write-Host 'GitHub CLI: set user-level GH_TOKEN (issues:write + pull_requests:write) or run gh auth login. Never commit tokens.'
+}
+
 if (-not $CwdRoots) { $CwdRoots = @($RepoRoot) }
 $rec = Register-BobMachine -Id $MachineId -CwdRoots $CwdRoots
 
@@ -139,6 +150,48 @@ Write-Host "Cursor IRC:  $ciTask -> $($ci.File) ($($ci.Status))"
 Write-Host "Once:        powershell -NoProfile -File `"$(Join-Path $RepoRoot 'tools\Watch-BobJobs.ps1')`" -Once"
 Write-Host "Tray:        hidden NotifyIcon (flashes on ACTION_REQUIRED)"
 Write-Host "Watch seat:  $watchDeployed (only way to create a build-worker seat)"
+# FR #346: Desktop + Start Menu shortcuts to reopen systray (single instance)
+$shortcutNote = 'skipped'
+try {
+    $re = Join-Path $RepoRoot 'tools\Invoke-BobFleetReinstall.ps1'
+    if (Test-Path -LiteralPath $re) {
+        $null = & (Get-Command powershell.exe).Source -NoProfile -ExecutionPolicy Bypass -File $re `
+            -RepoRoot $RepoRoot -WhatIf:$false -SkipTools -SkipSkills -SkipRestart 2>&1
+        # Install shortcuts only via helper function path
+        . (Join-Path $RepoRoot 'tools\BobInstallHelpers.ps1') -ErrorAction SilentlyContinue
+    }
+    $instShort = Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1'
+    if (Test-Path -LiteralPath $instShort) {
+        & $instShort -RepoRoot $RepoRoot | Out-Null
+        $shortcutNote = 'Bob Fleet.lnk (Desktop + Start Menu)'
+    }
+    else {
+        # inline minimal shortcut install
+        $launcher = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
+        if (Test-Path -LiteralPath $launcher) {
+            $desk = [Environment]::GetFolderPath('Desktop')
+            $sm = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Bob Fleet'
+            New-Item -ItemType Directory -Force -Path $sm | Out-Null
+            $psExe = (Get-Command powershell.exe).Source
+            $w = New-Object -ComObject WScript.Shell
+            foreach ($dir in @($desk, $sm)) {
+                $lnk = Join-Path $dir 'Bob Fleet.lnk'
+                $s = $w.CreateShortcut($lnk)
+                $s.TargetPath = $psExe
+                $s.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`""
+                $s.WorkingDirectory = $RepoRoot
+                $s.WindowStyle = 7
+                $s.Description = 'Bob Fleet systray (single instance)'
+                $s.Save()
+            }
+            $shortcutNote = 'Bob Fleet.lnk (Desktop + Start Menu)'
+        }
+    }
+}
+catch {
+    $shortcutNote = 'shortcut install failed: ' + $_.Exception.Message
+}
+Write-Host "Shortcut:    $shortcutNote"
 Write-BobInstallEnvReport 'Install-BobFleet'
 $ircInst = Join-Path $RepoRoot 'tools\Install-BobIrc.ps1'
 if (Test-Path $ircInst) {

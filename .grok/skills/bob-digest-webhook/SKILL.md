@@ -22,7 +22,7 @@ recipe. Do not re-derive the URL or the group map.
 |---|---|
 | URL | `https://irc.ntsa.uk/bob/v1/report` |
 | Config | `config/bobiverse.json` `reportUrl` (same string) |
-| GET | `Get-BobDigestUrl`. Env override: `AGENTIC_IRC_DIGEST_URL`, then `BOB_DIGEST_URL`. Default after PR #306 is the HTTPS report URL. The old `http://bob.ntsa.uk/bob/v1/digest` default 404'd. Do not use it. |
+| GET | `Get-BobDigestUrl` (FR #354). Env: `AGENTIC_IRC_DIGEST_URL`, then `BOB_DIGEST_URL`. Else `config/bobiverse.json` `digestUrl` or `reportUrl`. Hard default: `https://irc.ntsa.uk/bob/v1/report`. Never `http://bob.ntsa.uk/bob/v1/digest` (does not resolve; IIS has no `/digest`). |
 | POST | `Get-BobDigestReportUrl`: `reportUrl`, else `BOB_REPORT_URL`, else `AGENTIC_IRC_REPORT_URL`. |
 | Auth | Header `X-Bob-Secret` from `BOB_REPORT_SECRET` or `~\.grok\bob\report.secret`. Never git, never the JSON body. |
 | Verb | POST `op=merge` on a real peer delta (`Send-BobDigestWebhookIfChanged`). GET is read-only for TipForm / fuel. Do not HTTP GET as the publish path. |

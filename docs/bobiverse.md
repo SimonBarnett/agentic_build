@@ -95,3 +95,11 @@ Ergo `PASS` is `~\.grok\ergo\connect.password`. Callback secret is
 `~\.grok\bob\report.secret`. Do not commit either.
 
 Do not open IRC from CI.
+
+## Repo pair (`Start-BobRepoPair`)
+
+`bob-{machine}` keeps two persistent shop workers (dev + MRB) per assigned
+repo via `Start-BobRepoPair` / skill `bob-repo-pair` (issue #175). Workers
+JOIN `#<machine>`; `Watch-Bobiverse` applies shop channel descriptions
+(`Sync-BobShopChannelRepoDescriptions` ? SHOPDESC/TOPIC on the IRC outbox).
+See `docs/feature-request-bob-two-persistent-workers-2026-09-22.md`.

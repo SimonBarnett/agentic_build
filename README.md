@@ -6,6 +6,7 @@ Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build
 - Pull worker `tools/Watch-BobJobs.ps1` (logon task, not a Windows service). Tray: `tools/Watch-BobTray.ps1`.
 - Named bots (`-Agent Bob`) still use the Grok Bot API. Form Prep stays `--rules`, never `--always-approve`, pin `-Fuel grok-build`.
 - Off-DEV Fake-Grok never touches live bots or GitHub. DUMB / 2012 is not a git-task worker.
+- **GitHub posting readiness (FR #11 / #34):** `Get-BobGhPostingReadiness` / `gh_posting` on health, capacity, tray, and box-usage. `Select-BobGitWorker -Kind mrb` skips machines with `issue_posting_ready=false`. Token contract: `GH_TOKEN` (or `GITHUB_TOKEN`) with `issues:write` + `pull_requests:write` — never commit secrets. `Install-BobFleet` provisions `gh` or reports not-ready.
 
 ## Bob functional-spec build loop
 
@@ -136,6 +137,12 @@ Fleet status is **[agentic_irc](https://github.com/SimonBarnett/agentic_irc)** o
 - Cursor Models remaining % is the tray top bar and the fuel gate, not a fleet machine id, not Grok Bot Sand, not Other Models.
 - New product repos are **public** under `SimonBarnett` unless Simon says otherwise.
 - Never mark ready for human UAT until Bob stamps that phrase on the issue.
+
+## Bob Fleet tray (FR #346)
+
+- **Restart watcher** (systray menu): full local reinstall via `tools/Invoke-BobFleetReinstall.ps1` (pull/stash/ff, tools, skills, deploy SHA, restart; busy seats wait by default). Scope is this machine only — not Ergo/Jeeves.
+- **Bob Fleet** Desktop/Start Menu shortcuts: `tools/Start-BobFleetTray.ps1` (single-instance; no second tray).
+- Skill: `bob-fleet-tray`. Tests: `tests/Test-BobFleetReinstall-FR346.ps1`.
 
 ## Bob Fleet process diagrams
 
