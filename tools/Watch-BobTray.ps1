@@ -12,6 +12,8 @@
 # Empty fuel: Agents start / Plan may prompt for session XAI_API_KEY or CURSOR_API_KEY
 # (child process env only; never persist User/Machine env or auth.json).
 # Plan -> Grok|Cursor (top-level, sibling of Agents): visionary skills-visionary plan seat (no IRC / no build).
+# Every Plan click is a NEW session in a NEW empty folder %USERPROFILE%\BobPlans\plan-yyyyMMdd-HHmmss
+# (fresh skill-book copy; never -r/--resume/--continue; previous plans left untouched).
 # Replaces the blank Interactive PowerShell window.
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
@@ -903,7 +905,9 @@ function Get-BobTrayFuelLocalMachineId {
 }
 
 function Get-BobTrayGrokFuelRemaining {
-    # Grok Build weekly for THIS machine (digest machines.*.remaining_pct / seat pcent).
+    # Prefer digest machines.<id>.pcent["grok-chat"] (FR #356); fall back to remaining_pct.
+    $fromPcent = Get-BobTrayMachineGrokChatPcent
+    if ($null -ne $fromPcent) { return [int]$fromPcent }
     $snap = $script:lastFuelSnapshot
     if (-not $snap) { return $null }
     $mid = Get-BobTrayFuelLocalMachineId
@@ -923,6 +927,143 @@ function Get-BobTrayGrokFuelRemaining {
         try { return [int]$snap.remaining_pct } catch { return $null }
     }
     return $null
+}
+
+function Get-BobTrayDigestReportUrl {
+    $u = [string]$env:BOB_DIGEST_REPORT_URL
+    if ($u) { return $u.Trim() }
+    return 'https://irc.ntsa.uk/bob/v1/report'
+}
+
+function Get-BobTrayMachineGrokChatPcent {
+    <#
+      FR #356: read machines.<id>.pcent["grok-chat"] from the digest once at start.
+      Returns [int] when present (including 0); $null when blank/missing/unreachable.
+    #>
+    param(
+        [string]$MachineId,
+        [object]$Digest
+    )
+    $mid = [string]$MachineId
+    if (-not $mid) { $mid = Get-BobTrayFuelLocalMachineId }
+    if (-not $mid) { return $null }
+    try { $mid = [string](Resolve-BobiverseMachineId $mid) } catch { }
+    $mid = $mid.Trim().ToLowerInvariant()
+    $doc = $Digest
+    if (-not $doc) {
+        # Prefer hover cache when it already carries pcent (avoids a second GET on every paint).
+        if ($script:lastFuelSnapshot -and $script:lastFuelSnapshot.digest_machines) {
+            $doc = [pscustomobject]@{ machines = $script:lastFuelSnapshot.digest_machines }
+        }
+    }
+    if (-not $doc) {
+        try {
+            $doc = Invoke-RestMethod -Uri (Get-BobTrayDigestReportUrl) -TimeoutSec 8
+        }
+        catch {
+            Write-TrayLog ('agents: digest fuel read failed: ' + $_.Exception.Message)
+            return $null
+        }
+    }
+    $ent = $null
+    if ($doc.machines) {
+        if ($doc.machines -is [System.Collections.IDictionary] -or ($doc.machines.PSObject.Properties.Name -contains $mid)) {
+            try { $ent = $doc.machines.$mid } catch { $ent = $null }
+        }
+        if (-not $ent) {
+            foreach ($m in @($doc.machines)) {
+                if (-not $m) { continue }
+                $id = [string]$m.id
+                if (-not $id) { continue }
+                try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
+                if ($id -and $id.ToLowerInvariant() -eq $mid) { $ent = $m; break }
+            }
+        }
+    }
+    if (-not $ent -or -not $ent.pcent) { return $null }
+    $raw = $null
+    try { $raw = $ent.pcent.'grok-chat' } catch { $raw = $null }
+    if ($null -eq $raw) {
+        try { $raw = $ent.pcent.psobject.Properties['grok-chat'].Value } catch { $raw = $null }
+    }
+    if ($null -eq $raw -or [string]$raw -eq '') { return $null }
+    try { return [int]$raw } catch { return $null }
+}
+
+function Resolve-BobTrayGrokFuelAtStart {
+    <#
+      FR #356: check once at agent start.
+      - pcent > 0  => pool
+      - pcent = 0  => session-key (dialog)
+      - blank/missing => unknown (stop; never keyless)
+    #>
+    param(
+        [object]$Digest,
+        [string]$MachineId
+    )
+    $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
+    if ($null -eq $remain) {
+        return [pscustomobject]@{
+            remaining = $null
+            fuel_mode = 'unknown'
+            action    = 'stop-unknown'
+        }
+    }
+    if ([int]$remain -gt 0) {
+        return [pscustomobject]@{
+            remaining = [int]$remain
+            fuel_mode = 'pool'
+            action    = 'start-pool'
+        }
+    }
+    return [pscustomobject]@{
+        remaining = [int]$remain
+        fuel_mode = 'session-key'
+        action    = 'prompt-session'
+    }
+}
+
+function Publish-BobTrayFuelMode {
+    <#
+      FR #356: report fuel_mode on the seat's machine entry. Never send the key.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('pool', 'session-key', 'unknown')][string]$FuelMode,
+        [string]$MachineId
+    )
+    $mid = [string]$MachineId
+    if (-not $mid) { $mid = Get-BobTrayFuelLocalMachineId }
+    if (-not $mid) {
+        Write-TrayLog 'agents: fuel_mode publish skipped (no machine id)'
+        return $false
+    }
+    try { $mid = [string](Resolve-BobiverseMachineId $mid) } catch { }
+    $payload = [ordered]@{
+        op        = 'merge'
+        machine   = $mid
+        online    = $true
+        fuel_mode = $FuelMode
+        fuel      = $FuelMode
+    }
+    $json = ($payload | ConvertTo-Json -Compress -Depth 5)
+    if ($json -match '(?i)xai_api_key|password|sk-|Bearer') {
+        Write-TrayLog 'agents: fuel_mode publish blocked (secret-like payload)'
+        return $false
+    }
+    try {
+        if (Get-Command Invoke-BobDigestWebhookMergePost -ErrorAction SilentlyContinue) {
+            Invoke-BobDigestWebhookMergePost -Payload ([pscustomobject]$payload) | Out-Null
+        }
+        else {
+            Invoke-RestMethod -Method Post -Uri (Get-BobTrayDigestReportUrl) -Body $json -ContentType 'application/json; charset=utf-8' -TimeoutSec 8 | Out-Null
+        }
+        Write-TrayLog ('agents: reported fuel_mode={0} machine={1}' -f $FuelMode, $mid)
+        return $true
+    }
+    catch {
+        Write-TrayLog ('agents: fuel_mode publish failed: ' + $_.Exception.Message)
+        return $false
+    }
 }
 
 function Get-BobTrayCursorFuelRemaining {
@@ -954,10 +1095,14 @@ function Get-BobTrayCursorFuelRemaining {
 function Test-BobTrayAgentFuelExhausted {
     param([string]$Kind)
     $k = ([string]$Kind).ToLowerInvariant()
+    if ($k -eq 'grok') {
+        # FR #356: blank/missing is NOT exhausted (dialog); it is unknown → stop elsewhere.
+        $decision = Resolve-BobTrayGrokFuelAtStart
+        return ($decision.action -eq 'prompt-session')
+    }
     $remain = $null
-    if ($k -eq 'grok') { $remain = Get-BobTrayGrokFuelRemaining }
-    elseif ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
-    # Unknown/null remaining => do not block (keep current behaviour when digest missing).
+    if ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
+    # Cursor: unknown/null remaining => do not block (digest may omit cursor pools).
     if ($null -eq $remain) { return $false }
     return ($remain -le 0)
 }
@@ -1024,44 +1169,187 @@ function Start-BobTrayAgentWatch {
         Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
         return
     }
+    $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+    }
+    if (Test-Path -LiteralPath $slotHelpers) {
+        . $slotHelpers
+    }
+    else {
+        Write-TrayLog 'agents: missing Bob-WatchSeatSlot.ps1 (FR #345)'
+        return
+    }
     $kind = ([string]$Agent.kind).ToLowerInvariant()
     $sessionEnv = $null
-    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
-        if ($kind -eq 'grok') {
+    if ($kind -eq 'grok') {
+        # FR #356: check digest pcent["grok-chat"] once at start only.
+        $fuel = Resolve-BobTrayGrokFuelAtStart
+        if ($fuel.action -eq 'stop-unknown') {
+            Write-TrayLog 'agents: grok fuel_mode=unknown (pcent.grok-chat blank/missing) - refusing keyless start'
+            try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
+            try {
+                [void][System.Windows.Forms.MessageBox]::Show(
+                    'Digest pcent.grok-chat is blank/missing. Will not start a keyless Grok seat.',
+                    'Grok fuel unknown',
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                )
+            }
+            catch { }
+            return
+        }
+        if ($fuel.action -eq 'prompt-session') {
             Write-TrayLog 'agents: grok fuel remaining 0 - requesting session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok session API key' -Prompt "No Grok tokens remaining on this machine.`r`nEnter XAI_API_KEY for this start only (not saved; process-scoped for the child only)."
             if (-not $key) {
-                Write-TrayLog 'agents: grok start aborted (Cancel / empty session API key)'
+                Write-TrayLog 'agents: no tokens - dialog cancelled; nothing started'
+                try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
+                try {
+                    [void][System.Windows.Forms.MessageBox]::Show(
+                        'no tokens',
+                        'Grok seat',
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information
+                    )
+                }
+                catch { }
                 return
             }
-            # agent.exe reads XAI_API_KEY; pass only to the Watch-AgentHealth child (inherits to agent.exe).
-            # GROK_AUTH_PATH isolates the OAuth auth.json so the key is actually used (grok 1.0.41).
             $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
+            try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
         }
-        elseif ($kind -eq 'cursor') {
+        else {
+            Write-TrayLog ('agents: grok fuel_mode=pool remaining={0}' -f $fuel.remaining)
+            try { Publish-BobTrayFuelMode -FuelMode 'pool' } catch { }
+        }
+    }
+    elseif (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        if ($kind -eq 'cursor') {
             # cursor-agent supports --api-key / CURSOR_API_KEY (session BYOK).
             Write-TrayLog 'agents: cursor fuel remaining 0 - requesting session CURSOR_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor session API key' -Prompt "No Cursor tokens remaining (auto / cursor_pools).`r`nEnter CURSOR_API_KEY for this start only (not saved; process-scoped for the child only)."
             if (-not $key) {
-                Write-TrayLog 'agents: cursor start aborted (Cancel / empty session API key)'
+                Write-TrayLog 'agents: no tokens - dialog cancelled; nothing started'
+                try {
+                    [void][System.Windows.Forms.MessageBox]::Show(
+                        'no tokens',
+                        'Cursor seat',
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information
+                    )
+                }
+                catch { }
                 return
             }
             $sessionEnv = @{ CURSOR_API_KEY = $key }
         }
     }
     $ps = (Get-Command powershell.exe).Source
-    $kindFlag = if ($kind -eq 'grok') { '-Grok' } else { '-Cursor' }
+    # FR #345: explicit next free slot + -IrcHome (pairs AgentMonitor #97)
+    try {
+        $pick = Resolve-BobWatchNextFreeSlot -Kind $kind -ExcludePid $PID
+    }
+    catch {
+        Write-TrayLog ('agents: no free slot: ' + $_.Exception.Message)
+        try {
+            $script:notifyIcon.ShowBalloonTip(8000, 'Bob Fleet Agents', ('No free {0} watch slot' -f $kind), [System.Windows.Forms.ToolTipIcon]::Error)
+        }
+        catch { }
+        return
+    }
+    New-Item -ItemType Directory -Force -Path $pick.IrcHome | Out-Null
     # CAST IRON (Simon 2026-09-23): tray/agent links ALWAYS -New (skills + prompt), never resume.
     # Cursor always --model auto (Simon 2026-09-23).
     # FR #369 / #102: always pass -Cwd (per-machine bob-seat-work; never live \ai).
+    # FR #345: explicit slot + -IrcHome.
     $cwd = Get-BobTrayWatchWorkspace -FallbackRoot $script:agentMonitorDir
-    $launchArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $ps1, '-WatchWorker', $kindFlag, '-New', '-Cwd', $cwd)
-    if ($kind -eq 'cursor') {
-        $launchArgs += @('-Model', 'auto')
+    $launchArgs = Build-BobWatchSeatLaunchArgs -ScriptPath $ps1 -Kind $kind -Slot $pick.Slot -IrcHome $pick.IrcHome -New -Cwd $cwd
+    Write-TrayLog ('agents: launch {0} NEW slot={1} home={2} cwd={3} model={4} sessionKey={5}' -f $Agent.kind, $pick.Slot, $pick.IrcHome, $cwd, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    Write-BobTrayStartLog -Action 'tray-start' -Fields @{
+        kind = $kind
+        slot = $pick.Slot
+        home = $pick.IrcHome
+        cwd  = $cwd
     }
-    Write-TrayLog ('agents: launch {0} NEW watch seat hidden+TUI from {1} cwd={2} model={3} sessionKey={4}' -f $Agent.kind, $ps1, $cwd, $(if ($kind -eq 'cursor') { 'auto' } else { 'n/a' }), $(if ($sessionEnv) { 'yes' } else { 'no' }))
     $child = Start-BobTrayProcessWithSessionEnv -FilePath $ps -ArgumentList $launchArgs -WorkingDirectory $script:agentMonitorDir -SessionEnv $sessionEnv
     Watch-BobTrayAgentWatchEarlyExit -Process $child -Seconds 10 -BootstrapLog (Join-Path $env:TEMP 'Watch-AgentHealth-start.log')
+    # Async verify (do not block tray UI long): background job checks identity
+    $verifyScript = {
+        param($Kind, $Slot, $SeatIrcHome, $Helpers, $RepoRoot)
+        . $Helpers
+        $v = Test-BobWatchSeatIdentityOk -Kind $Kind -Slot $Slot -ExpectedHome $SeatIrcHome -TimeoutSec 60
+        $logLine = if ($v.ok) {
+            'tray-verify-ok'
+        }
+        else {
+            'tray-verify-fail'
+        }
+        Write-BobTrayStartLog -Action $logLine -Fields @{
+            kind   = $Kind
+            slot   = $Slot
+            home   = $SeatIrcHome
+            nick   = $v.nick
+            reason = $v.reason
+        }
+        if (-not $v.ok) {
+            $null = Stop-BobWatchSeatByHome -IrcHome $SeatIrcHome -Reason ('tray-verify-fail: ' + $v.reason)
+        }
+        return $v
+    }
+    try {
+        Start-Job -ScriptBlock $verifyScript -ArgumentList @($kind, $pick.Slot, $pick.IrcHome, $slotHelpers, $RepoRoot) | Out-Null
+    }
+    catch {
+        # Fallback synchronous short wait if jobs blocked
+        $v = Test-BobWatchSeatIdentityOk -Kind $kind -Slot $pick.Slot -ExpectedHome $pick.IrcHome -TimeoutSec 15
+        if (-not $v.ok) {
+            Write-TrayLog ('agents: verify fail slot={0} {1}' -f $pick.Slot, $v.reason)
+            try {
+                $script:notifyIcon.ShowBalloonTip(10000, 'Bob Fleet Agents', ('Seat {0} identity failed: {1}' -f $pick.Slot, $v.reason), [System.Windows.Forms.ToolTipIcon]::Error)
+            }
+            catch { }
+            [void](Stop-BobWatchSeatByHome -IrcHome $pick.IrcHome -Reason $v.reason)
+        }
+        else {
+            Write-TrayLog ('agents: verify ok slot={0} nick={1}' -f $pick.Slot, $v.nick)
+        }
+    }
+}
+
+function Stop-BobTrayAgentWatchSeat {
+    param(
+        [ValidateSet('cursor', 'grok')][string]$Kind,
+        [int]$Slot
+    )
+    $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+    }
+    if (-not (Test-Path -LiteralPath $slotHelpers)) {
+        Write-TrayLog 'agents: stop missing Bob-WatchSeatSlot.ps1'
+        return
+    }
+    . $slotHelpers
+    $seatHomePath = Get-BobWatchSeatHomePath -Kind $Kind -Slot $Slot
+    $st = Read-BobWatchSeatState -StatePath (Get-BobWatchSeatStatePath -Kind $Kind -Slot $Slot)
+    if ($st -and $st.ircHome) { $seatHomePath = [string]$st.ircHome }
+    $stop = Stop-BobWatchSeatByHome -IrcHome $seatHomePath -Reason 'tray-stop'
+    Write-BobTrayStartLog -Action 'tray-stop' -Fields @{
+        kind   = $Kind
+        slot   = $Slot
+        home   = $seatHomePath
+        ok     = $stop.ok
+        killed = $stop.killed
+        reason = $stop.reason
+    }
+    Write-TrayLog ('agents: stop {0} slot={1} ok={2} killed={3} {4}' -f $Kind, $Slot, $stop.ok, $stop.killed, $stop.reason)
+    if (-not $stop.ok) {
+        try {
+            $script:notifyIcon.ShowBalloonTip(8000, 'Bob Fleet Agents', $stop.reason, [System.Windows.Forms.ToolTipIcon]::Warning)
+        }
+        catch { }
+    }
 }
 
 function Invoke-BobTrayAgent {
@@ -1114,18 +1402,117 @@ function Sync-BobTrayVisionarySkills {
 }
 
 function Get-BobTrayPlanRules {
-    param([string]$VisionRoot)
-    $skillPath = Join-Path $env:USERPROFILE '.grok\skills\visionary\SKILL.md'
+    # VisionRoot = skills-visionary clone (skill book source). Workspace = this plan's NEW folder.
+    param([string]$VisionRoot, [string]$Workspace)
+    if (-not $Workspace) { $Workspace = $VisionRoot }
+    $skillPath = Join-Path $Workspace '.grok\skills\visionary\SKILL.md'
+    if (-not (Test-Path -LiteralPath $skillPath)) { $skillPath = Join-Path $env:USERPROFILE '.grok\skills\visionary\SKILL.md' }
     if (-not (Test-Path -LiteralPath $skillPath) -and $VisionRoot) {
         $skillPath = Join-Path $VisionRoot '.grok\skills\visionary\SKILL.md'
     }
     return @(
         'PLAN SEAT ONLY. Follow the visionary skill book (skills-visionary).',
+        'This is a NEW plan in a NEW empty folder: do not resume, reopen or continue any previous plan, session or repo.',
         'Do NOT join IRC / shop channels. Do NOT start Watch-Bobiverse, bob ear, or builds.',
         'Do NOT use agentic_build or agentic_irc as the work repo.',
         "Visionary skill path: $skillPath",
-        "Workspace: $VisionRoot"
+        "Workspace: $Workspace"
     ) -join ' '
+}
+
+function Get-BobTrayPlanRoot {
+    return (Join-Path $env:USERPROFILE 'BobPlans')
+}
+
+function New-BobTrayPlanWorkspace {
+    # Plan MUST always be a brand-new planning session (Simon 2026-09-25). The seat used to run
+    # with cwd = the shared skills-visionary clone, so every Plan click reopened the same folder:
+    # the previous plan's files (e.g. docs/club-madeira-skill/) were still there and the agent CLI
+    # keys its session history / memory / title-resume to the cwd, so it came back to the old plan.
+    # Now: one NEW empty folder per click, <PlanRoot>\plan-yyyyMMdd-HHmmss (suffix -2, -3.. if two
+    # clicks share a second), with a fresh copy of the skill book only (committed HEAD of
+    # .grok/skills, tools, docs/templates - no docs/vision.md, mocks or untracked leftovers).
+    # Never reuses, cleans or deletes previous plan folders.
+    param(
+        [Parameter(Mandatory = $true)][string]$VisionRoot,
+        [string]$PlanRoot,
+        [datetime]$Now = (Get-Date)
+    )
+    if (-not $PlanRoot) { $PlanRoot = Get-BobTrayPlanRoot }
+    New-Item -ItemType Directory -Force -Path $PlanRoot | Out-Null
+    $base = 'plan-' + $Now.ToString('yyyyMMdd-HHmmss')
+    $dir = $null
+    for ($n = 1; $n -le 1000 -and -not $dir; $n++) {
+        $name = if ($n -eq 1) { $base } else { '{0}-{1}' -f $base, $n }
+        $cand = Join-Path $PlanRoot $name
+        if (Test-Path -LiteralPath $cand) { continue }
+        try {
+            # No -Force: if another click created it first this throws and we take the next name.
+            New-Item -ItemType Directory -Path $cand -ErrorAction Stop | Out-Null
+            $dir = [IO.Path]::GetFullPath($cand)
+        }
+        catch { }
+    }
+    if (-not $dir) { throw "could not create a new plan folder under $PlanRoot" }
+    $parts = @('.grok/skills', 'tools', 'docs/templates')
+    $copied = $false
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git -and (Test-Path -LiteralPath (Join-Path $VisionRoot '.git'))) {
+        $zip = Join-Path ([IO.Path]::GetTempPath()) ('bob-plan-skills-' + [guid]::NewGuid().ToString('N') + '.zip')
+        try {
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try { $null = & $git.Source -C $VisionRoot archive --format=zip -o $zip HEAD @parts 2>&1; $code = $LASTEXITCODE }
+            finally { $ErrorActionPreference = $prev }
+            if ($code -eq 0 -and (Test-Path -LiteralPath $zip)) {
+                Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force
+                $copied = $true
+            }
+        }
+        catch { $copied = $false }
+        finally { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue }
+    }
+    if (-not $copied) {
+        foreach ($rel in $parts) {
+            $src = Join-Path $VisionRoot $rel
+            if (-not (Test-Path -LiteralPath $src)) { continue }
+            $dst = Join-Path $dir $rel
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+            Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force
+        }
+    }
+    return $dir
+}
+
+function Get-BobTrayPlanLaunchArgs {
+    # Command line for a Plan seat. ALWAYS a new session: never -r / --resume / -c / --continue.
+    # Grok gets a fresh --session-id UUID (grok: "Use a specific session UUID for a NEW conversation").
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('grok', 'cursor')][string]$Kind,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [string]$Rules,
+        [Parameter(Mandatory = $true)][string]$Prompt,
+        [string]$SessionId
+    )
+    if ($Kind -eq 'grok') {
+        if (-not $SessionId) { $SessionId = [guid]::NewGuid().ToString() }
+        # permission-mode plan; cwd = this plan's new folder (not agentic_build). No Watch-AgentHealth / IRC.
+        return @(
+            '--permission-mode', 'plan',
+            '--session-id', $SessionId,
+            '--cwd', $Workspace,
+            '--rules', $Rules,
+            $Prompt
+        )
+    }
+    # --plan; workspace = this plan's new folder. No IRC watch seat. cursor-agent without
+    # --resume/--continue starts a new chat.
+    return @(
+        '--plan',
+        '--model', 'auto',
+        '--workspace', $Workspace,
+        $Prompt
+    )
 }
 
 function Resolve-BobTrayGrokCliExe {
@@ -1267,22 +1654,38 @@ function Start-BobTrayPlanAgent {
         return
     }
     $sessionEnv = $null
-    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
-        if ($kind -eq 'grok') {
+    if ($kind -eq 'grok') {
+        # FR #356: same start-once rule as Agents > Grok (unknown => stop).
+        $fuel = Resolve-BobTrayGrokFuelAtStart
+        if ($fuel.action -eq 'stop-unknown') {
+            Write-TrayLog 'plan: grok fuel_mode=unknown - refusing keyless Plan start'
+            try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
+            [void][System.Windows.Forms.MessageBox]::Show(
+                'Digest pcent.grok-chat is blank/missing. Will not start a keyless Plan seat.',
+                'Plan seat',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            )
+            return
+        }
+        if ($fuel.action -eq 'prompt-session') {
             Write-TrayLog 'plan: grok fuel 0 - session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok plan session API key' -Prompt "No Grok tokens remaining.`r`nEnter XAI_API_KEY for this Plan start only (not saved)."
             if (-not $key) { Write-TrayLog 'plan: grok aborted (no key)'; return }
             $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
+            try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
         }
         else {
-            Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
-            $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor plan session API key' -Prompt "No Cursor tokens remaining.`r`nEnter CURSOR_API_KEY for this Plan start only (not saved)."
-            if (-not $key) { Write-TrayLog 'plan: cursor aborted (no key)'; return }
-            $sessionEnv = @{ CURSOR_API_KEY = $key }
+            try { Publish-BobTrayFuelMode -FuelMode 'pool' } catch { }
         }
     }
-    $rules = Get-BobTrayPlanRules -VisionRoot $visionRoot
-    $prompt = 'Follow the visionary skill. Plan-mode only: no IRC, no build, no agentic_build/agentic_irc work repo.'
+    elseif (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
+        $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor plan session API key' -Prompt "No Cursor tokens remaining.`r`nEnter CURSOR_API_KEY for this Plan start only (not saved)."
+        if (-not $key) { Write-TrayLog 'plan: cursor aborted (no key)'; return }
+        $sessionEnv = @{ CURSOR_API_KEY = $key }
+    }
+    $prompt = 'Follow the visionary skill. NEW plan in a NEW empty folder: do not resume any previous plan. Plan-mode only: no IRC, no build, no agentic_build/agentic_irc work repo.'
     if ($kind -eq 'grok') {
         $exe = Resolve-BobTrayGrokCliExe
         if (-not $exe) {
@@ -1295,15 +1698,13 @@ function Start-BobTrayPlanAgent {
             )
             return
         }
-        # permission-mode plan; cwd = skills-visionary (not agentic_build). No Watch-AgentHealth / IRC.
-        $launchArgs = @(
-            '--permission-mode', 'plan',
-            '--cwd', $visionRoot,
-            '--rules', $rules,
-            $prompt
-        )
-        Write-TrayLog ('plan: launch grok plan seat cwd={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
-        Start-BobTrayVisibleProcessWithSessionEnv -FilePath $exe -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv -Title 'Grok plan seat (visionary)'
+        $planDir = New-BobTrayPlanWorkspaceOrWarn -VisionRoot $visionRoot
+        if (-not $planDir) { return }
+        $rules = Get-BobTrayPlanRules -VisionRoot $visionRoot -Workspace $planDir
+        $sid = [guid]::NewGuid().ToString()
+        $launchArgs = Get-BobTrayPlanLaunchArgs -Kind 'grok' -Workspace $planDir -Rules $rules -Prompt $prompt -SessionId $sid
+        Write-TrayLog ('plan: launch grok plan seat NEW session={0} cwd={1} skills={2} sessionKey={3}' -f $sid, $planDir, $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
+        Start-BobTrayVisibleProcessWithSessionEnv -FilePath $exe -ArgumentList $launchArgs -WorkingDirectory $planDir -SessionEnv $sessionEnv -Title 'Grok plan seat (visionary)'
         return
     }
     $cmd = Resolve-BobTrayCursorAgentCmd
@@ -1317,15 +1718,30 @@ function Start-BobTrayPlanAgent {
         )
         return
     }
-    # --plan / --mode plan; workspace = skills-visionary. No IRC watch seat.
-    $launchArgs = @(
-        '--plan',
-        '--model', 'auto',
-        '--workspace', $visionRoot,
-        $prompt
-    )
-    Write-TrayLog ('plan: launch cursor plan seat workspace={0} sessionKey={1}' -f $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
-    Start-BobTrayVisibleProcessWithSessionEnv -FilePath $cmd -ArgumentList $launchArgs -WorkingDirectory $visionRoot -SessionEnv $sessionEnv -Title 'Cursor plan seat (visionary)'
+    $planDir = New-BobTrayPlanWorkspaceOrWarn -VisionRoot $visionRoot
+    if (-not $planDir) { return }
+    $launchArgs = Get-BobTrayPlanLaunchArgs -Kind 'cursor' -Workspace $planDir -Prompt $prompt
+    Write-TrayLog ('plan: launch cursor plan seat NEW workspace={0} skills={1} sessionKey={2}' -f $planDir, $visionRoot, $(if ($sessionEnv) { 'yes' } else { 'no' }))
+    Start-BobTrayVisibleProcessWithSessionEnv -FilePath $cmd -ArgumentList $launchArgs -WorkingDirectory $planDir -SessionEnv $sessionEnv -Title 'Cursor plan seat (visionary)'
+}
+
+function New-BobTrayPlanWorkspaceOrWarn {
+    param([string]$VisionRoot)
+    try {
+        $d = New-BobTrayPlanWorkspace -VisionRoot $VisionRoot
+        Write-TrayLog ('plan: new plan folder ' + $d)
+        return $d
+    }
+    catch {
+        Write-TrayLog ('plan: new plan folder failed: ' + $_.Exception.Message)
+        [void][System.Windows.Forms.MessageBox]::Show(
+            ("Could not create a new plan folder:`r`n{0}" -f $_.Exception.Message),
+            'Plan seat',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        )
+        return $null
+    }
 }
 
 function Build-BobTrayAgentsMenu {
@@ -1340,11 +1756,40 @@ function Build-BobTrayAgentsMenu {
         $item.Add_Click({ param($s, $e) Invoke-BobTrayAgent $s.Tag })
         [void]$Parent.DropDownItems.Add($item)
     }
+    # FR #345: list each live seat separately (nick + slot) so two seats are obvious
+    try {
+        $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+        if (-not (Test-Path -LiteralPath $slotHelpers)) {
+            $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+        }
+        if (Test-Path -LiteralPath $slotHelpers) {
+            . $slotHelpers
+            $seats = @(Get-BobWatchLiveSeatSummaries -Kind all)
+            if ($seats.Count -gt 0) {
+                [void]$Parent.DropDownItems.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+                foreach ($s in $seats) {
+                    $label = '{0} seat {1}: {2}' -f $s.kind, $s.slot, $(if ($s.nick) { $s.nick } else { '(no nick yet)' })
+                    $si = New-Object System.Windows.Forms.ToolStripMenuItem
+                    $si.Text = $label
+                    $si.Tag = $s
+                    $si.Add_Click({
+                            param($sender, $e)
+                            $t = $sender.Tag
+                            if ($t) { Stop-BobTrayAgentWatchSeat -Kind $t.kind -Slot ([int]$t.slot) }
+                        })
+                    [void]$Parent.DropDownItems.Add($si)
+                }
+            }
+        }
+    }
+    catch {
+        Write-TrayLog ('agents: seat list error ' + $_.Exception.Message)
+    }
 }
 
 function Build-BobTrayPlanMenu {
     # Top-level Plan -> Grok / Cursor, same level as Agents (Simon 2026-09-24).
-    # Visionary plan seat; no IRC / no build. Behaviour unchanged from #314.
+    # Visionary plan seat; no IRC / no build. Every click = NEW session in a NEW BobPlans folder.
     param([System.Windows.Forms.ToolStripMenuItem]$Parent)
     $Parent.DropDownItems.Clear()
     foreach ($pk in @('Grok', 'Cursor')) {
@@ -1514,14 +1959,62 @@ function Start-IrcWatcher {
 }
 
 function Restart-BobTrayWatcher {
-    Write-TrayLog 'Restart watcher: rejoin #bobiverse then relaunch tray'
-    Stop-BobiverseMoot
-    Start-BobiverseMootWrapper
+    # FR #346: full local reinstall/update, then single-instance tray relaunch.
+    Write-TrayLog 'Restart watcher: full fleet reinstall (pull/deploy/skills) then tray relaunch'
+    $reinstall = Join-Path $RepoRoot 'tools\Invoke-BobFleetReinstall.ps1'
+    $summary = 'reinstall script missing'
+    if (Test-Path -LiteralPath $reinstall) {
+        try {
+            $ps = (Get-Command powershell.exe).Source
+            $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $reinstall -RepoRoot $RepoRoot -RelaunchTray 2>&1
+            $code = $LASTEXITCODE
+            $jsonLine = @($out | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
+            if ($jsonLine) {
+                try {
+                    $rep = $jsonLine | ConvertFrom-Json
+                    $summary = [string]$rep.summary
+                    if (-not $summary) { $summary = "reinstall exit=$code" }
+                }
+                catch {
+                    $summary = (@($out) | Select-Object -Last 3) -join ' '
+                }
+            }
+            else {
+                $summary = "reinstall exit=$code"
+            }
+            Write-TrayLog ('Restart watcher report: ' + $summary)
+        }
+        catch {
+            $summary = 'reinstall error: ' + $_.Exception.Message
+            Write-TrayLog $summary
+        }
+    }
+    else {
+        Write-TrayLog 'Restart watcher: Invoke-BobFleetReinstall.ps1 missing; fallback ear+tray only'
+        Stop-BobiverseMoot
+        Start-BobiverseMootWrapper
+    }
+    try {
+        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Fleet — Restart watcher', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
+    }
+    catch { }
+    # Ensure ear + jobs after reinstall
+    try { Start-IrcWatcher } catch { }
+    try { Start-JobsWatcher } catch { }
+    # Relaunch tray via single-instance helper (may no-op if already replaced)
+    $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
-    $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
-    Start-Process -FilePath $ps `
-        -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
-        -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    if (Test-Path -LiteralPath $startTray) {
+        Start-Process -FilePath $ps `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot) `
+            -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    }
+    else {
+        $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+        Start-Process -FilePath $ps `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
+            -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    }
     $ctx.ExitThread()
 }
 
@@ -1556,6 +2049,24 @@ function Update-Hover {
     try {
         $h = Get-BobTrayHover
         $script:hoverBody = [string]$h.body
+        # FR #345: list each watch seat separately (nick + slot) on tooltip body
+        try {
+            $slotHelpers = Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1'
+            if (-not (Test-Path -LiteralPath $slotHelpers)) {
+                $slotHelpers = Join-Path $PSScriptRoot 'Bob-WatchSeatSlot.ps1'
+            }
+            if (Test-Path -LiteralPath $slotHelpers) {
+                . $slotHelpers
+                $seatLines = @()
+                foreach ($s in @(Get-BobWatchLiveSeatSummaries -Kind all)) {
+                    $seatLines += ('seat {0}/{1}: {2}' -f $s.kind, $s.slot, $(if ($s.nick) { $s.nick } else { '(starting)' }))
+                }
+                if ($seatLines.Count -gt 0) {
+                    $script:hoverBody = ($script:hoverBody + "`r`n" + ($seatLines -join "`r`n")).Trim()
+                }
+            }
+        }
+        catch { }
         $script:hoverTitle = [string]$h.title
         if (-not $script:hoverTitle) { $script:hoverTitle = Get-BobTrayTitle -MachineId $env:BOB_MACHINE_ID }
         if ($null -eq $h.remaining_pct -or $h.remaining_pct -eq '') { $script:remainingPct = $null }

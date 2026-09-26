@@ -505,6 +505,7 @@ function Get-BobTrayAlertKind {
         if ($a -match 'watcher_down') { return 'watcher' }
         if ($a -match 'agent_stall') { return 'stall' }
         if ($a -match 'ACTION_REQUIRED') { return 'stall' }
+        if ($a -match '(?i)no_tokens|out of tokens|needs Simon') { return 'no_tokens' }
     }
     $paint = Get-BobTrayBarPaint -RemainingPct $RemainingPct
     if ($paint.pulse) { return 'weekly' }
@@ -1922,6 +1923,24 @@ function Get-BobTrayHover {
         if ($mid -match '2012') { $tileFuels = @() }
         $tile | Add-Member -NotePropertyName fuels -NotePropertyValue $tileFuels -Force
         if ($tileFuels.Count -gt 0) { $jobLines += ('    fuels: {0}' -f ($tileFuels -join ', ')) }
+        # FR #352: TipForm/tooltip — out of tokens, open with key
+        $outOfTokens = $false
+        foreach ($pr in @($digestPcentRows)) {
+            if (-not $pr) { continue }
+            if ([string]$pr.machine -ne $mid) { continue }
+            if ($null -eq $pr.pct) { continue }
+            try {
+                if ([int]$pr.pct -le 0) { $outOfTokens = $true }
+                else { $outOfTokens = $false; break }
+            }
+            catch { }
+        }
+        if (-not $outOfTokens -and $null -ne $wPct -and [int]$wPct -le 0) { $outOfTokens = $true }
+        if ($outOfTokens) {
+            $jobLines += '    out of tokens, open with key'
+            $tile | Add-Member -NotePropertyName out_of_tokens -NotePropertyValue $true -Force
+            $tile | Add-Member -NotePropertyName token_hint -NotePropertyValue 'out of tokens, open with key' -Force
+        }
         if ($reach -eq 'not-in-moot' -or $reach -eq 'unreachable') {
             $jobLines += '    not in moot'
         }
@@ -2003,7 +2022,15 @@ function Get-BobTrayHover {
     foreach ($pool in $cursorPools) {
         if ($pool.heading) { $poolLines += ('  {0}' -f $pool.heading) }
     }
+    $ghPosting = $null
+    try { $ghPosting = Get-BobGhPostingReadiness } catch { $ghPosting = $null }
+    $ghLine = $null
+    if ($ghPosting) {
+        if ($ghPosting.issue_posting_ready) { $ghLine = 'GitHub issue post: ready' }
+        else { $ghLine = 'GitHub issue post: not ready' }
+    }
     $jobsText = (($poolLines + $jobLines) -join "`n")
+    if ($ghLine) { $jobsText = $jobsText + "`n" + $ghLine }
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
@@ -2047,6 +2074,7 @@ function Get-BobTrayHover {
         account_used_pct = $cursorUsed
         account_period_end = $(if ($cursorWeek -and $cursorWeek.period_end) { [string]$cursorWeek.period_end } else { $null })
         account_reset_label = $(if ($cursorWeek -and $cursorWeek.period_end) { Format-BobResetLabel $cursorWeek.period_end } else { $null })
+        gh_posting          = $ghPosting
     }
 }
 

@@ -2,7 +2,8 @@
 name: cursor-mrb-dev
 description: >
   Hand off hostile MRB per bob-mrb-worker: Cursor Models while remaining > 0,
-  else grok.exe. Workers open PRs. PASS merges. FAIL → exactly one fix PR then
+  else grok.exe. Workers open PRs. After PASS, review docs and merge exactly
+  one docs PR with the original when stale. FAIL → exactly one fix PR then
   merge both (not a FIX-worker chain). Leftover FAIL after another seat already
   merged: close the board, no extra fix. Use when the user says cursor mrb,
   mrb until pass, cursor builder, re-mrb, mrb/dev loop, or /cursor-mrb-dev.
@@ -16,8 +17,8 @@ github: https://github.com/SimonBarnett/agentic_build
 Foundation: `harvest-agent-skills` (honesty box) -> report back to
 https://github.com/SimonBarnett/agentic_build.
 
-**STANDARD process:** `bob-mrb-worker` (tests-first mermaid; PASS merge;
-FAIL one fix PR then merge both). Transaction pointer: `bob-build-loop`.
+**STANDARD process:** `bob-mrb-worker` (tests-first; PASS docs review then
+merge, with exactly one docs PR when stale; FAIL one fix PR then merge both). Transaction pointer: `bob-build-loop`.
 Bob does not write the MRB or the code. Hand off, watch GitHub, dispatch
 the next row.
 
@@ -45,13 +46,31 @@ Show remaining: `box-usage` / tray top bar. Catalog mapping:
 ## GitHub posting (preflight)
 
 Before `Start-BobMrbHandoff` starts an agent, the **worker box** must post
-issues and merge PRs: `gh.exe` + `gh auth login` or `GH_TOKEN` with
-`issues:write` and `pull_requests:write`. See `Get-BobGhExe` in
-`tools/Bob-Gh.ps1`. When `BOB_GH_EXE` is set to a path that does not exist,
-`Get-BobGhExe` returns `$null` (it does not fall through to a system `gh.exe`).
-Off-DEV Test-Pack points `BOB_GH_EXE` at `tests/fixtures/Fake-Gh.ps1`.
+issues and merge PRs. `Get-BobGhPostingReadiness` probes live auth (not just
+env presence): `gh.exe` present, `gh auth status` OK, and `gh repo view`
+on the product repo (`SimonBarnett/agentic_build` or `BOB_PRODUCT_REPO`).
 
-Grok-build fallback is dispatcher-local until issue #11.
+### Token contract (unattended fleet boxes)
+
+| Item | Rule |
+|---|---|
+| Env var | `GH_TOKEN` preferred; `GITHUB_TOKEN` also honored by `gh` |
+| Scopes | `issues:write` and `pull_requests:write` on the product repo (classic PAT or fine-grained repo access) |
+| Where it lives | **User-level** Windows env or Credential Manager from interactive `gh auth login` — never git, job packets, or prompts |
+| Rotation | Regenerate the PAT on GitHub, update the user env (or re-run `gh auth login`), then `Install-BobFleet` / `Get-BobHealth` should show `gh_posting.issue_posting_ready=true` |
+| Probe | `Get-BobHealth.gh_posting`, `Get-BobCapacity.machines[].gh_posting`, tray `Get-BobTrayHover.gh_posting` |
+
+Remediation when preflight fails: `winget install GitHub.cli` (or
+`Install-BobFleet`), then set `GH_TOKEN` or `gh auth login`. See
+`Get-BobGhExe` / `tools/Bob-Gh.ps1`. When `BOB_GH_EXE` is set to a path that
+does not exist, `Get-BobGhExe` returns `$null` (it does not fall through to a
+system `gh.exe`). Off-DEV Test-Pack points `BOB_GH_EXE` at
+`tests/fixtures/Fake-Gh.ps1`.
+
+`Select-BobGitWorker -Kind mrb` skips machines with
+`gh_posting.issue_posting_ready=false`. Grok-build fallback still runs on the
+**dispatcher** box until the remote worker is verified (issue #11 handoff
+checks).
 
 If preflight fails, fix auth first. Do not start the MRB agent.
 

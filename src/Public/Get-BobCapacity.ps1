@@ -395,6 +395,22 @@ function Get-BobCapacity {
             grok_build  = [pscustomobject]@{ remaining_pct = $gBuildPct; period_end = $gBuildEnd }
             grok_bot    = [pscustomobject]@{ remaining_pct = $null; period_end = $null }
             fuels       = @()
+            gh_posting  = $null
+        }
+        if ($rec.gh_posting) {
+            $row.gh_posting = $rec.gh_posting
+        }
+        elseif ($thisId -and $id -eq $thisId) {
+            try {
+                $liveGh = Get-BobGhPostingReadiness
+                $row.gh_posting = [pscustomobject]@{
+                    present               = [bool]$liveGh.present
+                    authenticated         = [bool]$liveGh.authenticated
+                    issue_posting_ready   = [bool]$liveGh.issue_posting_ready
+                    probed_at             = [DateTime]::UtcNow.ToString('o')
+                }
+            }
+            catch { }
         }
         $row.gitEligible = Test-BobGitEligibleMachine $row
         $row.fuels = @(Get-BobMachineFuels $row)
@@ -451,7 +467,8 @@ function Select-BobGitWorker {
         [string]$Fuel,
         [switch]$AllowOnDemand,
         [switch]$AllowCopilot,
-        [string]$Repo
+        [string]$Repo,
+        [ValidateSet('mrb', 'build')][string]$Kind = 'build'
     )
     if (-not $Capacity) {
         $Capacity = Get-BobCapacity
@@ -487,6 +504,19 @@ function Select-BobGitWorker {
         if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $wantFuel)) {
             return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'pin rejected (ineligible fuel)' }
         }
+        # FR #352: pinned machine+fuel must still refuse exhausted pools (needs Simon: API key).
+        if (-not (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $wantFuel -AllowOnDemand:$AllowOnDemand)) {
+            return [pscustomobject]@{
+                wait    = $true
+                machine = [string]$m.id
+                fuel    = $wantFuel
+                reason  = 'needs Simon: API key'
+                error   = 'no_tokens'
+            }
+        }
+        if ($Kind -eq 'mrb' -and -not (Test-BobMachineGhIssuePostingReady $m)) {
+            return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'pin rejected (gh issue posting not ready)' }
+        }
         return [pscustomobject]@{ wait = $false; machine = [string]$m.id; fuel = $wantFuel }
     }
 
@@ -506,6 +536,7 @@ function Select-BobGitWorker {
             if ((Get-BobMachineJobCount $m) -ne 0) { continue }
             if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $fuelName)) { continue }
             if (-not (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $fuelName -AllowOnDemand:$AllowOnDemand)) { continue }
+            if ($Kind -eq 'mrb' -and -not (Test-BobMachineGhIssuePostingReady $m)) { continue }
             $candidates += $m
         }
         if ($candidates.Count -eq 0) { continue }
@@ -538,5 +569,51 @@ function Select-BobGitWorker {
         return [pscustomobject]@{ wait = $false; machine = [string]$pick.id; fuel = $fuelName }
     }
 
+    # FR #352: idle eligible machine(s) exist but every strike fuel is at 0% →
+    # "needs Simon: API key" (not a generic wait / silent hang).
+    $idleNoFuel = $false
+    foreach ($m in $rows) {
+        if ($wantMachine -and [string]$m.id.ToLowerInvariant() -ne $wantMachine) { continue }
+        if (-not (Test-BobGitEligibleMachine $m)) { continue }
+        $alive = $true
+        if ($null -ne $m.alive -and [string]$m.alive -ne '') {
+            try { $alive = [bool]$m.alive } catch { $alive = $true }
+        }
+        if (-not $alive) { continue }
+        if ((Get-BobMachineJobCount $m) -ne 0) { continue }
+        $hasAnyFuel = $false
+        foreach ($fuelName in @(Get-BobFuelOrder -AllowOnDemand:$AllowOnDemand -AllowCopilot:$AllowCopilot)) {
+            if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $fuelName)) { continue }
+            if (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $fuelName -AllowOnDemand:$AllowOnDemand) {
+                $hasAnyFuel = $true
+                break
+            }
+        }
+        if (-not $hasAnyFuel) { $idleNoFuel = $true }
+    }
+    if ($idleNoFuel) {
+        return [pscustomobject]@{
+            wait    = $true
+            machine = $(if ($wantMachine) { $wantMachine } else { $null })
+            fuel    = $null
+            reason  = 'needs Simon: API key'
+            error   = 'no_tokens'
+        }
+    }
     return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'no eligible worker' }
+}
+
+function Test-BobQuotaFailureText {
+    <#
+      FR #352: detect provider quota / 402 / 429 / out-of-credits in agent output.
+      Distinct from no-progress hang (AgentMonitor #99).
+    #>
+    param([string]$Text)
+    $t = [string]$Text
+    if (-not $t) { return $false }
+    if ($t -match '(?i)\b402\b') { return $true }
+    if ($t -match '(?i)\b429\b') { return $true }
+    if ($t -match '(?i)out of credits|out.of.tokens|insufficient.?quota|quota.?exceeded|rate.?limit') { return $true }
+    if ($t -match '(?i)no tokens remaining|usage.?limit|billing|payment.?required') { return $true }
+    return $false
 }

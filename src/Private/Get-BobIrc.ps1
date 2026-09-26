@@ -351,9 +351,21 @@ function Save-BobCursorPoolForSeat {
 }
 
 function Get-BobDigestUrl {
+    # FR #354: public GET digest is the same document as reportUrl (IIS has no /digest).
+    # Never default to bob.ntsa.uk (does not resolve).
     foreach ($cand in @($env:AGENTIC_IRC_DIGEST_URL, $env:BOB_DIGEST_URL)) {
         if ($cand -and [string]$cand.Trim()) { return [string]$cand.Trim() }
     }
+    try {
+        $cfg = Get-BobiverseConfig
+        if ($cfg -and $cfg.digestUrl -and [string]$cfg.digestUrl.Trim()) {
+            return [string]$cfg.digestUrl.Trim()
+        }
+        if ($cfg -and $cfg.reportUrl -and [string]$cfg.reportUrl.Trim()) {
+            return [string]$cfg.reportUrl.Trim()
+        }
+    }
+    catch { }
     return 'https://irc.ntsa.uk/bob/v1/report'
 }
 
@@ -1688,12 +1700,30 @@ function Import-BobIrcTrayPull {
     $posPath = Get-BobIrcTrayLogPosPath
     $pos = 0
     if (Test-Path $posPath) {
-        try { $pos = [int](Get-Content $posPath -Raw).Trim() } catch { $pos = 0 }
+        try { $pos = [int64](Get-Content $posPath -Raw).Trim() } catch { $pos = 0 }
     }
-    $bytes = [IO.File]::ReadAllBytes($logPath)
-    if ($pos -gt $bytes.Length) { $pos = 0 }
-    $chunk = $bytes[$pos..($bytes.Length - 1)]
-    $text = [Text.Encoding]::UTF8.GetString($chunk)
+    # FR #355: FileStream seek+read instead of ReadAllBytes + $bytes[$pos..end] (O(n) copy).
+    $fs = $null
+    $len = 0L
+    $text = ''
+    try {
+        $fs = [IO.File]::Open($logPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        $len = [int64]$fs.Length
+        if ($pos -gt $len) { $pos = 0 }
+        $toRead = [int]([Math]::Min([int64]([int]::MaxValue), ($len - $pos)))
+        if ($toRead -gt 0) {
+            $null = $fs.Seek($pos, [IO.SeekOrigin]::Begin)
+            $buf = New-Object byte[] $toRead
+            $got = $fs.Read($buf, 0, $toRead)
+            if ($got -gt 0) {
+                if ($got -lt $buf.Length) { [Array]::Resize([ref]$buf, $got) }
+                $text = [Text.Encoding]::UTF8.GetString($buf)
+            }
+        }
+    }
+    finally {
+        if ($fs) { $fs.Dispose() }
+    }
     $nick = $null
     try {
         $cfg = Get-BobiverseConfig
@@ -1760,7 +1790,7 @@ function Import-BobIrcTrayPull {
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
-    Set-Content -Path $posPath -Value $bytes.Length -Encoding utf8 -NoNewline
+    Set-Content -Path $posPath -Value $len -Encoding utf8 -NoNewline
     return $updated
 }
 
@@ -1898,6 +1928,8 @@ function Build-BobDigestWebhookMergePayload {
     if ($Doc.repo) { $payload.repo = [string]$Doc.repo }
     if ($Doc.sha) { $payload.sha = [string]$Doc.sha }
     if ($Doc.fuel) { $payload.fuel = $Doc.fuel }
+    # FR #356 (agentic_build): seat start reports pool|session-key|unknown (never the key)
+    if ($Doc.fuel_mode) { $payload.fuel_mode = [string]$Doc.fuel_mode }
     if ($Doc.working_on) { $payload.working_on = [string]$Doc.working_on }
     if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
     if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
@@ -2193,19 +2225,48 @@ function Import-BobIrcPeerTranscript {
     if (-not $mid) { return @() }
     $tp = Join-Path $home (Join-Path 'moot' ($mid + '.txt'))
     if (-not (Test-Path $tp)) { return @() }
-    # Last POINT per machine wins (moot transcript is append-only).
+
+    # FR #355: skip when size+mtime unchanged (paid every ~30s tick otherwise).
+    $item = Get-Item -LiteralPath $tp -ErrorAction SilentlyContinue
+    if (-not $item) { return @() }
+    $sig = '{0}|{1}' -f $item.Length, $item.LastWriteTimeUtc.Ticks
+    if (-not $script:BobIrcPeerTranscriptCache) {
+        $script:BobIrcPeerTranscriptCache = @{}
+    }
+    $cacheKey = $tp.ToLowerInvariant()
+    if ($script:BobIrcPeerTranscriptCache.ContainsKey($cacheKey)) {
+        $hit = $script:BobIrcPeerTranscriptCache[$cacheKey]
+        if ($hit -and [string]$hit.sig -eq $sig) {
+            return @()
+        }
+    }
+
+    # Last POINT per machine wins (append-only). Walk newest-first; cheap id= skim
+    # then full parse only once per raw id (ionos: 64s → ~0.4s).
+    $lines = @(Get-Content -LiteralPath $tp -ErrorAction SilentlyContinue)
     $latest = @{}
-    foreach ($raw in @(Get-Content $tp -ErrorAction SilentlyContinue)) {
+    $seenRaw = @{}
+    $idRx = [regex]'BOB v1 id=(\S+)'
+    for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+        $raw = [string]$lines[$i]
         if ($raw -notmatch 'POINT' -or $raw -notmatch 'BOB v1 ') { continue }
+        $m = $idRx.Match($raw)
+        if (-not $m.Success) { continue }
+        $rawId = [string]$m.Groups[1].Value
+        if (-not $rawId) { continue }
+        if ($seenRaw.ContainsKey($rawId)) { continue }
+        $seenRaw[$rawId] = $true
         $idx = $raw.IndexOf('BOB v1 ')
         if ($idx -lt 0) { continue }
         $doc = ConvertFrom-BobIrcPoint $raw.Substring($idx)
         if (-not $doc) { continue }
         $resolved = Resolve-BobiverseMachineId ([string]$doc.id)
         if (-not $resolved) { continue }
+        if ($latest.ContainsKey($resolved)) { continue }
         $doc | Add-Member -NotePropertyName id -NotePropertyValue $resolved -Force
         $latest[$resolved] = $doc
     }
+
     $updated = @()
     $dir = Join-Path $home 'bob-peers'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -2229,5 +2290,6 @@ function Import-BobIrcPeerTranscript {
         Write-JsonFile $peerPath $doc
         $updated += $resolved
     }
+    $script:BobIrcPeerTranscriptCache[$cacheKey] = [pscustomobject]@{ sig = $sig; at = [datetime]::UtcNow }
     return $updated
 }

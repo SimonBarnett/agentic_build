@@ -2,8 +2,9 @@
 name: bob-mrb-worker
 description: >
   STANDARD Material Review Board worker process for every seat that does MRB.
-  Tests-first hostile review: PASS merges the PR; FAIL opens exactly one fix
-  PR then merges original + fix. Use when the user says MRB, hostile review,
+  Tests-first hostile review: after PASS, review docs for stale behavior; if
+  needed open exactly one docs PR and merge it with the original. FAIL opens
+  exactly one fix PR then merges original + fix. Use when the user says MRB, hostile review,
   review the push, Start-BobMrb, bob-mrb-worker, standard MRB process, or
   /bob-mrb-worker. Handoff launch: bob-hostile-mrb / cursor-mrb-dev. Loop:
   bob-job-loop. Bob alone stamps UAT.
@@ -24,37 +25,53 @@ Fuel / launch: `cursor-mrb-dev` / `start-bob-cursor`. Dispatcher: `bob-job-loop`
 
 ## Standing process (verbatim)
 
-1. Checkout PR; read intent + changed files
+1. Use `gh pr checkout` in a temporary worktree; read the PR intent + changed files
 2. BEFORE testing: add any NEW tests appropriate to the PR
-3. Run existing + new tests; hostile review
-4. PASS → merge that PR to main
+3. Run existing + new tests; perform the hostile review
+4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
+   for anything the PR made stale. If docs are stale, open exactly ONE docs PR
+   against `main` with the corrections and merge it together with the original;
+   if docs are OK, merge the original PR as before. Then close the source
+   issue/FR and hand off to a separate UAT worker; only Bob stamps UAT.
 5. FAIL → create exactly ONE fix PR with the fix, then merge both
    (original + fix). Not multiple fix PRs.
 6. Jeeves announces whatever happens (merge / fix+merge)
 
 ```mermaid
-flowchart TD
-  A[Get MRB: repo + PR] --> B[Checkout PR branch]
-  B --> C[Read the PR: intent + changed files]
-  C --> D[Add NEW tests appropriate to this PR]
-  D --> E[Run existing + new tests]
-  E --> F[Hostile review of the change]
-  F --> G{Verdict}
-  G -->|PASS| H[Merge PR to main]
-  H --> I[Jeeves announces merge]
-  G -->|FAIL| J[One fix branch/PR with the fix]
-  J --> K[Merge original PR + fix PR — one new PR only for the fix]
-  K --> L[Jeeves announces both]
+flowchart LR
+  A[gh pr checkout<br/>temp worktree] --> B[Read PR intent]
+  B --> C[Add NEW tests]
+  C --> D[Run tests +<br/>hostile review]
+  D -->|PASS| E[Review docs vs<br/>new behaviour]
+  E -->|docs stale| F[One docs PR<br/>README, skills, diagrams]
+  E -->|docs OK| G[Merge PR]
+  F --> G
+  D -->|FAIL| H[One fix PR]
 ```
+
+## FR mode vs MRB mode (FR #343 CAST IRON)
+
+| Mode | Who | Allowed | Forbidden |
+|------|-----|---------|-----------|
+| **FR / implementer** | Dev seat | Open one PR, post URL, stop | `gh pr merge`, self-approve+merge, close FR after self-merge |
+| **MRB** | **Different** seat (or **fresh session** if only one seat) | Tests-first review; PASS merge; FAIL one fix then merge both | Author MRB/merge of their own implementer PR in the same session |
+
+Pack text: `docs/fr-mode-no-self-merge.md`, `docs/worker-pack-fr-mode.md`.  
+Guard: `tools/fr_self_merge_guard.py` / `tools/Assert-FrPrNoSelfMerge.ps1` (flag self-merge within N minutes).
 
 ## Hard rules
 
 - **Different worker than author.** Never MRB your own implementer PR.
+- **FR authors never merge.** Opening the PR is the end of FR mode.
 - **Tests before verdict.** New tests land on the review branch (or the
   single fix branch) before you claim PASS or FAIL. Run existing + new.
-- **PASS → merge.** Merge the reviewed PR to main (`gh pr merge --merge`).
-  Close finished FR / prior FAIL / this PASS board; pull main. See
-  `bob-hostile-mrb` close/merge/pull + recycle-after-merge.
+- **PASS → docs review, then merge.** After tests and hostile review PASS,
+  review README, skills, `docs/`, mermaid diagrams, and usage/help text for
+  stale behavior. If anything is stale, open exactly **one** docs PR against
+  `main` and merge it together with the original PR; if docs are fine, merge
+  the original as before (`gh pr merge --merge`). Then close the source FR /
+  issue, pull main, and hand off to a separate UAT worker. Only Bob stamps
+  UAT. See `bob-hostile-mrb` close/merge/pull + recycle-after-merge.
 - **FAIL → one fix PR only.** Do not spawn a chain of FIX workers / many
   fix PRs. Open **exactly one** fix branch/PR with the fix (include the
   new tests). Then merge **both** the original PR and that one fix PR.

@@ -27,4 +27,4 @@ TipForm + Watch-BobTray poller. No new website.
 
 - One `?` on the Cursor section header only.
 - `n/a` when remaining is missing; confirm 0 never collapses to `n/a`.
-- Digest is local `bob-peers/digest.json` only — must HTTP GET `bob.ntsa.uk/bob/v1/digest` (agentic_irc #174).
+- Digest is local `bob-peers/digest.json` only — must HTTP GET `https://irc.ntsa.uk/bob/v1/report` (`Get-BobDigestUrl` / `reportUrl`; FR #354). Do not use `bob.ntsa.uk/bob/v1/digest`.

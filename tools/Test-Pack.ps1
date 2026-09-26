@@ -1,4 +1,4 @@
-﻿# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
+# Off-DEV test pack (BT0*). Uses Fake-Grok. Does not touch real ~/.grok/bob-bridge.
 # FR #329: never join live fleet Ergo from tests (no w-* orphans on #marchhare).
 [CmdletBinding()]
 param(
@@ -979,7 +979,12 @@ Invoke-Case 'BT0l tray hover' {
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
-    if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted') { throw 'systray Agents must check fuel before start (Test-BobTrayAgentFuelExhausted)' }
+    if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted|Resolve-BobTrayGrokFuelAtStart') { throw 'systray Agents must check fuel before start' }
+    if ($watchBody -notmatch 'Resolve-BobTrayGrokFuelAtStart') { throw 'FR #356: Grok start must Resolve-BobTrayGrokFuelAtStart (once)' }
+    if ($watchBody -notmatch 'stop-unknown') { throw 'FR #356: blank/missing pcent.grok-chat must stop-unknown (no keyless start)' }
+    if ($watchBody -notmatch 'Publish-BobTrayFuelMode') { throw 'FR #356: must report fuel_mode on digest' }
+    if ($watchBody -notmatch "fuel_mode=unknown|FuelMode 'unknown'") { throw 'FR #356: unknown fuel_mode must be reported' }
+    if ($traySrc -notmatch 'Get-BobTrayMachineGrokChatPcent') { throw 'FR #356: must read machines.<id>.pcent[grok-chat]' }
     if ($watchBody -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'systray Agents must launch via Start-BobTrayProcessWithSessionEnv' }
     if ($traySrc -notmatch 'Show-BobTraySessionApiKeyDialog') { throw 'empty fuel must offer Show-BobTraySessionApiKeyDialog' }
     if ($traySrc -notmatch 'XAI_API_KEY') { throw 'session Grok key must set child env XAI_API_KEY' }
@@ -1088,6 +1093,55 @@ Invoke-Case 'BT369 tray seat work dir never live ai' {
         if ($null -ne $prevWork) { $env:BOB_SEAT_WORK = $prevWork } else { Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue }
         if ($null -ne $prevRoot) { $env:BOB_SEAT_WORK_ROOT = $prevRoot } else { Remove-Item Env:BOB_SEAT_WORK_ROOT -ErrorAction SilentlyContinue }
         if ($null -ne $prevMid) { $env:BOB_MACHINE_ID = $prevMid } else { Remove-Item Env:BOB_MACHINE_ID -ErrorAction SilentlyContinue }
+    }
+}
+
+# --- BT354 Get-BobDigestUrl from reportUrl (FR #354) ---
+Invoke-Case 'BT354 Get-BobDigestUrl report endpoint' {
+    param($bridgeRoot)
+    $ircPath = Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1'
+    $src = Get-Content -LiteralPath $ircPath -Raw
+    if ($src -match "return\s+'http://bob\.ntsa\.uk") { throw 'Get-BobDigestUrl must not return bob.ntsa.uk' }
+    if ($src -match "return\s+'[^']*/bob/v1/digest") { throw 'Get-BobDigestUrl must not hard-default /digest' }
+    if ($src -notmatch 'function Get-BobDigestUrl') { throw 'missing Get-BobDigestUrl' }
+    if ($src -notmatch 'reportUrl') { throw 'Get-BobDigestUrl must prefer config reportUrl' }
+
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($ircPath, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-BobDigestUrl' }, $true)
+    if (-not $fn) { throw 'AST missing Get-BobDigestUrl' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+
+    $prevDig = $env:BOB_DIGEST_URL
+    $prevAg = $env:AGENTIC_IRC_DIGEST_URL
+    try {
+        Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        $url = Get-BobDigestUrl
+        if ($url -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw "from reportUrl got=$url"
+        }
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ digestUrl = 'https://example.test/bob/v1/report'; reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        if ((Get-BobDigestUrl) -ne 'https://example.test/bob/v1/report') {
+            throw 'digestUrl must win over reportUrl'
+        }
+        function script:Get-BobiverseConfig { return $null }
+        if ((Get-BobDigestUrl) -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw 'hard default must be irc.ntsa.uk report'
+        }
+        $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/override-report'
+        if ((Get-BobDigestUrl) -ne 'http://127.0.0.1:9/override-report') {
+            throw 'BOB_DIGEST_URL override ignored'
+        }
+    }
+    finally {
+        if ($null -ne $prevDig) { $env:BOB_DIGEST_URL = $prevDig } else { Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue }
+        if ($null -ne $prevAg) { $env:AGENTIC_IRC_DIGEST_URL = $prevAg } else { Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue }
     }
 }
 
@@ -2434,7 +2488,7 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
 Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
     if ($traySrc -notmatch 'function Format-BobTrayCursorOverspendLine') { throw 'Watch-BobTray must format Cursor overspend for the card' }
-    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend Â£N.NN' }
+    if ($traySrc -notmatch "overspend \{0\}\{1:N2\}") { throw 'overspend line must be overspend currency+N.NN' }
     if ($traySrc -notmatch 'function Get-BobTrayCursorHelpTooltip') { throw 'Watch-BobTray must define Cursor help tooltip' }
     if ($traySrc -notmatch 'low cost models: Cursor build fuel gate') { throw 'help tooltip must name low-cost as Cursor build fuel gate' }
     if ($traySrc -notmatch 'grok chat:') { throw 'help tooltip must explain grok chat bracket' }
@@ -5173,11 +5227,374 @@ public static class BobTestArgv {
     if ($tui.Value -match "'-p'|'--print'|'--prompt'") { throw 'grok TUI launch must not use headless -p/--print flags' }
     if ($wahSrc -notmatch "\[string\]\`$Windows = 'on'") { throw 'Watch-AgentHealth default -Windows must stay on (visible TUI)' }
     if ($wahSrc -notmatch "AgentTuiWindowStyle = \`$\(if \(\`$Windows -eq 'on'\) \{ 'Normal' \}") { throw 'TUI window style must be Normal when -Windows on' }
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
-    $sessFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    $traySrcWah = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $sessFn = [regex]::Match($traySrcWah, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
     if (-not $sessFn.Success) { throw 'Start-BobTrayProcessWithSessionEnv not found' }
     if ($sessFn.Value -notmatch 'EnvironmentVariables\[') { throw 'session API key must be passed only via child ProcessStartInfo.EnvironmentVariables' }
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
+}
+
+Invoke-Case 'BT0fr355 peer transcript newest-first + mtime cache' {
+    param($bridgeRoot)
+    # FR #355: Import-BobIrcPeerTranscript must stay fast on large append-only moot files.
+    Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
+    $ircHome = Join-Path $bridgeRoot 'irc-home-fr355'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'moot') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    # Self-machine POINTS are skipped; pin this box as marchhare so ionos/flamingo are peers.
+    $env:BOB_MACHINE_ID = 'marchhare'
+    $script:BobIrcPeerTranscriptCache = @{}
+    $cfg = Get-Content $env:BOB_IRC_CONFIG -Raw | ConvertFrom-Json
+    $tp = Join-Path $ircHome (Join-Path 'moot' ($cfg.mootId + '.txt'))
+
+    # Correctness: newest POINT wins (self-machine is skipped by design — use peers).
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('1000 bob-ionos POINT BOB v1 id=ionos weekly=1 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-') | Out-Null
+    $lines.Add('1001 bob-flamingo POINT BOB v1 id=flamingo weekly=2 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-') | Out-Null
+    $lines.Add('1002 bob-ionos POINT BOB v1 id=ionos weekly=99 running=1 queued=0 lastSeen=2026-09-25T12:00:00Z jobs=-') | Out-Null
+    [IO.File]::WriteAllLines($tp, $lines)
+    $got = @(Import-BobIrcPeerTranscript)
+    if ($got -notcontains 'ionos' -or $got -notcontains 'flamingo') { throw "updated=$($got -join ',')" }
+    $io = Read-BobIrcPeer -Id ionos
+    if ([int]$io.weekly -ne 99) { throw "newest weekly want 99 got $($io.weekly)" }
+
+    # Unchanged file → cache hit under 50ms budget (and empty update list).
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $got2 = @(Import-BobIrcPeerTranscript)
+    $sw.Stop()
+    if ($got2.Count -ne 0) { throw "mtime cache should return no updates; got $($got2 -join ',')" }
+    if ($sw.ElapsedMilliseconds -gt 50) { throw "unchanged import took $($sw.ElapsedMilliseconds)ms want <=50" }
+
+    # 6000-line transcript: one import under 1s.
+    $big = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt 5997; $i++) {
+        $id = @('ionos', 'flamingo', 'ce-priority-dev1')[$i % 3]
+        $big.Add(('{0} bob-{1} POINT BOB v1 id={1} weekly={2} running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-' -f (10000 + $i), $id, ($i % 50))) | Out-Null
+    }
+    $big.Add('999997 bob-ce-priority-dev1 POINT BOB v1 id=ce-priority-dev1 weekly=7 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $big.Add('999998 bob-flamingo POINT BOB v1 id=flamingo weekly=8 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $big.Add('999999 bob-ionos POINT BOB v1 id=ionos weekly=9 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $script:BobIrcPeerTranscriptCache = @{}
+    [IO.File]::WriteAllLines($tp, $big)
+    $sw2 = [Diagnostics.Stopwatch]::StartNew()
+    $got3 = @(Import-BobIrcPeerTranscript)
+    $sw2.Stop()
+    if ($sw2.ElapsedMilliseconds -gt 1000) { throw "6000-line import took $($sw2.ElapsedMilliseconds)ms want <=1000" }
+    $io2 = Read-BobIrcPeer -Id ionos
+    if ([int]$io2.weekly -ne 9) { throw "6000-line newest ionos weekly=$($io2.weekly)" }
+
+    $src = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($src -notmatch 'BobIrcPeerTranscriptCache') { throw 'mtime cache missing' }
+    if ($src -notmatch 'File\]::Open' -and $src -notmatch 'SeekOrigin') { throw 'Import-BobIrcTrayPull must FileStream seek' }
+    # Executable slice gone; comment may still mention the old pattern.
+    $trayFn = [regex]::Match($src, '(?s)function Import-BobIrcTrayPull\s*\{.*?^function ', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $trayFn.Success) { throw 'Import-BobIrcTrayPull not found' }
+    $trayBody = ($trayFn.Value -split "`n" | Where-Object { $_.Trim() -notmatch '^#' }) -join "`n"
+    if ($trayBody -match 'ReadAllBytes') { throw 'tray pull must not ReadAllBytes' }
+    if ($trayBody -match '\$bytes\[\$pos\.\.') { throw 'tray pull must not slice full byte array' }
+}
+
+Invoke-Case 'BT170a bulk-close requires merged PR' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-170a.log'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    $env:BOB_FAKE_GH_ISSUE_JSON = '[]'
+    $script = Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1'
+    $failed = $false
+    try {
+        & $script -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/pull/140' 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $failed = $true }
+    }
+    catch { $failed = $false }
+    if ($failed) { throw 'open PR must refuse close' }
+    if (Test-Path $log) {
+        $raw = Get-Content $log -Raw
+        if ($raw -match 'issue close') { throw 'must not close when PR still open' }
+    }
+}
+
+Invoke-Case 'BT170b bulk-close comments include PR URL' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-170b.log'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T00:00:00Z"}'
+    $prUrl = 'https://github.com/SimonBarnett/agentic_build/pull/140'
+    $issues = @(
+        [pscustomobject]@{
+            number = 200
+            title  = 'MRB PASS-nits: bulk-close-stale-mrb-boards 8be01ef'
+            state  = 'OPEN'
+            body   = "**Feature request:** https://github.com/SimonBarnett/agentic_build/issues/140`n`n## PR`n$prUrl"
+        },
+        [pscustomobject]@{
+            number = 170
+            title  = 'MRB FAIL: bulk-close-stale-mrb-boards 8be01ef'
+            state  = 'OPEN'
+            body   = 'prior fail'
+        },
+        [pscustomobject]@{
+            number = 140
+            title  = 'Bulk-close stale MRB PASS-nits boards'
+            state  = 'OPEN'
+            body   = 'product chair'
+        },
+        [pscustomobject]@{
+            number = 999
+            title  = 'MRB FAIL: unrelated-feature abcdef1'
+            state  = 'OPEN'
+            body   = 'live board'
+        }
+    ) | ConvertTo-Json -Depth 6 -Compress
+    $env:BOB_FAKE_GH_ISSUE_JSON = $issues
+    $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = '{"state":"OPEN"}'
+    if (Test-Path $log) { Remove-Item $log -Force }
+    $out = & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl $prUrl 2>&1 | Out-String
+    if ($out -notmatch 'closed PASS #200') { throw "expected close PASS: $out" }
+    if ($out -notmatch 'closed FAIL #170') { throw "expected close FAIL for same slug: $out" }
+    if ($out -notmatch 'closed FR #140') { throw "expected close FR: $out" }
+    if ($out -match '999') { throw 'must not close unrelated FAIL #999' }
+    $logRaw = Get-Content $log -Raw
+    if ($logRaw -notmatch [regex]::Escape($prUrl)) { throw 'close comments must include merged PR URL' }
+    if ($logRaw -notmatch 'issue close') { throw 'expected issue close in fake gh log' }
+}
+
+Invoke-Case 'BT170c bulk-close missing gh fails' {
+    param($bridgeRoot)
+    $saved = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-gh.exe'
+    $threw = $false
+    try {
+        & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/pull/1' 2>&1 | Out-Null
+    }
+    catch { $threw = $true }
+    finally { $env:BOB_GH_EXE = $saved }
+    if (-not $threw) { throw 'missing gh.exe must fail' }
+}
+
+Invoke-Case 'BT170d bulk-close Repo has no agentic_irc default' {
+    $src = Get-Content (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Raw
+    if ($src -match "\[Parameter\(Mandatory\)\]\[string\]\`$Repo\s*=\s*'SimonBarnett/agentic_irc'") {
+        throw 'Repo must not default to SimonBarnett/agentic_irc'
+    }
+    if ($src -notmatch 'MergedPrUrl') { throw 'MergedPrUrl mandatory parameter required' }
+    if ($src -notmatch 'Test-BobGhPrIsMerged') { throw 'must verify PR merged before close' }
+}
+
+Invoke-Case 'BT170e bulk-close bad MergedPrUrl refuses' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $threw = $false
+    try {
+        & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/issues/140' 2>&1 | Out-Null
+    }
+    catch { $threw = $true }
+    if (-not $threw) { throw 'MergedPrUrl without /pull/N must refuse' }
+}
+
+Invoke-Case 'BT0gh1 gh readiness absent gh' {
+    param($bridgeRoot)
+    $savedGh = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-such-gh.exe'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if ($r.present) { throw 'present must be false' }
+        if ($r.issue_posting_ready) { throw 'issue_posting_ready must be false' }
+        $h = Get-BobHealth
+        if ($h.gh_posting.issue_posting_ready) { throw 'health must not be ready' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+    }
+}
+
+Invoke-Case 'BT0gh2 gh readiness dead token' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'dead'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if ($r.present -ne $true) { throw 'present must be true with fake gh' }
+        if ($r.authenticated) { throw 'authenticated must be false on dead token' }
+        if ($r.issue_posting_ready) { throw 'issue_posting_ready must be false' }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+    }
+}
+
+Invoke-Case 'BT0gh3 gh readiness ok fixture' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $savedGh = $env:BOB_GH_EXE
+    $savedMode = $env:BOB_FAKE_GH_MODE
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    try {
+        $r = Get-BobGhPostingReadiness -Repo 'fixture/repo'
+        if (-not $r.issue_posting_ready) { throw "expected ready reason=$($r.reason)" }
+    }
+    finally {
+        $env:BOB_GH_EXE = $savedGh
+        $env:BOB_FAKE_GH_MODE = $savedMode
+    }
+}
+
+Invoke-Case 'BT0gh4 mrb picker skips not-ready gh' {
+    param($bridgeRoot)
+    $fixture = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 99 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $false }
+        copilot       = [pscustomobject]@{ available = $false }
+        machines      = @(
+            [pscustomobject]@{
+                id = 'notready'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 100 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+                gh_posting = [pscustomobject]@{ present = $true; authenticated = $false; issue_posting_ready = $false }
+            }
+            [pscustomobject]@{
+                id = 'ready'; kind = 'windows'; gitEligible = $true; alive = $true; jobs = 0
+                cwdRoots = @('C:\ai'); grok_build = [pscustomobject]@{ remaining_pct = 50 }
+                grok_bot = [pscustomobject]@{ remaining_pct = 0 }
+                fuels = @('cursor-models', 'grok-build')
+                gh_posting = [pscustomobject]@{ present = $true; authenticated = $true; issue_posting_ready = $true }
+            }
+        )
+    }
+    $mrb = Select-BobGitWorker -Capacity $fixture -Kind mrb -Fuel grok-build
+    if ($mrb.wait) { throw "mrb picker waited: $($mrb.reason)" }
+    if ($mrb.machine -ne 'ready') { throw "mrb machine=$($mrb.machine) expected ready" }
+    $build = Select-BobGitWorker -Capacity $fixture -Kind build -Fuel grok-build
+    if ($build.wait) { throw "build picker waited: $($build.reason)" }
+    if ($build.machine -ne 'notready') { throw "build should still pick notready (gh gate is mrb-only) machine=$($build.machine)" }
+}
+
+Invoke-Case 'BT0gh5 Install-BobFleet documents gh' {
+    param($bridgeRoot)
+    $installSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleet.ps1') -Raw
+    if ($installSrc -notmatch 'Install-BobGitHubCliIfMissing') { throw 'Install-BobFleet must call Install-BobGitHubCliIfMissing' }
+    if ($installSrc -notmatch 'GH_TOKEN') { throw 'Install-BobFleet must mention GH_TOKEN remediation' }
+}
+
+Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
+    # FR #352: automated start refused with needs Simon: API key; quota text → no_tokens.
+    Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
+    $cap = [pscustomobject]@{
+        cursor_models = [pscustomobject]@{ remaining_pct = 0 }
+        on_demand     = [pscustomobject]@{ remaining_pct = 0; enabled = $true }
+        copilot       = [pscustomobject]@{ remaining_pct = 0; available = $true }
+        machines      = @(
+            [pscustomobject]@{
+                id           = 'flamingo'
+                alive        = $true
+                gitEligible  = $true
+                jobs         = @()
+                fuels        = @('cursor-models', 'grok-build', 'grok-bot')
+                grok_build   = [pscustomobject]@{ remaining_pct = 0 }
+                grok_bot     = [pscustomobject]@{ remaining_pct = 0 }
+            }
+        )
+    }
+    $sel = Select-BobGitWorker -Capacity $cap -AllowOnDemand
+    if (-not $sel.wait) { throw 'expected wait when all fuels 0' }
+    if ([string]$sel.reason -ne 'needs Simon: API key') { throw "reason=$($sel.reason)" }
+    if ([string]$sel.error -ne 'no_tokens') { throw "error=$($sel.error)" }
+
+    $pin = Select-BobGitWorker -Capacity $cap -Machine flamingo -Fuel cursor-models -AllowOnDemand
+    if (-not $pin.wait) { throw 'pinned exhausted fuel must wait (FR #352 / MRB fix)' }
+    if ([string]$pin.reason -ne 'needs Simon: API key') { throw "pin reason=$($pin.reason)" }
+    if ([string]$pin.error -ne 'no_tokens') { throw "pin error=$($pin.error)" }
+
+    if (-not (Test-BobQuotaFailureText -Text 'HTTP 402 Payment Required')) { throw '402 must match' }
+    if (-not (Test-BobQuotaFailureText -Text 'rate limit 429')) { throw '429 must match' }
+    if (-not (Test-BobQuotaFailureText -Text 'out of credits on this account')) { throw 'credits must match' }
+    if (Test-BobQuotaFailureText -Text 'ACK FR SimonBarnett/x#1') { throw 'normal ACK must not match' }
+
+    $wah = Join-Path $RepoRoot 'tools\Watch-AgentHealth\Watch-AgentHealth.ps1'
+    $wahSrc = Get-Content $wah -Raw
+    if ($wahSrc -notmatch 'Test-WatchQuotaFailureText') { throw 'Watch-AgentHealth must detect quota failures' }
+    if ($wahSrc -notmatch 'Set-WatchNoTokensUnhealthy') { throw 'Watch-AgentHealth must mark no_tokens without rotate' }
+    if ($wahSrc -notmatch 'no_tokens') { throw 'no_tokens marker missing' }
+    if ($wahSrc -notmatch 'forward skipped \(no_tokens') { throw 'ear must stop offering when no_tokens' }
+
+    $tray = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($tray -notmatch "no tokens") { throw 'tray cancel must surface no tokens' }
+    $hover = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hover -notmatch 'out of tokens, open with key') { throw 'TipForm must show out of tokens, open with key' }
+}
+
+Invoke-Case 'BT0agent FR356 grok fuel_mode at start' {
+    # FR #356: pcent>0 => pool; 0 => session-key; blank/missing => unknown (stop).
+    $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($tray, [ref]$tok, [ref]$err)
+    foreach ($name in @('Get-BobTrayMachineGrokChatPcent', 'Resolve-BobTrayGrokFuelAtStart')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "missing $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function script:Get-BobTrayFuelLocalMachineId { return 'marchhare' }
+    function script:Resolve-BobiverseMachineId { param($Id) return ([string]$Id).ToLowerInvariant() }
+    function script:Write-TrayLog { param($Message) }
+
+    $poolDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{ 'grok-chat' = 7 } }
+        }
+    }
+    $dPool = Resolve-BobTrayGrokFuelAtStart -Digest $poolDoc -MachineId 'marchhare'
+    if ($dPool.fuel_mode -ne 'pool' -or $dPool.action -ne 'start-pool' -or $dPool.remaining -ne 7) {
+        throw "pool want remaining=7 action=start-pool got $($dPool | ConvertTo-Json -Compress)"
+    }
+
+    $zeroDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{ 'grok-chat' = 0 } }
+        }
+    }
+    $dZero = Resolve-BobTrayGrokFuelAtStart -Digest $zeroDoc -MachineId 'marchhare'
+    if ($dZero.fuel_mode -ne 'session-key' -or $dZero.action -ne 'prompt-session') {
+        throw "zero want session-key got $($dZero | ConvertTo-Json -Compress)"
+    }
+
+    $blankDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{} }
+        }
+    }
+    $dBlank = Resolve-BobTrayGrokFuelAtStart -Digest $blankDoc -MachineId 'marchhare'
+    if ($dBlank.fuel_mode -ne 'unknown' -or $dBlank.action -ne 'stop-unknown') {
+        throw "blank want unknown/stop got $($dBlank | ConvertTo-Json -Compress)"
+    }
+
+    $missingDoc = [pscustomobject]@{ machines = [pscustomobject]@{ flamingo = [pscustomobject]@{ id = 'flamingo'; pcent = [pscustomobject]@{ 'grok-chat' = 3 } } } }
+    $dMiss = Resolve-BobTrayGrokFuelAtStart -Digest $missingDoc -MachineId 'marchhare'
+    if ($dMiss.action -ne 'stop-unknown') { throw "missing machine pcent must stop-unknown got $($dMiss.action)" }
+
+    $traySrc = Get-Content $tray -Raw
+    if ($traySrc -match '(?i)XAI_API_KEY\s*=\s*\$key' -and $traySrc -match 'Publish-BobTrayFuelMode' -and $traySrc -match 'fuel_mode') {
+        # publish path must never interpolate the key into webhook JSON
+        $pub = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Publish-BobTrayFuelMode' }, $true)
+        if (-not $pub) { throw 'Publish-BobTrayFuelMode missing' }
+        if ($pub.Extent.Text -match 'XAI_API_KEY|ApiKey|\$key') { throw 'Publish-BobTrayFuelMode must not touch the session key' }
+    }
+    if ($traySrc -notmatch 'stop-unknown') { throw 'Agents start must handle stop-unknown' }
 }
 
 Invoke-Case 'BT0tray idempotent ear/jobs start' {

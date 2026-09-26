@@ -46,7 +46,7 @@ The pull worker `tools\Watch-BobJobs.ps1` (logon task) claims **this** machine�
 | `bob-spec-intake` | Park FR issue + `/docs` md |
 | `bob-build-dispatch` | Write plan + `Start-BobBuild -Task git` |
 | `bob-job-loop` | `Start-BobBuildLoop.ps1` retry + PASS-nits notify |
-| `bob-hostile-mrb` / `cursor-mrb-dev` | Hand off MRB; FAIL → FIX; PASS-nits merges |
+| `bob-hostile-mrb` / `cursor-mrb-dev` | Hand off MRB; PASS reviews docs and merges one docs PR if stale; FAIL → one fix PR then merge both |
 | `grok-build-fleet` | Start/monitor/stop; picker; heal `Watch-BobJobs` |
 | `bob-build-loop` | Pointer to the rows above |
 | `bob-repo-pair` | Two persistent dev+MRB workers per repo (#175); chair `bob-{machine}` |

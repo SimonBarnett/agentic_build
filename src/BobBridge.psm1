@@ -10,6 +10,8 @@ Get-ChildItem -Path $PublicDir -Filter '*.ps1' -ErrorAction Stop | ForEach-Objec
 
 Export-ModuleMember -Function @(
     'Get-BobHealth',
+    'Get-BobGhPostingReadiness',
+    'Install-BobGitHubCliIfMissing',
     'Get-BobWorkers',
     'Get-BobAgents',
     'Get-BobMachines',
@@ -22,6 +24,8 @@ Export-ModuleMember -Function @(
     'Test-BobPacketMissingFuel',
     'Resolve-BobGrokCliModel',
     'Select-BobGitWorker',
+    'Test-BobQuotaFailureText',
+    'Sync-BobShopChannelRepoDescriptions',
     'Get-ThisMachineId',
     'Copy-BobProjectSkills',
     'Get-BobBuild',
