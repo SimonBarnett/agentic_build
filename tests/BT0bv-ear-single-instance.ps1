@@ -23,6 +23,14 @@ try {
     if (($dup -join ',') -ne '57612') { throw "keep oldest 12176, stop newer 57612: got $($dup -join ',')" }
     if (@(Select-BobiverseEarDuplicates -Processes @($procs[1], $procs[2])).Count -ne 0) { throw 'single ear: no duplicates' }
     if (@(Select-BobiverseEarDuplicates -Processes @()).Count -ne 0) { throw 'no processes: no duplicates' }
+    # Hostile: two different bob-* nicks on one box must not reap each other
+    $mixed = @(
+        $procs[1],
+        [pscustomobject]@{ ProcessId = 800; CreationDate = $new; CommandLine = 'python.exe -u C:\ai\agentic_irc\scripts\irc_agent.py --host irc.ntsa.uk --port 6697 --nick bob-ionos --channel #bobiverse,#ionos --home C:\Users\simon\.agentic-irc-bobiverse' }
+    )
+    if (@(Select-BobiverseEarDuplicates -Processes $mixed).Count -ne 0) {
+        throw 'bob-flamingo + bob-ionos must not be duplicates'
+    }
     if ((Get-BobiverseEarSpawnDecision -QueryOk $false -EarCount 0) -ne 'unknown') { throw 'failed query must be unknown (never spawn)' }
     if ((Get-BobiverseEarSpawnDecision -QueryOk $true -EarCount 0) -ne 'spawn') { throw 'query ok + no ear -> spawn' }
     if ((Get-BobiverseEarSpawnDecision -QueryOk $true -EarCount 1) -ne 'up') { throw 'query ok + ear -> up' }

@@ -46,11 +46,31 @@ function Get-BobiverseEarSpawnDecision {
 }
 
 function Select-BobiverseEarDuplicates {
-    # Keep the OLDEST ear (it holds the real nick; newer ones are nick_l / nick_), return the rest.
+    # Keep the OLDEST ear per --nick (it holds the real nick; newer ones are nick_l / nick_).
     # Same keep-oldest rule as the tray single-instance guard (#318).
+    # Group by nick so bob-flamingo and bob-ionos on one box are not treated as twins.
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Processes)
-    $ears = @(Select-BobiverseEarProcesses -Processes $Processes |
-            Sort-Object @{ Expression = { if ($_.CreationDate) { [datetime]$_.CreationDate } else { [datetime]::MaxValue } } }, @{ Expression = { [int]$_.ProcessId } })
+    $ears = @(Select-BobiverseEarProcesses -Processes $Processes)
     if ($ears.Count -le 1) { return @() }
-    return @($ears | Select-Object -Skip 1)
+    $dups = New-Object System.Collections.Generic.List[object]
+    $groups = $ears | Group-Object {
+        if ([string]$_.CommandLine -match '--nick\s+(\S+)') {
+            $Matches[1].ToLowerInvariant()
+        }
+        else {
+            ''
+        }
+    }
+    foreach ($g in @($groups)) {
+        $sorted = @($g.Group | Sort-Object @{
+                Expression = {
+                    if ($_.CreationDate) { [datetime]$_.CreationDate } else { [datetime]::MaxValue }
+                }
+            }, @{ Expression = { [int]$_.ProcessId } })
+        if ($sorted.Count -le 1) { continue }
+        foreach ($p in @($sorted | Select-Object -Skip 1)) {
+            [void]$dups.Add($p)
+        }
+    }
+    return @($dups.ToArray())
 }
