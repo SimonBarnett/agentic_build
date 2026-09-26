@@ -4,8 +4,9 @@ description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
   in-session. STANDARD worker steps: bob-mrb-worker (tests-first; after PASS review docs and
-  merge one docs PR with the original when needed; FAIL → exactly one fix PR
-  then merge both). No MRB PDFs. Use when the user
+  merge one separate docs/mrb-<n> PR with the original when needed — never push
+  onto the PR under review; FAIL → exactly one separate fix PR then merge both).
+  No MRB PDFs. Use when the user
   says MRB, hostile review, review the push, ready for UAT, hand off MRB,
   missing features, or /bob-hostile-mrb. Loop table is bob-build-loop.
 github: https://github.com/SimonBarnett/agentic_build
@@ -75,12 +76,14 @@ PASS **includes merge**. If the worker thinks it passed UAT, they write
 2. BEFORE testing: add any NEW tests appropriate to the PR
 3. Run existing + new tests; hostile review
 4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
-   for stale behavior. If anything is stale, open exactly ONE docs PR against
-   `main` and merge it together with the original; if docs are fine, merge the
+   for stale behavior. If anything is stale, open exactly ONE **separate**
+   `docs/mrb-<n>-...` PR against `main` (never push onto the PR under review —
+   FR #348) and merge it together with the original; if docs are fine, merge the
    original as before. Then close the source issue/FR and hand off to a separate
    UAT worker; only Bob stamps UAT.
-5. FAIL → create exactly ONE fix PR with the fix, then merge both
-   (original + fix). Not multiple fix PRs.
+5. FAIL → create exactly ONE **separate** fix PR with the fix, then merge both
+   (original + fix). Not multiple fix PRs. Do not push the fix onto the reviewed
+   branch.
 6. Jeeves announces whatever happens (merge / fix+merge)
 
 Shop channel only. Report **agent + model** on the webhook. Full mermaid
@@ -92,11 +95,12 @@ A PASS that leaves git dirty is not finished. The MRB worker MUST,
 in this order, before the driver prints DONE:
 
 1. After PASS, review README, skills, `docs/`, mermaid diagrams, and
-   usage/help text against the new behavior. If stale, open exactly one docs
-   PR against `main`; merge that docs PR together with the reviewed PR. If
-   docs are fine, merge the reviewed PR as before (`gh pr merge --merge`).
+   usage/help text against the new behavior. If stale, open exactly one
+   **separate** `docs/mrb-<n>-...` PR against `main` (never push onto the
+   reviewed branch — FR #348); merge that docs PR together with the reviewed
+   PR. If docs are fine, merge the reviewed PR as before (`gh pr merge --merge`).
    Do not claim merged unless the required merge command succeeded (or
-   `gh pr view` is already MERGED).
+   `gh pr view` is already MERGED). Guard: `tools/mrb_docs_branch_guard.py`.
 2. **Close finished issues**: the feature-request issue, **every** prior
    FAIL MRB board for this FR, and this PASS board. Each close
    comment links the merged PR URL.
@@ -228,7 +232,8 @@ unless this process created the merge commit.
 - Prior version folders intact on feature work
 - No secrets in repo or prompts
 - README, skills, `/docs`, mermaid diagrams, and usage/help text match reality
-- Any stale docs are corrected in exactly one docs PR merged with the original
+- Any stale docs are corrected in exactly one **separate** `docs/mrb-<n>` PR
+  merged with the original (never commits on the reviewed branch)
 - PR is merged by this MRB worker
 
 ## Fail bar (examples)

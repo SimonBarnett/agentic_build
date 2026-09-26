@@ -29,12 +29,15 @@ Fuel / launch: `cursor-mrb-dev` / `start-bob-cursor`. Dispatcher: `bob-job-loop`
 2. BEFORE testing: add any NEW tests appropriate to the PR
 3. Run existing + new tests; perform the hostile review
 4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
-   for anything the PR made stale. If docs are stale, open exactly ONE docs PR
-   against `main` with the corrections and merge it together with the original;
-   if docs are OK, merge the original PR as before. Then close the source
-   issue/FR and hand off to a separate UAT worker; only Bob stamps UAT.
-5. FAIL → create exactly ONE fix PR with the fix, then merge both
-   (original + fix). Not multiple fix PRs.
+   for anything the PR made stale. If docs are stale, open exactly ONE **separate**
+   docs PR from branch `docs/mrb-<n>-...` against `main` (references the original
+   PR). **Never push commits onto the PR under review** (FR #348). Merge the
+   original and that docs PR together; if docs are OK, merge the original only.
+   Then close the source issue/FR and hand off to a separate UAT worker; only
+   Bob stamps UAT.
+5. FAIL → create exactly ONE **separate** fix PR with the fix, then merge both
+   (original + fix). Not multiple fix PRs. Never push the fix onto the reviewed
+   branch either.
 6. Jeeves announces whatever happens (merge / fix+merge)
 
 ```mermaid
@@ -43,10 +46,10 @@ flowchart LR
   B --> C[Add NEW tests]
   C --> D[Run tests +<br/>hostile review]
   D -->|PASS| E[Review docs vs<br/>new behaviour]
-  E -->|docs stale| F[One docs PR<br/>README, skills, diagrams]
+  E -->|docs stale| F[Separate docs/mrb-n PR<br/>never push to reviewed branch]
   E -->|docs OK| G[Merge PR]
   F --> G
-  D -->|FAIL| H[One fix PR]
+  D -->|FAIL| H[Separate fix PR]
 ```
 
 ## FR mode vs MRB mode (FR #343 CAST IRON)
@@ -65,17 +68,20 @@ Guard: `tools/fr_self_merge_guard.py` / `tools/Assert-FrPrNoSelfMerge.ps1` (flag
 - **FR authors never merge.** Opening the PR is the end of FR mode.
 - **Tests before verdict.** New tests land on the review branch (or the
   single fix branch) before you claim PASS or FAIL. Run existing + new.
-- **PASS → docs review, then merge.** After tests and hostile review PASS,
-  review README, skills, `docs/`, mermaid diagrams, and usage/help text for
-  stale behavior. If anything is stale, open exactly **one** docs PR against
-  `main` and merge it together with the original PR; if docs are fine, merge
-  the original as before (`gh pr merge --merge`). Then close the source FR /
-  issue, pull main, and hand off to a separate UAT worker. Only Bob stamps
-  UAT. See `bob-hostile-mrb` close/merge/pull + recycle-after-merge.
+- **PASS → docs review, then merge (FR #348).** After tests and hostile review
+  PASS, review README, skills, `docs/`, mermaid diagrams, and usage/help text for
+  stale behavior. If anything is stale, open exactly **one separate** docs PR
+  from `docs/mrb-<n>-...` against `main` (title/body reference the original PR)
+  and merge it **with** the original; if docs are fine, merge the original only
+  (`gh pr merge --merge`). **Never** `git push` / commit onto the branch under
+  review. Where a second reviewer exists, the docs PR follows FR #343
+  no-self-merge; otherwise label it clearly as MRB docs. Guard:
+  `tools/mrb_docs_branch_guard.py`. Then close the source FR / issue, pull main,
+  and hand off to a separate UAT worker. Only Bob stamps UAT.
 - **FAIL → one fix PR only.** Do not spawn a chain of FIX workers / many
-  fix PRs. Open **exactly one** fix branch/PR with the fix (include the
+  fix PRs. Open **exactly one separate** fix branch/PR with the fix (include the
   new tests). Then merge **both** the original PR and that one fix PR.
-  Jeeves announces both.
+  Jeeves announces both. Do not push the fix onto the reviewed branch.
 - **No UAT stamp by worker.** Only Bob declares ready for human UAT. If
   you believe it is UAT-ready, write `candidate PASS-UAT, Bob stamp
   required` — never stamp UAT yourself.
