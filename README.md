@@ -24,6 +24,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
+| bob-restart-worker-seat | Diagnose slow vs hung vs out-of-tokens; fresh-session restart (ask first) |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` |
 | setup-github-webhooks | How to add GitHub repo hooks (`/bob/v1/git`) |
 | setup-ssl-certs | How to issue IIS Let's Encrypt with win-acme |
