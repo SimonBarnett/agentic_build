@@ -1178,8 +1178,17 @@ function Start-BobTrayAgentWatch {
             Write-TrayLog 'agents: grok fuel remaining 0 - requesting session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok session API key' -Prompt "No Grok tokens remaining on this machine.`r`nEnter XAI_API_KEY for this start only (not saved; process-scoped for the child only)."
             if (-not $key) {
-                Write-TrayLog 'agents: grok start aborted (Cancel / empty session API key)'
+                Write-TrayLog 'agents: no tokens - dialog cancelled; nothing started'
                 try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
+                try {
+                    [void][System.Windows.Forms.MessageBox]::Show(
+                        'no tokens',
+                        'Grok seat',
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information
+                    )
+                }
+                catch { }
                 return
             }
             $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
@@ -1196,7 +1205,16 @@ function Start-BobTrayAgentWatch {
             Write-TrayLog 'agents: cursor fuel remaining 0 - requesting session CURSOR_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor session API key' -Prompt "No Cursor tokens remaining (auto / cursor_pools).`r`nEnter CURSOR_API_KEY for this start only (not saved; process-scoped for the child only)."
             if (-not $key) {
-                Write-TrayLog 'agents: cursor start aborted (Cancel / empty session API key)'
+                Write-TrayLog 'agents: no tokens - dialog cancelled; nothing started'
+                try {
+                    [void][System.Windows.Forms.MessageBox]::Show(
+                        'no tokens',
+                        'Cursor seat',
+                        [System.Windows.Forms.MessageBoxButtons]::OK,
+                        [System.Windows.Forms.MessageBoxIcon]::Information
+                    )
+                }
+                catch { }
                 return
             }
             $sessionEnv = @{ CURSOR_API_KEY = $key }

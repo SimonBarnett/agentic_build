@@ -21,6 +21,7 @@
         'Test-BobPacketMissingFuel',
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
+        'Test-BobQuotaFailureText',
         'Get-ThisMachineId',
         'Copy-BobProjectSkills',
         'Get-BobBuild',
