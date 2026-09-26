@@ -165,6 +165,8 @@ flowchart TD
 
 A worker idle for more than 2 minutes must say `!bored` in its own `#{machine}`. **Jeeves assigns** the next job to that nick (`<nick>: <TYPE> <repo>#<n> <url>`, `!focus` order). The job is marked accepted only when the worker ACKs. Source of truth: [gh-Jeeves README](https://github.com/SimonBarnett/gh-Jeeves#readme) (FR #106).
 
+AgentMonitor **watch seats** get `!bored` from the monitor itself (start / after DONE / idle; no LLM) — see AgentMonitor FR #100 / #108 and `tools/Watch-AgentHealth/Watch-AgentHealth.ps1`. CAST IRON (Simon 2026-09-26): the model never posts `!bored`; only the seat monitor does.
+
 ```mermaid
 flowchart TD
   A[Worker idle] --> B{Idle > 2 min?}
