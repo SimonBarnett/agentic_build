@@ -1028,6 +1028,15 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
 
+# --- BT102 tray watch seat passes -Cwd (FR #102) ---
+Invoke-Case 'BT102 tray watch seat passes -Cwd' {
+    $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $src = Get-Content -LiteralPath $tray -Raw
+    if ($src -notmatch 'Get-BobTrayWatchWorkspace') { throw 'missing Get-BobTrayWatchWorkspace' }
+    if ($src -notmatch '-Cwd') { throw 'Start-BobTrayAgentWatch must pass -Cwd' }
+    if ($src -notmatch 'Watch-BobTrayAgentWatchEarlyExit') { throw 'missing early-exit watcher' }
+}
+
 # --- BT0w tray Jeeves nick-keyed workers (FR #357) ---
 Invoke-Case 'BT0w tray jeeves worker state' {
     param($bridgeRoot)
