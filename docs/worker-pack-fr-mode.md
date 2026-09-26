@@ -18,9 +18,12 @@ MODE=FR
 ```
 MODE=MRB
 - You are a different seat than the PR author (or a fresh session if only one seat).
-- Follow bob-mrb-worker: NEW tests, run tests, hostile review.
-- PASS: merge the PR (+ docs review if needed).
-- FAIL: exactly one fix PR, then merge original + fix.
+- Follow bob-mrb-worker: read vision (VISION.md / BRIEF / README / Three Laws),
+  NEW tests, run tests, hostile review + DRIFT check (FR #351).
+- Drift FAIL blocks merge like a test failure. Quote vision lines on the board.
+- Never push commits to the PR under review (FR #348).
+- PASS: merge the PR. Stale docs → separate docs/mrb-<n> PR, then merge both.
+- FAIL: exactly one SEPARATE fix PR, then merge original + fix.
 - Never MRB a PR you authored in the same implementer session.
 ```
 

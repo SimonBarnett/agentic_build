@@ -3,10 +3,10 @@ name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. STANDARD worker steps: bob-mrb-worker (tests-first; after PASS review docs and
-  merge one docs PR with the original when needed; FAIL → exactly one fix PR
-  then merge both). No MRB PDFs. Use when the user
-  says MRB, hostile review, review the push, ready for UAT, hand off MRB,
+  in-session. STANDARD worker steps: bob-mrb-worker (tests-first + vision/drift
+  FR #351; after PASS review docs and merge one separate docs/mrb-<n> PR when
+  needed; FAIL → exactly one fix PR then merge both). No MRB PDFs. Use when the
+  user says MRB, hostile review, review the push, ready for UAT, hand off MRB,
   missing features, or /bob-hostile-mrb. Loop table is bob-build-loop.
 github: https://github.com/SimonBarnett/agentic_build
 ---
@@ -19,7 +19,7 @@ https://github.com/SimonBarnett/agentic_build.
 Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`. **Worker process STANDARD:** `bob-mrb-worker` (mermaid +
-PASS docs review/merge / FAIL one-fix-PR).
+vision/drift + PASS docs review/merge / FAIL one-fix-PR).
 
 ## Shop IRC (every MRB worker)
 
@@ -72,16 +72,13 @@ PASS **includes merge**. If the worker thinks it passed UAT, they write
 ## STANDARD worker process → `bob-mrb-worker`
 
 1. Use `gh pr checkout` in a temporary worktree; read intent + changed files
-2. BEFORE testing: add any NEW tests appropriate to the PR
-3. Run existing + new tests; hostile review
-4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
-   for stale behavior. If anything is stale, open exactly ONE docs PR against
-   `main` and merge it together with the original; if docs are fine, merge the
-   original as before. Then close the source issue/FR and hand off to a separate
-   UAT worker; only Bob stamps UAT.
-5. FAIL → create exactly ONE fix PR with the fix, then merge both
-   (original + fix). Not multiple fix PRs.
-6. Jeeves announces whatever happens (merge / fix+merge)
+2. Read vision (VISION.md / BRIEF / README / CAST IRON / Three Laws); quote lines
+3. BEFORE testing: add any NEW tests appropriate to the PR
+4. Run existing + new tests; hostile review + **drift check** (FR #351)
+5. PASS → review docs; if stale, separate `docs/mrb-<n>` PR (never push onto the
+   reviewed branch); merge; close FR; UAT handoff; only Bob stamps UAT
+6. FAIL → exactly ONE separate fix PR, then merge original + fix
+7. Jeeves announces whatever happens (merge / fix+merge)
 
 Shop channel only. Report **agent + model** on the webhook. Full mermaid
 and free-agent harvest CAST IRON: `bob-mrb-worker`.
@@ -222,22 +219,26 @@ unless this process created the merge commit.
 ## Pass bar
 
 - Feature-request MUST / MUST NOT honored
+- **Vision / drift (FR #351):** change serves the quoted vision lines; no CAST
+  IRON / Three Laws contradiction; no scope creep or under-delivery
 - Plan phases claimed as done have evidence
 - New tests appropriate to the PR were added and run
 - Missing features either requested (issue+doc) or explicitly out of scope
 - Prior version folders intact on feature work
 - No secrets in repo or prompts
 - README, skills, `/docs`, mermaid diagrams, and usage/help text match reality
-- Any stale docs are corrected in exactly one docs PR merged with the original
+- Any stale docs are corrected in exactly one **separate** `docs/mrb-<n>` PR
 - PR is merged by this MRB worker
 
 ## Fail bar (examples)
 
 - ok=true without the documented gate
+- **Drift:** tests pass but change contradicts repo vision / CAST IRON (FR #351)
 - Invented APIs
 - Breaking v1 while adding v2
 - Empty errors[] on failure paths the spec requires
 - Code landed with no FR, or an open issue with no intake doc, and the MRB did not request them
 - Worker pushed `main` or merged their own implementer PR without MRB
 - Multiple fix PRs for one FAIL (violates `bob-mrb-worker`)
+- Docs commits pushed onto the PR under review (violates FR #348)
 - Bob wrote the full MRB in-session when Cursor Agent or grok.exe could take it

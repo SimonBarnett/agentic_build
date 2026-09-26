@@ -2,18 +2,19 @@
 name: bob-mrb-worker
 description: >
   STANDARD Material Review Board worker process for every seat that does MRB.
-  Tests-first hostile review: after PASS, review docs for stale behavior; if
-  needed open exactly one docs PR and merge it with the original. FAIL opens
-  exactly one fix PR then merges original + fix. Use when the user says MRB, hostile review,
-  review the push, Start-BobMrb, bob-mrb-worker, standard MRB process, or
-  /bob-mrb-worker. Handoff launch: bob-hostile-mrb / cursor-mrb-dev. Loop:
+  Tests-first hostile review against the FR and the repo vision (drift check);
+  after PASS, review docs for stale behavior; if needed open exactly one
+  separate docs/mrb-<n> PR and merge it with the original. FAIL opens exactly
+  one fix PR then merges original + fix. Use when the user says MRB, hostile
+  review, review the push, Start-BobMrb, bob-mrb-worker, standard MRB process,
+  or /bob-mrb-worker. Handoff launch: bob-hostile-mrb / cursor-mrb-dev. Loop:
   bob-job-loop. Bob alone stamps UAT.
 github: https://github.com/SimonBarnett/agentic_build
 ---
 
 # MRB worker (STANDARD)
 
-Foundation: `harvest-agent-skills` (honesty box) -> report back to
+Foundation: `harvest-agent-skills` (honesty box / Three Laws) -> report back to
 https://github.com/SimonBarnett/agentic_build.
 
 This is the **CAST IRON** process for **all** workers doing MRB — Cursor,
@@ -26,65 +27,86 @@ Fuel / launch: `cursor-mrb-dev` / `start-bob-cursor`. Dispatcher: `bob-job-loop`
 ## Standing process (verbatim)
 
 1. Use `gh pr checkout` in a temporary worktree; read the PR intent + changed files
-2. BEFORE testing: add any NEW tests appropriate to the PR
-3. Run existing + new tests; perform the hostile review
-4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
-   for anything the PR made stale. If docs are stale, open exactly ONE docs PR
-   against `main` with the corrections and merge it together with the original;
-   if docs are OK, merge the original PR as before. Then close the source
-   issue/FR and hand off to a separate UAT worker; only Bob stamps UAT.
-5. FAIL → create exactly ONE fix PR with the fix, then merge both
+2. **Find the vision (FR #351).** Read, in order: `VISION.md` / visionary brief
+   (`*_BRIEF.md`, skills-visionary output), README purpose/goals, CAST IRON rules
+   (including Three Laws via `harvest-agent-skills`), and the source FR intent.
+   Quote 1–2 vision lines in the MRB board that the PR is judged against.
+3. BEFORE testing: add any NEW tests appropriate to the PR
+4. Run existing + new tests; perform the hostile review **and** the **drift check**
+   (separate verdict line — see below). Drift is a FAIL like a test failure.
+5. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
+   for anything the PR made stale. If docs are stale, open exactly ONE **separate**
+   docs PR from `docs/mrb-<n>-...` against `main` (never push onto the PR under
+   review — FR #348). Merge original + docs PR; if docs OK, merge original only.
+   Then close the source issue/FR and hand off to a separate UAT worker; only Bob
+   stamps UAT.
+6. FAIL → create exactly ONE **separate** fix PR with the fix, then merge both
    (original + fix). Not multiple fix PRs.
-6. Jeeves announces whatever happens (merge / fix+merge)
+7. Jeeves announces whatever happens (merge / fix+merge)
 
 ```mermaid
 flowchart LR
-  A[gh pr checkout<br/>temp worktree] --> B[Read PR intent]
-  B --> C[Add NEW tests]
-  C --> D[Run tests +<br/>hostile review]
+  A[gh pr checkout<br/>temp worktree] --> B[Read PR + FR intent]
+  B --> V[Read vision source<br/>VISION / BRIEF / README]
+  V --> C[Add NEW tests]
+  C --> D[Run tests + hostile<br/>+ drift check]
+  D -->|drift FAIL| H[Separate fix PR<br/>or leave FR open]
   D -->|PASS| E[Review docs vs<br/>new behaviour]
-  E -->|docs stale| F[One docs PR<br/>README, skills, diagrams]
+  E -->|docs stale| F[Separate docs/mrb-n PR]
   E -->|docs OK| G[Merge PR]
   F --> G
-  D -->|FAIL| H[One fix PR]
 ```
+
+_Caption: vision first; drift is a first-class FAIL; docs stay on a separate PR._
+
+## Vision / drift check (FR #351)
+
+**Drift verdict** (required line on the MRB board):
+
+- Serves the stated vision and success metric?
+- Contradicts CAST IRON / Three Laws / earlier decisions?
+- Scope creep (features/deps/behaviour not asked)?
+- Under-delivery (closes FR letter but misses intent — e.g. code never wired)?
+
+**If the PR shows the vision itself should change:** do **not** edit the vision.
+File one FR tagged `vision` for Simon; leave the product PR waiting.
+
+**No vision source found:** record `no vision source found`, review against README
++ FR only, and file **one** FR asking for `VISION.md` (dedupe: one open request
+per repo).
+
+### Worked example (tests PASS, drift FAIL)
+
+PR adds an LLM client to `gh-Jeeves` "token-free" digest path. Unit tests green;
+FR text said "improve routing". Vision (gh-Jeeves brief): GitHub event → worker
+without model tokens. **Drift FAIL** — contradicts token-free success metric.
+Fix PR removes the LLM dependency (or FR left open). MRB quotes: "token-free
+path from GitHub event to worker".
 
 ## FR mode vs MRB mode (FR #343 CAST IRON)
 
 | Mode | Who | Allowed | Forbidden |
 |------|-----|---------|-----------|
 | **FR / implementer** | Dev seat | Open one PR, post URL, stop | `gh pr merge`, self-approve+merge, close FR after self-merge |
-| **MRB** | **Different** seat (or **fresh session** if only one seat) | Tests-first review; PASS merge; FAIL one fix then merge both | Author MRB/merge of their own implementer PR in the same session |
+| **MRB** | **Different** seat (or **fresh session** if only one seat) | Tests-first + vision/drift; PASS merge; FAIL one fix then merge both | Author MRB/merge of their own implementer PR in the same session |
 
 Pack text: `docs/fr-mode-no-self-merge.md`, `docs/worker-pack-fr-mode.md`.  
-Guard: `tools/fr_self_merge_guard.py` / `tools/Assert-FrPrNoSelfMerge.ps1` (flag self-merge within N minutes).
+Guards: `tools/fr_self_merge_guard.py`, `tools/mrb_docs_branch_guard.py` (when present).
 
 ## Hard rules
 
 - **Different worker than author.** Never MRB your own implementer PR.
 - **FR authors never merge.** Opening the PR is the end of FR mode.
-- **Tests before verdict.** New tests land on the review branch (or the
-  single fix branch) before you claim PASS or FAIL. Run existing + new.
-- **PASS → docs review, then merge.** After tests and hostile review PASS,
-  review README, skills, `docs/`, mermaid diagrams, and usage/help text for
-  stale behavior. If anything is stale, open exactly **one** docs PR against
-  `main` and merge it together with the original PR; if docs are fine, merge
-  the original as before (`gh pr merge --merge`). Then close the source FR /
-  issue, pull main, and hand off to a separate UAT worker. Only Bob stamps
-  UAT. See `bob-hostile-mrb` close/merge/pull + recycle-after-merge.
-- **FAIL → one fix PR only.** Do not spawn a chain of FIX workers / many
-  fix PRs. Open **exactly one** fix branch/PR with the fix (include the
-  new tests). Then merge **both** the original PR and that one fix PR.
-  Jeeves announces both.
-- **No UAT stamp by worker.** Only Bob declares ready for human UAT. If
-  you believe it is UAT-ready, write `candidate PASS-UAT, Bob stamp
-  required` — never stamp UAT yourself.
-- **Shop channel only** for worker IRC chatter about this MRB (machine
-  shop `#<machine>`, not spam on `#bobiverse`).
-- **Webhook report:** when posting report / completion webhook, include
-  **agent + model** (e.g. cursor-agent `grok-4.6`, grok.exe `grok-4.6`).
-- No MRB PDFs. No `password=` / `XAI_API_KEY=` assignments. Never Other
-  Models. Copilot only with `-AllowCopilot`.
+- **Vision before verdict (FR #351).** Quote vision lines; drift FAIL blocks merge.
+- **Three Laws / honesty box.** Bound by `harvest-agent-skills`; do not gut CAST IRON.
+- **Tests before verdict.** New tests land before PASS or FAIL.
+- **PASS → docs review, then merge (FR #348).** Separate `docs/mrb-<n>` PR if stale;
+  never push onto the reviewed branch.
+- **FAIL → one fix PR only.** Merge original + that one fix.
+- **No UAT stamp by worker.** Only Bob stamps UAT.
+- **Shop channel only** for worker IRC about this MRB.
+- **Webhook report:** include **agent + model**.
+- No MRB PDFs. No secrets. Never Other Models. Copilot only with `-AllowCopilot`.
 
 ## After merge
 
@@ -108,4 +130,6 @@ leave MRB process only in chat memory.
 | Fuel + FIX/MRB launch until done | `cursor-mrb-dev` |
 | Driver `Start-BobBuildLoop.ps1` | `bob-job-loop` |
 | Pointer map | `bob-build-loop` |
-| Honesty box harvest | `harvest-agent-skills` |
+| Honesty box / Three Laws harvest | `harvest-agent-skills` |
+| Separate docs PR | FR #348 |
+| Vision source | `VISION.md`, skills-visionary, `*_BRIEF.md` |
