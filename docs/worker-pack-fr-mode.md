@@ -30,3 +30,9 @@ MODE=MRB
 python tools/fr_self_merge_guard.py --repo OWNER/REPO --pr N --minutes 30 --json
 # exit 2 → MRB-pending self-merge flag
 ```
+
+## Hung / slow seat (FR #353)
+
+Load skill `bob-restart-worker-seat` before stopping a seat. Diagnose first
+(slow TTFT vs hung vs out of tokens vs mis-bound slot 2). Ask the user before
+restart. Never tray-stop a mis-bound seat 2. Never touch ear/Ergo/Jeeves.
