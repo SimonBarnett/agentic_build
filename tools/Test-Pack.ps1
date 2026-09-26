@@ -1042,6 +1042,55 @@ Invoke-Case 'BT102 tray watch seat passes -Cwd' {
     if ($src -notmatch 'Watch-BobTrayAgentWatchEarlyExit') { throw 'missing early-exit watcher' }
 }
 
+# --- BT354 Get-BobDigestUrl from reportUrl (FR #354) ---
+Invoke-Case 'BT354 Get-BobDigestUrl report endpoint' {
+    param($bridgeRoot)
+    $ircPath = Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1'
+    $src = Get-Content -LiteralPath $ircPath -Raw
+    if ($src -match "return\s+'http://bob\.ntsa\.uk") { throw 'Get-BobDigestUrl must not return bob.ntsa.uk' }
+    if ($src -match "return\s+'[^']*/bob/v1/digest") { throw 'Get-BobDigestUrl must not hard-default /digest' }
+    if ($src -notmatch 'function Get-BobDigestUrl') { throw 'missing Get-BobDigestUrl' }
+    if ($src -notmatch 'reportUrl') { throw 'Get-BobDigestUrl must prefer config reportUrl' }
+
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($ircPath, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-BobDigestUrl' }, $true)
+    if (-not $fn) { throw 'AST missing Get-BobDigestUrl' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+
+    $prevDig = $env:BOB_DIGEST_URL
+    $prevAg = $env:AGENTIC_IRC_DIGEST_URL
+    try {
+        Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        $url = Get-BobDigestUrl
+        if ($url -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw "from reportUrl got=$url"
+        }
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ digestUrl = 'https://example.test/bob/v1/report'; reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        if ((Get-BobDigestUrl) -ne 'https://example.test/bob/v1/report') {
+            throw 'digestUrl must win over reportUrl'
+        }
+        function script:Get-BobiverseConfig { return $null }
+        if ((Get-BobDigestUrl) -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw 'hard default must be irc.ntsa.uk report'
+        }
+        $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/override-report'
+        if ((Get-BobDigestUrl) -ne 'http://127.0.0.1:9/override-report') {
+            throw 'BOB_DIGEST_URL override ignored'
+        }
+    }
+    finally {
+        if ($null -ne $prevDig) { $env:BOB_DIGEST_URL = $prevDig } else { Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue }
+        if ($null -ne $prevAg) { $env:AGENTIC_IRC_DIGEST_URL = $prevAg } else { Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue }
+    }
+}
+
 # --- BT0w tray Jeeves nick-keyed workers (FR #357) ---
 Invoke-Case 'BT0w tray jeeves worker state' {
     param($bridgeRoot)

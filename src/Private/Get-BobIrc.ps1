@@ -351,9 +351,21 @@ function Save-BobCursorPoolForSeat {
 }
 
 function Get-BobDigestUrl {
+    # FR #354: public GET digest is the same document as reportUrl (IIS has no /digest).
+    # Never default to bob.ntsa.uk (does not resolve).
     foreach ($cand in @($env:AGENTIC_IRC_DIGEST_URL, $env:BOB_DIGEST_URL)) {
         if ($cand -and [string]$cand.Trim()) { return [string]$cand.Trim() }
     }
+    try {
+        $cfg = Get-BobiverseConfig
+        if ($cfg -and $cfg.digestUrl -and [string]$cfg.digestUrl.Trim()) {
+            return [string]$cfg.digestUrl.Trim()
+        }
+        if ($cfg -and $cfg.reportUrl -and [string]$cfg.reportUrl.Trim()) {
+            return [string]$cfg.reportUrl.Trim()
+        }
+    }
+    catch { }
     return 'https://irc.ntsa.uk/bob/v1/report'
 }
 
