@@ -5193,6 +5193,112 @@ Invoke-Case 'BT0fr355 peer transcript newest-first + mtime cache' {
     if ($trayBody -match '\$bytes\[\$pos\.\.') { throw 'tray pull must not slice full byte array' }
 }
 
+Invoke-Case 'BT170a bulk-close requires merged PR' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-170a.log'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"OPEN","mergedAt":null}'
+    $env:BOB_FAKE_GH_ISSUE_JSON = '[]'
+    $script = Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1'
+    $failed = $false
+    try {
+        & $script -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/pull/140' 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { $failed = $true }
+    }
+    catch { $failed = $false }
+    if ($failed) { throw 'open PR must refuse close' }
+    if (Test-Path $log) {
+        $raw = Get-Content $log -Raw
+        if ($raw -match 'issue close') { throw 'must not close when PR still open' }
+    }
+}
+
+Invoke-Case 'BT170b bulk-close comments include PR URL' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $log = Join-Path $bridgeRoot 'fake-gh-170b.log'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $env:BOB_FAKE_GH_LOG = $log
+    $env:BOB_FAKE_GH_PR_VIEW_JSON = '{"state":"MERGED","mergedAt":"2026-09-22T00:00:00Z"}'
+    $prUrl = 'https://github.com/SimonBarnett/agentic_build/pull/140'
+    $issues = @(
+        [pscustomobject]@{
+            number = 200
+            title  = 'MRB PASS-nits: bulk-close-stale-mrb-boards 8be01ef'
+            state  = 'OPEN'
+            body   = "**Feature request:** https://github.com/SimonBarnett/agentic_build/issues/140`n`n## PR`n$prUrl"
+        },
+        [pscustomobject]@{
+            number = 170
+            title  = 'MRB FAIL: bulk-close-stale-mrb-boards 8be01ef'
+            state  = 'OPEN'
+            body   = 'prior fail'
+        },
+        [pscustomobject]@{
+            number = 140
+            title  = 'Bulk-close stale MRB PASS-nits boards'
+            state  = 'OPEN'
+            body   = 'product chair'
+        },
+        [pscustomobject]@{
+            number = 999
+            title  = 'MRB FAIL: unrelated-feature abcdef1'
+            state  = 'OPEN'
+            body   = 'live board'
+        }
+    ) | ConvertTo-Json -Depth 6 -Compress
+    $env:BOB_FAKE_GH_ISSUE_JSON = $issues
+    $env:BOB_FAKE_GH_ISSUE_VIEW_JSON = '{"state":"OPEN"}'
+    if (Test-Path $log) { Remove-Item $log -Force }
+    $out = & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl $prUrl 2>&1 | Out-String
+    if ($out -notmatch 'closed PASS #200') { throw "expected close PASS: $out" }
+    if ($out -notmatch 'closed FAIL #170') { throw "expected close FAIL for same slug: $out" }
+    if ($out -notmatch 'closed FR #140') { throw "expected close FR: $out" }
+    if ($out -match '999') { throw 'must not close unrelated FAIL #999' }
+    $logRaw = Get-Content $log -Raw
+    if ($logRaw -notmatch [regex]::Escape($prUrl)) { throw 'close comments must include merged PR URL' }
+    if ($logRaw -notmatch 'issue close') { throw 'expected issue close in fake gh log' }
+}
+
+Invoke-Case 'BT170c bulk-close missing gh fails' {
+    param($bridgeRoot)
+    $saved = $env:BOB_GH_EXE
+    $env:BOB_GH_EXE = Join-Path $bridgeRoot 'no-gh.exe'
+    $threw = $false
+    try {
+        & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/pull/1' 2>&1 | Out-Null
+    }
+    catch { $threw = $true }
+    finally { $env:BOB_GH_EXE = $saved }
+    if (-not $threw) { throw 'missing gh.exe must fail' }
+}
+
+Invoke-Case 'BT170d bulk-close Repo has no agentic_irc default' {
+    $src = Get-Content (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Raw
+    if ($src -match "\[Parameter\(Mandatory\)\]\[string\]\`$Repo\s*=\s*'SimonBarnett/agentic_irc'") {
+        throw 'Repo must not default to SimonBarnett/agentic_irc'
+    }
+    if ($src -notmatch 'MergedPrUrl') { throw 'MergedPrUrl mandatory parameter required' }
+    if ($src -notmatch 'Test-BobGhPrIsMerged') { throw 'must verify PR merged before close' }
+}
+
+Invoke-Case 'BT170e bulk-close bad MergedPrUrl refuses' {
+    param($bridgeRoot)
+    $fakeGh = Join-Path $RepoRoot 'tests\fixtures\Fake-Gh.ps1'
+    $env:BOB_GH_EXE = $fakeGh
+    $env:BOB_FAKE_GH_MODE = 'ok'
+    $threw = $false
+    try {
+        & (Join-Path $RepoRoot 'tools\Close-BobMrbPassedIssues.ps1') -Repo 'SimonBarnett/agentic_build' -MergedPrUrl 'https://github.com/SimonBarnett/agentic_build/issues/140' 2>&1 | Out-Null
+    }
+    catch { $threw = $true }
+    if (-not $threw) { throw 'MergedPrUrl without /pull/N must refuse' }
+}
+
 Invoke-Case 'BT0gh1 gh readiness absent gh' {
     param($bridgeRoot)
     $savedGh = $env:BOB_GH_EXE
