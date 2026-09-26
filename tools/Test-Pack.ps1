@@ -5155,6 +5155,11 @@ Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
     if ([string]$sel.reason -ne 'needs Simon: API key') { throw "reason=$($sel.reason)" }
     if ([string]$sel.error -ne 'no_tokens') { throw "error=$($sel.error)" }
 
+    $pin = Select-BobGitWorker -Capacity $cap -Machine flamingo -Fuel cursor-models -AllowOnDemand
+    if (-not $pin.wait) { throw 'pinned exhausted fuel must wait (FR #352 / MRB fix)' }
+    if ([string]$pin.reason -ne 'needs Simon: API key') { throw "pin reason=$($pin.reason)" }
+    if ([string]$pin.error -ne 'no_tokens') { throw "pin error=$($pin.error)" }
+
     if (-not (Test-BobQuotaFailureText -Text 'HTTP 402 Payment Required')) { throw '402 must match' }
     if (-not (Test-BobQuotaFailureText -Text 'rate limit 429')) { throw '429 must match' }
     if (-not (Test-BobQuotaFailureText -Text 'out of credits on this account')) { throw 'credits must match' }

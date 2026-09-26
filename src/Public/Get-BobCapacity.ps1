@@ -487,6 +487,16 @@ function Select-BobGitWorker {
         if (-not (Test-BobMachineCanStrikeFuel -Machine $m -Fuel $wantFuel)) {
             return [pscustomobject]@{ wait = $true; machine = $null; fuel = $null; reason = 'pin rejected (ineligible fuel)' }
         }
+        # FR #352: pinned machine+fuel must still refuse exhausted pools (needs Simon: API key).
+        if (-not (Test-BobFuelHasIncluded -Capacity $Capacity -Machine $m -Fuel $wantFuel -AllowOnDemand:$AllowOnDemand)) {
+            return [pscustomobject]@{
+                wait    = $true
+                machine = [string]$m.id
+                fuel    = $wantFuel
+                reason  = 'needs Simon: API key'
+                error   = 'no_tokens'
+            }
+        }
         return [pscustomobject]@{ wait = $false; machine = [string]$m.id; fuel = $wantFuel }
     }
 
