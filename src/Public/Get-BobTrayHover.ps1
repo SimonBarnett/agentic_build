@@ -860,24 +860,157 @@ function Get-BobCursorGroupRemainFromSeatCache {
     return $null
 }
 
+function Test-BobTrayWorkerNickKey {
+    # Shop seat nick grammar: {machine}-{pid} (FR #357 / gh-Jeeves workers map).
+    param([string]$Key)
+    return ([string]$Key -match '^[A-Za-z0-9_]+-\d+$')
+}
+
+function Get-BobTrayWorkersFromNickMap {
+    # Jeeves digest: workers is an object keyed by nick → {state,job,ts} (not an array).
+    param($WorkersNode, [string]$MachineIdFilter = '')
+    $out = @()
+    if (-not $WorkersNode) { return $out }
+
+    $isNickMap = $false
+    if ($WorkersNode -is [pscustomobject] -or $WorkersNode -is [System.Collections.IDictionary]) {
+        foreach ($prop in @($WorkersNode.PSObject.Properties)) {
+            if (Test-BobTrayWorkerNickKey ([string]$prop.Name)) { $isNickMap = $true; break }
+        }
+    }
+    function Resolve-BobTraySeatMachineId {
+        param([string]$Nick, [string]$Filter)
+        $nickMachine = $null
+        if ($Nick -match '^([A-Za-z0-9_]+)-\d+$') {
+            $nickMachine = [string]$Matches[1]
+        }
+        if ($Filter) {
+            if ($nickMachine -and ($nickMachine.ToLowerInvariant() -ne $Filter.ToLowerInvariant())) {
+                return $null
+            }
+            return $Filter
+        }
+        if ($nickMachine) { return $nickMachine }
+        $mac = Resolve-BobiverseMachineFromIrcNick $Nick
+        # Ignore bogus ids equal to the full nick (empty nicks{} Resolve-BobiverseMachineId passthrough).
+        if ($mac -and $mac -ne $Nick) { return $mac }
+        return $null
+    }
+
+    if ($isNickMap) {
+        foreach ($prop in @($WorkersNode.PSObject.Properties)) {
+            $nick = [string]$prop.Name
+            if (-not (Test-BobTrayWorkerNickKey $nick)) { continue }
+            $mac = Resolve-BobTraySeatMachineId -Nick $nick -Filter $MachineIdFilter
+            if (-not $mac) { continue }
+            $val = $prop.Value
+            $state = 'idle'
+            $job = ''
+            if ($val -is [pscustomobject] -or $val -is [System.Collections.IDictionary]) {
+                if ($val.state) { $state = [string]$val.state }
+                if ($val.job) { $job = [string]$val.job }
+                elseif ($val.working_on) { $job = [string]$val.working_on }
+            }
+            elseif ($null -ne $val -and [string]$val -ne '') {
+                $job = [string]$val
+            }
+            $out += ,[pscustomobject]@{
+                nick    = $nick
+                machine = $mac
+                state   = $state
+                job     = $job
+            }
+        }
+        return $out
+    }
+
+    # Legacy: array of nick strings or objects with .nick
+    foreach ($wn in @($WorkersNode)) {
+        if (-not $wn) { continue }
+        $nick = [string]$wn
+        $state = 'idle'
+        $job = ''
+        if ($wn -is [pscustomobject] -or $wn -is [System.Collections.IDictionary]) {
+            if ($wn.nick) { $nick = [string]$wn.nick }
+            elseif ($wn.id) { $nick = [string]$wn.id }
+            if ($wn.state) { $state = [string]$wn.state }
+            if ($wn.job) { $job = [string]$wn.job }
+            elseif ($wn.working_on) { $job = [string]$wn.working_on }
+        }
+        if (-not (Test-BobTrayWorkerNickKey $nick)) { continue }
+        $mac = Resolve-BobTraySeatMachineId -Nick $nick -Filter $MachineIdFilter
+        if (-not $mac) { continue }
+        $out += ,[pscustomobject]@{
+            nick    = $nick
+            machine = $mac
+            state   = $state
+            job     = $job
+        }
+    }
+    return $out
+}
+
+function Add-BobTrayWorkersToMachineMap {
+    param([hashtable]$WorkersByMachine, [object[]]$Seats)
+    foreach ($seat in @($Seats)) {
+        if (-not $seat) { continue }
+        $mid = [string]$seat.machine
+        if (-not $mid) { continue }
+        if (-not $WorkersByMachine.ContainsKey($mid)) {
+            $WorkersByMachine[$mid] = [pscustomobject]@{ seats = @() }
+        }
+        $cur = $WorkersByMachine[$mid]
+        $list = @()
+        if ($cur.seats) { $list = @($cur.seats) }
+        # Dedupe by nick (machine-level wins if already present).
+        $nick = [string]$seat.nick
+        $already = $false
+        foreach ($s in $list) {
+            if ([string]$s.nick -eq $nick) { $already = $true; break }
+        }
+        if ($already) { continue }
+        $list += ,$seat
+        $WorkersByMachine[$mid] = [pscustomobject]@{ seats = $list }
+    }
+}
+
 function New-BobTrayIrcWorkerJobRow {
-    param([string]$MachineId, [string]$Description, [string]$Nick)
-    $desc = $Description
-    if (-not $desc) { $desc = 'irc agent' }
+    # FR #357: seat rows show "<STATE> <job>"; moot ear fallback is "ear online" (not START).
+    param(
+        [string]$MachineId,
+        [string]$Description,
+        [string]$Nick,
+        [string]$State = 'ear online'
+    )
+    $stRaw = ([string]$State).Trim()
+    if (-not $stRaw) { $stRaw = 'ear online' }
+    $desc = ([string]$Description).Trim()
+    if ($stRaw -eq 'ear online') {
+        $line = 'ear online'
+        $desc = 'ear online'
+    }
+    else {
+        $stShow = $stRaw.ToUpperInvariant()
+        if (-not $desc) { $desc = if ($Nick) { [string]$Nick } else { 'irc agent' } }
+        $line = ('{0} {1}' -f $stShow, $desc).Trim()
+    }
     $model = 'irc'
     if ($Nick) { $model = [string]$Nick }
-    $job = [pscustomobject]@{
-        id          = ('irc-worker-' + $MachineId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
-        machine     = $MachineId
-        repo        = 'irc'
-        sha         = $null
-        model       = $model
-        description = $desc
-        run_time    = $null
-        state       = 'START'
-        source      = 'irc-worker'
+    return [pscustomobject]@{
+        id                    = ('irc-worker-' + $MachineId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        id8                   = 'irc'
+        machine               = $MachineId
+        repo                  = 'irc'
+        sha                   = $null
+        model                 = $model
+        description           = $desc
+        run_time              = $null
+        duration              = $null
+        state                 = $stRaw
+        line                  = $line
+        cwd                   = $null
+        context_remaining_pct = $null
     }
-    return ConvertTo-BobTrayJobRow -Job $job -DefaultMachine $MachineId -State 'START' -SkipGit
 }
 
 function Expand-BobReportDigestView {
@@ -954,20 +1087,34 @@ function Expand-BobReportDigestView {
                     }
                 }
             }
-            $wCount = 0
-            $wOn = $null
+            # FR #357: machines.<id>.workers is nick-keyed {state,job,ts}, not a count/array.
             $nodeNames = @($node.PSObject.Properties.Name)
-            if ($nodeNames -contains 'workers' -and $null -ne $node.workers -and [string]$node.workers -ne '') {
-                if ($node.workers -is [System.Array] -or ($node.workers -is [System.Collections.IEnumerable] -and $node.workers -isnot [string])) {
-                    $wCount = @($node.workers).Count
+            if ($nodeNames -contains 'workers' -and $null -ne $node.workers) {
+                $seats = @(Get-BobTrayWorkersFromNickMap -WorkersNode $node.workers -MachineIdFilter $mid)
+                if ($seats.Count -eq 0 -and $nodeNames -contains 'working_on' -and $node.working_on) {
+                    # Legacy single working_on string with no nick map.
+                    $seats = @(
+                        [pscustomobject]@{
+                            nick    = ''
+                            machine = $mid
+                            state   = 'busy'
+                            job     = [string]$node.working_on
+                        }
+                    )
                 }
-                else {
-                    try { $wCount = [int]$node.workers } catch { }
+                if ($seats.Count -gt 0) {
+                    Add-BobTrayWorkersToMachineMap -WorkersByMachine $workersByMachine -Seats $seats
                 }
             }
-            if ($nodeNames -contains 'working_on' -and $node.working_on) { $wOn = [string]$node.working_on }
-            if ($wCount -gt 0 -or $wOn) {
-                $workersByMachine[$mid] = [pscustomobject]@{ count = $wCount; working_on = $wOn }
+            elseif ($nodeNames -contains 'working_on' -and $node.working_on) {
+                Add-BobTrayWorkersToMachineMap -WorkersByMachine $workersByMachine -Seats @(
+                    [pscustomobject]@{
+                        nick    = ''
+                        machine = $mid
+                        state   = 'busy'
+                        job     = [string]$node.working_on
+                    }
+                )
             }
         }
     }
@@ -1003,32 +1150,10 @@ function Expand-BobReportDigestView {
         }
     }
 
+    # Top-level workers{nick:{state,job}} — fill machines that lack seat rows (FR #357).
     if ($Digest.workers) {
-        foreach ($wn in @($Digest.workers)) {
-            if (-not $wn) { continue }
-            $nick = [string]$wn
-            if ($wn -is [pscustomobject] -or $wn -is [System.Collections.IDictionary]) {
-                if ($wn.nick) { $nick = [string]$wn.nick }
-                elseif ($wn.id) { $nick = [string]$wn.id }
-            }
-            $mac = Resolve-BobiverseMachineFromIrcNick $nick
-            if (-not $mac) { continue }
-            $desc = 'irc agent'
-            if ($wn -is [pscustomobject] -and $wn.working_on) { $desc = [string]$wn.working_on }
-            $cur = $workersByMachine[$mac]
-            if (-not $cur) {
-                $workersByMachine[$mac] = [pscustomobject]@{ count = 1; working_on = $desc; nick = $nick }
-            }
-            else {
-                $cnt = [int]$cur.count
-                if ($cnt -lt 1) { $cnt = 1 }
-                $workersByMachine[$mac] = [pscustomobject]@{
-                    count      = $cnt + 1
-                    working_on = $(if ($cur.working_on) { [string]$cur.working_on } else { $desc })
-                    nick       = $nick
-                }
-            }
-        }
+        $topSeats = @(Get-BobTrayWorkersFromNickMap -WorkersNode $Digest.workers)
+        Add-BobTrayWorkersToMachineMap -WorkersByMachine $workersByMachine -Seats $topSeats
     }
 
     return [pscustomobject]@{
@@ -1716,17 +1841,32 @@ function Get-BobTrayHover {
         }
         if ($rows.Count -eq 0 -and $digestWorkersByMachine.ContainsKey($mid)) {
             $wi = $digestWorkersByMachine[$mid]
-            $desc = $null
-            if ($wi.working_on) { $desc = [string]$wi.working_on }
-            $nick = $null
-            if ($wi.nick) { $nick = [string]$wi.nick }
-            $rows += ,(New-BobTrayIrcWorkerJobRow -MachineId $mid -Description $desc -Nick $nick)
+            $seats = @()
+            if ($wi.seats) { $seats = @($wi.seats) }
+            elseif ($wi.working_on -or $wi.nick) {
+                # Legacy single-slot shape
+                $seats = @(
+                    [pscustomobject]@{
+                        nick  = $(if ($wi.nick) { [string]$wi.nick } else { '' })
+                        state = 'busy'
+                        job   = $(if ($wi.working_on) { [string]$wi.working_on } else { '' })
+                    }
+                )
+            }
+            foreach ($seat in $seats) {
+                $rows += ,(New-BobTrayIrcWorkerJobRow `
+                        -MachineId $mid `
+                        -Description ([string]$seat.job) `
+                        -Nick ([string]$seat.nick) `
+                        -State ([string]$seat.state))
+            }
         }
+        # Moot ear fallback only when no seat workers (FR #357) — label "ear online", not START.
         if ($rows.Count -eq 0 -and $moot) {
             foreach ($nk in @($moot.nicks)) {
                 $mac = Resolve-BobiverseMachineFromIrcNick $nk
                 if ($mac -eq $mid) {
-                    $rows += ,(New-BobTrayIrcWorkerJobRow -MachineId $mid -Description 'on #bobiverse' -Nick $nk)
+                    $rows += ,(New-BobTrayIrcWorkerJobRow -MachineId $mid -Description 'ear online' -Nick $nk -State 'ear online')
                     break
                 }
             }

@@ -1028,6 +1028,63 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
 
+# --- BT0w tray Jeeves nick-keyed workers (FR #357) ---
+Invoke-Case 'BT0w tray jeeves worker state' {
+    param($bridgeRoot)
+    $null = Register-BobMachine -Id testhost -CwdRoots $bridgeRoot
+    if (-not (Test-BobTrayWorkerNickKey 'testhost-31712')) { throw 'machine-pid nick must match' }
+    if (Test-BobTrayWorkerNickKey 'bob-testhost') { throw 'ear nick must not match worker grammar' }
+
+    $digest = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            testhost = [pscustomobject]@{
+                workers = [pscustomobject]@{
+                    'testhost-31712' = [pscustomobject]@{
+                        state = 'busy'
+                        job   = 'FR SimonBarnett/agentic_build#357'
+                        ts    = '2026-09-26T10:00:00Z'
+                    }
+                }
+                working_on = ''
+            }
+        }
+        workers = [pscustomobject]@{
+            'testhost-31712' = [pscustomobject]@{
+                state = 'busy'
+                job   = 'FR SimonBarnett/agentic_build#357'
+            }
+            'bob-testhost' = [pscustomobject]@{
+                state = 'idle'
+                job   = ''
+            }
+        }
+    }
+    $view = Expand-BobReportDigestView -Digest $digest
+    if (-not $view.workersByMachine.ContainsKey('testhost')) {
+        throw 'expected testhost in workersByMachine'
+    }
+    $seats = @($view.workersByMachine['testhost'].seats)
+    if ($seats.Count -lt 1) { throw "expected seat rows, got $($seats.Count)" }
+    $hit = $seats | Where-Object { $_.nick -eq 'testhost-31712' } | Select-Object -First 1
+    if (-not $hit) { throw 'missing testhost-31712 seat' }
+    if ([string]$hit.state -ne 'busy') { throw "state=$($hit.state)" }
+    if ([string]$hit.job -notmatch 'agentic_build#357') { throw "job=$($hit.job)" }
+
+    $row = New-BobTrayIrcWorkerJobRow -MachineId 'testhost' -Description $hit.job -Nick $hit.nick -State $hit.state
+    if ([string]$row.line -ne 'BUSY FR SimonBarnett/agentic_build#357') {
+        throw "seat line=$($row.line)"
+    }
+    if ([string]$row.line -match '(?i)\bSTART\b') { throw 'seat row must not say START' }
+
+    $ear = New-BobTrayIrcWorkerJobRow -MachineId 'testhost' -Description 'on #bobiverse' -Nick 'bob-testhost' -State 'ear online'
+    if ([string]$ear.line -ne 'ear online') { throw "ear line=$($ear.line)" }
+    if ([string]$ear.state -eq 'START') { throw 'ear fallback must not use START' }
+
+    $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
+    if ($hoverSrc -notmatch 'Get-BobTrayWorkersFromNickMap') { throw 'hover must parse nick-keyed workers' }
+    if ($hoverSrc -notmatch 'ear online') { throw 'hover must label moot fallback ear online' }
+}
+
 # --- BT0m tray tip placement (NC-T01..NC-T03) ---
 Invoke-Case 'BT0m tray tip placement' {
     $icon = @{ X = 1880; Y = 1048; Width = 24; Height = 24 }
@@ -1745,7 +1802,8 @@ Invoke-Case 'BT0fr341 no irc idle busy status talk' {
     }
     if ($src -match 'return "\$mid is idle\."') { throw 'must not return is idle (FR #341)' }
     if ($src -match 'return "\$mid is busy\."') { throw 'must not return is busy (FR #341)' }
-    if ($src -match 'return "\$mid is operational\."') { throw 'must not return is operational (FR #341)' }|is busy\.|is operational\.') {
+    if ($src -match 'return "\$mid is operational\."') { throw 'must not return is operational (FR #341)' }
+    if ($src -match 'is idle\.|is busy\.|is operational\.') {
         throw 'Get-BobIrc.ps1 must not contain idle/busy/operational talk strings'
     }
 
