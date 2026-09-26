@@ -1087,7 +1087,10 @@ Invoke-Case 'BT369 tray seat work dir never live ai' {
         if ($got3 -notmatch 'bob-seat-work') { throw "refused ai parent should fall back to bob-seat-work, got $got3" }
 
         $src = Get-Content -LiteralPath $trayPath -Raw
-        if ($src.IndexOf("'-Cwd', `$cwd") -lt 0) { throw 'launchArgs must include -Cwd $cwd' }
+        # FR #345 builds args via Build-BobWatchSeatLaunchArgs -Cwd $cwd (not inline '-Cwd', $cwd).
+        if ($src -notmatch '(?s)Build-BobWatchSeatLaunchArgs[\s\S]*?-Cwd\s+\$cwd' -and $src.IndexOf("'-Cwd', `$cwd") -lt 0) {
+            throw 'launch must pass -Cwd $cwd (inline or Build-BobWatchSeatLaunchArgs)'
+        }
     }
     finally {
         if ($null -ne $prevWork) { $env:BOB_SEAT_WORK = $prevWork } else { Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue }
