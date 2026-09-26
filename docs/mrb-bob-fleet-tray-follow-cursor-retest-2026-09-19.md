@@ -1,4 +1,4 @@
-﻿# Hostile MRB - Bob tray hover park-once retest (2026-09-19)
+# Hostile MRB - Bob tray hover park-once retest (2026-09-19)
 
 **Tip:** e50ce69 Tray: park hover card near icon; do not follow cursor (NC-T01)
 **Prior FAIL:** docs/mrb-bob-fleet-tray-follow-cursor-2026-09-19.md

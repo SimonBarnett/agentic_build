@@ -1,4 +1,4 @@
-﻿# Test-Pack must not join live IRC (FR #329)
+# Test-Pack must not join live IRC (FR #329)
 
 `tools/Test-Pack.ps1` sets `BOB_TEST_NO_LIVE_IRC=1` for the whole run.
 `Start-BobWorkerIrcAgent` refuses live Ergo (`irc.ntsa.uk`) when that env is set,

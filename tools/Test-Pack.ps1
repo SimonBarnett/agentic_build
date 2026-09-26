@@ -1033,13 +1033,119 @@ Invoke-Case 'BT0l tray hover' {
     if ($skillBox -notmatch 'creditUsagePercent') { throw 'box-usage skill must name creditUsagePercent source' }
 }
 
-# --- BT102 tray watch seat passes -Cwd (FR #102) ---
+# --- BT102 tray watch seat passes -Cwd (FR #102 / #369) ---
 Invoke-Case 'BT102 tray watch seat passes -Cwd' {
     $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
     $src = Get-Content -LiteralPath $tray -Raw
     if ($src -notmatch 'Get-BobTrayWatchWorkspace') { throw 'missing Get-BobTrayWatchWorkspace' }
     if ($src -notmatch '-Cwd') { throw 'Start-BobTrayAgentWatch must pass -Cwd' }
     if ($src -notmatch 'Watch-BobTrayAgentWatchEarlyExit') { throw 'missing early-exit watcher' }
+    if ($src -notmatch 'bob-seat-work') { throw 'Get-BobTrayWatchWorkspace must default under bob-seat-work' }
+    if ($src -notmatch 'BOB_SEAT_WORK') { throw 'seat work dir must be configurable via BOB_SEAT_WORK' }
+}
+
+# --- BT369 tray seat work dir never live \ai (FR #369) ---
+Invoke-Case 'BT369 tray seat work dir never live ai' {
+    param($bridgeRoot)
+    $trayPath = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tok, [ref]$err)
+    foreach ($name in @('Get-BobTrayWatchWorkspace', 'Get-BobTrayMachineId')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "Watch-BobTray must define $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function script:Write-TrayLog([string]$m) { }
+
+    $parent = Join-Path $bridgeRoot 'bob-seat-work'
+    $exact = Join-Path $bridgeRoot 'exact-seat'
+    $aiLive = Join-Path $bridgeRoot 'ai'
+    New-Item -ItemType Directory -Force -Path $aiLive | Out-Null
+
+    $prevWork = $env:BOB_SEAT_WORK
+    $prevRoot = $env:BOB_SEAT_WORK_ROOT
+    $prevMid = $env:BOB_MACHINE_ID
+    try {
+        $env:BOB_MACHINE_ID = 'ionos'
+        Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue
+        $env:BOB_SEAT_WORK_ROOT = $parent
+        $got = Get-BobTrayWatchWorkspace -FallbackRoot $aiLive
+        $want = [IO.Path]::GetFullPath((Join-Path $parent 'ionos'))
+        if ($got -ne $want) { throw "default seat cwd=$got want=$want" }
+        if (-not (Test-Path -LiteralPath $got)) { throw 'seat work dir must be created' }
+        if ($got -match '(?i)[/\\]ai$') { throw 'must not resolve to \\ai' }
+
+        $env:BOB_SEAT_WORK = $exact
+        $got2 = Get-BobTrayWatchWorkspace
+        if ($got2 -ne [IO.Path]::GetFullPath($exact)) { throw "BOB_SEAT_WORK exact failed: $got2" }
+        if (-not (Test-Path -LiteralPath $got2)) { throw 'exact seat path must be created' }
+
+        Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue
+        $env:BOB_SEAT_WORK_ROOT = $aiLive
+        $got3 = Get-BobTrayWatchWorkspace
+        if ($got3 -match '(?i)[/\\]ai([/\\]|$)') { throw "ai parent must be refused, got $got3" }
+        if ($got3 -notmatch 'bob-seat-work') { throw "refused ai parent should fall back to bob-seat-work, got $got3" }
+
+        $src = Get-Content -LiteralPath $trayPath -Raw
+        # FR #345 builds args via Build-BobWatchSeatLaunchArgs -Cwd $cwd (not inline '-Cwd', $cwd).
+        if ($src -notmatch '(?s)Build-BobWatchSeatLaunchArgs[\s\S]*?-Cwd\s+\$cwd' -and $src.IndexOf("'-Cwd', `$cwd") -lt 0) {
+            throw 'launch must pass -Cwd $cwd (inline or Build-BobWatchSeatLaunchArgs)'
+        }
+    }
+    finally {
+        if ($null -ne $prevWork) { $env:BOB_SEAT_WORK = $prevWork } else { Remove-Item Env:BOB_SEAT_WORK -ErrorAction SilentlyContinue }
+        if ($null -ne $prevRoot) { $env:BOB_SEAT_WORK_ROOT = $prevRoot } else { Remove-Item Env:BOB_SEAT_WORK_ROOT -ErrorAction SilentlyContinue }
+        if ($null -ne $prevMid) { $env:BOB_MACHINE_ID = $prevMid } else { Remove-Item Env:BOB_MACHINE_ID -ErrorAction SilentlyContinue }
+    }
+}
+
+# --- BT354 Get-BobDigestUrl from reportUrl (FR #354) ---
+Invoke-Case 'BT354 Get-BobDigestUrl report endpoint' {
+    param($bridgeRoot)
+    $ircPath = Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1'
+    $src = Get-Content -LiteralPath $ircPath -Raw
+    if ($src -match "return\s+'http://bob\.ntsa\.uk") { throw 'Get-BobDigestUrl must not return bob.ntsa.uk' }
+    if ($src -match "return\s+'[^']*/bob/v1/digest") { throw 'Get-BobDigestUrl must not hard-default /digest' }
+    if ($src -notmatch 'function Get-BobDigestUrl') { throw 'missing Get-BobDigestUrl' }
+    if ($src -notmatch 'reportUrl') { throw 'Get-BobDigestUrl must prefer config reportUrl' }
+
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($ircPath, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-BobDigestUrl' }, $true)
+    if (-not $fn) { throw 'AST missing Get-BobDigestUrl' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+
+    $prevDig = $env:BOB_DIGEST_URL
+    $prevAg = $env:AGENTIC_IRC_DIGEST_URL
+    try {
+        Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue
+        Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        $url = Get-BobDigestUrl
+        if ($url -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw "from reportUrl got=$url"
+        }
+        function script:Get-BobiverseConfig {
+            return [pscustomobject]@{ digestUrl = 'https://example.test/bob/v1/report'; reportUrl = 'https://irc.ntsa.uk/bob/v1/report' }
+        }
+        if ((Get-BobDigestUrl) -ne 'https://example.test/bob/v1/report') {
+            throw 'digestUrl must win over reportUrl'
+        }
+        function script:Get-BobiverseConfig { return $null }
+        if ((Get-BobDigestUrl) -ne 'https://irc.ntsa.uk/bob/v1/report') {
+            throw 'hard default must be irc.ntsa.uk report'
+        }
+        $env:BOB_DIGEST_URL = 'http://127.0.0.1:9/override-report'
+        if ((Get-BobDigestUrl) -ne 'http://127.0.0.1:9/override-report') {
+            throw 'BOB_DIGEST_URL override ignored'
+        }
+    }
+    finally {
+        if ($null -ne $prevDig) { $env:BOB_DIGEST_URL = $prevDig } else { Remove-Item Env:BOB_DIGEST_URL -ErrorAction SilentlyContinue }
+        if ($null -ne $prevAg) { $env:AGENTIC_IRC_DIGEST_URL = $prevAg } else { Remove-Item Env:AGENTIC_IRC_DIGEST_URL -ErrorAction SilentlyContinue }
+    }
 }
 
 # --- BT0w tray Jeeves nick-keyed workers (FR #357) ---

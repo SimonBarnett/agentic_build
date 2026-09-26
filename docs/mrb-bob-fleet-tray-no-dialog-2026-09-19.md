@@ -1,4 +1,4 @@
-﻿# Hostile MRB - Bob tray dark hover card not shown (2026-09-19)
+# Hostile MRB - Bob tray dark hover card not shown (2026-09-19)
 
 **Repo:** SimonBarnett/agentic_build
 **Tip:** 1b54cdd / e50ce69 (park-once PASS claimed)

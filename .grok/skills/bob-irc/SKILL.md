@@ -11,6 +11,10 @@ description: >
 
 Foundation: harvest-agent-skills (honesty box) -> report back to https://github.com/SimonBarnett/agentic_build.
 
+**Outbox / file encoding (FR #347):** append IRC outbox and repo text as UTF-8
+**without BOM** (`tools/Utf8NoBom.ps1` / `UTF8Encoding $false`). Never PS5
+`Add-Content -Encoding UTF8` (writes BOM). See `docs/utf8-no-bom.md`.
+
 Canonical playbook: `https://github.com/SimonBarnett/agentic_irc`
 `.grok/skills/bob-irc/SKILL.md` (clone `C:\ai\agentic_irc` else `D:\ai\...`
 else `C:\src\...`). Nicks/host/`reportUrl` live in this repo's

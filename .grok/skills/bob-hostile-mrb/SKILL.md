@@ -1,12 +1,12 @@
----
+﻿---
 name: bob-hostile-mrb
 description: >
   Hostile Material Review Board of a worker PR as a GitHub issue. Bob hands
   the review off (Cursor Models, then grok.exe). He does not write the MRB
-  in-session. STANDARD worker steps: bob-mrb-worker (tests-first; after PASS review docs and
-  merge one docs PR with the original when needed; FAIL → exactly one fix PR
-  then merge both). No MRB PDFs. Use when the user
-  says MRB, hostile review, review the push, ready for UAT, hand off MRB,
+  in-session. STANDARD worker steps: bob-mrb-worker (tests-first + vision/drift
+  FR #351; after PASS review docs and merge one separate docs/mrb-<n> PR when
+  needed; FAIL â†’ exactly one fix PR then merge both). No MRB PDFs. Use when the
+  user says MRB, hostile review, review the push, ready for UAT, hand off MRB,
   missing features, or /bob-hostile-mrb. Loop table is bob-build-loop.
 github: https://github.com/SimonBarnett/agentic_build
 ---
@@ -19,14 +19,14 @@ https://github.com/SimonBarnett/agentic_build.
 Git (the product repo's issues + `docs/feature-request-*.md`) is the single
 source of truth. **Do not generate `docs/mrb-*.pdf`.** Loop table:
 `bob-build-loop`. **Worker process STANDARD:** `bob-mrb-worker` (mermaid +
-PASS docs review/merge / FAIL one-fix-PR).
+vision/drift + PASS docs review/merge / FAIL one-fix-PR).
 
 ## Shop IRC (every MRB worker)
 
 Load skill `bob-shop-worker` as soon as this process starts on a fleet box.
 JOIN `#<machine-id>` as `w-<shortid>-<pid>`. Set `working_on` from the FR
 title. POST `reportUrl`. Do not JOIN `#bobiverse`. Do not `!report`.
-Conversation stdout → shop. Thinking/tool traces → open Query only.
+Conversation stdout â†’ shop. Thinking/tool traces â†’ open Query only.
 On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
 
 ## Bob hands off (do this first)
@@ -34,7 +34,7 @@ On exit QUIT the shop. Canon: agentic_irc #46 / this repo #124.
 Bob **does not write** the review in Grok Bot / this grok.exe session.
 The implementer does not review their own PR (**FR #343**: FR mode opens
 the PR and **never** `gh pr merge`; MRB is a **different** seat or fresh
-session — `docs/fr-mode-no-self-merge.md`). Dispatcher runs
+session â€” `docs/fr-mode-no-self-merge.md`). Dispatcher runs
 `tools/Start-BobBuildLoop.ps1` (skill `bob-job-loop`) or, for a single
 SHA, starts a **new** MRB worker (`Start-BobMrbHandoff`, `-Kind mrb`) as
 soon as the PR exists. The driver comments the new URL on the prior FAIL
@@ -59,7 +59,7 @@ on the machine that will post.
 
 After a FIX **PR**, hand off **again** only when a **new** head still needs
 a separate board (legacy multi-cycle). Under `bob-mrb-worker`, FAIL opens
-**exactly one** fix PR and the same MRB seat merges original + that fix —
+**exactly one** fix PR and the same MRB seat merges original + that fix â€”
 do not spawn a chain of FIX workers.
 
 IRC verb `MRB <job> <nick>` is the machine nick; fuel is in the job file.
@@ -69,34 +69,32 @@ or `PASS` / `PASS-nits` only (board titles may still use `PASS-nits`).
 PASS **includes merge**. If the worker thinks it passed UAT, they write
 `candidate PASS-UAT, Bob stamp required`.
 
-## STANDARD worker process → `bob-mrb-worker`
+## STANDARD worker process â†’ `bob-mrb-worker`
 
 1. Use `gh pr checkout` in a temporary worktree; read intent + changed files
-2. BEFORE testing: add any NEW tests appropriate to the PR
-3. Run existing + new tests; hostile review
-4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
-   for stale behavior. If anything is stale, open exactly ONE docs PR against
-   `main` and merge it together with the original; if docs are fine, merge the
-   original as before. Then close the source issue/FR and hand off to a separate
-   UAT worker; only Bob stamps UAT.
-5. FAIL → create exactly ONE fix PR with the fix, then merge both
-   (original + fix). Not multiple fix PRs.
-6. Jeeves announces whatever happens (merge / fix+merge)
+2. Read vision (VISION.md / BRIEF / README / CAST IRON / Three Laws); quote lines
+3. BEFORE testing: add any NEW tests appropriate to the PR
+4. Run existing + new tests; hostile review + **drift check** (FR #351)
+6. PASS â†’ review docs; if stale, separate `docs/mrb-<n>` PR (never push onto the
+   reviewed branch); merge; close FR; UAT handoff; only Bob stamps UAT
+7. FAIL â†’ exactly ONE separate fix PR, then merge original + fix
+8. Jeeves announces whatever happens (merge / fix+merge)
 
 Shop channel only. Report **agent + model** on the webhook. Full mermaid
 and free-agent harvest CAST IRON: `bob-mrb-worker`.
 
-## PASS / PASS-nits MUST close, merge, and pull (Simon 2026-09-22 — VERY important)
+## PASS / PASS-nits MUST close, merge, and pull (Simon 2026-09-22 â€” VERY important)
 
 A PASS that leaves git dirty is not finished. The MRB worker MUST,
 in this order, before the driver prints DONE:
 
 1. After PASS, review README, skills, `docs/`, mermaid diagrams, and
-   usage/help text against the new behavior. If stale, open exactly one docs
-   PR against `main`; merge that docs PR together with the reviewed PR. If
-   docs are fine, merge the reviewed PR as before (`gh pr merge --merge`).
+   usage/help text against the new behavior. If stale, open exactly one
+   **separate** `docs/mrb-<n>-...` PR against `main` (never push onto the
+   reviewed branch â€” FR #348); merge that docs PR together with the reviewed
+   PR. If docs are fine, merge the reviewed PR as before (`gh pr merge --merge`).
    Do not claim merged unless the required merge command succeeded (or
-   `gh pr view` is already MERGED).
+   `gh pr view` is already MERGED). Guard: `tools/mrb_docs_branch_guard.py`.
 2. **Close finished issues**: the feature-request issue, **every** prior
    FAIL MRB board for this FR, and this PASS board. Each close
    comment links the merged PR URL.
@@ -110,7 +108,7 @@ The loop finish race (`FAILED: PASS-nits finish: PR still open after gh
 pr merge`) is not a reason to skip close/pull. If the PR is already
 MERGED and the FR is CLOSED, treat DONE, then still pull.
 
-## recycle-after-merge (Simon 2026-09-23 — merger owns live fleet)
+## recycle-after-merge (Simon 2026-09-23 â€” merger owns live fleet)
 
 Anyone merging `agentic_build` or `agentic_irc` to **main** (MRB
 worker or Bob) must **recycle-after-merge** so live boxes are not left on
@@ -120,7 +118,7 @@ skills); this skill owns the MRB merger duty on `agentic_build`.
 After merge, close, and pull (above), before the driver prints DONE:
 
 4. **Recycle live machines**: merger (or Bob) recycles Watch-Bobiverse,
-   Bob Fleet tray, and agent seats on affected fleet boxes — pull `main`
+   Bob Fleet tray, and agent seats on affected fleet boxes â€” pull `main`
    at the merge SHA, then roll watchers / tray / seats per local playbook.
 5. **ionos restart IRC when required**: when the merged change is not
    tray-only, notify **ionos** to restart IRC altogether (Ergo / bobircd /
@@ -128,7 +126,7 @@ After merge, close, and pull (above), before the driver prints DONE:
    transport is UNKNOWN (`agentic_irc` #152).
 
 **Implementer PR workers do not live-recycle.** Document the duty in skill
-and FR only. Bob or ionos runs recycle / IRC restart after merge to main —
+and FR only. Bob or ionos runs recycle / IRC restart after merge to main â€”
 not a worker on DEV1 (or any non-merger seat) calling live `!recycle` at
 another box.
 
@@ -165,7 +163,7 @@ Before the verdict, walk:
 | Already parked issue+doc, not in this PR | List under Missing features with the issue URL. Do not duplicate. Dispatcher starts a **new** worker if none is running. |
 
 Do not implement unrelated missing features in the MRB job beyond the
-single fix PR for this FAIL. Listing alone is not enough for parked FRs —
+single fix PR for this FAIL. Listing alone is not enough for parked FRs â€”
 the dispatcher must hand remaining FRs to new workers (`bob-job-loop`).
 
 ## Worker steps
@@ -192,7 +190,7 @@ unless this process created the merge commit.
 3. Run or cite automated evidence (Test-Pack, CI). Note what was **not** run.
 4. Post **only** with `tools/Start-BobMrb.ps1` (never `gh issue create`):
    - `-Verdict FAIL` or `PASS-nits`; title slug + `-Sha`; body sections as below.
-   - **PASS-nits requires `-PrUrl`** — the script **merges that PR before** creating the
+   - **PASS-nits requires `-PrUrl`** â€” the script **merges that PR before** creating the
      `mrb-pass` issue. If merge fails, post **FAIL** instead.
    - Body: **Verdict**, **Feature request**, **Missing features**, **Blockers**, **Nits**, **Evidence**, **Required fixes**, **PR**
    - Worker must not use verdict `PASS-UAT` (Bob stamp).
@@ -208,11 +206,11 @@ unless this process created the merge commit.
    handed off; only Bob stamps UAT.
 8. **Remaining issues / feature requests:** after PASS or FAIL+merge, the
    dispatcher must pass work to **new** workers for **any other open
-   actionable issues** — not only those labeled `feature-request` (Simon
+   actionable issues** â€” not only those labeled `feature-request` (Simon
    2026-09-22). Skip pure MRB meta boards. Missing features just parked
-   count. Listing under Missing features is not enough — hand each to
+   count. Listing under Missing features is not enough â€” hand each to
    `bob-job-loop`. Remaining issues do not block this merge.
-9. **No Bob, still open issues — do not sit (Simon 2026-09-22):** if you
+9. **No Bob, still open issues â€” do not sit (Simon 2026-09-22):** if you
    just MRB'd and Bob is not on channel / not assigning, **do not leave
    remaining open issues idle**. Find someone: ask `#bobiverse` for a
    spare seat, or launch the next `bob-job-loop` yourself on another
@@ -222,22 +220,26 @@ unless this process created the merge commit.
 ## Pass bar
 
 - Feature-request MUST / MUST NOT honored
+- **Vision / drift (FR #351):** change serves the quoted vision lines; no CAST
+  IRON / Three Laws contradiction; no scope creep or under-delivery
 - Plan phases claimed as done have evidence
 - New tests appropriate to the PR were added and run
 - Missing features either requested (issue+doc) or explicitly out of scope
 - Prior version folders intact on feature work
 - No secrets in repo or prompts
 - README, skills, `/docs`, mermaid diagrams, and usage/help text match reality
-- Any stale docs are corrected in exactly one docs PR merged with the original
+- Any stale docs are corrected in exactly one **separate** `docs/mrb-<n>` PR
 - PR is merged by this MRB worker
 
 ## Fail bar (examples)
 
 - ok=true without the documented gate
+- **Drift:** tests pass but change contradicts repo vision / CAST IRON (FR #351)
 - Invented APIs
 - Breaking v1 while adding v2
 - Empty errors[] on failure paths the spec requires
 - Code landed with no FR, or an open issue with no intake doc, and the MRB did not request them
 - Worker pushed `main` or merged their own implementer PR without MRB
 - Multiple fix PRs for one FAIL (violates `bob-mrb-worker`)
+- Docs commits pushed onto the PR under review (violates FR #348)
 - Bob wrote the full MRB in-session when Cursor Agent or grok.exe could take it

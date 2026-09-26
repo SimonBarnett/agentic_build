@@ -8,19 +8,22 @@ Do **not** write `docs/mrb-*.pdf`. Git is the source of truth.
 
 Transaction (no judgment): `.grok/skills/bob-build-loop`.
 
-1. Worker opens a PR. Never push `main`. Never merge (**FR #343** — other seat MRBs).
+1. Worker opens a PR. Never push `main`. Never merge (**FR #343** - other seat MRBs).
 2. Bob hands off MRB with `tools/Start-BobBuildLoop.ps1` (skill
    `bob-job-loop`) or a single `tools/Start-BobMrbHandoff.ps1` (Cursor Models
    while remaining > 0, else grok.exe). Never Other Models.
-3. In a temporary worktree, use `gh pr checkout`, read intent, add NEW tests,
-   run existing + new tests, and perform the hostile review.
+3. In a temporary worktree, use `gh pr checkout`, read intent **and the repo
+   vision** (FR #351: `VISION.md` / brief / README purpose / CAST IRON), add NEW
+   tests, run existing + new tests, and perform the hostile review **plus drift
+   check**. Drift FAIL is like a test FAIL. Quote the vision lines used.
 4. **PASS:** review README, skills, `docs/`, mermaid diagrams, and usage/help
-   text for stale behavior. If anything is stale, open exactly ONE docs PR
-   against `main` with the corrections and merge it together with the original;
-   if docs are fine, merge the original as before. Close the source issue/FR,
-   then hand off to a separate UAT worker. Only Bob stamps UAT.
-5. **FAIL:** open exactly ONE fix PR with the fix, then merge both the original
-   PR and the fix PR. Do not open multiple fix PRs.
+   text for stale behavior. If anything is stale, open exactly ONE **separate**
+   `docs/mrb-<n>` PR against `main` (never push onto the reviewed branch) and
+   merge it with the original; if docs are fine, merge the original as before.
+   Close the source issue/FR, then hand off to a separate UAT worker. Only Bob
+   stamps UAT.
+5. **FAIL:** open exactly ONE **separate** fix PR with the fix, then merge both
+   the original PR and the fix PR. Do not open multiple fix PRs.
 6. Worker posts `MRB FAIL|PASS-nits: <slug> <sha>` via
    `tools/Start-BobMrb.ps1`. Jeeves announces whatever lands.
 

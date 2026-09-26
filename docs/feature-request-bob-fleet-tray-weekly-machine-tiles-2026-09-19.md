@@ -1,4 +1,4 @@
-﻿# Feature request - Bob Fleet tray: weekly remaining + machine tiles (2026-09-19)
+# Feature request - Bob Fleet tray: weekly remaining + machine tiles (2026-09-19)
 
 **Repo:** SimonBarnett/agentic_build
 **Surface:** tools/Watch-BobTray.ps1, Get-BobTrayHover.ps1, Get-BobBoxUsage.ps1, bob-fleet-tray skill
