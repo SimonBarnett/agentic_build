@@ -979,7 +979,12 @@ Invoke-Case 'BT0l tray hover' {
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
-    if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted') { throw 'systray Agents must check fuel before start (Test-BobTrayAgentFuelExhausted)' }
+    if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted|Resolve-BobTrayGrokFuelAtStart') { throw 'systray Agents must check fuel before start' }
+    if ($watchBody -notmatch 'Resolve-BobTrayGrokFuelAtStart') { throw 'FR #356: Grok start must Resolve-BobTrayGrokFuelAtStart (once)' }
+    if ($watchBody -notmatch 'stop-unknown') { throw 'FR #356: blank/missing pcent.grok-chat must stop-unknown (no keyless start)' }
+    if ($watchBody -notmatch 'Publish-BobTrayFuelMode') { throw 'FR #356: must report fuel_mode on digest' }
+    if ($watchBody -notmatch "fuel_mode=unknown|FuelMode 'unknown'") { throw 'FR #356: unknown fuel_mode must be reported' }
+    if ($traySrc -notmatch 'Get-BobTrayMachineGrokChatPcent') { throw 'FR #356: must read machines.<id>.pcent[grok-chat]' }
     if ($watchBody -notmatch 'Start-BobTrayProcessWithSessionEnv') { throw 'systray Agents must launch via Start-BobTrayProcessWithSessionEnv' }
     if ($traySrc -notmatch 'Show-BobTraySessionApiKeyDialog') { throw 'empty fuel must offer Show-BobTraySessionApiKeyDialog' }
     if ($traySrc -notmatch 'XAI_API_KEY') { throw 'session Grok key must set child env XAI_API_KEY' }
@@ -5119,11 +5124,69 @@ public static class BobTestArgv {
     if ($tui.Value -match "'-p'|'--print'|'--prompt'") { throw 'grok TUI launch must not use headless -p/--print flags' }
     if ($wahSrc -notmatch "\[string\]\`$Windows = 'on'") { throw 'Watch-AgentHealth default -Windows must stay on (visible TUI)' }
     if ($wahSrc -notmatch "AgentTuiWindowStyle = \`$\(if \(\`$Windows -eq 'on'\) \{ 'Normal' \}") { throw 'TUI window style must be Normal when -Windows on' }
-    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
-    $sessFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    $traySrcWah = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    $sessFn = [regex]::Match($traySrcWah, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
     if (-not $sessFn.Success) { throw 'Start-BobTrayProcessWithSessionEnv not found' }
     if ($sessFn.Value -notmatch 'EnvironmentVariables\[') { throw 'session API key must be passed only via child ProcessStartInfo.EnvironmentVariables' }
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
+}
+
+Invoke-Case 'BT0agent FR356 grok fuel_mode at start' {
+    # FR #356: pcent>0 => pool; 0 => session-key; blank/missing => unknown (stop).
+    $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($tray, [ref]$tok, [ref]$err)
+    foreach ($name in @('Get-BobTrayMachineGrokChatPcent', 'Resolve-BobTrayGrokFuelAtStart')) {
+        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
+        if (-not $fn) { throw "missing $name" }
+        . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function script:Get-BobTrayFuelLocalMachineId { return 'marchhare' }
+    function script:Resolve-BobiverseMachineId { param($Id) return ([string]$Id).ToLowerInvariant() }
+    function script:Write-TrayLog { param($Message) }
+
+    $poolDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{ 'grok-chat' = 7 } }
+        }
+    }
+    $dPool = Resolve-BobTrayGrokFuelAtStart -Digest $poolDoc -MachineId 'marchhare'
+    if ($dPool.fuel_mode -ne 'pool' -or $dPool.action -ne 'start-pool' -or $dPool.remaining -ne 7) {
+        throw "pool want remaining=7 action=start-pool got $($dPool | ConvertTo-Json -Compress)"
+    }
+
+    $zeroDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{ 'grok-chat' = 0 } }
+        }
+    }
+    $dZero = Resolve-BobTrayGrokFuelAtStart -Digest $zeroDoc -MachineId 'marchhare'
+    if ($dZero.fuel_mode -ne 'session-key' -or $dZero.action -ne 'prompt-session') {
+        throw "zero want session-key got $($dZero | ConvertTo-Json -Compress)"
+    }
+
+    $blankDoc = [pscustomobject]@{
+        machines = [pscustomobject]@{
+            marchhare = [pscustomobject]@{ id = 'marchhare'; pcent = [pscustomobject]@{} }
+        }
+    }
+    $dBlank = Resolve-BobTrayGrokFuelAtStart -Digest $blankDoc -MachineId 'marchhare'
+    if ($dBlank.fuel_mode -ne 'unknown' -or $dBlank.action -ne 'stop-unknown') {
+        throw "blank want unknown/stop got $($dBlank | ConvertTo-Json -Compress)"
+    }
+
+    $missingDoc = [pscustomobject]@{ machines = [pscustomobject]@{ flamingo = [pscustomobject]@{ id = 'flamingo'; pcent = [pscustomobject]@{ 'grok-chat' = 3 } } } }
+    $dMiss = Resolve-BobTrayGrokFuelAtStart -Digest $missingDoc -MachineId 'marchhare'
+    if ($dMiss.action -ne 'stop-unknown') { throw "missing machine pcent must stop-unknown got $($dMiss.action)" }
+
+    $traySrc = Get-Content $tray -Raw
+    if ($traySrc -match '(?i)XAI_API_KEY\s*=\s*\$key' -and $traySrc -match 'Publish-BobTrayFuelMode' -and $traySrc -match 'fuel_mode') {
+        # publish path must never interpolate the key into webhook JSON
+        $pub = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Publish-BobTrayFuelMode' }, $true)
+        if (-not $pub) { throw 'Publish-BobTrayFuelMode missing' }
+        if ($pub.Extent.Text -match 'XAI_API_KEY|ApiKey|\$key') { throw 'Publish-BobTrayFuelMode must not touch the session key' }
+    }
+    if ($traySrc -notmatch 'stop-unknown') { throw 'Agents start must handle stop-unknown' }
 }
 
 Invoke-Case 'BT0tray idempotent ear/jobs start' {

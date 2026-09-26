@@ -1898,6 +1898,8 @@ function Build-BobDigestWebhookMergePayload {
     if ($Doc.repo) { $payload.repo = [string]$Doc.repo }
     if ($Doc.sha) { $payload.sha = [string]$Doc.sha }
     if ($Doc.fuel) { $payload.fuel = $Doc.fuel }
+    # FR #356 (agentic_build): seat start reports pool|session-key|unknown (never the key)
+    if ($Doc.fuel_mode) { $payload.fuel_mode = [string]$Doc.fuel_mode }
     if ($Doc.working_on) { $payload.working_on = [string]$Doc.working_on }
     if ($null -ne $Doc.running) { $payload.running = [int]$Doc.running }
     if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }

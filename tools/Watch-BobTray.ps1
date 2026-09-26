@@ -880,7 +880,9 @@ function Get-BobTrayFuelLocalMachineId {
 }
 
 function Get-BobTrayGrokFuelRemaining {
-    # Grok Build weekly for THIS machine (digest machines.*.remaining_pct / seat pcent).
+    # Prefer digest machines.<id>.pcent["grok-chat"] (FR #356); fall back to remaining_pct.
+    $fromPcent = Get-BobTrayMachineGrokChatPcent
+    if ($null -ne $fromPcent) { return [int]$fromPcent }
     $snap = $script:lastFuelSnapshot
     if (-not $snap) { return $null }
     $mid = Get-BobTrayFuelLocalMachineId
@@ -900,6 +902,143 @@ function Get-BobTrayGrokFuelRemaining {
         try { return [int]$snap.remaining_pct } catch { return $null }
     }
     return $null
+}
+
+function Get-BobTrayDigestReportUrl {
+    $u = [string]$env:BOB_DIGEST_REPORT_URL
+    if ($u) { return $u.Trim() }
+    return 'https://irc.ntsa.uk/bob/v1/report'
+}
+
+function Get-BobTrayMachineGrokChatPcent {
+    <#
+      FR #356: read machines.<id>.pcent["grok-chat"] from the digest once at start.
+      Returns [int] when present (including 0); $null when blank/missing/unreachable.
+    #>
+    param(
+        [string]$MachineId,
+        [object]$Digest
+    )
+    $mid = [string]$MachineId
+    if (-not $mid) { $mid = Get-BobTrayFuelLocalMachineId }
+    if (-not $mid) { return $null }
+    try { $mid = [string](Resolve-BobiverseMachineId $mid) } catch { }
+    $mid = $mid.Trim().ToLowerInvariant()
+    $doc = $Digest
+    if (-not $doc) {
+        # Prefer hover cache when it already carries pcent (avoids a second GET on every paint).
+        if ($script:lastFuelSnapshot -and $script:lastFuelSnapshot.digest_machines) {
+            $doc = [pscustomobject]@{ machines = $script:lastFuelSnapshot.digest_machines }
+        }
+    }
+    if (-not $doc) {
+        try {
+            $doc = Invoke-RestMethod -Uri (Get-BobTrayDigestReportUrl) -TimeoutSec 8
+        }
+        catch {
+            Write-TrayLog ('agents: digest fuel read failed: ' + $_.Exception.Message)
+            return $null
+        }
+    }
+    $ent = $null
+    if ($doc.machines) {
+        if ($doc.machines -is [System.Collections.IDictionary] -or ($doc.machines.PSObject.Properties.Name -contains $mid)) {
+            try { $ent = $doc.machines.$mid } catch { $ent = $null }
+        }
+        if (-not $ent) {
+            foreach ($m in @($doc.machines)) {
+                if (-not $m) { continue }
+                $id = [string]$m.id
+                if (-not $id) { continue }
+                try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
+                if ($id -and $id.ToLowerInvariant() -eq $mid) { $ent = $m; break }
+            }
+        }
+    }
+    if (-not $ent -or -not $ent.pcent) { return $null }
+    $raw = $null
+    try { $raw = $ent.pcent.'grok-chat' } catch { $raw = $null }
+    if ($null -eq $raw) {
+        try { $raw = $ent.pcent.psobject.Properties['grok-chat'].Value } catch { $raw = $null }
+    }
+    if ($null -eq $raw -or [string]$raw -eq '') { return $null }
+    try { return [int]$raw } catch { return $null }
+}
+
+function Resolve-BobTrayGrokFuelAtStart {
+    <#
+      FR #356: check once at agent start.
+      - pcent > 0  => pool
+      - pcent = 0  => session-key (dialog)
+      - blank/missing => unknown (stop; never keyless)
+    #>
+    param(
+        [object]$Digest,
+        [string]$MachineId
+    )
+    $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
+    if ($null -eq $remain) {
+        return [pscustomobject]@{
+            remaining = $null
+            fuel_mode = 'unknown'
+            action    = 'stop-unknown'
+        }
+    }
+    if ([int]$remain -gt 0) {
+        return [pscustomobject]@{
+            remaining = [int]$remain
+            fuel_mode = 'pool'
+            action    = 'start-pool'
+        }
+    }
+    return [pscustomobject]@{
+        remaining = [int]$remain
+        fuel_mode = 'session-key'
+        action    = 'prompt-session'
+    }
+}
+
+function Publish-BobTrayFuelMode {
+    <#
+      FR #356: report fuel_mode on the seat's machine entry. Never send the key.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('pool', 'session-key', 'unknown')][string]$FuelMode,
+        [string]$MachineId
+    )
+    $mid = [string]$MachineId
+    if (-not $mid) { $mid = Get-BobTrayFuelLocalMachineId }
+    if (-not $mid) {
+        Write-TrayLog 'agents: fuel_mode publish skipped (no machine id)'
+        return $false
+    }
+    try { $mid = [string](Resolve-BobiverseMachineId $mid) } catch { }
+    $payload = [ordered]@{
+        op        = 'merge'
+        machine   = $mid
+        online    = $true
+        fuel_mode = $FuelMode
+        fuel      = $FuelMode
+    }
+    $json = ($payload | ConvertTo-Json -Compress -Depth 5)
+    if ($json -match '(?i)xai_api_key|password|sk-|Bearer') {
+        Write-TrayLog 'agents: fuel_mode publish blocked (secret-like payload)'
+        return $false
+    }
+    try {
+        if (Get-Command Invoke-BobDigestWebhookMergePost -ErrorAction SilentlyContinue) {
+            Invoke-BobDigestWebhookMergePost -Payload ([pscustomobject]$payload) | Out-Null
+        }
+        else {
+            Invoke-RestMethod -Method Post -Uri (Get-BobTrayDigestReportUrl) -Body $json -ContentType 'application/json; charset=utf-8' -TimeoutSec 8 | Out-Null
+        }
+        Write-TrayLog ('agents: reported fuel_mode={0} machine={1}' -f $FuelMode, $mid)
+        return $true
+    }
+    catch {
+        Write-TrayLog ('agents: fuel_mode publish failed: ' + $_.Exception.Message)
+        return $false
+    }
 }
 
 function Get-BobTrayCursorFuelRemaining {
@@ -931,10 +1070,14 @@ function Get-BobTrayCursorFuelRemaining {
 function Test-BobTrayAgentFuelExhausted {
     param([string]$Kind)
     $k = ([string]$Kind).ToLowerInvariant()
+    if ($k -eq 'grok') {
+        # FR #356: blank/missing is NOT exhausted (dialog); it is unknown → stop elsewhere.
+        $decision = Resolve-BobTrayGrokFuelAtStart
+        return ($decision.action -eq 'prompt-session')
+    }
     $remain = $null
-    if ($k -eq 'grok') { $remain = Get-BobTrayGrokFuelRemaining }
-    elseif ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
-    # Unknown/null remaining => do not block (keep current behaviour when digest missing).
+    if ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
+    # Cursor: unknown/null remaining => do not block (digest may omit cursor pools).
     if ($null -eq $remain) { return $false }
     return ($remain -le 0)
 }
@@ -1003,19 +1146,41 @@ function Start-BobTrayAgentWatch {
     }
     $kind = ([string]$Agent.kind).ToLowerInvariant()
     $sessionEnv = $null
-    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
-        if ($kind -eq 'grok') {
+    if ($kind -eq 'grok') {
+        # FR #356: check digest pcent["grok-chat"] once at start only.
+        $fuel = Resolve-BobTrayGrokFuelAtStart
+        if ($fuel.action -eq 'stop-unknown') {
+            Write-TrayLog 'agents: grok fuel_mode=unknown (pcent.grok-chat blank/missing) - refusing keyless start'
+            try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
+            try {
+                [void][System.Windows.Forms.MessageBox]::Show(
+                    'Digest pcent.grok-chat is blank/missing. Will not start a keyless Grok seat.',
+                    'Grok fuel unknown',
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                )
+            }
+            catch { }
+            return
+        }
+        if ($fuel.action -eq 'prompt-session') {
             Write-TrayLog 'agents: grok fuel remaining 0 - requesting session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok session API key' -Prompt "No Grok tokens remaining on this machine.`r`nEnter XAI_API_KEY for this start only (not saved; process-scoped for the child only)."
             if (-not $key) {
                 Write-TrayLog 'agents: grok start aborted (Cancel / empty session API key)'
+                try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
                 return
             }
-            # agent.exe reads XAI_API_KEY; pass only to the Watch-AgentHealth child (inherits to agent.exe).
-            # GROK_AUTH_PATH isolates the OAuth auth.json so the key is actually used (grok 1.0.41).
             $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
+            try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
         }
-        elseif ($kind -eq 'cursor') {
+        else {
+            Write-TrayLog ('agents: grok fuel_mode=pool remaining={0}' -f $fuel.remaining)
+            try { Publish-BobTrayFuelMode -FuelMode 'pool' } catch { }
+        }
+    }
+    elseif (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        if ($kind -eq 'cursor') {
             # cursor-agent supports --api-key / CURSOR_API_KEY (session BYOK).
             Write-TrayLog 'agents: cursor fuel remaining 0 - requesting session CURSOR_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor session API key' -Prompt "No Cursor tokens remaining (auto / cursor_pools).`r`nEnter CURSOR_API_KEY for this start only (not saved; process-scoped for the child only)."
@@ -1244,19 +1409,36 @@ function Start-BobTrayPlanAgent {
         return
     }
     $sessionEnv = $null
-    if (Test-BobTrayAgentFuelExhausted -Kind $kind) {
-        if ($kind -eq 'grok') {
+    if ($kind -eq 'grok') {
+        # FR #356: same start-once rule as Agents > Grok (unknown => stop).
+        $fuel = Resolve-BobTrayGrokFuelAtStart
+        if ($fuel.action -eq 'stop-unknown') {
+            Write-TrayLog 'plan: grok fuel_mode=unknown - refusing keyless Plan start'
+            try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
+            [void][System.Windows.Forms.MessageBox]::Show(
+                'Digest pcent.grok-chat is blank/missing. Will not start a keyless Plan seat.',
+                'Plan seat',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Warning
+            )
+            return
+        }
+        if ($fuel.action -eq 'prompt-session') {
             Write-TrayLog 'plan: grok fuel 0 - session XAI_API_KEY dialog'
             $key = Show-BobTraySessionApiKeyDialog -Title 'Grok plan session API key' -Prompt "No Grok tokens remaining.`r`nEnter XAI_API_KEY for this Plan start only (not saved)."
             if (-not $key) { Write-TrayLog 'plan: grok aborted (no key)'; return }
             $sessionEnv = New-BobTrayGrokSessionEnv -ApiKey $key
+            try { Publish-BobTrayFuelMode -FuelMode 'session-key' } catch { }
         }
         else {
-            Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
-            $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor plan session API key' -Prompt "No Cursor tokens remaining.`r`nEnter CURSOR_API_KEY for this Plan start only (not saved)."
-            if (-not $key) { Write-TrayLog 'plan: cursor aborted (no key)'; return }
-            $sessionEnv = @{ CURSOR_API_KEY = $key }
+            try { Publish-BobTrayFuelMode -FuelMode 'pool' } catch { }
         }
+    }
+    elseif (Test-BobTrayAgentFuelExhausted -Kind $kind) {
+        Write-TrayLog 'plan: cursor fuel 0 - session CURSOR_API_KEY dialog'
+        $key = Show-BobTraySessionApiKeyDialog -Title 'Cursor plan session API key' -Prompt "No Cursor tokens remaining.`r`nEnter CURSOR_API_KEY for this Plan start only (not saved)."
+        if (-not $key) { Write-TrayLog 'plan: cursor aborted (no key)'; return }
+        $sessionEnv = @{ CURSOR_API_KEY = $key }
     }
     $rules = Get-BobTrayPlanRules -VisionRoot $visionRoot
     $prompt = 'Follow the visionary skill. Plan-mode only: no IRC, no build, no agentic_build/agentic_irc work repo.'
