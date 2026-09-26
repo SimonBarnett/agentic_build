@@ -1,4 +1,4 @@
-﻿# Feature request: Bob Fleet tray — per-machine weekly bars + IRC peer status (no bogus unreachable)
+# Feature request: Bob Fleet tray — per-machine weekly bars + IRC peer status (no bogus unreachable)
 
 **Date:** 2026-09-20  
 **Repo:** https://github.com/SimonBarnett/agentic_build  

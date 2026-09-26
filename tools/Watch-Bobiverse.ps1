@@ -160,6 +160,8 @@ while ($true) {
             Sync-BobDigestWebhookAfterBobiversePull -LocalDoc $localDoc
         }
         Import-BobIrcPeerTranscript | Out-Null
+        # FR #192 / #175 A7: apply pending shop channel repo descriptions (SHOPDESC + TOPIC outbox).
+        try { Sync-BobShopChannelRepoDescriptions | Out-Null } catch { Write-BobiverseLog ('shop desc: ' + $_.Exception.Message) }
         # Shop backup: idle w-* says !BORED only. Does not !ACCEPT. Does not claim Jeeves GIT.
         Import-BobWorkerGitShop | Out-Null
     }

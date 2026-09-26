@@ -1,23 +1,8 @@
 # Shared gh.exe discovery and MRB posting preflight (dot-sourced by Start-BobMrb*.ps1).
+# Get-BobGhExe / Get-BobGhPostingReadiness live in src/Private/Get-BobGh.ps1 (issue #11 / #34).
 $ErrorActionPreference = 'Stop'
-
-function Get-BobGhExe {
-    if ($env:BOB_GH_EXE) {
-        if (Test-Path -LiteralPath $env:BOB_GH_EXE) { return $env:BOB_GH_EXE }
-        return $null
-    }
-    foreach ($c in @(
-            (Join-Path ${env:ProgramFiles} 'GitHub CLI\gh.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'GitHubCLI\gh.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Programs\GitHub CLI\gh.exe')
-        )) {
-        if ($c -and (Test-Path -LiteralPath $c)) { return $c }
-    }
-    $cmd = Get-Command gh.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    return $null
-}
+$repoRoot = Split-Path $PSScriptRoot -Parent
+. (Join-Path $repoRoot 'src\Private\Get-BobGh.ps1')
 
 function Test-BobGhIssuePosting {
     param(

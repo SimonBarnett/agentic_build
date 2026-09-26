@@ -25,6 +25,7 @@ function Write-Audit {
     if ($line -match 'XAI_API_KEY') {
         throw "Refusing to write audit line that contains XAI_API_KEY"
     }
+    # FR #347: UTF-8 without BOM (PS5 Set-Content -Encoding utf8 would BOM)
     $utf8 = New-Object System.Text.UTF8Encoding $false
     [IO.File]::AppendAllText($path, $line + [Environment]::NewLine, $utf8)
 }

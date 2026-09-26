@@ -9,6 +9,8 @@
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
         'Get-BobHealth',
+        'Get-BobGhPostingReadiness',
+        'Install-BobGitHubCliIfMissing',
         'Get-BobWorkers',
         'Get-BobAgents',
         'Get-BobMachines',
@@ -22,6 +24,7 @@
         'Resolve-BobGrokCliModel',
         'Select-BobGitWorker',
         'Test-BobQuotaFailureText',
+        'Sync-BobShopChannelRepoDescriptions',
         'Get-ThisMachineId',
         'Copy-BobProjectSkills',
         'Get-BobBuild',

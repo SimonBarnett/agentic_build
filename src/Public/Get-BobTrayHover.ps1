@@ -2022,7 +2022,15 @@ function Get-BobTrayHover {
     foreach ($pool in $cursorPools) {
         if ($pool.heading) { $poolLines += ('  {0}' -f $pool.heading) }
     }
+    $ghPosting = $null
+    try { $ghPosting = Get-BobGhPostingReadiness } catch { $ghPosting = $null }
+    $ghLine = $null
+    if ($ghPosting) {
+        if ($ghPosting.issue_posting_ready) { $ghLine = 'GitHub issue post: ready' }
+        else { $ghLine = 'GitHub issue post: not ready' }
+    }
     $jobsText = (($poolLines + $jobLines) -join "`n")
+    if ($ghLine) { $jobsText = $jobsText + "`n" + $ghLine }
 
     $lines = New-Object System.Collections.Generic.List[string]
     if ($null -eq $remainPct) {
@@ -2066,6 +2074,7 @@ function Get-BobTrayHover {
         account_used_pct = $cursorUsed
         account_period_end = $(if ($cursorWeek -and $cursorWeek.period_end) { [string]$cursorWeek.period_end } else { $null })
         account_reset_label = $(if ($cursorWeek -and $cursorWeek.period_end) { Format-BobResetLabel $cursorWeek.period_end } else { $null })
+        gh_posting          = $ghPosting
     }
 }
 

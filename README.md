@@ -6,6 +6,7 @@ Any Grok Bot starts git tasks on named machines. Skill: `.grok/skills/grok-build
 - Pull worker `tools/Watch-BobJobs.ps1` (logon task, not a Windows service). Tray: `tools/Watch-BobTray.ps1`.
 - Named bots (`-Agent Bob`) still use the Grok Bot API. Form Prep stays `--rules`, never `--always-approve`, pin `-Fuel grok-build`.
 - Off-DEV Fake-Grok never touches live bots or GitHub. DUMB / 2012 is not a git-task worker.
+- **GitHub posting readiness (FR #11 / #34):** `Get-BobGhPostingReadiness` / `gh_posting` on health, capacity, tray, and box-usage. `Select-BobGitWorker -Kind mrb` skips machines with `issue_posting_ready=false`. Token contract: `GH_TOKEN` (or `GITHUB_TOKEN`) with `issues:write` + `pull_requests:write` — never commit secrets. `Install-BobFleet` provisions `gh` or reports not-ready.
 
 ## Bob functional-spec build loop
 
@@ -23,6 +24,7 @@ Skills (copied by Install-BobFleet into `~\.grok\skills`):
 | start-bob-copilot | Hand GitHub repo work to Copilot (`Start-BobCopilot.ps1`) |
 | start-bob-cursor | Hand git task to Cursor Agent (`Start-BobCursor.ps1`) |
 | unstick-grok-bot | Unstick a named Grok Bot Temporal hang |
+| bob-restart-worker-seat | Diagnose slow vs hung vs out-of-tokens; fresh-session restart (ask first) |
 | bob-irc | Fleet `#bobiverse` on Ergo `irc.ntsa.uk:6697` |
 | setup-github-webhooks | How to add GitHub repo hooks (`/bob/v1/git`) |
 | setup-ssl-certs | How to issue IIS Let's Encrypt with win-acme |

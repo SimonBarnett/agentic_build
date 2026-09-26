@@ -1,4 +1,4 @@
-﻿# Build/test plan: systray start agent visible TUI
+# Build/test plan: systray start agent visible TUI
 
 ## Goals
 Systray Agents menu: hidden watcher, visible agent TUI.
