@@ -44,7 +44,17 @@ Every `bob-*` builder with a Cursor login runs `Write-BobIrcStatus` (Watch-Bobiv
 | `sand_remaining_pct` | overwrites `grok-chat` |
 | `on_demand_remaining_pct` | `on-demand` (not a TipForm bar) |
 
-Fingerprint (`Get-BobDigestWebhookFingerprint`) includes the `pcent` JSON. Merge payload (`Build-BobDigestWebhookMergePayload`) copies `pcent` through. A pcent-only change must POST.
+Fingerprint (`Get-BobDigestWebhookFingerprint`) includes the `pcent` JSON and
+`weekly` / `period_end`. Merge payload (`Build-BobDigestWebhookMergePayload`)
+copies `weekly`, `period_end`, and `pcent` through. A weekly-only or pcent-only
+change must POST.
+
+**agentic_build #387 / gh-Jeeves:** the chair `op=merge` handler must **persist**
+`machines.<id>.weekly` and `period_end` (xAI `Get-BobWeeklyRemaining`). If GET
+digest shows workers but no weekly while local hover shows weekly remaining,
+the chair was dropping those fields — fixed in gh-Jeeves PR that lands
+`coerce_machine` + merge for weekly/period_end. MarchHare may have empty
+`pcent` (no Cursor login) and still must show weekly.
 
 State file: `{IRC home}\bob-peers\_digest-webhook-posted.json` (`Get-BobDigestWebhookPostStatePath`). If that fingerprint equals the current doc, the next tick does not POST. **When the fingerprint blocks a needed republish** (pcent added in code but the state file predates it, or the chair is stale while the fingerprint still matches), delete `_digest-webhook-posted.json` and let the next `Write-BobIrcStatus` POST. Do not hand-edit the percent inside that file.
 
