@@ -56,14 +56,16 @@ On the same delta gate (not `lastSeen`-only), it may **POST** ionos `reportUrl` 
 
 Jeeves is a second agent on ionos. His IRC `--home` is `~\.agentic-irc-jeeves`. `BOB_DIGEST_HOME` must be `~\.agentic-irc-bobiverse`, the directory `bobcallback` uses for `chair-outbox.txt` (`POST /bob/v1/git`). `fleet_digest_home()` follows that env. Without it, Jeeves drains his own home and GIT lines sit on the digest home. Do not pass the bob-ionos home as `--home` (QUIT/JOIN storm). Do not pass `--hello` or `--announce-key`.
 
-Service **`BobJeeves`** (Automatic, NSSM, depends on `BobIrcd`) is the start path. Install: `tools/Install-BobJeeves.ps1` or `tools/Install-BobChair.ps1` (same service). Boot starts `BobIrcd`, then `BobJeeves`. `Restart-Service BobIrcd` stops Jeeves and does not start him again:
+**Canonical install (FR #330):** [SimonBarnett/gh-Jeeves](https://github.com/SimonBarnett/gh-Jeeves) `tools/Install-BobJeeves.ps1` — Windows service **`BobJeeves`**, `python -m jeeves`, token-less G1 gate. Prefer that over this repo’s legacy NSSM + `agentic_irc` wrapper.
+
+**Legacy (this repo):** Service **`BobJeeves`** (Automatic, NSSM, depends on `BobIrcd`). Install: `tools/Install-BobJeeves.ps1 -AllowLegacyAgenticIrc` or `tools/Install-BobChair.ps1`. Boot starts `BobIrcd`, then `BobJeeves`. `Restart-Service BobIrcd` stops Jeeves and does not start him again:
 
 ```powershell
 Restart-Service BobIrcd
 Start-Service BobJeeves
 ```
 
-Command the service runs: `python -u scripts/irc_agent.py --host irc.ntsa.uk --port 6697 --nick Jeeves --channel #bobiverse --home <jeevesHome> --chair` with `AGENTIC_IRC_PASSWORD` read from `~\.grok\ergo\connect.password` (never git) and `BOB_DIGEST_HOME` set to the digest home.
+Legacy command: `python -u scripts/irc_agent.py --host irc.ntsa.uk --port 6697 --nick Jeeves --channel #bobiverse --home <jeevesHome> --chair` with `AGENTIC_IRC_PASSWORD` from `~\.grok\ergo\connect.password` (never git) and `BOB_DIGEST_HOME` set to the digest home.
 
 Tray peers for **other** machines: `Watch-Bobiverse` sends `!bobiverse` about every **120 seconds**, then ingests chair **`BOB DIGEST v1`** JSON whispers (chunked when needed) from `irc.log` into `bob-peers\` plus `cursor-pools.json` cache. Legacy **`BOB TRAY v1`** kv lines still work. Protocol: `agentic_irc` `!bobiverse` digest + issue #142 / `docs/feature-request-bobiverse-digest-feeds-systray-2026-09-21.md`.
 

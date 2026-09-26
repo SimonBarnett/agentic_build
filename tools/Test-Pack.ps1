@@ -4449,6 +4449,8 @@ Invoke-Case 'BT0jeeves chair autostart' {
     if ($chair -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobChair must point BOB_DIGEST_HOME at .agentic-irc-bobiverse' }
     if ($chair -match 'Install-BobIrc\.ps1') { throw 'Install-BobChair must not call Install-BobIrc' }
     if ($chair -match '--hello|--announce-key') { throw 'Install-BobChair must not pass hello or announce-key' }
+    if ($chair -notmatch 'gh-Jeeves') { throw 'Install-BobChair must name gh-Jeeves cutover (FR #330 / MRB #368)' }
+    if ($chair -notmatch 'AllowLegacyAgenticIrc') { throw 'Install-BobChair must support -AllowLegacyAgenticIrc' }
     $inst = Get-Content (Join-Path $RepoRoot 'tools\Install-BobJeeves.ps1') -Raw
     if ($inst -notmatch "ServiceName = 'BobJeeves'") { throw 'Install-BobJeeves must default service BobJeeves' }
     if ($inst -notmatch "DependsOn = 'BobIrcd'") { throw 'BobJeeves must depend on BobIrcd' }
@@ -4460,6 +4462,12 @@ Invoke-Case 'BT0jeeves chair autostart' {
     if ($inst -notmatch '\.agentic-irc-jeeves') { throw 'Install-BobJeeves must keep the Jeeves IRC home' }
     if ($inst -notmatch '\.agentic-irc-bobiverse') { throw 'Install-BobJeeves must name the digest home' }
     if ($inst -match '--hello|--announce-key') { throw 'Install-BobJeeves must not pass hello or announce-key' }
+    # FR #330: legacy wrapper must point operators at gh-Jeeves canonical install
+    if ($inst -notmatch 'gh-Jeeves') { throw 'Install-BobJeeves must name gh-Jeeves as canonical (FR #330)' }
+    if ($inst -notmatch 'AllowLegacyAgenticIrc') { throw 'Install-BobJeeves must gate legacy path with -AllowLegacyAgenticIrc' }
+    $chairSkill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-jeeves-chair\SKILL.md') -Raw
+    if ($chairSkill -notmatch 'gh-Jeeves') { throw 'bob-jeeves-chair must document gh-Jeeves cutover (FR #330)' }
+    if ($chairSkill -notmatch 'token-less') { throw 'bob-jeeves-chair must name token-less gate (FR #330)' }
     $start = Get-Content (Join-Path $RepoRoot 'tools\Start-BobJeeves.ps1') -Raw
     if ($start -notmatch '\$env:BOB_DIGEST_HOME') { throw 'Start-BobJeeves must set BOB_DIGEST_HOME' }
     if ($start -notmatch '\.agentic-irc-jeeves') { throw 'Start-BobJeeves must default --home to .agentic-irc-jeeves' }
