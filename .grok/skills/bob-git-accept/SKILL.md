@@ -1,7 +1,7 @@
 ---
 name: bob-git-accept
 description: >
-  Shop backup when Bob is out of Sand: idle {machine}-<pid> says !bored only,
+  Shop backup when Bob is out of Sand: the seat monitor (never the model) says !bored,
   Jeeves assigns the next unaccepted GIT job (one line), worker ACK then
   Start-BobBuild and reports agent+model on the digest webhook.
   Use when the user says !bored, !BORED, git accept, shop idle worker,
@@ -10,6 +10,11 @@ description: >
 ---
 
 # Shop !bored → Jeeves assigns → ACK
+
+**CAST IRON (Simon 2026-09-26): the model NEVER posts `!bored`.** Only the seat
+monitor (`Watch-AgentHealth` / AgentMonitor FR #100) sends it, and never while a
+`-p` run is alive or an ACKed job lacks a valid DONE. After the DONE line, the
+worker **stops** (no `!bored` from the model).
 
 Backup when the builder is out of Sand. `bob-*` does **not** auto-claim
 Jeeves `GIT` lines. **Jeeves assigns** on `!bored` (FR #106; ear OFFER
@@ -23,16 +28,16 @@ assign line.
 | Nick | Where | What |
 |---|---|---|
 | `Jeeves` | `#bobiverse` | `GIT …` announce only |
-| `{machine}-<pid>` | shop `#{machine}` only | `!bored` after idle **> 2 min** (120s) |
+| seat **monitor** (not the model) | shop `#{machine}` only | `!bored` when idle (no -p run, no open ACK) |
 | `Jeeves` | that shop | assign: `<nick>: <TYPE> <repo>#<n> <url>` (`!focus` order) |
 | same worker | that shop | `ACK <TYPE> <repo>#<n>` → Jeeves marks accepted + busy |
-| same worker | — | `Start-BobBuild` / work; then `DONE` → done + idle |
+| same worker | — | work; then exact `DONE` line → done + idle |
 
-`!bored` is `PRIVMSG #<shop> :!bored` on **that worker's** `outbox.txt`.
-Not the builder outbox. Not `chair-outbox.txt`.
+`!bored` is `PRIVMSG #<shop> :!bored` written by the **monitor** on that
+worker's `outbox.txt`. Not the builder outbox. Not `chair-outbox.txt`. Not the LLM.
 
 Legacy `w-<short>-<pid>` nicks are retired for the trust gate; live seats use
-`{machine}-<pid>` (for example `marchhare-34992`).
+`{machine}-{pid}` (for example `marchhare-34992`).
 
 ## Queue (digest webhook)
 
@@ -48,26 +53,21 @@ This skill only describes the **worker** side.
 
 ## Worker clock
 
-`Watch-Bobiverse` / shop packs call the idle loop each tick.
-
-- Busy (ACK'd job still running): no `!bored`. When the job finishes, send
-  `DONE` then `!bored` again.
-- Idle 120 seconds: append `!bored` once. A later idle stretch appends it again.
-- Chair reply on that shop, after the `!bored` byte offset:
-  - `<nick>: nothing queued` — reset the idle clock.
+- Busy (ACK'd job still running): monitor suppresses `!bored`.
+- When the job finishes: send the exact **DONE** line below, then **stop**.
+  The monitor posts `!bored`; you never do.
+- Chair reply on that shop, after the monitor's `!bored`:
+  - `<nick>: nothing queued` — idle continues.
   - `<nick>: <TYPE> <repo>#<n> <url>` — **assign**. Reply `ACK <TYPE> <repo>#<n>`
     (FR match rules: ACK FR may match a legacy PR row; see gh-Jeeves FR #102).
 - `OFFER`, bare `GIT`, and `#bobiverse` chatter do not start work.
 - On one box, the first seat to ACK owns the row. A sibling that sees the same
   assign no-ops.
 
-### AgentMonitor watch seats (FR AgentMonitor#100)
+### AgentMonitor watch seats
 
-Grok/Cursor **watch seats** do **not** rely on the LLM to post `!bored`.
-`Watch-AgentHealth.ps1` emits `PRIVMSG #{machine} :!bored` deterministically on
-seat start, right after `DONE`, and while idle (never while busy). The seat still
-ACKs Jeeves assignment lines itself. Vendored copy:
-`tools/Watch-AgentHealth/Watch-AgentHealth.ps1`.
+Grok/Cursor **watch seats** get `!bored` from `Watch-AgentHealth.ps1` only
+(start / after DONE / idle). See AgentMonitor FR #100 / #103.
 
 ## Start and activity
 
@@ -83,11 +83,48 @@ Fuel order inside the picker: Cursor Models, then grok-build.
 On a real start, POST the digest webhook (`op: merge`) with `working_on`
 set to `{agent} {model} {TYPE} {repo}{#n}`, plus `model`, `fuel`, `kind`, and
 `repo`. When the job leaves inbox/running, POST `working_on` empty and send
-`DONE`.
+`DONE` (exact wire below).
+
+## DONE wire (exact; CAST IRON)
+
+Jeeves expects one clean DONE line. Prefer exactly:
+
+```text
+DONE <MODE> <owner/repo>#<N> [PASS|FAIL] <PR-url>
+```
+
+Rules:
+
+- **MODE** = the TYPE **Jeeves assigned** (the word after `<nick>:` on the assign
+  line), even if the issue title says MRB or the work became a review.
+- **repo#N** = exactly the assigned repo and number.
+- At most one optional `PASS` / `FAIL` (or omit for FR with only a URL).
+- Then the PR URL (required for FR/MRB when you opened/merged a PR).
+- **One DONE line**, starting at column 0, **nothing after the URL**.
+- Fix PR numbers, SHAs, companion links, and follow-ups go on a **separate**
+  outbox line (or a GitHub comment) — never jammed into DONE.
+
+Examples:
+
+```text
+DONE FR SimonBarnett/agentic_build#360 https://github.com/SimonBarnett/agentic_build/pull/363
+DONE MRB SimonBarnett/AgentMonitor#112 PASS https://github.com/SimonBarnett/AgentMonitor/pull/112
+DONE UAT SimonBarnett/gh-Jeeves#138 PASS
+```
+
+Wrong (extra tokens after FAIL before URL; MODE ≠ assign):
+
+```text
+DONE MRB SimonBarnett/agentic_fomprep#3 FAIL fix#54 https://github.com/.../pull/54
+```
+
+(gh-Jeeves #135 softened parsing of trailing text; workers still use this exact
+wire so completions never depend on chair version.)
 
 ## Hard rules
 
 - Jeeves **assigns**; workers do not invent OFFER/ASSIGN lines.
-- ACK before work; DONE after work; then `!bored` again.
+- ACK before work; DONE after work (exact wire, assigned MODE); then **STOP**.
+- **Never** post `!bored` (monitor-only).
 - Self-MRB only when one live seat (CAST IRON).
 - Do not merge UNSTABLE.

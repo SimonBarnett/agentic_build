@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Start grok agent.exe or Cursor agent.cmd; watch the agent process; forward IRC FROM lines when the agent's listener exists.
 
@@ -61,7 +61,43 @@ param(
 
     # Open ACK without DONE older than this is treated as stale (not busy).
     [ValidateRange(5, 240)]
-    [int]$BoredAckStaleMinutes = 45
+    [int]$BoredAckStaleMinutes = 45,
+
+    # FR #100 acceptance: DONE -> !bored within ~5s (poll loop ticks this often for Sync-WatchBored).
+    [ValidateRange(1, 15)]
+    [int]$BoredCheckSeconds = 5,
+
+    # FR #105: identical FROM lines are deduped only for this many seconds (then re-forward).
+    [ValidateRange(5, 600)]
+    [int]$ForwardDedupeSeconds = 60,
+
+    # FR #91: max runtime for a hidden agent -p / Cursor -p wake before kill (default 30 min).
+    [ValidateRange(60, 86400)]
+    [int]$WakeTimeoutSeconds = 1800,
+
+    # FR #91: max queued FROM lines while a wake is in flight for this session.
+    [ValidateRange(1, 100)]
+    [int]$WakeQueueMax = 20,
+
+    # FR #99: rotate oversized sessions before resume (default 10 MB updates.jsonl)
+    [double]$SessionMaxUpdatesMb = 10,
+    # FR #99: hung agent -p with no CPU progress (minutes)
+    [double]$SessionHangMinutes = 3,
+    # Optional override for tests
+    [string]$GrokSessionsRoot = '',
+
+    # FR #103: fleet (default) vs loop (continuous non-job agent; never !bored / ACK-Jeeves).
+    [ValidateSet('fleet', 'loop')]
+    [string]$SeatType = 'fleet',
+
+    # FR #103: suppress every monitor !bored (implied by -SeatType loop).
+    [switch]$NoBored,
+
+    # FR #103: loop seat IRC channel (e.g. '#ce-priority-dev1'). Fleet ignores (own #{machine}).
+    [string]$Channel = '',
+
+    # FR #103: loop seat nick (e.g. 'dayworks-dev1'). Must NOT match {machine}-{pid} worker grammar.
+    [string]$Nick = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -71,6 +107,33 @@ $script:CursorModel = ([string]$Model).Trim()
 $script:BoredIdleSeconds = [int]$BoredIdleSeconds
 $script:BoredRepeatSeconds = [int]$BoredRepeatSeconds
 $script:BoredAckStaleMinutes = [int]$BoredAckStaleMinutes
+$script:BoredCheckSeconds = [int]$BoredCheckSeconds
+$script:ForwardDedupeSeconds = [int]$ForwardDedupeSeconds
+$script:WakeTimeoutSeconds = [int]$WakeTimeoutSeconds
+$script:WakeQueueMax = [int]$WakeQueueMax
+$script:SessionMaxUpdatesMb = [double]$SessionMaxUpdatesMb
+$script:SessionHangMinutes = [double]$SessionHangMinutes
+$script:GrokSessionsRoot = [string]$GrokSessionsRoot
+$script:SeatType = ([string]$SeatType).Trim().ToLowerInvariant()
+if (-not $script:SeatType) { $script:SeatType = 'fleet' }
+$script:NoBored = [bool]$NoBored -or ($script:SeatType -eq 'loop')
+$script:WatchChannelOverride = ([string]$Channel).Trim()
+$script:WatchNickOverride = ([string]$Nick).Trim()
+if ($script:SeatType -eq 'loop') {
+    if (-not $script:WatchChannelOverride) {
+        throw 'Loop seat (-SeatType loop) requires -Channel (e.g. -Channel ''#ce-priority-dev1'').'
+    }
+    if (-not $script:WatchNickOverride) {
+        throw 'Loop seat (-SeatType loop) requires -Nick (non-worker nick, e.g. -Nick ''dayworks-dev1'').'
+    }
+    # Reject worker grammar so Jeeves/gh-Jeeves never assign or mark busy/idle (K1/K2).
+    if ($script:WatchNickOverride -match '^[A-Za-z0-9_]+-\d+$') {
+        throw ("Loop seat -Nick '{0}' looks like a worker {{machine}}-{{pid}} nick. Use a non-worker nick (e.g. dayworks-dev1)." -f $script:WatchNickOverride)
+    }
+}
+function Test-WatchNoBored {
+    return [bool]$script:NoBored
+}
 
 function Get-CursorModelCliArgs {
     if (-not $script:CursorModel) { return @() }
@@ -88,7 +151,67 @@ if (-not $Grok -and -not $Cursor) {
     throw 'Pass --grok (agent.exe) or --cursor (agent.cmd).'
 }
 
+function Write-WatchBootstrapLog {
+    # FR #102: log before Resolve-AgentWorkspace / Write-WatchLog exist.
+    param([string]$Message)
+    $line = '{0:o} {1}' -f [datetime]::UtcNow, $Message
+    $paths = @(
+        (Join-Path $env:TEMP 'Watch-AgentHealth-start.log')
+    )
+    if ($script:LogFile) { $paths += $script:LogFile }
+    foreach ($p in $paths) {
+        try {
+            $dir = Split-Path -Parent $p
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            }
+            Add-Content -LiteralPath $p -Value $line -Encoding utf8 -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
+    try { Write-Host $line } catch { }
+}
+
+function Test-WatchFixedWritableDriveRoot {
+    # Physical fixed local disk (DriveType=3) that accepts create+delete of a probe file.
+    param([string]$Root)
+    if (-not $Root) { return $false }
+    try {
+        $rootPath = [IO.Path]::GetFullPath($Root)
+        if ($rootPath -notmatch '^[A-Za-z]:\\$') { return $false }
+        $letter = $rootPath.Substring(0, 1).ToUpperInvariant()
+        $disk = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}:'" -f $letter) -ErrorAction SilentlyContinue
+        if (-not $disk) { return $false }
+        if ([int]$disk.DriveType -ne 3) { return $false } # 3 = local fixed disk
+        $probe = Join-Path $rootPath ('_wah_write_probe_' + [guid]::NewGuid().ToString('N'))
+        [IO.File]::WriteAllText($probe, 'ok')
+        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+        return $true
+    }
+    catch {
+        # Missing/ejected letter, ACL deny, or non-fixed — never throw into Resolve-AgentWorkspace.
+        try {
+            if ($probe) { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+        }
+        catch { }
+        return $false
+    }
+}
+
+function Get-WatchFixedDriveLetters {
+    # Simon 2026-09-25: letter order C, D, E, … — fixed local disks only.
+    $letters = @()
+    foreach ($disk in @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)) {
+        $id = [string]$disk.DeviceID
+        if ($id -match '^([A-Za-z]):$') {
+            $letters += $Matches[1].ToUpperInvariant()
+        }
+    }
+    return @($letters | Sort-Object)
+}
+
 function Resolve-AgentWorkspace {
+    # FR #102: fixed writable disks only; C first; never optical/network/rclone/read-only.
     param(
         [string]$Requested,
         [switch]$Explicit
@@ -97,26 +220,46 @@ function Resolve-AgentWorkspace {
         return [IO.Path]::GetFullPath($Requested)
     }
     $leaf = 'ai'
-    foreach ($letter in @('D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')) {
+    $letters = @(Get-WatchFixedDriveLetters)
+    # Existing \ai: fixed disk only (DriveType=3). Do not require root writability —
+    # C:\ may deny create-in-root while C:\ai already exists and is usable.
+    foreach ($letter in $letters) {
         $root = '{0}:\' -f $letter
-        if (-not (Test-Path -LiteralPath $root)) { continue }
+        $disk = Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='{0}:'" -f $letter) -ErrorAction SilentlyContinue
+        if (-not $disk -or [int]$disk.DriveType -ne 3) { continue }
         $candidate = Join-Path $root $leaf
         if (Test-Path -LiteralPath $candidate) {
+            Write-WatchBootstrapLog ("workspace existing {0}" -f $candidate)
             return [IO.Path]::GetFullPath($candidate)
         }
     }
-    foreach ($letter in @('D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z')) {
+    foreach ($letter in $letters) {
         $root = '{0}:\' -f $letter
-        if (-not (Test-Path -LiteralPath $root)) { continue }
+        if (-not (Test-WatchFixedWritableDriveRoot -Root $root)) {
+            Write-WatchBootstrapLog ("workspace skip create on {0} (not writable fixed)" -f $root)
+            continue
+        }
         $candidate = Join-Path $root $leaf
-        New-Item -ItemType Directory -Force -Path $candidate | Out-Null
-        return [IO.Path]::GetFullPath($candidate)
+        try {
+            New-Item -ItemType Directory -Force -Path $candidate | Out-Null
+            Write-WatchBootstrapLog ("workspace created {0}" -f $candidate)
+            return [IO.Path]::GetFullPath($candidate)
+        }
+        catch {
+            Write-WatchBootstrapLog ("workspace create failed {0}: {1}" -f $candidate, $_.Exception.Message)
+        }
     }
-    throw 'No drive D:..Z: found to use or create \ai.'
+    throw 'No writable fixed local drive found to use or create \ai (C: first; never optical/network/rclone).'
 }
 
-$CwdExplicit = $PSBoundParameters.ContainsKey('Cwd') -and $Cwd
-$Cwd = Resolve-AgentWorkspace -Requested $Cwd -Explicit:$CwdExplicit
+try {
+    $CwdExplicit = $PSBoundParameters.ContainsKey('Cwd') -and $Cwd
+    $Cwd = Resolve-AgentWorkspace -Requested $Cwd -Explicit:$CwdExplicit
+}
+catch {
+    Write-WatchBootstrapLog ("fatal start: {0}" -f $_.Exception.Message)
+    throw
+}
 
 $script:KindName = $(if ($Cursor) { 'cursor' } else { 'grok' })
 $script:StateDir = Join-Path $env:USERPROFILE '.grok\agent-health'
@@ -135,6 +278,289 @@ function Write-WatchLog {
     $line = '{0:o} {1}' -f [datetime]::UtcNow, $Message
     Add-Content -LiteralPath $script:LogFile -Value $line -Encoding utf8
     Write-Host $line
+}
+
+function Get-WatchSeatTranscriptPath {
+    # FR #90 Option B: operator-visible wake transcript (TUI does not reload hidden -p turns).
+    if (-not $script:StateDir) { return $null }
+    return (Join-Path $script:StateDir 'seat-wake-transcript.log')
+}
+
+function Write-WatchSeatTranscript {
+    param([string]$Message)
+    $path = Get-WatchSeatTranscriptPath
+    if (-not $path) {
+        Write-WatchLog $Message
+        return
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+    $line = '{0:o} {1}' -f [datetime]::UtcNow, $Message
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::AppendAllText($path, $line + [Environment]::NewLine, $utf8)
+    Write-WatchLog $Message
+}
+
+function Test-WatchSeatTranscriptPaneAlive {
+    param([string]$TranscriptPath)
+    if (-not $TranscriptPath) { return $false }
+    $esc = [regex]::Escape($TranscriptPath)
+    $rows = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)
+    foreach ($row in $rows) {
+        $cl = [string]$row.CommandLine
+        if ($cl -match 'seat-wake-transcript' -and $cl -match $esc) { return $true }
+    }
+    return $false
+}
+
+function Ensure-WatchSeatTranscriptPane {
+    # Visible console that tails seat-wake-transcript.log (Option B). No keystroke injection.
+    if ($script:AgentTuiWindowStyle -eq 'Hidden') { return $false }
+    $path = Get-WatchSeatTranscriptPath
+    if (-not $path) { return $false }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+    if (-not (Test-Path -LiteralPath $path)) {
+        [IO.File]::WriteAllText($path, '', (New-Object System.Text.UTF8Encoding $false))
+    }
+    if (Test-WatchSeatTranscriptPaneAlive -TranscriptPath $path) { return $true }
+    $title = 'Watch seat IRC wake transcript (FR #90) - hidden -p turns appear here'
+    $escPath = $path.Replace("'", "''")
+    $escTitle = $title.Replace("'", "''")
+    $body = @(
+        "`$Host.UI.RawUI.WindowTitle = '$escTitle'"
+        "Write-Host 'Tailing $escPath'"
+        "Write-Host 'Hidden agent -p wakes are logged here so the seat does not look idle (AgentMonitor FR #90).'"
+        "Write-Host ''"
+        "Get-Content -LiteralPath '$escPath' -Wait -Tail 80 -Encoding UTF8"
+    ) -join [Environment]::NewLine
+    $launcher = Join-Path $script:StateDir 'seat-wake-transcript-pane.ps1'
+    [IO.File]::WriteAllText($launcher, $body, (New-Object System.Text.UTF8Encoding $false))
+    $psExe = (Get-Command powershell.exe).Source
+    Start-Process -FilePath $psExe -ArgumentList @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', $launcher
+    ) -WindowStyle Normal | Out-Null
+    Write-WatchLog ('seat transcript pane started path={0}' -f $path)
+    return $true
+}
+
+function Start-WatchForwardExitWatcher {
+    # Non-blocking: wait for hidden wake PID and append end/exit to transcript + monitor log.
+    param(
+        [int]$ProcessId,
+        [string]$SessionId,
+        [string]$Kind,
+        [string]$TranscriptPath,
+        [string]$LogFile
+    )
+    if ($ProcessId -le 0) { return }
+    if (-not $script:StateDir) { return }
+    $psExe = (Get-Command powershell.exe).Source
+    $escTrans = ([string]$TranscriptPath).Replace("'", "''")
+    $escLog = ([string]$LogFile).Replace("'", "''")
+    $escSid = ([string]$SessionId).Replace("'", "''")
+    $escKind = ([string]$Kind).Replace("'", "''")
+    $scriptBody = @"
+`$ErrorActionPreference = 'SilentlyContinue'
+`$pidWake = $ProcessId
+`$p = Get-Process -Id `$pidWake -ErrorAction SilentlyContinue
+`$code = 'unknown'
+`$ended = [datetime]::UtcNow.ToString('o')
+if (`$p) {
+    `$p.WaitForExit()
+    try { `$code = `$p.ExitCode } catch { `$code = 'n/a' }
+    `$ended = [datetime]::UtcNow.ToString('o')
+} else {
+    `$code = 'gone'
+}
+`$msg = ('wake end kind={0} session={1} pid={2} exit={3}' -f '$escKind', '$escSid', `$pidWake, `$code)
+`$line = '{0} {1}' -f `$ended, `$msg
+`$utf8 = New-Object System.Text.UTF8Encoding `$false
+if ('$escTrans') { [IO.File]::AppendAllText('$escTrans', `$line + [Environment]::NewLine, `$utf8) }
+if ('$escLog') { [IO.File]::AppendAllText('$escLog', `$line + [Environment]::NewLine, `$utf8) }
+"@
+    $waiter = Join-Path $script:StateDir ('forward-exit-waiter-{0}.ps1' -f $ProcessId)
+    [IO.File]::WriteAllText($waiter, $scriptBody, (New-Object System.Text.UTF8Encoding $false))
+    Start-Process -FilePath $psExe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $waiter) -WindowStyle Hidden | Out-Null
+}
+
+function Test-WatchProcessAlive {
+    param([int]$ProcessId)
+    if ($ProcessId -le 0) { return $false }
+    $p = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    return [bool]$p
+}
+
+function Test-WatchWakeInFlight {
+    # FR #91: true when state tracks a live wake PID (or OS still shows -p for session).
+    param($State)
+    if (-not $State) { return $false }
+    $wp = 0
+    if ($State.PSObject.Properties.Name -contains 'wakePid') {
+        try { $wp = [int]$State.wakePid } catch { $wp = 0 }
+    }
+    if ($wp -gt 0 -and (Test-WatchProcessAlive -ProcessId $wp)) { return $true }
+    $sid = ''
+    if ($State.sessionId) { $sid = [string]$State.sessionId }
+    $grokKind = ($script:KindName -eq 'grok') -or [bool]$Grok
+    return (Test-WatchAgentWakeBusy -SessionId $sid -GrokKind:$grokKind)
+}
+
+function Clear-WatchWakeState {
+    param($State, [string]$Reason = '')
+    if (-not $State) { return $State }
+    $State | Add-Member -NotePropertyName 'wakePid' -NotePropertyValue 0 -Force
+    $State | Add-Member -NotePropertyName 'wakeStartedUtc' -NotePropertyValue $null -Force
+    $State | Add-Member -NotePropertyName 'wakeKind' -NotePropertyValue '' -Force
+    if ($Reason) { Write-WatchLog $Reason }
+    return $State
+}
+
+function Add-WatchWakeQueue {
+    # Queue FROM while a wake is in flight; coalesce exact duplicate pending lines.
+    param($State, [string]$Line)
+    if (-not $State) { return $State }
+    $q = @()
+    if ($State.PSObject.Properties.Name -contains 'wakeQueue' -and $State.wakeQueue) {
+        $q = @($State.wakeQueue)
+    }
+    foreach ($existing in $q) {
+        if ([string]$existing -eq [string]$Line) {
+            Write-WatchLog 'forward queue coalesce (duplicate pending FROM)'
+            return $State
+        }
+    }
+    $max = [int]$script:WakeQueueMax
+    if ($max -le 0) { $max = 20 }
+    if ($q.Count -ge $max) {
+        $q = @($q | Select-Object -Skip 1)
+        Write-WatchLog ('forward queue overflow drop oldest max={0}' -f $max)
+    }
+    $q += ,[string]$Line
+    $State | Add-Member -NotePropertyName 'wakeQueue' -NotePropertyValue $q -Force
+    Write-WatchLog ('forward queued depth={0}' -f $q.Count)
+    return $State
+}
+
+function Pop-WatchWakeQueue {
+    param($State)
+    if (-not $State) { return @{ State = $State; Line = $null } }
+    $q = @()
+    if ($State.PSObject.Properties.Name -contains 'wakeQueue' -and $State.wakeQueue) {
+        $q = @($State.wakeQueue)
+    }
+    if ($q.Count -eq 0) {
+        $State | Add-Member -NotePropertyName 'wakeQueue' -NotePropertyValue @() -Force
+        return @{ State = $State; Line = $null }
+    }
+    $line = [string]$q[0]
+    $rest = @()
+    if ($q.Count -gt 1) { $rest = @($q | Select-Object -Skip 1) }
+    $State | Add-Member -NotePropertyName 'wakeQueue' -NotePropertyValue $rest -Force
+    return @{ State = $State; Line = $line }
+}
+
+function Stop-OrphanWatchWakeProcesses {
+    # FR #91: on monitor start, kill orphaned -p wakes whose parent is dead.
+    # Never touch interactive TUI (agent.exe / cursor-agent without -p).
+    param(
+        [string]$SessionId,
+        [switch]$GrokKind
+    )
+    $sid = ([string]$SessionId).Trim()
+    $killed = 0
+    $rows = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    foreach ($row in $rows) {
+        $cl = [string]$row.CommandLine
+        $procId = [int]$row.ProcessId
+        $isWake = $false
+        if ($GrokKind) {
+            if ([string]$row.Name -ne 'agent.exe') { continue }
+            if ($cl -notmatch ' -p(\s|$)') { continue } # live TUI: keep
+            if ($sid -and $cl -notmatch (' -r\s+' + [regex]::Escape($sid) + '\b')) { continue }
+            $isWake = $true
+        }
+        else {
+            if ([string]$row.Name -eq 'powershell.exe' -and $cl -match 'forward-cursor\.ps1') {
+                if ($script:StateDir -and $cl -notmatch [regex]::Escape($script:StateDir)) { continue }
+                $isWake = $true
+            }
+            elseif ($sid -and $cl -match 'cursor-agent' -and $cl -match [regex]::Escape($sid) -and $cl -match ' -p ') {
+                $isWake = $true
+            }
+            else { continue }
+        }
+        if (-not $isWake) { continue }
+        $ppid = 0
+        try { $ppid = [int]$row.ParentProcessId } catch { $ppid = 0 }
+        $parentAlive = ($ppid -gt 0) -and (Test-WatchProcessAlive -ProcessId $ppid)
+        if ($parentAlive -and $ppid -eq $PID) { continue } # ours, still running
+        if ($parentAlive) { continue } # another live parent owns it
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        Write-WatchLog ('wake orphan reaped pid={0} parent={1} session={2}' -f $procId, $ppid, $sid)
+        $killed++
+    }
+    return $killed
+}
+
+function Sync-WatchWakeLifecycle {
+    # FR #91: reap finished/timed-out wakes; dequeue next FROM when idle.
+    # FR #99: also run no-CPU hang detection (may rotate session).
+    param(
+        $State,
+        [datetime]$Now = $(Get-Date),
+        [switch]$StartNext
+    )
+    if (-not $State) { return $State }
+    if (Get-Command Update-WatchPendingForwardHang -ErrorAction SilentlyContinue) {
+        $State = Update-WatchPendingForwardHang -State $State
+        if ($State.PSObject.Properties.Name -contains 'seatUnhealthy' -and [bool]$State.seatUnhealthy) {
+            return $State
+        }
+    }
+    $wp = 0
+    if ($State.PSObject.Properties.Name -contains 'wakePid') {
+        try { $wp = [int]$State.wakePid } catch { $wp = 0 }
+    }
+    $started = $null
+    if ($State.PSObject.Properties.Name -contains 'wakeStartedUtc' -and $State.wakeStartedUtc) {
+        try { $started = [datetime]$State.wakeStartedUtc } catch { $started = $null }
+    }
+    $kind = 'wake'
+    if ($State.PSObject.Properties.Name -contains 'wakeKind' -and $State.wakeKind) {
+        $kind = [string]$State.wakeKind
+    }
+    $sid = ''
+    if ($State.sessionId) { $sid = [string]$State.sessionId }
+
+    if ($wp -gt 0) {
+        $alive = Test-WatchProcessAlive -ProcessId $wp
+        $timeoutSec = [int]$script:WakeTimeoutSeconds
+        if ($timeoutSec -le 0) { $timeoutSec = 1800 }
+        $age = 0.0
+        if ($started) { $age = ($Now - $started).TotalSeconds }
+        if ($alive -and $started -and $age -ge $timeoutSec) {
+            Stop-Process -Id $wp -Force -ErrorAction SilentlyContinue
+            $msg = ('wake timeout kind={0} session={1} pid={2} ageSec={3}' -f $kind, $sid, $wp, [int]$age)
+            Write-WatchSeatTranscript $msg
+            $State = Clear-WatchWakeState -State $State -Reason $msg
+            $wp = 0
+        }
+        elseif (-not $alive) {
+            $msg = ('wake cleared kind={0} session={1} pid={2} (process gone)' -f $kind, $sid, $wp)
+            Write-WatchSeatTranscript $msg
+            $State = Clear-WatchWakeState -State $State -Reason $msg
+            $wp = 0
+        }
+    }
+
+    if ($StartNext -and $wp -le 0 -and -not (Test-WatchWakeInFlight -State $State)) {
+        $pop = Pop-WatchWakeQueue -State $State
+        $State = $pop.State
+        if ($pop.Line) {
+            Write-WatchLog 'forward dequeue next FROM'
+            $State = Send-IrcLineToSession -State $State -Line $pop.Line
+        }
+    }
+    return $State
 }
 
 function Read-WatchState {
@@ -490,8 +916,21 @@ function Resolve-NextFreeWatchIrcHome {
     throw ("All 16 watch-{0} slots are in use (live Watch-AgentHealth workers)." -f $Kind)
 }
 
+function Get-WatchBoundIrcHome {
+    # FR #97: always the seat-bound home (never a sibling slot).
+    if ($script:BoundIrcHome) {
+        return [IO.Path]::GetFullPath([string]$script:BoundIrcHome)
+    }
+    if ($script:IrcHome) {
+        return [IO.Path]::GetFullPath([string]$script:IrcHome)
+    }
+    return $null
+}
+
 function Bind-WatchSlot {
     # Pick next free IRC home (or keep -IrcHome), isolate state/log/worker pid per slot.
+    # FR #97 CAST IRON: set $script:IrcHome (not a function-local $IrcHome) so Ensure-WatchIrcSeat,
+    # Initialize-WatchIrcHome, irc.log tail, outbox, and Disconnect all use THIS seat only.
     if ($script:IrcHomeExplicit) {
         $resolved = [IO.Path]::GetFullPath($IrcHome)
     }
@@ -504,7 +943,9 @@ function Bind-WatchSlot {
     $slot = Get-WatchSlotNumberFromHome -SeatHome $resolved -Kind $script:KindName
     $script:ClientSlot = $slot
     $script:BoundIrcHome = $resolved
-    $IrcHome = $resolved
+    $script:IrcHome = $resolved
+    # Keep param-scope name in sync for any leftover $IrcHome reads in this script.
+    Set-Variable -Name IrcHome -Scope Script -Value $resolved
     $script:StateDir = Join-Path $env:USERPROFILE ('.grok\agent-health\watch-{0}-{1}' -f $script:KindName, $slot)
     New-Item -ItemType Directory -Force -Path $script:StateDir | Out-Null
     New-Item -ItemType Directory -Force -Path $resolved | Out-Null
@@ -523,7 +964,13 @@ function Bind-WatchSlot {
     else {
         $script:LogFile = $LogPath
     }
-    Write-WatchLog ("bind slot={0} ircHome={1} stateDir={2}" -f $slot, $resolved, $script:StateDir)
+    # Create log only if missing — never truncate another seat's log (FR #97).
+    if (-not (Test-Path -LiteralPath $script:LogFile)) {
+        $parent = Split-Path -Parent $script:LogFile
+        if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+        New-Item -ItemType File -Path $script:LogFile -Force | Out-Null
+    }
+    Write-WatchLog ("bind slot={0} ircHome={1} stateDir={2} log={3}" -f $slot, $resolved, $script:StateDir, $script:LogFile)
 }
 
 function Stop-OrphanWatchPythonForHome {
@@ -644,11 +1091,15 @@ function Test-ForbiddenIrcHome {
 
 function Initialize-WatchIrcHome {
     param($State)
-    $resolved = [IO.Path]::GetFullPath($IrcHome)
+    # FR #97: always bound home for this seat
+    $home = Get-WatchBoundIrcHome
+    if (-not $home) { $home = [string]$IrcHome }
+    $resolved = [IO.Path]::GetFullPath($home)
     if (Test-ForbiddenIrcHome -ResolvedHome $resolved) {
         throw "Refusing IrcHome $resolved (talk-seat / Watch home). Use .agentic-irc-watch-*."
     }
     $State.ircHome = $resolved
+    $State | Add-Member -NotePropertyName 'clientSlot' -NotePropertyValue $script:ClientSlot -Force
     return $State
 }
 
@@ -771,6 +1222,7 @@ function Try-AdoptLiveWatchAgent {
 
 function Resolve-StableWatchIrcNick {
     # Keep seat nick across monitor PID change while irc_agent for that nick is live (FR #89).
+    # FR #103: loop seats use -Nick override (non-worker grammar).
     param(
         $State,
         [string]$MachineId,
@@ -778,6 +1230,9 @@ function Resolve-StableWatchIrcNick {
         [int]$DefaultSeatPid,
         [object[]]$AgentRows = @()
     )
+    if ($script:WatchNickOverride) {
+        return ([string]$script:WatchNickOverride).Trim()
+    }
     $mid = ([string]$MachineId).Trim().ToLowerInvariant()
     $agents = @($AgentRows)
     if ($agents.Count -eq 0 -and $ResolvedHome) {
@@ -843,24 +1298,54 @@ function Clear-WatchStaleQuitRequest {
 }
 
 function Get-WatchSeatChannels {
-    # CAST IRON (Simon 2026-09-25): worker / watch seats JOIN their own #{machine} ONLY.
+    # CAST IRON (Simon 2026-09-25): fleet worker / watch seats JOIN their own #{machine} ONLY.
     # Never #bobiverse (bob-{machine} ears, Jeeves and humans only) and never #agentic_irc or extras.
+    # FR #103: loop seats JOIN -Channel only (still never #bobiverse / #agentic_irc).
     param([string]$MachineId)
+    if ($script:WatchChannelOverride) {
+        $c = ([string]$script:WatchChannelOverride).Trim()
+        if ($c -notmatch '^#') { $c = '#' + $c.TrimStart('#') }
+        $c = $c.ToLowerInvariant()
+        if ($c -match '(?i)^#(bobiverse|agentic_irc)$') {
+            throw ("Loop/fleet seat must not JOIN {0}" -f $c)
+        }
+        return $c
+    }
     $m = ([string]$MachineId).Trim().TrimStart('#').ToLowerInvariant()
     if (-not $m) { $m = ([string]$env:COMPUTERNAME).Trim().ToLowerInvariant() }
     return ('#' + $m)
+}
+
+function Test-WatchWorkerNickGrammar {
+    # gh-Jeeves / agentic_irc treat {machine}-{pid} as a shop worker.
+    param([string]$Nick)
+    return ([string]$Nick -match '^[A-Za-z0-9_]+-\d+$')
 }
 
 function Ensure-WatchIrcSeat {
     # CAST IRON (Simon 2026-09-23): systray / Watch-AgentHealth launch MUST connect
     # irc_agent + irc_listen on this home and JOIN its own #{machine} ONLY
     # (CAST IRON 2026-09-25: workers never join #bobiverse / #agentic_irc). Monitor then forwards FROM.
+    # FR #97: never adopt another slot's home/agent/listen.
     param($State)
+    $bound = Get-WatchBoundIrcHome
     $seatHome = [string]$State.ircHome
+    if ($bound) {
+        # Force state onto this seat's bound home (do not keep a sibling home from stale state.json).
+        if (-not $seatHome -or ([IO.Path]::GetFullPath($seatHome).TrimEnd('\') -ne $bound.TrimEnd('\'))) {
+            Write-WatchLog ("irc ensure rebasing state.ircHome from {0} to bound {1}" -f $seatHome, $bound)
+            $seatHome = $bound
+            $State.ircHome = $bound
+        }
+    }
     if (-not $seatHome) { return $State }
     $resolved = [IO.Path]::GetFullPath($seatHome)
     if (Test-ForbiddenIrcHome -ResolvedHome $resolved) {
         Write-WatchLog 'irc ensure skipped (forbidden home)'
+        return $State
+    }
+    if ($bound -and ($resolved.TrimEnd('\') -ne $bound.TrimEnd('\'))) {
+        Write-WatchLog ("irc ensure refused foreign home {0} (bound={1})" -f $resolved, $bound)
         return $State
     }
     New-Item -ItemType Directory -Force -Path $resolved | Out-Null
@@ -876,16 +1361,38 @@ function Ensure-WatchIrcSeat {
         $listens = @()
     }
     if ($agents.Count -gt 0 -and $listens.Count -gt 0) {
-        $nick = ''
-        if ([string]$agents[0].CommandLine -match '--nick\s+(\S+)') { $nick = $Matches[1] }
-        Write-WatchLog ("irc seat already up nick={0} agent={1} listen={2}" -f $nick, $agents[0].ProcessId, $listens[0].ProcessId)
-        if ($nick) {
-            $State | Add-Member -NotePropertyName 'ircNick' -NotePropertyValue $nick -Force
-            if ($nick -match '-(\d+)$') {
-                $State | Add-Member -NotePropertyName 'seatNickPid' -NotePropertyValue ([int]$Matches[1]) -Force
+        # FR #102: only treat as live if agent/listen PIDs are still running (Get-CimInstance rows
+        # can race; also rewrite coordinator.pid for this monitor seat).
+        $agentAlive = Test-WatchProcessAlive -ProcessId ([int]$agents[0].ProcessId)
+        $listenAlive = Test-WatchProcessAlive -ProcessId ([int]$listens[0].ProcessId)
+        if ($agentAlive -and $listenAlive) {
+            $nick = ''
+            if ([string]$agents[0].CommandLine -match '--nick\s+(\S+)') { $nick = $Matches[1] }
+            Write-WatchLog ("irc seat already up nick={0} agent={1} listen={2} home={3}" -f $nick, $agents[0].ProcessId, $listens[0].ProcessId, $resolved)
+            if ($nick) {
+                $State | Add-Member -NotePropertyName 'ircNick' -NotePropertyValue $nick -Force
+                if ($nick -match '-(\d+)$') {
+                    $State | Add-Member -NotePropertyName 'seatNickPid' -NotePropertyValue ([int]$Matches[1]) -Force
+                }
             }
+            $coordPath = Join-Path $resolved 'coordinator.pid'
+            @(
+                "nick=$nick"
+                "seat=$PID"
+                "listen=$($listens[0].ProcessId)"
+                "agent=$($agents[0].ProcessId)"
+                "home=$resolved"
+                "channels=$(Get-WatchSeatChannels -MachineId (Get-WatchMachineId))"
+            ) | Set-Content -LiteralPath $coordPath -Encoding utf8
+            return $State
         }
-        return $State
+        Write-WatchLog ("irc ensure stale live rows agentAlive={0} listenAlive={1} - relaunch" -f $agentAlive, $listenAlive)
+        foreach ($row in @($agents + $listens)) {
+            Stop-Process -Id $row.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 400
+        $agents = @()
+        $listens = @()
     }
     $scripts = Resolve-AgenticIrcScriptsDir
     if (-not $scripts) {
@@ -984,6 +1491,12 @@ function Disconnect-WatchIrc {
     $watchHome = [string]$State.ircHome
     if (-not $watchHome) { return }
     $resolved = [IO.Path]::GetFullPath($watchHome)
+    $bound = Get-WatchBoundIrcHome
+    # FR #97: never QUIT/kill another seat's IRC processes
+    if ($bound -and ($resolved.TrimEnd('\') -ne $bound.TrimEnd('\'))) {
+        Write-WatchLog ("irc disconnect refused foreign home {0} (bound={1})" -f $resolved, $bound)
+        return
+    }
     if (Test-ForbiddenIrcHome -ResolvedHome $resolved) {
         Write-WatchLog "irc disconnect skipped (forbidden home)"
         return
@@ -1016,16 +1529,40 @@ function Disconnect-WatchIrc {
 
 function Get-CursorSeedPrompt {
     param([string]$ResolvedIrcHome)
+    if (Test-WatchNoBored) {
+        $chan = if ($script:WatchChannelOverride) { $script:WatchChannelOverride } else { '#{channel}' }
+        $nick = if ($script:WatchNickOverride) { $script:WatchNickOverride } else { 'loop-nick' }
+        return @(
+            'Loop seat online (continuous agent; not a fleet job worker).'
+            "IRC home $ResolvedIrcHome. Monitor JOINed $chan as $nick only."
+            'No !bored, no ACK/DONE to Jeeves, no fleet job loop. Act on monitor FROM forwards; reply on outbox. No UAT.'
+        ) -join ' '
+    }
     return @(
         'Watch seat online. Skills: agent-monitor, watch-seat, agentic-irc + agentic_build (harvest-agent-skills; IRC playbooks to agentic_irc).'
         "IRC home $ResolvedIrcHome. Monitor already started irc_agent+irc_listen on this home (own #{machine} channel only)."
         'Monitor posts !bored for you on start, after DONE, and while idle (own #{machine} only). Do not post busy/idle status yourself.'
+        'ACK/DONE outbox lines: start with ACK or DONE (no nick: prefix); append PRIVMSG only. Skills watch-seat / bob-git-accept have the exact wire.'
         'You are NOT on IRC by reading irc.log or counting processes — you get IRC only via monitor FROM forwards. Act on those; reply on outbox. No UAT.'
     ) -join ' '
 }
 
 function Get-AgentPrompt {
     param([string]$ResolvedIrcHome)
+    if (Test-WatchNoBored) {
+        $chan = if ($script:WatchChannelOverride) { $script:WatchChannelOverride } else { '#{channel}' }
+        $nick = if ($script:WatchNickOverride) { $script:WatchNickOverride } else { 'loop-nick' }
+        return @(
+            'You are a continuous loop agent on this Windows box (NOT a fleet job worker).'
+            'Split: Watch-AgentHealth.ps1 is the deterministic monitor (health, irc_agent+irc_listen, tail irc.log, forward FROM). You do not run or reimplement the monitor.'
+            "IRC home: $ResolvedIrcHome. You JOIN only $chan as nick $nick. Never #bobiverse. Never join the fleet shop job loop."
+            'HARD RULES: never post !bored; never ACK/DONE/NACK to Jeeves; never !list; never claim busy/idle on the digest webhook.'
+            'Take commands only from Simon (or the human operator). Post progress with the project prefix when required (e.g. [dayworks]). Ask Simon questions as QUESTION lines when stuck.'
+            'CAST IRON: IRC arrives only as monitor-forwarded FROM lines. Prefer that wake path; do not arm in-session ^FROM TSR.'
+            'On each wake: act on the payload if it is for you or Simon asked; reply on outbox to your channel. Bare ping/PING is watcher auto-pong. Then end turn.'
+            'Do not stamp UAT. Bob/Simon only. No invented secrets. Do not gut cards or docs.'
+        ) -join ' '
+    }
     return @(
         'You are a fleet agent on this Windows box (watch seat).'
         'Split: Watch-AgentHealth.ps1 is the deterministic monitor (health, start irc_agent+irc_listen, tail irc.log, forward each IRC PRIVMSG into this session as FROM). You do not run, restart, or reimplement the monitor.'
@@ -1036,7 +1573,13 @@ function Get-AgentPrompt {
         'CAST IRON !bored: the monitor posts PRIVMSG #{machine} :!bored for you on seat start, right after your DONE, and every few minutes while idle. Never while busy. Do not post !bored or busy/idle chatter yourself.'
         'Forbidden homes: ~/.agentic-irc-cursor, cursor-2, bobiverse Watch.'
         'On each wake: treat the payload as the task; reply on outbox if addressed or Simon asked the box. Bare ping/PING is auto-ponged by the watcher. Then end turn.'
-        "Your IRC nick is nick= in $ResolvedIrcHome\coordinator.pid ({machine}-{monitor pid}, e.g. marchhare-34992). A wake starting FOR YOU is addressed to you — treat a Jeeves assignment (<nick>: FR|MRB owner/repo#N <url>) like an ASSIGN: ACK on #{machine}, do the job, DONE."
+        "Your IRC nick is nick= in $ResolvedIrcHome\coordinator.pid ({machine}-{monitor pid}, e.g. marchhare-34992). A wake starting FOR YOU is addressed to you - treat a Jeeves assignment (FR|MRB|UAT owner/repo#N url) like an ASSIGN."
+        'CAST IRON ACK/DONE wire (Jeeves ignores anything else): each outbox chat line must START with the keyword - no nick: prefix, no prose before ACK/DONE.'
+        'ACK format (exact): ACK FR|MRB|UAT owner/repo#n   Example: ACK FR SimonBarnett/gh-Jeeves#74'
+        'DONE format (exact, one line, ends at URL): DONE FR|MRB|UAT owner/repo#n PASS|FAIL PR-url'
+        'Nothing after the URL on a DONE line. Fix notes go on a SEPARATE outbox line. Then STOP - never post !bored (monitor-only).'
+        'Outbox: APPEND only (Add-Content / AppendAllText). Never Set-Content / Out-File without -Append. Prefer: PRIVMSG #{machine} :<payload>'
+        'Wrong: nick-prefixed ACK or text after DONE URL. Right: keyword first, assigned MODE, owner/repo#n, optional PASS|FAIL and URL.'
         'Do not stamp UAT. Bob/Simon only. No invented secrets. Do not gut cards or docs.'
     ) -join ' '
 }
@@ -1075,7 +1618,10 @@ function ConvertTo-WatchProcessArgumentString {
 
 function Get-GrokRules {
     $skills = Join-Path $env:USERPROFILE '.grok\skills'
-    return "Skills live at $skills. Follow agent-monitor, watch-seat, agentic-irc and agentic_build (including harvest-agent-skills). CAST IRON harvest AgentMonitor playbooks to this repo; fleet to agentic_build; IRC to agentic_irc. Monitor owns !bored (start/DONE/idle on #{machine}); treat Jeeves assignment lines as ASSIGN (ACK, work, DONE); never post busy/idle yourself."
+    if (Test-WatchNoBored) {
+        return "Skills live at $skills. Loop seat: never !bored, never ACK/DONE to Jeeves, never fleet job loop. Monitor forwards FROM only. Harvest AgentMonitor playbooks to this repo when relevant."
+    }
+    return "Skills live at $skills. Follow agent-monitor, watch-seat, agentic-irc and agentic_build (including harvest-agent-skills / bob-git-accept). CAST IRON harvest AgentMonitor playbooks to this repo; fleet to agentic_build; IRC to agentic_irc. Monitor owns !bored; Jeeves assign → ACK FR|MRB|UAT owner/repo#N (line starts with ACK, no nick prefix) → work → DONE FR|MRB|UAT owner/repo#N [PASS|FAIL] <url> (nothing after URL) → STOP; append outbox only; never post !bored yourself."
 }
 
 function Get-DescendantPids {
@@ -1126,7 +1672,8 @@ function Stop-WatchedTree {
 function Test-DropIrcLine {
     param([string]$Line)
     if ($Line -notmatch '^FROM ') { return $true }
-    if ($Line -match ' POINT | DIGEST | AGPK | SEAL ') { return $true }
+    # Protocol tokens are UPPERCASE; -cmatch so chat words (digest, point, seal) still forward.
+    if ($Line -cmatch ' POINT | DIGEST | AGPK | SEAL ') { return $true }
     # Do NOT drop chat PING here â€” Send-IrcLineToSession auto-pongs first (CAST IRON).
     if ($Line -match '(?i)is busy\.|password=|XAI_API_KEY') { return $true }
     return $false
@@ -1148,6 +1695,7 @@ function Get-WatchSeatNick {
     if ($State -and $State.ircNick) { return ([string]$State.ircNick).Trim() }
     $seatHome = $null
     if ($State -and $State.ircHome) { $seatHome = [string]$State.ircHome }
+    if (-not $seatHome) { $seatHome = Get-WatchBoundIrcHome }
     if (-not $seatHome) { $seatHome = [string]$IrcHome }
     if (-not $seatHome) { return '' }
     $coord = Join-Path $seatHome 'coordinator.pid'
@@ -1194,6 +1742,14 @@ function Send-WatchIrcPong {
     [IO.File]::AppendAllText($outbox, $line + "`n", (New-Object System.Text.UTF8Encoding $false))
     Write-WatchLog ('auto-pong {0} -> {1} (watcher; no agent wake)' -f $Nick, $Target)
     return $true
+}
+
+function Set-WatchBoredActivity {
+    # FR #100: reset idle clock on forward / seat activity so !bored does not fire mid-wake.
+    param($State, [datetime]$Now = $(Get-Date))
+    if (-not $State) { return $State }
+    $State | Add-Member -NotePropertyName 'boredIdleSinceUtc' -NotePropertyValue $Now -Force
+    return $State
 }
 
 function Get-WatchOutboxPayload {
@@ -1272,6 +1828,7 @@ function Test-WatchSeatBoredBusy {
 
 function Get-WatchBoredChannel {
     # CAST IRON: !bored only in own #{machine}. Never #bobiverse / #agentic_irc / nick PRIVMSG.
+    # Loop seats never call Send-WatchIrcBored (Test-WatchNoBored), but keep channel helper consistent.
     param([string]$MachineId = '')
     $mid = ([string]$MachineId).Trim()
     if (-not $mid) { $mid = Get-WatchMachineId }
@@ -1327,6 +1884,7 @@ function Get-WatchOutboxDoneKey {
 function Sync-WatchBored {
     # FR #100: monitor emits !bored on start, after DONE, and while idle — never while busy.
     # Works with zero model tokens. Own #{machine} only.
+    # FR #103: -NoBored / -SeatType loop suppresses every !bored trigger.
     param(
         $State,
         [ValidateSet('poll', 'start')]
@@ -1334,6 +1892,9 @@ function Sync-WatchBored {
         [datetime]$Now = $(Get-Date)
     )
     if (-not $State) { return $State }
+    if (Test-WatchNoBored) {
+        return $State
+    }
     $seatHome = [string]$State.ircHome
     if (-not $seatHome) { return $State }
     $resolved = [IO.Path]::GetFullPath($seatHome)
@@ -1442,6 +2003,273 @@ function Test-WatchIrcAddressedToNick {
     return ($t -match ("^(?i)@?{0}(\s*[:,]|\s+-\s|\s*$)" -f $esc))
 }
 
+function Get-GrokSessionsRoot {
+    if ($script:GrokSessionsRoot) { return [IO.Path]::GetFullPath($script:GrokSessionsRoot) }
+    if ($GrokSessionsRoot) { return [IO.Path]::GetFullPath($GrokSessionsRoot) }
+    if ($env:BOB_GROK_SESSIONS_ROOT) { return [IO.Path]::GetFullPath($env:BOB_GROK_SESSIONS_ROOT) }
+    return Join-Path $env:USERPROFILE '.grok\sessions'
+}
+
+function Get-GrokCwdSessionBucket {
+    param([string]$WorkDir)
+    $full = [IO.Path]::GetFullPath($WorkDir)
+    # Grok stores sessions under URL-encoded cwd (e.g. D%3A%5Cai)
+    return [uri]::EscapeDataString($full)
+}
+
+function Resolve-GrokSessionDir {
+    param(
+        [string]$SessionId,
+        [string]$WorkDir,
+        [string]$SessionsRoot = ''
+    )
+    $sid = ([string]$SessionId).Trim()
+    if (-not $sid) { return $null }
+    $root = if ($SessionsRoot) { $SessionsRoot } else { Get-GrokSessionsRoot }
+    if (-not (Test-Path -LiteralPath $root)) { return $null }
+    $bucket = Join-Path $root (Get-GrokCwdSessionBucket -WorkDir $WorkDir)
+    $direct = Join-Path $bucket $sid
+    if (Test-Path -LiteralPath $direct) { return [IO.Path]::GetFullPath($direct) }
+    # Fallback: search one level under sessions root
+    foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+        $cand = Join-Path $dir.FullName $sid
+        if (Test-Path -LiteralPath $cand) { return [IO.Path]::GetFullPath($cand) }
+    }
+    return $null
+}
+
+function Get-WatchSessionSizeInfo {
+    param([string]$SessionDir)
+    $info = [pscustomobject]@{
+        SessionDir     = $SessionDir
+        UpdatesBytes   = [int64]0
+        FolderBytes    = [int64]0
+        UpdatesPath    = ''
+        Exists         = $false
+    }
+    if (-not $SessionDir -or -not (Test-Path -LiteralPath $SessionDir)) { return $info }
+    $info.Exists = $true
+    $updates = Join-Path $SessionDir 'updates.jsonl'
+    $info.UpdatesPath = $updates
+    if (Test-Path -LiteralPath $updates) {
+        $info.UpdatesBytes = [int64](Get-Item -LiteralPath $updates).Length
+    }
+    $sum = [int64]0
+    foreach ($f in @(Get-ChildItem -LiteralPath $SessionDir -File -Recurse -ErrorAction SilentlyContinue)) {
+        $sum += [int64]$f.Length
+    }
+    $info.FolderBytes = $sum
+    return $info
+}
+
+function Test-WatchSessionNeedsRotation {
+    param(
+        $SizeInfo,
+        [double]$MaxUpdatesMb = 10
+    )
+    if (-not $SizeInfo -or -not $SizeInfo.Exists) { return $false }
+    $limit = [int64]([Math]::Max(1.0, $MaxUpdatesMb) * 1MB)
+    if ([int64]$SizeInfo.UpdatesBytes -ge $limit) { return $true }
+    # whole folder > 3x updates limit is also oversized
+    if ([int64]$SizeInfo.FolderBytes -ge (3 * $limit)) { return $true }
+    return $false
+}
+
+function Archive-WatchSessionDir {
+    param(
+        [string]$SessionDir,
+        [string]$Reason = 'oversized'
+    )
+    if (-not $SessionDir -or -not (Test-Path -LiteralPath $SessionDir)) {
+        return [pscustomobject]@{ ok = $false; archivePath = ''; reason = 'missing' }
+    }
+    $parent = Split-Path -Parent $SessionDir
+    $leaf = Split-Path -Leaf $SessionDir
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $archRoot = Join-Path $parent ('_archive-{0}-{1}' -f $stamp, ($Reason -replace '[^\w\-]', ''))
+    New-Item -ItemType Directory -Force -Path $archRoot | Out-Null
+    $dest = Join-Path $archRoot $leaf
+    # Move (never delete)
+    Move-Item -LiteralPath $SessionDir -Destination $dest -Force
+    return [pscustomobject]@{ ok = $true; archivePath = $dest; reason = $Reason }
+}
+
+function New-WatchSessionId {
+    return [guid]::NewGuid().ToString()
+}
+
+function Write-WatchSessionHealthReport {
+    param(
+        [string]$Kind,
+        [string]$Event,
+        [hashtable]$Fields
+    )
+    # FR #99: digest webhook only (no IRC chatter). Best-effort; never throws.
+    try {
+        $payload = @{
+            op        = 'merge'
+            machine   = $(if ($env:BOB_MACHINE_ID) { $env:BOB_MACHINE_ID.ToLowerInvariant() } else { $env:COMPUTERNAME.ToLowerInvariant() })
+            lastSeen  = (Get-Date).ToUniversalTime().ToString('o')
+            working_on = ('watch-seat {0}: {1}' -f $Kind, $Event)
+            status    = $(if ($Event -match 'unhealthy') { 'I am degraded' } else { 'I am online' })
+            online    = $true
+            watch_session = $Fields
+        }
+        $url = $env:BOB_REPORT_URL
+        if (-not $url) { $url = 'http://127.0.0.1:19781/bob/v1/report' }
+        $body = ($payload | ConvertTo-Json -Depth 6 -Compress)
+        $headers = @{ 'Content-Type' = 'application/json' }
+        $sec = $env:BOB_CALLBACK_SECRET
+        if (-not $sec) { $sec = $env:BOB_SECRET }
+        if ($sec) { $headers['X-Bob-Secret'] = $sec }
+        Invoke-WebRequest -Uri $url -Method POST -Body $body -Headers $headers -UseBasicParsing -TimeoutSec 3 | Out-Null
+    }
+    catch { }
+}
+
+function Ensure-WatchSessionBeforeResume {
+    param(
+        $State,
+        [string]$WorkDir,
+        [string]$Kind = 'grok'
+    )
+    $sid = [string]$State.sessionId
+    if (-not $sid) {
+        $State.sessionId = New-WatchSessionId
+        $State.seenSession = $false
+        return $State
+    }
+    $dir = Resolve-GrokSessionDir -SessionId $sid -WorkDir $WorkDir
+    if (-not $dir) { return $State }
+    $info = Get-WatchSessionSizeInfo -SessionDir $dir
+    $maxMb = if ($SessionMaxUpdatesMb -gt 0) { $SessionMaxUpdatesMb } else { 10 }
+    if (-not (Test-WatchSessionNeedsRotation -SizeInfo $info -MaxUpdatesMb $maxMb)) {
+        return $State
+    }
+    $arch = Archive-WatchSessionDir -SessionDir $dir -Reason 'oversized'
+    $old = $sid
+    $State.sessionId = New-WatchSessionId
+    $State.seenSession = $false
+    if ($State.PSObject.Properties.Name -contains 'cursorSessionValid') {
+        try { $State.PSObject.Properties.Remove('cursorSessionValid') } catch { }
+    }
+    $State | Add-Member -NotePropertyName 'lastSessionRotate' -NotePropertyValue ((Get-Date).ToUniversalTime().ToString('o')) -Force
+    $State | Add-Member -NotePropertyName 'lastSessionRotateReason' -NotePropertyValue 'oversized' -Force
+    Write-WatchLog ("session rotate oversized old={0} new={1} updatesMb={2:N1} archive={3}" -f $old, $State.sessionId, ($info.UpdatesBytes / 1MB), $arch.archivePath)
+    Write-WatchSessionHealthReport -Kind $Kind -Event 'session-rotate-oversized' -Fields @{
+        old_session = $old
+        new_session = $State.sessionId
+        updates_mb  = [Math]::Round(($info.UpdatesBytes / 1MB), 2)
+        archive     = $arch.archivePath
+    }
+    return $State
+}
+
+function Test-WatchForwardBusy {
+    # Max one pending agent -p per seat (FR #99).
+    param($State)
+    if ($State.PSObject.Properties.Name -contains 'pendingForwardPid') {
+        $fwdPid = 0
+        try { $fwdPid = [int]$State.pendingForwardPid } catch { $fwdPid = 0 }
+        if ($fwdPid -gt 0 -and (Test-WatchProcessAlive -ProcessId $fwdPid)) {
+            return $true
+        }
+    }
+    $sid = [string]$State.sessionId
+    if ($sid -and (Test-CursorAgentForwardBusy -SessionId $sid)) { return $true }
+    return $false
+}
+
+function Get-ProcessCpuSeconds {
+    param([int]$ProcessId)
+    if ($ProcessId -le 0) { return $null }
+    try {
+        $p = Get-Process -Id $ProcessId -ErrorAction Stop
+        return [double]$p.TotalProcessorTime.TotalSeconds
+    }
+    catch { return $null }
+}
+
+function Update-WatchPendingForwardHang {
+    param($State)
+    # FR #99: if pending -p makes no CPU progress for SessionHangMinutes, kill once, rotate, redeliver once.
+    # Prefer pendingForwardPid; fall back to wakePid (FR #91).
+    $fwdPid = 0
+    if ($State.PSObject.Properties.Name -contains 'pendingForwardPid') {
+        try { $fwdPid = [int]$State.pendingForwardPid } catch { $fwdPid = 0 }
+    }
+    if ($fwdPid -le 0 -and ($State.PSObject.Properties.Name -contains 'wakePid')) {
+        try { $fwdPid = [int]$State.wakePid } catch { $fwdPid = 0 }
+        if ($fwdPid -gt 0) {
+            $State | Add-Member -NotePropertyName 'pendingForwardPid' -NotePropertyValue $fwdPid -Force
+        }
+    }
+    if ($fwdPid -le 0) { return $State }
+    if (-not (Test-WatchProcessAlive -ProcessId $fwdPid)) {
+        $State.pendingForwardPid = 0
+        if ($State.PSObject.Properties.Name -contains 'wakePid') { $State.wakePid = 0 }
+        return $State
+    }
+    $cpu = Get-ProcessCpuSeconds -ProcessId $fwdPid
+    $now = Get-Date
+    if (-not ($State.PSObject.Properties.Name -contains 'pendingForwardCpu')) {
+        $State | Add-Member -NotePropertyName 'pendingForwardCpu' -NotePropertyValue $cpu -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardCpuAt' -NotePropertyValue $now -Force
+        return $State
+    }
+    $prevCpu = $State.pendingForwardCpu
+    $prevAt = $State.pendingForwardCpuAt
+    if ($null -eq $cpu -or $null -eq $prevCpu) { return $State }
+    if ([double]$cpu -gt ([double]$prevCpu + 0.05)) {
+        $State.pendingForwardCpu = $cpu
+        $State.pendingForwardCpuAt = $now
+        return $State
+    }
+    $hangMin = if ($SessionHangMinutes -gt 0) { $SessionHangMinutes } else { 3 }
+    $elapsed = ($now - [datetime]$prevAt).TotalMinutes
+    if ($elapsed -lt $hangMin) { return $State }
+
+    # Hung: stop once, rotate session, redeliver pending FROM once
+    Write-WatchLog ("forward hung no-cpu pid={0} elapsedMin={1:N1} - stop+rotate once" -f $fwdPid, $elapsed)
+    try { Stop-Process -Id $fwdPid -Force -ErrorAction SilentlyContinue } catch { }
+    $State.pendingForwardPid = 0
+    if ($State.PSObject.Properties.Name -contains 'wakePid') { $State.wakePid = 0 }
+    $oldSid = [string]$State.sessionId
+    $cwdFull = [IO.Path]::GetFullPath($Cwd)
+    $dir = Resolve-GrokSessionDir -SessionId $oldSid -WorkDir $cwdFull
+    if ($dir) { [void](Archive-WatchSessionDir -SessionDir $dir -Reason 'hung') }
+    $State.sessionId = New-WatchSessionId
+    $State.seenSession = $false
+    $State | Add-Member -NotePropertyName 'lastSessionRotateReason' -NotePropertyValue 'hung' -Force
+    Write-WatchSessionHealthReport -Kind $(if ($Grok) { 'grok' } else { 'cursor' }) -Event 'session-rotate-hung' -Fields @{
+        old_session = $oldSid
+        new_session = $State.sessionId
+        hung_pid    = $fwdPid
+    }
+    $pendingLine = ''
+    if ($State.PSObject.Properties.Name -contains 'pendingForwardLine') {
+        $pendingLine = [string]$State.pendingForwardLine
+    }
+    $alreadyRetried = $false
+    if ($State.PSObject.Properties.Name -contains 'pendingForwardRetried' -and [bool]$State.pendingForwardRetried) {
+        $alreadyRetried = $true
+    }
+    if ($pendingLine -and -not $alreadyRetried) {
+        $State | Add-Member -NotePropertyName 'pendingForwardRetried' -NotePropertyValue $true -Force
+        $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue '' -Force
+        Write-WatchLog 'forward hung: re-deliver pending FROM once after rotate'
+        return (Send-IrcLineToSession -State $State -Line $pendingLine)
+    }
+    if ($alreadyRetried) {
+        $State | Add-Member -NotePropertyName 'seatUnhealthy' -NotePropertyValue $true -Force
+        Write-WatchLog 'forward hung: second failure - seat unhealthy; stop queueing'
+        Write-WatchSessionHealthReport -Kind $(if ($Grok) { 'grok' } else { 'cursor' }) -Event 'seat-unhealthy-hung' -Fields @{
+            session = $State.sessionId
+        }
+    }
+    return $State
+}
+
 function Format-WatchWakeText {
     # Wake payload for the headless resume (agent -r <sid> -p <text>).
     # The session never learns its IRC nick from the seed prompt, so a line addressed to
@@ -1452,9 +2280,48 @@ function Format-WatchWakeText {
     if ($text.Length -gt $MaxLen) { $text = $text.Substring(0, $MaxLen) }
     $parts = Get-IrcFromParts -Line $text
     if ($parts -and $OurNick -and (Test-WatchIrcAddressedToNick -Text $parts.text -OurNick $OurNick)) {
-        return ('FOR YOU (your IRC nick is {0}; this line is addressed to you - act on it and reply on outbox to {1}): {2}' -f $OurNick, $parts.target, $text)
+        # FR #104: remind wire on every FOR YOU wake — agents copy nick: from the ear line otherwise.
+        return ('FOR YOU (your IRC nick is {0}; this line is addressed to you - act on it and reply on outbox to {1}). Outbox ACK/DONE: line must start with ACK or DONE (no {0}: prefix); append PRIVMSG only; DONE ends at the URL: {2}' -f $OurNick, $parts.target, $text)
     }
     return $text
+}
+
+function Test-WatchForwardDedupeHit {
+    # FR #105: true when $Line matches last forward and age is still within TTL.
+    param(
+        $State,
+        [string]$Line,
+        [datetime]$Now = $(Get-Date),
+        [int]$TtlSeconds = 0
+    )
+    if (-not $State) { return $false }
+    if (-not ($State.PSObject.Properties.Name -contains 'lastForwardLine')) { return $false }
+    if ([string]$State.lastForwardLine -ne [string]$Line) { return $false }
+    $ttl = [int]$TtlSeconds
+    if ($ttl -le 0) { $ttl = [int]$script:ForwardDedupeSeconds }
+    if ($ttl -le 0) { $ttl = 60 }
+    $lastUtc = $null
+    if ($State.PSObject.Properties.Name -contains 'lastForwardUtc' -and $State.lastForwardUtc) {
+        try { $lastUtc = [datetime]$State.lastForwardUtc } catch { $lastUtc = $null }
+    }
+    if (-not $lastUtc) {
+        # Legacy state without timestamp: treat as expired so re-offers wake again.
+        return $false
+    }
+    $age = ($Now - $lastUtc).TotalSeconds
+    return ($age -ge 0 -and $age -lt [double]$ttl)
+}
+
+function Set-WatchLastForward {
+    param(
+        $State,
+        [string]$Line,
+        [datetime]$Now = $(Get-Date)
+    )
+    if (-not $State) { return $State }
+    $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue $Line -Force
+    $State | Add-Member -NotePropertyName 'lastForwardUtc' -NotePropertyValue $Now -Force
+    return $State
 }
 
 function Send-IrcLineToSession {
@@ -1463,7 +2330,13 @@ function Send-IrcLineToSession {
         [string]$Line
     )
     try {
-    if ($State.PSObject.Properties.Name -contains 'lastForwardLine' -and [string]$State.lastForwardLine -eq $Line) {
+    if (Test-WatchForwardDedupeHit -State $State -Line $Line) {
+        $age = '?'
+        try {
+            $age = [int]((Get-Date) - [datetime]$State.lastForwardUtc).TotalSeconds
+        }
+        catch { }
+        Write-WatchLog ('forward skipped (duplicate within {0}s, age={1}s) {2}' -f $script:ForwardDedupeSeconds, $age, ([string]$Line).Substring(0, [Math]::Min(120, ([string]$Line).Length)))
         return $State
     }
     $trim = $Line.Trim()
@@ -1478,7 +2351,7 @@ function Send-IrcLineToSession {
                 $seatHome = [string]$State.ircHome
                 if (-not $seatHome) { $seatHome = $IrcHome }
                 [void](Send-WatchIrcPong -IrcHome $seatHome -Target $parts.target -Nick $parts.nick)
-                $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue $Line -Force
+                $State = Set-WatchLastForward -State $State -Line $Line
                 return $State
             }
         }
@@ -1492,17 +2365,43 @@ function Send-IrcLineToSession {
         Write-WatchLog ('listen {0}' -f $trim.Substring(0, [Math]::Min(120, $trim.Length)))
     }
     if (Test-DropIrcLine -Line $Line) { return $State }
+    # FR #99: hang check (no-CPU) before queueing another wake.
+    $State = Update-WatchPendingForwardHang -State $State
+    if ($State.PSObject.Properties.Name -contains 'seatUnhealthy' -and [bool]$State.seatUnhealthy) {
+        Write-WatchLog 'forward skipped (seat unhealthy after hung wake)'
+        return $State
+    }
+    # FR #91: clear finished/timed-out wake before deciding to start or queue.
+    $State = Sync-WatchWakeLifecycle -State $State -StartNext:$false
+    if (Test-WatchWakeInFlight -State $State) {
+        return (Add-WatchWakeQueue -State $State -Line $Line)
+    }
     $inbox = Join-Path $script:StateDir 'agent-inbox.txt'
     Add-Content -LiteralPath $inbox -Value $Line -Encoding utf8
     $cwdFull = [IO.Path]::GetFullPath($Cwd)
     $text = Format-WatchWakeText -Line $Line -OurNick (Get-WatchSeatNick -State $State)
+    # FR #99: rotate oversized session before resume (archive, never delete).
+    $State = Ensure-WatchSessionBeforeResume -State $State -WorkDir $cwdFull -Kind $(if ($Grok) { 'grok' } else { 'cursor' })
     $sid = [string]$State.sessionId
     if ($Grok) {
         $exe = Get-GrokAgentPath
         $args = @('--no-auto-update', '--no-alt-screen', '--cwd', $cwdFull, '-r', $sid, '-p', $text)
-        Start-Process -FilePath $exe -ArgumentList (ConvertTo-WatchProcessArgumentString -ArgumentList $args) -WorkingDirectory $cwdFull -WindowStyle Hidden | Out-Null
-        $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue $Line -Force
-        Write-WatchLog ('forward grok session={0} {1}' -f $sid, $text.Substring(0, [Math]::Min(80, $text.Length)))
+        $fwdProc = Start-Process -FilePath $exe -ArgumentList (ConvertTo-WatchProcessArgumentString -ArgumentList $args) -WorkingDirectory $cwdFull -WindowStyle Hidden -PassThru
+        $State = Set-WatchLastForward -State $State -Line $Line
+        $State = Set-WatchBoredActivity -State $State
+        $preview = $text.Substring(0, [Math]::Min(120, $text.Length))
+        $pidWake = 0
+        if ($fwdProc) { $pidWake = [int]$fwdProc.Id }
+        $State | Add-Member -NotePropertyName 'wakePid' -NotePropertyValue $pidWake -Force
+        $State | Add-Member -NotePropertyName 'wakeStartedUtc' -NotePropertyValue (Get-Date) -Force
+        $State | Add-Member -NotePropertyName 'wakeKind' -NotePropertyValue 'grok' -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardPid' -NotePropertyValue $pidWake -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardLine' -NotePropertyValue $Line -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardCpu' -NotePropertyValue (Get-ProcessCpuSeconds -ProcessId $pidWake) -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardCpuAt' -NotePropertyValue (Get-Date) -Force
+        $State | Add-Member -NotePropertyName 'pendingForwardRetried' -NotePropertyValue $false -Force
+        Write-WatchSeatTranscript ('wake start kind=grok session={0} pid={1} text={2}' -f $sid, $pidWake, $preview)
+        Start-WatchForwardExitWatcher -ProcessId $pidWake -SessionId $sid -Kind 'grok' -TranscriptPath (Get-WatchSeatTranscriptPath) -LogFile $script:LogFile
         return $State
     }
     $agentCmd = Get-CursorAgentCmd
@@ -1514,10 +2413,6 @@ function Send-IrcLineToSession {
     $escCwd = $cwdFull.Replace("'", "''")
     $escAgent = $agentCmd.Replace("'", "''")
     $escSid = $sid.Replace("'", "''")
-    if (Test-CursorAgentForwardBusy -SessionId $sid) {
-        Write-WatchLog ('forward skipped (agent -p already running session={0})' -f $sid)
-        return $State
-    }
     $fwdAgent = "& '$escAgent' --trust --force$(Format-CursorModelCliFragment) --workspace '$escCwd' -p -- `$prompt"
     $fwdResume = Test-CursorUseResumeCli -State $State
     if ($fwdResume) {
@@ -1531,9 +2426,22 @@ function Send-IrcLineToSession {
     ) -join [Environment]::NewLine
     [IO.File]::WriteAllText($launch, $body, $utf8)
     $psExe = (Get-Command powershell.exe).Source
-    Start-Process -FilePath $psExe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launch) -WindowStyle Hidden | Out-Null
-    $State | Add-Member -NotePropertyName 'lastForwardLine' -NotePropertyValue $Line -Force
-    Write-WatchLog ('forward cursor session={0} {1}' -f $sid, $text.Substring(0, [Math]::Min(80, $text.Length)))
+    $fwdProc = Start-Process -FilePath $psExe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $launch) -WindowStyle Hidden -PassThru
+    $State = Set-WatchLastForward -State $State -Line $Line
+    $State = Set-WatchBoredActivity -State $State
+    $preview = $text.Substring(0, [Math]::Min(120, $text.Length))
+    $pidWake = 0
+    if ($fwdProc) { $pidWake = [int]$fwdProc.Id }
+    $State | Add-Member -NotePropertyName 'wakePid' -NotePropertyValue $pidWake -Force
+    $State | Add-Member -NotePropertyName 'wakeStartedUtc' -NotePropertyValue (Get-Date) -Force
+    $State | Add-Member -NotePropertyName 'wakeKind' -NotePropertyValue 'cursor' -Force
+    $State | Add-Member -NotePropertyName 'pendingForwardPid' -NotePropertyValue $pidWake -Force
+    $State | Add-Member -NotePropertyName 'pendingForwardLine' -NotePropertyValue $Line -Force
+    $State | Add-Member -NotePropertyName 'pendingForwardCpu' -NotePropertyValue (Get-ProcessCpuSeconds -ProcessId $pidWake) -Force
+    $State | Add-Member -NotePropertyName 'pendingForwardCpuAt' -NotePropertyValue (Get-Date) -Force
+    $State | Add-Member -NotePropertyName 'pendingForwardRetried' -NotePropertyValue $false -Force
+    Write-WatchSeatTranscript ('wake start kind=cursor session={0} pid={1} text={2}' -f $sid, $pidWake, $preview)
+    Start-WatchForwardExitWatcher -ProcessId $pidWake -SessionId $sid -Kind 'cursor' -TranscriptPath (Get-WatchSeatTranscriptPath) -LogFile $script:LogFile
     return $State
     }
     catch {
@@ -1852,11 +2760,24 @@ function Start-DetachedWatchWorkerIfNeeded {
     if ($script:CursorModel) { $workerArgs += @('-Model', $script:CursorModel) }
     if ($PSBoundParameters.ContainsKey('Cwd')) { $workerArgs += @('-Cwd', $Cwd) }
     # Always pass bound slot home so seats 2/3/4 are distinct.
-    $workerArgs += @('-IrcHome', $IrcHome)
+    $homeForWorker = Get-WatchBoundIrcHome
+    if (-not $homeForWorker) { $homeForWorker = [string]$IrcHome }
+    $workerArgs += @('-IrcHome', $homeForWorker)
     if ($PSBoundParameters.ContainsKey('PollSeconds')) { $workerArgs += @('-PollSeconds', [string]$PollSeconds) }
     if ($PSBoundParameters.ContainsKey('CrashBackoffSeconds')) { $workerArgs += @('-CrashBackoffSeconds', [string]$CrashBackoffSeconds) }
     if ($PSBoundParameters.ContainsKey('LogPath')) { $workerArgs += @('-LogPath', $LogPath) }
     elseif ($script:LogFile) { $workerArgs += @('-LogPath', $script:LogFile) }
+    if ($PSBoundParameters.ContainsKey('BoredIdleSeconds')) { $workerArgs += @('-BoredIdleSeconds', [string]$BoredIdleSeconds) }
+    if ($PSBoundParameters.ContainsKey('BoredRepeatSeconds')) { $workerArgs += @('-BoredRepeatSeconds', [string]$BoredRepeatSeconds) }
+    if ($PSBoundParameters.ContainsKey('BoredAckStaleMinutes')) { $workerArgs += @('-BoredAckStaleMinutes', [string]$BoredAckStaleMinutes) }
+    if ($PSBoundParameters.ContainsKey('BoredCheckSeconds')) { $workerArgs += @('-BoredCheckSeconds', [string]$BoredCheckSeconds) }
+    if ($PSBoundParameters.ContainsKey('ForwardDedupeSeconds')) { $workerArgs += @('-ForwardDedupeSeconds', [string]$ForwardDedupeSeconds) }
+    if ($PSBoundParameters.ContainsKey('WakeTimeoutSeconds')) { $workerArgs += @('-WakeTimeoutSeconds', [string]$WakeTimeoutSeconds) }
+    if ($PSBoundParameters.ContainsKey('WakeQueueMax')) { $workerArgs += @('-WakeQueueMax', [string]$WakeQueueMax) }
+    if ($script:SeatType -and $script:SeatType -ne 'fleet') { $workerArgs += @('-SeatType', $script:SeatType) }
+    if ($NoBored -or $script:NoBored) { $workerArgs += '-NoBored' }
+    if ($script:WatchChannelOverride) { $workerArgs += @('-Channel', $script:WatchChannelOverride) }
+    if ($script:WatchNickOverride) { $workerArgs += @('-Nick', $script:WatchNickOverride) }
     $log = $LogPath
     if (-not $log) { $log = $script:LogFile }
     if (-not $log) {
@@ -1874,7 +2795,8 @@ function Register-WatchWorkerProcess {
     New-Item -ItemType Directory -Force -Path $script:StateDir | Out-Null
     $self = $PID
     $kindFlag = if ($Cursor) { '-Cursor' } else { '-Grok' }
-    $seatHome = if ($script:BoundIrcHome) { $script:BoundIrcHome } else { [string]$IrcHome }
+    $seatHome = Get-WatchBoundIrcHome
+    if (-not $seatHome) { $seatHome = [string]$IrcHome }
     # Only retire stale workers on THIS slot home â€” never kill seats 2/3/4.
     foreach ($row in @(Get-LiveWatchWorkerRows -Kind $script:KindName -SeatHome $seatHome -ExcludePid $self)) {
         $opid = [int]$row.ProcessId
@@ -1911,35 +2833,38 @@ function Unregister-WatchWorkerProcess {
     catch { }
 }
 
+# FR #97: do NOT create/truncate the default seat-1 log before Bind-WatchSlot.
+# Bind-WatchSlot sets per-slot LogFile and creates it only if missing.
 $script:LogFile = $LogPath
-if (-not $script:LogFile) {
-    $script:LogFile = Join-Path $env:USERPROFILE 'Desktop\Watch-AgentHealth\Watch-AgentHealth.log'
-}
-
-New-Item -ItemType File -Force -Path $script:LogFile | Out-Null
 if (-not $WatchWorker -and $Windows -eq 'on') {
     $WatchWorker = $true
 }
-# Next free .agentic-irc-watch-* / -2 / -3 â€¦ before spawning the detached worker.
+# Next free .agentic-irc-watch-* / -2 / -3 … before spawning the detached worker.
 Bind-WatchSlot
 Start-DetachedWatchWorkerIfNeeded
 $state = Read-WatchState
+$boundHome = Get-WatchBoundIrcHome
 if (-not $state) {
     $state = [pscustomobject]@{
         kind         = $script:KindName
         sessionId    = [guid]::NewGuid().ToString()
         seenSession  = $false
-        ircHome      = $IrcHome
+        ircHome      = $boundHome
         clientSlot   = $script:ClientSlot
         ircLogOffset = 0
         rootPid      = 0
     }
 }
+else {
+    # Never keep a sibling seat's ircHome from a misplaced state.json
+    $state.ircHome = $boundHome
+    $state | Add-Member -NotePropertyName 'clientSlot' -NotePropertyValue $script:ClientSlot -Force
+}
 if ($New) {
     $oldWatchSid = [string]$state.sessionId
     $state = Reset-WatchSessionForNew -State $state
     $state.kind = $script:KindName
-    $state.ircHome = $IrcHome
+    $state.ircHome = $boundHome
     $state | Add-Member -NotePropertyName 'clientSlot' -NotePropertyValue $script:ClientSlot -Force
     Write-WatchState -Obj $state
     Write-WatchLog "session reset (--new) session=$($state.sessionId) slot=$($script:ClientSlot)"
@@ -1962,6 +2887,16 @@ $state | Add-Member -NotePropertyName 'clientSlot' -NotePropertyValue $script:Cl
 [void](Clear-OrphanWatchProcessesOnStart -ResolvedHome ([string]$state.ircHome))
 # After orphan prune: always (re)connect IRC for this watch home (systray CAST IRON).
 $state = Ensure-WatchIrcSeat -State $state
+# FR #91: reap orphaned -p wakes from a dead previous monitor (never touch TUI without -p).
+$orphanKind = ($script:KindName -eq 'grok') -or [bool]$Grok
+$nOrphans = Stop-OrphanWatchWakeProcesses -SessionId ([string]$state.sessionId) -GrokKind:$orphanKind
+if ($nOrphans -gt 0) {
+    Write-WatchLog ("wake orphans reaped count={0}" -f $nOrphans)
+}
+$state = Clear-WatchWakeState -State $state
+# FR #90 Option B: visible transcript pane for hidden -p wakes (operator sees work).
+[void](Ensure-WatchSeatTranscriptPane)
+Write-WatchSeatTranscript ('seat online kind={0} session={1} transcript={2}' -f $script:KindName, $state.sessionId, (Get-WatchSeatTranscriptPath))
 # FR #100: claim work immediately (deterministic !bored; no LLM).
 $state = Sync-WatchBored -State $state -Mode start
 if ($WatchWorker) {
@@ -2057,11 +2992,17 @@ try {
             }
         }
 
+        # FR #100: tick at BoredCheckSeconds (default 5) so DONE->!bored meets the ~5s gate.
+        # IRC forward runs on the same tick (cheap irc.log tail).
+        $boredCheck = [int]$script:BoredCheckSeconds
+        if ($boredCheck -le 0) { $boredCheck = 5 }
+        # FR #91: timeout/reap wake; dequeue next FROM when free.
+        $state = Sync-WatchWakeLifecycle -State $state -StartNext
         $state = Sync-IrcForward -State $state
-        # FR #100: after DONE / idle fallback !bored (suppressed while busy).
+        $state = Sync-WatchWakeLifecycle -State $state -StartNext
         $state = Sync-WatchBored -State $state -Mode poll
         Write-WatchState -Obj $state
-        Start-Sleep -Seconds $PollSeconds
+        Start-Sleep -Seconds $boredCheck
         }
         catch {
             Write-WatchLog ("watch loop error: $($_.Exception.Message)")
