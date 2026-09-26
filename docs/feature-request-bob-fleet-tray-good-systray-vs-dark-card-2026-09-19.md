@@ -1,4 +1,4 @@
-﻿# Feature request: Bob Fleet — stop the dark hover card covering the good systray tip
+# Feature request: Bob Fleet — stop the dark hover card covering the good systray tip
 
 **Date:** 2026-09-19  
 **Repo:** https://github.com/SimonBarnett/agentic_build  

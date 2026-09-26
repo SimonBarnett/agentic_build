@@ -1,4 +1,4 @@
-﻿# Build-and-test plan: setup-remote-grok-bot skill
+# Build-and-test plan: setup-remote-grok-bot skill
 
 **FR:** `docs/feature-request-setup-remote-grok-bot-2026-09-20.md`  
 **Issue:** https://github.com/SimonBarnett/agentic_build/issues/1  

@@ -1,4 +1,4 @@
-﻿# FR: restore Cursor / xAI (Grok) icons on systray tip + Agents menu
+# FR: restore Cursor / xAI (Grok) icons on systray tip + Agents menu
 
 ## Summary
 Simon (agentic_irc #182, 2026-09-23): the xAI / Cursor icons disappeared from the systray. Add them back.

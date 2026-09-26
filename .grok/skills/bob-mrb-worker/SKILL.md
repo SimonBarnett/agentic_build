@@ -28,17 +28,21 @@ Fuel / launch: `cursor-mrb-dev` / `start-bob-cursor`. Dispatcher: `bob-job-loop`
 1. Use `gh pr checkout` in a temporary worktree; read the PR intent + changed files
 2. BEFORE testing: add any NEW tests appropriate to the PR
 3. Run existing + new tests; perform the hostile review
-4. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
+4. Encoding (FR #347): on changed `*.md` (and other text you touch), run
+   `python tools/check_utf8_mojibake.py --root . <paths>` — fail on UTF-8 BOM
+   or mojibake. Writers must use UTF-8 **without** BOM
+   (`tools/Utf8NoBom.ps1` / `UTF8Encoding $false`). See `docs/utf8-no-bom.md`.
+5. PASS → review README, skills, `docs/`, mermaid diagrams, and usage/help text
    for anything the PR made stale. If docs are stale, open exactly ONE **separate**
    docs PR from branch `docs/mrb-<n>-...` against `main` (references the original
    PR). **Never push commits onto the PR under review** (FR #348). Merge the
    original and that docs PR together; if docs are OK, merge the original only.
    Then close the source issue/FR and hand off to a separate UAT worker; only
    Bob stamps UAT.
-5. FAIL → create exactly ONE **separate** fix PR with the fix, then merge both
+6. FAIL → create exactly ONE **separate** fix PR with the fix, then merge both
    (original + fix). Not multiple fix PRs. Never push the fix onto the reviewed
    branch either.
-6. Jeeves announces whatever happens (merge / fix+merge)
+7. Jeeves announces whatever happens (merge / fix+merge)
 
 ```mermaid
 flowchart LR
@@ -68,6 +72,9 @@ Guard: `tools/fr_self_merge_guard.py` / `tools/Assert-FrPrNoSelfMerge.ps1` (flag
 - **FR authors never merge.** Opening the PR is the end of FR mode.
 - **Tests before verdict.** New tests land on the review branch (or the
   single fix branch) before you claim PASS or FAIL. Run existing + new.
+- **UTF-8 no BOM (FR #347).** Never round-trip markdown through PS5
+  `Get-Content | Set-Content` without encodings. Check changed `*.md` with
+  `tools/check_utf8_mojibake.py` before PASS.
 - **PASS → docs review, then merge (FR #348).** After tests and hostile review
   PASS, review README, skills, `docs/`, mermaid diagrams, and usage/help text for
   stale behavior. If anything is stale, open exactly **one separate** docs PR

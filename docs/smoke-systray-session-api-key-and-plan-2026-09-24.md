@@ -1,4 +1,4 @@
-﻿# Smoke: TipForm session API key + Plan seats (2026-09-24)
+# Smoke: TipForm session API key + Plan seats (2026-09-24)
 
 ## Session API key (empty fuel)
 1. Recycle tray only if needed (kill Watch-BobTray, start `_Watch-BobTray-marchhare.ps1`) so it loads this branch.

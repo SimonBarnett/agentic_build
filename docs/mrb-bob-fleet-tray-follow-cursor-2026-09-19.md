@@ -1,4 +1,4 @@
-﻿# Hostile MRB - Bob tray hover follows cursor (2026-09-19)
+# Hostile MRB - Bob tray hover follows cursor (2026-09-19)
 
 **Repo:** SimonBarnett/agentic_build
 **Tip reviewed:** f1f3ac6 / 82234e2 (tray this-machine PASS) + live Watch-BobTray.ps1
