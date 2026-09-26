@@ -5131,6 +5131,66 @@ public static class BobTestArgv {
     if ($sessFn.Value -match 'SetEnvironmentVariable|\$env:XAI_API_KEY\s*=|\$env:CURSOR_API_KEY\s*=') { throw 'session API key must not be set on the tray process / User / Machine env' }
 }
 
+Invoke-Case 'BT0fr355 peer transcript newest-first + mtime cache' {
+    param($bridgeRoot)
+    # FR #355: Import-BobIrcPeerTranscript must stay fast on large append-only moot files.
+    Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
+    $ircHome = Join-Path $bridgeRoot 'irc-home-fr355'
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'moot') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $ircHome 'bob-peers') | Out-Null
+    $env:BOB_IRC_HOME = $ircHome
+    $env:BOB_IRC_CONFIG = Join-Path $RepoRoot 'config\bobiverse.json'
+    $script:BobIrcPeerTranscriptCache = @{}
+    $cfg = Get-Content $env:BOB_IRC_CONFIG -Raw | ConvertFrom-Json
+    $tp = Join-Path $ircHome (Join-Path 'moot' ($cfg.mootId + '.txt'))
+
+    # Correctness: newest POINT wins (self-machine is skipped by design — use peers).
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add('1000 bob-ionos POINT BOB v1 id=ionos weekly=1 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-') | Out-Null
+    $lines.Add('1001 bob-flamingo POINT BOB v1 id=flamingo weekly=2 running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-') | Out-Null
+    $lines.Add('1002 bob-ionos POINT BOB v1 id=ionos weekly=99 running=1 queued=0 lastSeen=2026-09-25T12:00:00Z jobs=-') | Out-Null
+    [IO.File]::WriteAllLines($tp, $lines)
+    $got = @(Import-BobIrcPeerTranscript)
+    if ($got -notcontains 'ionos' -or $got -notcontains 'flamingo') { throw "updated=$($got -join ',')" }
+    $io = Read-BobIrcPeer -Id ionos
+    if ([int]$io.weekly -ne 99) { throw "newest weekly want 99 got $($io.weekly)" }
+
+    # Unchanged file → cache hit under 50ms budget (and empty update list).
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $got2 = @(Import-BobIrcPeerTranscript)
+    $sw.Stop()
+    if ($got2.Count -ne 0) { throw "mtime cache should return no updates; got $($got2 -join ',')" }
+    if ($sw.ElapsedMilliseconds -gt 50) { throw "unchanged import took $($sw.ElapsedMilliseconds)ms want <=50" }
+
+    # 6000-line transcript: one import under 1s.
+    $big = New-Object System.Collections.Generic.List[string]
+    for ($i = 0; $i -lt 5997; $i++) {
+        $id = @('ionos', 'flamingo', 'ce-priority-dev1')[$i % 3]
+        $big.Add(('{0} bob-{1} POINT BOB v1 id={1} weekly={2} running=0 queued=0 lastSeen=2026-09-20T10:00:00Z jobs=-' -f (10000 + $i), $id, ($i % 50))) | Out-Null
+    }
+    $big.Add('999997 bob-ce-priority-dev1 POINT BOB v1 id=ce-priority-dev1 weekly=7 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $big.Add('999998 bob-flamingo POINT BOB v1 id=flamingo weekly=8 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $big.Add('999999 bob-ionos POINT BOB v1 id=ionos weekly=9 running=0 queued=0 lastSeen=2026-09-26T00:00:00Z jobs=-') | Out-Null
+    $script:BobIrcPeerTranscriptCache = @{}
+    [IO.File]::WriteAllLines($tp, $big)
+    $sw2 = [Diagnostics.Stopwatch]::StartNew()
+    $got3 = @(Import-BobIrcPeerTranscript)
+    $sw2.Stop()
+    if ($sw2.ElapsedMilliseconds -gt 1000) { throw "6000-line import took $($sw2.ElapsedMilliseconds)ms want <=1000" }
+    $io2 = Read-BobIrcPeer -Id ionos
+    if ([int]$io2.weekly -ne 9) { throw "6000-line newest ionos weekly=$($io2.weekly)" }
+
+    $src = Get-Content (Join-Path $RepoRoot 'src\Private\Get-BobIrc.ps1') -Raw
+    if ($src -notmatch 'BobIrcPeerTranscriptCache') { throw 'mtime cache missing' }
+    if ($src -notmatch 'File\]::Open' -and $src -notmatch 'SeekOrigin') { throw 'Import-BobIrcTrayPull must FileStream seek' }
+    # Executable slice gone; comment may still mention the old pattern.
+    $trayFn = [regex]::Match($src, '(?s)function Import-BobIrcTrayPull\s*\{.*?^function ', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $trayFn.Success) { throw 'Import-BobIrcTrayPull not found' }
+    $trayBody = ($trayFn.Value -split "`n" | Where-Object { $_.Trim() -notmatch '^#' }) -join "`n"
+    if ($trayBody -match 'ReadAllBytes') { throw 'tray pull must not ReadAllBytes' }
+    if ($trayBody -match '\$bytes\[\$pos\.\.') { throw 'tray pull must not slice full byte array' }
+}
+
 Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
     # FR #352: automated start refused with needs Simon: API key; quota text → no_tokens.
     Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force
