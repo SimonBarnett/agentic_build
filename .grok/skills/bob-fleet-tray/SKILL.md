@@ -187,13 +187,16 @@ Both call `tools/Start-BobFleetTray.ps1`, which **always**:
 
 1. Runs deterministic `Update-BobSystrayFromGit.ps1` (git fetch + install when
    behind `origin/main`; Updating dialog when work is needed). **No LLM.**
-2. **Tidies** leftover session `powershell` / `python` / `node` via
+2. **Closes prior agents** via `Stop-BobSystrayPriorAgents.ps1` (Watch-AgentHealth
+   seats, `grok.exe` / Grok Bot TUI, cursor-agent). Old agent windows must not
+   survive Start/Restart.
+3. **Tidies** leftover session `powershell` / `python` / `node` via
    `Cleanup-OrphanAgents.ps1` (keeps live fleet watchers; skill
    `cleanup-orphans`).
-3. **Sweeps orphan NotifyIcons** (ghost tray icons) via
+4. **Sweeps orphan NotifyIcons** (ghost tray icons) via
    `Clear-BobOrphanNotifyIcons.ps1` (WM_MOUSEMOVE over the notification
    toolbars; does not restart Explorer).
-4. Starts / ForceNew-replaces the tray via `_Watch-BobTray-<machineId>.ps1`.
+5. Starts / ForceNew-replaces the tray via `_Watch-BobTray-<machineId>.ps1`.
 
 TipForm **Restart watcher** uses the same Start path (`-ForceNew`).
 
