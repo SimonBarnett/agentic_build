@@ -5741,6 +5741,63 @@ Invoke-Case 'BT0agent watch seat joins IRC' {
     if ($fleet -notmatch "-not \(Test-Path -LiteralPath \(Join-Path \`$watchDst '\.git'\)\)") { throw 'Install-BobFleet must not copy the fleet fork over the AgentMonitor git clone' }
 }
 
+Invoke-Case 'BT0systray start menu git-update gate' {
+    param($bridgeRoot)
+    # Bob Systray: Start Menu folder + robot ico + deterministic update (no LLM).
+    $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
+    if (-not (Test-Path -LiteralPath $ico)) { throw 'assets/bob-systray.ico missing (same robot as NotifyIcon)' }
+    foreach ($leaf in @('Start-BobFleetTray.ps1', 'Update-BobSystrayFromGit.ps1', 'Show-BobSystrayUpdatingDialog.ps1', 'Install-BobFleetTrayShortcut.ps1')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "tools\$leaf"))) { throw "missing tools/$leaf" }
+    }
+    $startSrc = Get-Content (Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1') -Raw
+    if ($startSrc -notmatch 'Update-BobSystrayFromGit') { throw 'Start-BobFleetTray must call Update-BobSystrayFromGit' }
+    if ($startSrc -match '(?i)grok\.exe|cursor-agent|Invoke-LLM|openai') { throw 'Start-BobFleetTray must not invoke LLM/agents' }
+    $updSrc = Get-Content (Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1') -Raw
+    if ($updSrc -notmatch 'Show-BobSystrayUpdatingDialog') { throw 'updater must show Updating dialog when behind' }
+    if ($updSrc -notmatch 'Invoke-BobFleetReinstall') { throw 'updater must install via Invoke-BobFleetReinstall (scripts only)' }
+    if ($updSrc -match '(?i)grok\.exe|cursor-agent|Invoke-LLM|openai') { throw 'Update-BobSystrayFromGit must not invoke LLM/agents' }
+    $shortSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1') -Raw
+    if ($shortSrc -notmatch 'Bob Systray') { throw 'shortcut installer must use Bob Systray Start Menu folder' }
+    if ($shortSrc -notmatch 'bob-systray\.ico') { throw 'shortcut installer must set robot IconLocation' }
+    $prof = Join-Path $bridgeRoot 'systray-profile'
+    New-Item -ItemType Directory -Force -Path $prof | Out-Null
+    $env:BOB_WATCH_SEAT_PROFILE_ROOT = $prof
+    $env:BOB_FLEET_REINSTALL_FAKE = '1'
+    $env:BOB_SYSTRAY_UPDATE_HEADLESS = '1'
+    try {
+        $env:BOB_SYSTRAY_FAKE_BEHIND = '0'
+        $ps = (Get-Command powershell.exe).Source
+        $out0 = & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1') -RepoRoot $RepoRoot 2>&1
+        $j0 = (@($out0 | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1) | ConvertFrom-Json)
+        if ($j0.behind -ne $false -and $j0.updated -ne $false) { throw "current tree must skip update: $out0" }
+        $env:BOB_SYSTRAY_FAKE_BEHIND = '1'
+        $out1 = & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1') -RepoRoot $RepoRoot -Force 2>&1
+        $j1 = (@($out1 | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1) | ConvertFrom-Json)
+        if ($j1.updated -ne $true) { throw "behind/Force must run install: $out1" }
+        $inst = & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1') -RepoRoot $RepoRoot 2>&1
+        $ji = (@($inst | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1) | ConvertFrom-Json)
+        $sm = [string]$ji.startMenuDir
+        if ($sm -notmatch 'Bob Systray') { throw "startMenuDir must be Bob Systray: $sm" }
+        if (-not (Test-Path -LiteralPath $sm)) { throw "Start Menu Bob Systray folder missing: $sm" }
+        $targets = @($ji.paths)
+        if ($targets.Count -lt 2) { throw "expected Start+Restart shortcut targets, got $($targets.Count)" }
+        $joined = ($targets -join '|')
+        if ($joined -notmatch 'Bob Systray') { throw "shortcut paths missing Bob Systray: $joined" }
+        if ($joined -notmatch 'Restart Bob Systray') { throw "Restart shortcut missing: $joined" }
+    }
+    finally {
+        $env:BOB_WATCH_SEAT_PROFILE_ROOT = $null
+        $env:BOB_FLEET_REINSTALL_FAKE = $null
+        $env:BOB_SYSTRAY_UPDATE_HEADLESS = $null
+        $env:BOB_SYSTRAY_FAKE_BEHIND = $null
+    }
+    $fr = Join-Path $RepoRoot 'docs\feature-request-bob-systray-start-update-2026-09-27.md'
+    if (-not (Test-Path -LiteralPath $fr)) { throw 'FR doc missing' }
+    foreach ($m in @('home.html', 'empty.html', 'error.html')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "docs\mocks\bob-systray\$m"))) { throw "mock missing: $m" }
+    }
+}
+
 Invoke-Case 'BT0tray grok session key overrides OAuth' {
     param($bridgeRoot)
     # grok 1.0.41 prefers ~/.grok/auth.json (OAuth) over XAI_API_KEY; the #314 session key was

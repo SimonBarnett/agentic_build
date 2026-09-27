@@ -163,28 +163,35 @@ try {
     $instShort = Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1'
     if (Test-Path -LiteralPath $instShort) {
         & $instShort -RepoRoot $RepoRoot | Out-Null
-        $shortcutNote = 'Bob Fleet.lnk (Desktop + Start Menu)'
+        $shortcutNote = 'Bob Systray (Desktop + Start Menu)'
     }
     else {
-        # inline minimal shortcut install
+        # inline minimal shortcut install → Bob Systray folder + robot icon
         $launcher = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
         if (Test-Path -LiteralPath $launcher) {
             $desk = [Environment]::GetFolderPath('Desktop')
-            $sm = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Bob Fleet'
+            $sm = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Bob Systray'
             New-Item -ItemType Directory -Force -Path $sm | Out-Null
             $psExe = (Get-Command powershell.exe).Source
+            $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
             $w = New-Object -ComObject WScript.Shell
             foreach ($dir in @($desk, $sm)) {
-                $lnk = Join-Path $dir 'Bob Fleet.lnk'
-                $s = $w.CreateShortcut($lnk)
-                $s.TargetPath = $psExe
-                $s.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`""
-                $s.WorkingDirectory = $RepoRoot
-                $s.WindowStyle = 7
-                $s.Description = 'Bob Fleet systray (single instance)'
-                $s.Save()
+                foreach ($pair in @(
+                        @{ Name = 'Bob Systray.lnk'; Extra = '' },
+                        @{ Name = 'Restart Bob Systray.lnk'; Extra = ' -ForceNew' }
+                    )) {
+                    $lnk = Join-Path $dir $pair.Name
+                    $s = $w.CreateShortcut($lnk)
+                    $s.TargetPath = $psExe
+                    $s.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`"$($pair.Extra)"
+                    $s.WorkingDirectory = $RepoRoot
+                    $s.WindowStyle = 7
+                    $s.Description = 'Bob Systray (git update if needed)'
+                    if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
+                    $s.Save()
+                }
             }
-            $shortcutNote = 'Bob Fleet.lnk (Desktop + Start Menu)'
+            $shortcutNote = 'Bob Systray (Desktop + Start Menu)'
         }
     }
 }

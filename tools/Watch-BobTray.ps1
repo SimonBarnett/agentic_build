@@ -1978,54 +1978,56 @@ function Start-IrcWatcher {
 }
 
 function Restart-BobTrayWatcher {
-    # FR #346: full local reinstall/update, then single-instance tray relaunch.
-    Write-TrayLog 'Restart watcher: full fleet reinstall (pull/deploy/skills) then tray relaunch'
-    $reinstall = Join-Path $RepoRoot 'tools\Invoke-BobFleetReinstall.ps1'
-    $summary = 'reinstall script missing'
-    if (Test-Path -LiteralPath $reinstall) {
+    # FR #346 + Bob Systray: deterministic git update (dialog if behind) then ForceNew relaunch.
+    # No LLM on this path — Update-BobSystrayFromGit.ps1 / Invoke-BobFleetReinstall.ps1 only.
+    Write-TrayLog 'Restart watcher: Bob Systray git update + ForceNew tray relaunch'
+    $summary = 'update skipped'
+    $updater = Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1'
+    if (Test-Path -LiteralPath $updater) {
         try {
             $ps = (Get-Command powershell.exe).Source
-            $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $reinstall -RepoRoot $RepoRoot -RelaunchTray 2>&1
+            # Force update check+install so Restart always refreshes from git when behind;
+            # dialog shown by updater when work is needed.
+            $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $updater -RepoRoot $RepoRoot 2>&1
             $code = $LASTEXITCODE
             $jsonLine = @($out | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
             if ($jsonLine) {
                 try {
                     $rep = $jsonLine | ConvertFrom-Json
                     $summary = [string]$rep.summary
-                    if (-not $summary) { $summary = "reinstall exit=$code" }
+                    if (-not $summary) { $summary = "update exit=$code" }
                 }
                 catch {
                     $summary = (@($out) | Select-Object -Last 3) -join ' '
                 }
             }
             else {
-                $summary = "reinstall exit=$code"
+                $summary = "update exit=$code"
             }
             Write-TrayLog ('Restart watcher report: ' + $summary)
         }
         catch {
-            $summary = 'reinstall error: ' + $_.Exception.Message
+            $summary = 'update error: ' + $_.Exception.Message
             Write-TrayLog $summary
         }
     }
     else {
-        Write-TrayLog 'Restart watcher: Invoke-BobFleetReinstall.ps1 missing; fallback ear+tray only'
+        Write-TrayLog 'Restart watcher: Update-BobSystrayFromGit.ps1 missing; fallback ear+tray only'
         Stop-BobiverseMoot
         Start-BobiverseMootWrapper
     }
     try {
-        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Fleet — Restart watcher', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
+        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Systray — Restart', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
     }
     catch { }
-    # Ensure ear + jobs after reinstall
     try { Start-IrcWatcher } catch { }
     try { Start-JobsWatcher } catch { }
-    # Relaunch tray via single-instance helper (may no-op if already replaced)
+    # ForceNew: kill this tray and start replacement (SkipUpdate — already updated above).
     $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
     if (Test-Path -LiteralPath $startTray) {
         Start-Process -FilePath $ps `
-            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot) `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot, '-ForceNew', '-SkipUpdate') `
             -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
     }
     else {

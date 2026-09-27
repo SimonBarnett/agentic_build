@@ -281,6 +281,19 @@ function Install-BobFleetTrayShortcuts {
         [string]$DesktopDir = '',
         [string]$StartMenuDir = ''
     )
+    # Prefer dedicated installer (Bob Systray folder + robot .ico).
+    $helper = Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1'
+    if (Test-Path -LiteralPath $helper) {
+        $ps = (Get-Command powershell.exe).Source
+        $ha = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $helper, '-RepoRoot', $RepoRoot)
+        if ($WhatIf) { $ha += '-WhatIf' }
+        $raw = & $ps @ha 2>&1
+        $line = @($raw | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
+        if ($line) {
+            try { return ($line | ConvertFrom-Json) } catch { }
+        }
+        return [pscustomobject]@{ ok = $true; paths = @($raw); note = 'helper-ran' }
+    }
     $launcher = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     if (-not (Test-Path -LiteralPath $launcher)) {
         return [pscustomobject]@{ ok = $false; error = 'Start-BobFleetTray.ps1 missing'; paths = @() }
@@ -293,40 +306,47 @@ function Install-BobFleetTrayShortcuts {
         }
     }
     if (-not $StartMenuDir) {
-        $StartMenuDir = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Bob Fleet'
+        $StartMenuDir = Join-Path ([Environment]::GetFolderPath('StartMenu')) 'Programs\Bob Systray'
         if ($env:BOB_WATCH_SEAT_PROFILE_ROOT) {
-            $StartMenuDir = Join-Path $env:BOB_WATCH_SEAT_PROFILE_ROOT 'StartMenu\Bob Fleet'
+            $StartMenuDir = Join-Path $env:BOB_WATCH_SEAT_PROFILE_ROOT 'StartMenu\Bob Systray'
         }
     }
     New-Item -ItemType Directory -Force -Path $DesktopDir, $StartMenuDir | Out-Null
     $paths = @()
     $ps = (Get-Command powershell.exe).Source
-    $args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`""
+    $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
+    $entries = @(
+        @{ Name = 'Bob Systray.lnk'; Extra = '' },
+        @{ Name = 'Restart Bob Systray.lnk'; Extra = ' -ForceNew' }
+    )
     foreach ($dir in @($DesktopDir, $StartMenuDir)) {
-        $lnkPath = Join-Path $dir 'Bob Fleet.lnk'
-        if ($WhatIf) {
-            $paths += $lnkPath
-            continue
-        }
-        if ($env:BOB_FLEET_REINSTALL_FAKE -match '^(?i)1|true|yes$') {
-            # fake: write a stub file instead of COM shortcut
-            Set-Content -LiteralPath ($lnkPath + '.target.txt') -Value "$ps $args" -Encoding utf8
-            $paths += ($lnkPath + '.target.txt')
-            continue
-        }
-        try {
-            $w = New-Object -ComObject WScript.Shell
-            $s = $w.CreateShortcut($lnkPath)
-            $s.TargetPath = $ps
-            $s.Arguments = $args
-            $s.WorkingDirectory = $RepoRoot
-            $s.WindowStyle = 7
-            $s.Description = 'Bob Fleet systray (single instance)'
-            $s.Save()
-            $paths += $lnkPath
-        }
-        catch {
-            $paths += "error:$($_.Exception.Message)"
+        foreach ($e in $entries) {
+            $lnkPath = Join-Path $dir $e.Name
+            $args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`"$($e.Extra)"
+            if ($WhatIf) {
+                $paths += $lnkPath
+                continue
+            }
+            if ($env:BOB_FLEET_REINSTALL_FAKE -match '^(?i)1|true|yes$') {
+                Set-Content -LiteralPath ($lnkPath + '.target.txt') -Value "$ps $args" -Encoding utf8
+                $paths += ($lnkPath + '.target.txt')
+                continue
+            }
+            try {
+                $w = New-Object -ComObject WScript.Shell
+                $s = $w.CreateShortcut($lnkPath)
+                $s.TargetPath = $ps
+                $s.Arguments = $args
+                $s.WorkingDirectory = $RepoRoot
+                $s.WindowStyle = 7
+                $s.Description = 'Bob Systray (git update if needed)'
+                if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
+                $s.Save()
+                $paths += $lnkPath
+            }
+            catch {
+                $paths += "error:$($_.Exception.Message)"
+            }
         }
     }
     return [pscustomobject]@{ ok = $true; paths = $paths }
