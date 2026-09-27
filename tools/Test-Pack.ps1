@@ -5752,11 +5752,14 @@ Invoke-Case 'BT0systray start menu git-update gate' {
     # Bob Systray: Start Menu folder + robot ico + deterministic update (no LLM).
     $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
     if (-not (Test-Path -LiteralPath $ico)) { throw 'assets/bob-systray.ico missing (same robot as NotifyIcon)' }
-    foreach ($leaf in @('Start-BobFleetTray.ps1', 'Update-BobSystrayFromGit.ps1', 'Show-BobSystrayUpdatingDialog.ps1', 'Install-BobFleetTrayShortcut.ps1')) {
+    foreach ($leaf in @('Start-BobFleetTray.ps1', 'Update-BobSystrayFromGit.ps1', 'Show-BobSystrayUpdatingDialog.ps1', 'Install-BobFleetTrayShortcut.ps1', 'Clear-BobOrphanNotifyIcons.ps1', 'Cleanup-OrphanAgents.ps1')) {
         if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "tools\$leaf"))) { throw "missing tools/$leaf" }
     }
     $startSrc = Get-Content (Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1') -Raw
     if ($startSrc -notmatch 'Update-BobSystrayFromGit') { throw 'Start-BobFleetTray must call Update-BobSystrayFromGit' }
+    if ($startSrc -notmatch 'Cleanup-OrphanAgents') { throw 'Start/Restart must tidy orphans via Cleanup-OrphanAgents' }
+    if ($startSrc -notmatch 'Clear-BobOrphanNotifyIcons') { throw 'Start/Restart must clear orphan systray icons via Clear-BobOrphanNotifyIcons' }
+    if ($startSrc -notmatch 'Invoke-BobSystrayTidy') { throw 'Start-BobFleetTray must Invoke-BobSystrayTidy on start/restart' }
     if ($startSrc -match '(?i)grok\.exe|cursor-agent|Invoke-LLM|openai') { throw 'Start-BobFleetTray must not invoke LLM/agents' }
     $updSrc = Get-Content (Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1') -Raw
     if ($updSrc -notmatch 'Show-BobSystrayUpdatingDialog') { throw 'updater must show Updating dialog when behind' }

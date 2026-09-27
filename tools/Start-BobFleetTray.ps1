@@ -9,6 +9,7 @@ param(
     [string]$RepoRoot,
     [switch]$ForceNew,
     [switch]$SkipUpdate,
+    [switch]$SkipTidy,
     [switch]$WhatIf
 )
 
@@ -100,6 +101,39 @@ if (-not $SkipUpdate) {
     }
 }
 
+function Invoke-BobSystrayTidy {
+    # CAST IRON (Simon 2026-09-27): start/restart MUST tidy leftover session
+    # powershell/python/node and sweep orphan NotifyIcons (ghost tray icons).
+    param([string]$Root)
+    $psExe = (Get-Command powershell.exe).Source
+    $cleanup = Join-Path $Root 'tools\Cleanup-OrphanAgents.ps1'
+    if (Test-Path -LiteralPath $cleanup) {
+        Write-Output 'tidy: Cleanup-OrphanAgents'
+        try {
+            & $psExe -NoProfile -ExecutionPolicy Bypass -File $cleanup 2>&1 | ForEach-Object { Write-Output $_ }
+        }
+        catch {
+            Write-Warning ("tidy cleanup failed: {0}" -f $_.Exception.Message)
+        }
+    }
+    else {
+        Write-Warning "tidy: missing $cleanup"
+    }
+    $icons = Join-Path $Root 'tools\Clear-BobOrphanNotifyIcons.ps1'
+    if (Test-Path -LiteralPath $icons) {
+        Write-Output 'tidy: Clear-BobOrphanNotifyIcons'
+        try {
+            & $psExe -NoProfile -ExecutionPolicy Bypass -File $icons 2>&1 | ForEach-Object { Write-Output $_ }
+        }
+        catch {
+            Write-Warning ("tidy notify icons failed: {0}" -f $_.Exception.Message)
+        }
+    }
+    else {
+        Write-Warning "tidy: missing $icons"
+    }
+}
+
 $hits = @(Get-BobSystrayTrayProcesses)
 
 if ($ForceNew -and $hits.Count -gt 0) {
@@ -108,6 +142,12 @@ if ($ForceNew -and $hits.Count -gt 0) {
     }
     Start-Sleep -Milliseconds 800
     $hits = @()
+}
+
+# Always tidy on start/restart (after ForceNew kill so dead tray is not "kept").
+if (-not $SkipTidy -and -not $WhatIf) {
+    Invoke-BobSystrayTidy -Root $RepoRoot
+    $hits = @(Get-BobSystrayTrayProcesses)
 }
 
 if ($hits.Count -gt 0 -and -not $ForceNew) {
@@ -120,7 +160,7 @@ if ($hits.Count -gt 0 -and -not $ForceNew) {
 }
 
 if ($WhatIf) {
-    Write-Output 'would-start-tray'
+    Write-Output 'would-tidy-and-start-tray'
     exit 0
 }
 
@@ -142,6 +182,16 @@ $proc = Start-Process -FilePath $ps -ArgumentList @(
 ) -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
 
 Start-Sleep -Seconds 2
+# Second icon sweep: Explorer drops ghosts from the ForceNew kill once the new tray is up.
+if (-not $SkipTidy) {
+    $icons = Join-Path $RepoRoot 'tools\Clear-BobOrphanNotifyIcons.ps1'
+    if (Test-Path -LiteralPath $icons) {
+        try {
+            & $ps -NoProfile -ExecutionPolicy Bypass -File $icons | Out-Null
+        }
+        catch { }
+    }
+}
 $alive = @(Get-BobSystrayTrayProcesses)
 if ($alive.Count -eq 0) {
     throw ("Watch-BobTray failed to stay up after start (launcherPid={0} launch={1})" -f $(if ($proc) { $proc.Id } else { 0 }), $launch)
