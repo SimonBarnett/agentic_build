@@ -1,5 +1,7 @@
 #Requires -Version 5.1
-# Install Start Menu\Programs\Bob Systray (+ Desktop) shortcuts with robot .ico.
+# Install Start Menu\Programs\Bob Systray (+ Desktop) shortcut with robot .ico.
+# CAST IRON (Simon 2026-09-27): ONE shortcut only. Restart is from the systray
+# context menu when running, or Start Menu start when not.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
@@ -25,16 +27,21 @@ if ($env:BOB_WATCH_SEAT_PROFILE_ROOT) {
 }
 New-Item -ItemType Directory -Force -Path $desktop, $startMenu | Out-Null
 
+# Remove legacy Restart shortcut (restart is tray menu / ForceNew from Start).
+foreach ($dir in @($desktop, $startMenu)) {
+    foreach ($legacy in @('Restart Bob Systray.lnk', 'Restart Bob Systray.lnk.target.txt')) {
+        $lp = Join-Path $dir $legacy
+        if (Test-Path -LiteralPath $lp) {
+            if (-not $WhatIf) { Remove-Item -LiteralPath $lp -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
+
 $entries = @(
     [pscustomobject]@{
         Name = 'Bob Systray.lnk'
         Args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`""
-        Desc = 'Start Bob Systray (git update if needed, then tray)'
-    }
-    [pscustomobject]@{
-        Name = 'Restart Bob Systray.lnk'
-        Args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`" -ForceNew"
-        Desc = 'Restart Bob Systray (git update + replace tray)'
+        Desc = 'Start Bob Systray (bootstrap + tidy + tray). Restart from systray menu when running.'
     }
 )
 

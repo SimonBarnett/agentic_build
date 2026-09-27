@@ -176,20 +176,19 @@ try {
             $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
             $w = New-Object -ComObject WScript.Shell
             foreach ($dir in @($desk, $sm)) {
-                foreach ($pair in @(
-                        @{ Name = 'Bob Systray.lnk'; Extra = '' },
-                        @{ Name = 'Restart Bob Systray.lnk'; Extra = ' -ForceNew' }
-                    )) {
-                    $lnk = Join-Path $dir $pair.Name
-                    $s = $w.CreateShortcut($lnk)
-                    $s.TargetPath = $psExe
-                    $s.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`"$($pair.Extra)"
-                    $s.WorkingDirectory = $RepoRoot
-                    $s.WindowStyle = 7
-                    $s.Description = 'Bob Systray (git update if needed)'
-                    if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
-                    $s.Save()
+                foreach ($legacy in @('Restart Bob Systray.lnk')) {
+                    $lp = Join-Path $dir $legacy
+                    if (Test-Path -LiteralPath $lp) { Remove-Item -LiteralPath $lp -Force -ErrorAction SilentlyContinue }
                 }
+                $lnk = Join-Path $dir 'Bob Systray.lnk'
+                $s = $w.CreateShortcut($lnk)
+                $s.TargetPath = $psExe
+                $s.Arguments = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`""
+                $s.WorkingDirectory = $RepoRoot
+                $s.WindowStyle = 7
+                $s.Description = 'Bob Systray (bootstrap + tidy). Restart from systray menu.'
+                if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
+                $s.Save()
             }
             $shortcutNote = 'Bob Systray (Desktop + Start Menu)'
         }

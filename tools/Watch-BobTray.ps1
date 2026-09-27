@@ -18,7 +18,8 @@
 # Not a Windows service. Requires powershell.exe -STA.
 [CmdletBinding()]
 param(
-    [int]$PollSec = 60,
+    # CAST IRON (Simon 2026-09-27): cursor + xAI usage POST to digest webhook every 30s.
+    [int]$PollSec = 30,
     [int]$StallSec = 600,
     [int]$HeartbeatStaleSec = 90,
     [string]$RepoRoot
@@ -1995,64 +1996,54 @@ function Start-IrcWatcher {
     Start-BobiverseMootWrapper
 }
 
-function Restart-BobTrayWatcher {
-    # FR #346 + Bob Systray: deterministic git update (dialog if behind) then ForceNew relaunch.
-    # No LLM on this path - Update-BobSystrayFromGit.ps1 / Invoke-BobFleetReinstall.ps1 only.
-    Write-TrayLog 'Restart watcher: Bob Systray git update + ForceNew tray relaunch'
-    $summary = 'update skipped'
-    $updater = Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1'
-    if (Test-Path -LiteralPath $updater) {
-        try {
-            $ps = (Get-Command powershell.exe).Source
-            # Force update check+install so Restart always refreshes from git when behind;
-            # dialog shown by updater when work is needed.
-            $out = & $ps -NoProfile -ExecutionPolicy Bypass -File $updater -RepoRoot $RepoRoot 2>&1
-            $code = $LASTEXITCODE
-            $jsonLine = @($out | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1)
-            if ($jsonLine) {
-                try {
-                    $rep = $jsonLine | ConvertFrom-Json
-                    $summary = [string]$rep.summary
-                    if (-not $summary) { $summary = "update exit=$code" }
-                }
-                catch {
-                    $summary = (@($out) | Select-Object -Last 3) -join ' '
-                }
-            }
-            else {
-                $summary = "update exit=$code"
-            }
-            Write-TrayLog ('Restart watcher report: ' + $summary)
-        }
-        catch {
-            $summary = 'update error: ' + $_.Exception.Message
-            Write-TrayLog $summary
-        }
-    }
-    else {
-        Write-TrayLog 'Restart watcher: Update-BobSystrayFromGit.ps1 missing; fallback ear+tray only'
-        Stop-BobiverseMoot
-        Start-BobiverseMootWrapper
-    }
+function Request-BobTrayIrcLogout {
+    # CAST IRON (Simon 2026-09-27): closing systray must log off bob IRC account.
+    # Prefer graceful agent.quit.request (PART/QUIT); then stop ear + kill leftovers.
+    $home = $null
     try {
-        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Systray - Restart', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
+        if (Get-Command Get-BobIrcHome -ErrorAction SilentlyContinue) {
+            $home = Get-BobIrcHome
+        }
     }
     catch { }
-    try { Start-IrcWatcher } catch { }
-    try { Start-JobsWatcher } catch { }
-    # ForceNew: kill this tray and start replacement (SkipUpdate - already updated above).
+    if (-not $home) {
+        $home = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
+    }
+    if ($home -and (Test-Path -LiteralPath $home)) {
+        try {
+            $quitPath = Join-Path $home 'agent.quit.request'
+            Set-Content -LiteralPath $quitPath -Value ('tray-exit {0:o}' -f [datetime]::UtcNow) -Encoding ascii
+            Write-TrayLog ("irc logout: wrote {0}" -f $quitPath)
+            Start-Sleep -Seconds 2
+        }
+        catch {
+            Write-TrayLog ('irc logout quit.request failed: ' + $_.Exception.Message)
+        }
+    }
+    try { Stop-BobiverseMoot } catch {
+        Write-TrayLog ('irc logout Stop-BobiverseMoot: ' + $_.Exception.Message)
+    }
+}
+
+function Restart-BobTrayWatcher {
+    # CAST IRON: Restart uses the SAME bootstrap as Start (Start-BobFleetTray -ForceNew).
+    # No separate Restart shortcut. No LLM.
+    Write-TrayLog 'Restart: Start-BobFleetTray -ForceNew (same bootstrap as Start Menu)'
+    try {
+        $script:notifyIcon.ShowBalloonTip(8000, 'Bob Systray', 'Restarting (bootstrap + tidy)...', [System.Windows.Forms.ToolTipIcon]::Info)
+    }
+    catch { }
+    # Log off IRC before this process dies (replacement will rejoin).
+    try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('restart irc logout: ' + $_.Exception.Message) }
     $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
     if (Test-Path -LiteralPath $startTray) {
         Start-Process -FilePath $ps `
-            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot, '-ForceNew', '-SkipUpdate') `
+            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $startTray, '-RepoRoot', $RepoRoot, '-ForceNew') `
             -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
     }
     else {
-        $self = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
-        Start-Process -FilePath $ps `
-            -ArgumentList @('-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', $self) `
-            -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+        Write-TrayLog 'Restart: Start-BobFleetTray.ps1 missing'
     }
     $ctx.ExitThread()
 }
@@ -2730,8 +2721,8 @@ $miPlan.Add_DropDownOpening({ Build-BobTrayPlanMenu -Parent $miPlan })
 $miAck = $menu.Items.Add('Acknowledge')
 $miLog = $menu.Items.Add('Open log')
 [void]$menu.Items.Add('-')
-$miRestart = $menu.Items.Add('Restart watcher')
-$miExit = $menu.Items.Add('Exit watcher')
+$miRestart = $menu.Items.Add('Restart')
+$miExit = $menu.Items.Add('Exit')
 $notify.ContextMenuStrip = $menu
 
 $miStatus.Add_Click({
@@ -2742,7 +2733,10 @@ $miAck.Add_Click({ Clear-Attention })
 $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath } })
 $ctx = New-Object System.Windows.Forms.ApplicationContext
 $miRestart.Add_Click({ Restart-BobTrayWatcher })
-$miExit.Add_Click({ $ctx.ExitThread() })
+$miExit.Add_Click({
+        try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('exit irc logout: ' + $_.Exception.Message) }
+        $ctx.ExitThread()
+    })
 $notify.Add_MouseClick({
         param($s, $e)
         if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
@@ -2768,9 +2762,27 @@ $poll.Add_Tick({
             $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $StallSec -HeartbeatStaleSec $HeartbeatStaleSec)
             if ($alerts.Count -gt 0) { Set-Attention $alerts }
             Update-Hover
+            # CAST IRON: local Cursor (pcent + overspend) + xAI weekly -> digest webhook every tick.
+            if (Get-Command Write-BobIrcStatus -ErrorAction SilentlyContinue) {
+                try { Write-BobIrcStatus | Out-Null } catch {
+                    Write-TrayLog ('digest Write-BobIrcStatus: ' + $_.Exception.Message)
+                    try {
+                        if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                            Report-BobDeterministicException -Site 'Watch-BobTray.Write-BobIrcStatus' -Exception $_.Exception -ScriptPath $PSCommandPath | Out-Null
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
         catch {
             Write-TrayLog ("poll error: " + $_.Exception.Message)
+            try {
+                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                    Report-BobDeterministicException -Site 'Watch-BobTray.poll' -Exception $_.Exception -ScriptPath $PSCommandPath | Out-Null
+                }
+            }
+            catch { }
         }
     })
 
@@ -2790,10 +2802,41 @@ $pulse.Add_Tick({
         $pulseOff.Stop(); $pulseOff.Start()
     })
 
+# Unhandled exceptions -> GitHub issues via gh (FR #401). No model tokens.
+try {
+    [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+    [System.Windows.Forms.Application]::add_ThreadException({
+            param($sender, $e)
+            try { Write-TrayLog ('ThreadException: ' + $e.Exception.Message) } catch { }
+            try {
+                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                    Report-BobDeterministicException -Site 'Watch-BobTray.ThreadException' -Exception $e.Exception -ScriptPath $PSCommandPath | Out-Null
+                }
+            }
+            catch { }
+        })
+    [AppDomain]::CurrentDomain.add_UnhandledException({
+            param($sender, $e)
+            try { Write-TrayLog ('UnhandledException: ' + $e.ExceptionObject) } catch { }
+            try {
+                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                    Report-BobDeterministicException -Site 'Watch-BobTray.UnhandledException' -Exception $e.ExceptionObject -ScriptPath $PSCommandPath | Out-Null
+                }
+            }
+            catch { }
+        })
+}
+catch { Write-TrayLog ('exception hooks: ' + $_.Exception.Message) }
+
 try { Clear-BobTrayGrokSessionDirs } catch { }
 Start-JobsWatcher
 try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
+# First digest heartbeat immediately (then every PollSec).
+try {
+    if (Get-Command Write-BobIrcStatus -ErrorAction SilentlyContinue) { Write-BobIrcStatus | Out-Null }
+}
+catch { Write-TrayLog ('digest startup: ' + $_.Exception.Message) }
 # TipForm handle only on click - startup CreateHandle caused hover stub.
 $notify.Visible = $true
 $flash.Start()
@@ -2802,6 +2845,8 @@ $pulse.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
 $poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop()
+# Exit path (menu Exit already requested logout; Restart also did). Idempotent.
+try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('final irc logout: ' + $_.Exception.Message) }
 if (Test-BobTrayTipAlive) {
     try { [void]$script:tip.TryHide() } catch { try { $script:tip.Hide() } catch { } }
     try { $script:tip.Dispose() } catch { }

@@ -32,7 +32,7 @@ Cache: `Read-BobReportDigestHttp` holds the GET for 60 seconds.
 
 ## Who publishes
 
-Every `bob-*` builder with a Cursor login runs `Write-BobIrcStatus` (Watch-Bobiverse, ~30s) and **must POST `pcent`** when spending groups are known. MarchHare has no Cursor login: it consumes; it does not invent local Cursor percents.
+Every `bob-*` builder with a Cursor login runs `Write-BobIrcStatus` (**Watch-BobTray** and Watch-Bobiverse, **every 30s**) and **must POST `pcent`** plus **`overage_gbp`** (Cursor month overspend) and local xAI **`weekly`** when known. MarchHare has no Cursor login: it still POSTs local xAI weekly; it does not invent Cursor percents.
 
 `Write-BobIrcStatus` builds `pcent` from `cursor_spending_groups` (PR #306):
 
@@ -80,6 +80,7 @@ POST body (change-only merge):
 op, machine, online, status
 weekly, period_end, cursor_label, cursor_period_end
 remaining_pct / account_remaining_pct / cursor_remaining_pct
+overage_gbp (Cursor month overspend; omit when unknown)
 pcent: { cursor-models, high-cost-models, grok-chat, on-demand }
 running, queued, jobs[{repo, state}]
 model, kind, repo, sha, fuel, working_on, responding

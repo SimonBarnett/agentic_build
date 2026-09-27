@@ -5772,6 +5772,18 @@ Invoke-Case 'BT0systray start menu git-update gate' {
     $shortSrc = Get-Content (Join-Path $RepoRoot 'tools\Install-BobFleetTrayShortcut.ps1') -Raw
     if ($shortSrc -notmatch 'Bob Systray') { throw 'shortcut installer must use Bob Systray Start Menu folder' }
     if ($shortSrc -notmatch 'bob-systray\.ico') { throw 'shortcut installer must set robot IconLocation' }
+    if ($shortSrc -match "Name = 'Restart Bob Systray\.lnk'") { throw 'Restart must not have its own Start Menu/Desktop icon (tray menu / Start only)' }
+    $traySrcSy = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrcSy -notmatch '\[int\]\$PollSec = 30') { throw 'Watch-BobTray PollSec default must be 30 (digest heartbeat)' }
+    if ($traySrcSy -notmatch 'Write-BobIrcStatus') { throw 'Watch-BobTray must Write-BobIrcStatus (cursor+xAI to webhook)' }
+    if ($traySrcSy -notmatch 'Request-BobTrayIrcLogout') { throw 'Watch-BobTray Exit/close must IRC logoff bob account' }
+    if ($traySrcSy -notmatch 'Report-BobDeterministicException') { throw 'Watch-BobTray must report unhandled exceptions via Report-BobDeterministicException (gh, no LLM)' }
+    $restartFn = [regex]::Match($traySrcSy, '(?s)function Restart-BobTrayWatcher\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $restartFn.Success) { throw 'Restart-BobTrayWatcher missing' }
+    if ($restartFn.Value -notmatch 'Start-BobFleetTray\.ps1') { throw 'Restart must call Start-BobFleetTray (same bootstrap as Start)' }
+    if ($restartFn.Value -notmatch '-ForceNew') { throw 'Restart must ForceNew' }
+    if ($restartFn.Value -match 'SkipUpdate') { throw 'Restart must not SkipUpdate (full bootstrap)' }
+    if ($restartFn.Value -notmatch 'Request-BobTrayIrcLogout') { throw 'Restart must IRC logoff before replace' }
     $prof = Join-Path $bridgeRoot 'systray-profile'
     New-Item -ItemType Directory -Force -Path $prof | Out-Null
     $env:BOB_WATCH_SEAT_PROFILE_ROOT = $prof
@@ -5793,10 +5805,10 @@ Invoke-Case 'BT0systray start menu git-update gate' {
         if ($sm -notmatch 'Bob Systray') { throw "startMenuDir must be Bob Systray: $sm" }
         if (-not (Test-Path -LiteralPath $sm)) { throw "Start Menu Bob Systray folder missing: $sm" }
         $targets = @($ji.paths)
-        if ($targets.Count -lt 2) { throw "expected Start+Restart shortcut targets, got $($targets.Count)" }
+        if ($targets.Count -lt 1) { throw "expected Bob Systray shortcut targets, got $($targets.Count)" }
         $joined = ($targets -join '|')
         if ($joined -notmatch 'Bob Systray') { throw "shortcut paths missing Bob Systray: $joined" }
-        if ($joined -notmatch 'Restart Bob Systray') { throw "Restart shortcut missing: $joined" }
+        if ($joined -match 'Restart Bob Systray') { throw 'Restart must not install its own shortcut' }
     }
     finally {
         $env:BOB_WATCH_SEAT_PROFILE_ROOT = $null
