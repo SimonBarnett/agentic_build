@@ -2504,6 +2504,60 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     $env:BOB_CURSOR_USAGE_FILE = $null
 }
 
+# --- BT0overspend423 TipForm overspend is local-only (issue #423) ---
+Invoke-Case 'BT0overspend423 local overspend never digest cache' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_BRIDGE_HOME = $bridgeRoot
+    $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
+    $src = Get-Content $hoverPath -Raw
+    # Getter body must not read pools cache for overage (allow Save/Read elsewhere in file).
+    $fn = [regex]::Match($src, '(?s)function Get-BobCursorOverageGbp \{.*?^\}', [Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $fn.Success) { throw 'Get-BobCursorOverageGbp not found' }
+    $body = $fn.Value
+    if ($body -match 'Read-BobCursorPoolsCache') { throw 'Get-BobCursorOverageGbp must not call Read-BobCursorPoolsCache' }
+    if ($body -match '(?m)^\s*[^#\r\n]*overage_label') { throw 'Get-BobCursorOverageGbp must not parse overage_label from digest cache' }
+    if ($body -notmatch 'issue #423') { throw 'Get-BobCursorOverageGbp must cite issue #423 CAST IRON' }
+
+    $usage = Join-Path $bridgeRoot 'cursor-overspend-local.json'
+    @{
+        remaining_pct = 0
+        used_pct      = 100
+        overage_gbp   = 12.34
+        period_end    = '2026-10-16T00:00:00Z'
+    } | ConvertTo-Json | Set-Content -Path $usage -Encoding utf8
+    $env:BOB_CURSOR_USAGE_FILE = $usage
+
+    # Poison seat cache with a different digest-sourced overage label — must be ignored.
+    @{
+        by_seat = @{
+            'smart-catalogue' = @{
+                remaining_pct = 50
+                overage_label = ('-{0}99.99' -f [char]0x00A3)
+            }
+        }
+    } | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $bridgeRoot 'cursor-pools.json') -Encoding utf8
+
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+    $h2 = Get-BobTrayHover
+    if ($null -eq $h2.account_overage_gbp) { throw 'hover account_overage_gbp missing with local doc' }
+    if ([math]::Abs([double]$h2.account_overage_gbp - 12.34) -gt 0.001) {
+        throw "hover overage=$($h2.account_overage_gbp) expected 12.34 (digest cache leak?)"
+    }
+
+    # No local usage file → TipForm overspend must be null even with poisoned cache.
+    Remove-Item -LiteralPath $usage -Force
+    $env:BOB_CURSOR_USAGE_FILE = Join-Path $bridgeRoot 'cursor-overspend-missing.json'
+    $h3 = Get-BobTrayHover
+    if ($null -ne $h3.account_overage_gbp) {
+        throw "no-local must not paint digest cache overage; got $($h3.account_overage_gbp)"
+    }
+
+    $env:BOB_CURSOR_USAGE_FILE = $null
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_BRIDGE_HOME = $null
+}
+
 # --- BT0l6 systray Cursor overspend / help / section icons (issue #266) ---
 Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw

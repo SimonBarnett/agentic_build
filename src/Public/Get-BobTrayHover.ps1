@@ -546,25 +546,15 @@ function Get-BobSeatForMachine {
 }
 
 function Get-BobCursorOverageGbp {
-    # Real on-demand spend from Get-CursorAgentUsage.py (USD cents -> GBP).
+    # CAST IRON (issue #423 / Simon 2026-09-27): TipForm Cursor overspend is LOCAL only.
+    # Read spendLimitUsage via Get-BobCursorAgentWeeklyRemaining / Get-CursorAgentUsage.py.
+    # Never digest GET, never cursor_pools / seat-cache peer GBP labels.
+    # Digest may still *publish* overage_gbp for other seats; this getter must not consume it.
     # Never treat tip_cursor.json as pounds.
     try {
         $doc = Get-BobCursorAgentWeeklyRemaining
         if ($doc -and $null -ne $doc.overage_gbp -and [string]$doc.overage_gbp -ne '') {
             return [double]$doc.overage_gbp
-        }
-    } catch { }
-    try {
-        $cache = Read-BobCursorPoolsCache
-        foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
-            $lab = $null
-            if ($seatEnt.Value.overage_label) { $lab = [string]$seatEnt.Value.overage_label }
-            if (-not $lab) { continue }
-            # Real overspend only (GBP/USD), never plain "0%" / "82%" remaining labels.
-            if (-not (($lab -match '^-') -or ($lab.IndexOf([char]0x00A3) -ge 0) -or ($lab -match 'GBP|\$'))) { continue }
-            if ($lab -match '([0-9]+(?:\.[0-9]+)?)') {
-                return [double]$Matches[1]
-            }
         }
     } catch { }
     return $null

@@ -88,7 +88,7 @@ Grok Build weekly + fuels (`cursor-models`, `grok-build`, `copilot`,
 `grok-bot`).
 
 - Known remaining: each group bar shows N% from Spending (see `box-usage`), not Sand overage mislabelled as auto.
-- Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents to GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overspend, not as the fuel remaining figure. Digest `overage_gbp` may be null while the local TipForm has GBP: prefer local `spendLimitUsage` when present (`box-usage`). A plain `0%` or `82%` label is not overspend.
+- Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents to GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overspend, not as the fuel remaining figure. **CAST IRON (issue #423):** TipForm Cursor overspend (`Get-BobCursorOverageGbp` / `account_overage_gbp`) is **local Spending only** — never digest GET, never `cursor_pools` / seat-cache `overage_label`. Digest may still *publish* `overage_gbp` for peers; this seat must not paint from that. Digest `overage_gbp` may be null while local TipForm has GBP (`box-usage`). A plain `0%` or `82%` label is not overspend.
 - Empty auto remaining (0%): then fuel falls through to grok.exe. Sand 100% does not by itself mean auto is empty.
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining (`creditUsagePercent` on `billing: fetched credits config`).
 - Numbers: `box-usage`. Do not invent weekly %.
