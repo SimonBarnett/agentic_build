@@ -2517,7 +2517,9 @@ Invoke-Case 'BT0overspend423 local overspend never digest cache' {
     $body = $fn.Value
     if ($body -match 'Read-BobCursorPoolsCache') { throw 'Get-BobCursorOverageGbp must not call Read-BobCursorPoolsCache' }
     if ($body -match '(?m)^\s*[^#\r\n]*overage_label') { throw 'Get-BobCursorOverageGbp must not parse overage_label from digest cache' }
-    if ($body -notmatch 'issue #423') { throw 'Get-BobCursorOverageGbp must cite issue #423 CAST IRON' }
+    if ($body -notmatch 'issue #423' -and $body -notmatch 'AgentMonitor #150') {
+        throw 'Get-BobCursorOverageGbp must cite issue #423 / AgentMonitor #150 CAST IRON'
+    }
 
     $usage = Join-Path $bridgeRoot 'cursor-overspend-local.json'
     @{
@@ -2554,6 +2556,71 @@ Invoke-Case 'BT0overspend423 local overspend never digest cache' {
     }
 
     $env:BOB_CURSOR_USAGE_FILE = $null
+    $env:BOB_MACHINE_ID = $null
+    $env:BOB_BRIDGE_HOME = $null
+}
+
+# --- BT0am150 TipForm local Grok+Cursor pools (AgentMonitor #150) ---
+Invoke-Case 'BT0am150 local grok weekly not clobbered by digest' {
+    param($bridgeRoot)
+    $env:BOB_MACHINE_ID = 'ionos'
+    $env:BOB_BRIDGE_HOME = $bridgeRoot
+    $null = Register-BobMachine -Id ionos -CwdRoots $bridgeRoot
+
+    # Local unified.jsonl weekly remaining = 77% (used 23); digest claims ionos weekly = 11%.
+    $logPath = Join-Path $bridgeRoot 'uat150-unified.jsonl'
+    $end = ([datetime]::UtcNow).AddDays(3).ToString('o')
+    $weekObj = [ordered]@{
+        ts  = ([datetime]::UtcNow).ToString('o')
+        msg = 'billing: fetched credits config'
+        ctx = @{
+            config = @{
+                creditUsagePercent = 23
+                currentPeriod      = @{ type = 'WEEKLY'; end = $end }
+            }
+        }
+    }
+    [IO.File]::WriteAllText($logPath, ($weekObj | ConvertTo-Json -Compress -Depth 6))
+    $env:BOB_WEEKLY_LOG = $logPath
+
+    $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
+    $src = Get-Content $hoverPath -Raw
+    if ($src -notmatch 'AgentMonitor#150') { throw 'Get-BobTrayHover must cite AgentMonitor#150 for local Grok weekly protect' }
+
+    # Poison HTTP digest cache (preferred over peer file) with wrong ionos weekly.
+    $poison = [pscustomobject]@{
+        v        = 1
+        machines = [pscustomobject]@{
+            ionos = [pscustomobject]@{
+                weekly     = 11
+                period_end = $end
+                pcent      = [pscustomobject]@{ 'grok-build' = 11 }
+            }
+        }
+    }
+    $mod = Get-Module BobBridge -ErrorAction SilentlyContinue
+    if (-not $mod) { throw 'BobBridge module not loaded' }
+    & $mod {
+        param($d)
+        $script:BobDigestHttpCache = $d
+        $script:BobDigestHttpCacheAt = [datetime]::UtcNow
+    } $poison
+
+    $h = Get-BobTrayHover
+    if ($null -eq $h.remaining_pct) { throw 'hover remaining_pct null (local weekly missing?)' }
+    if ([int]$h.remaining_pct -ne 77) {
+        throw "local weekly remaining=$($h.remaining_pct) expected 77 (digest 11 must not win)"
+    }
+    $tile = @($h.machines) | Where-Object { [string]$_.id -eq 'ionos' -or [string]$_.machine -eq 'ionos' } | Select-Object -First 1
+    if ($tile) {
+        $rp = $null
+        if ($null -ne $tile.remaining_pct) { $rp = [int]$tile.remaining_pct }
+        elseif ($null -ne $tile.weekly) { $rp = [int]$tile.weekly }
+        if ($null -ne $rp -and $rp -ne 77) { throw "ionos tile weekly=$rp expected 77" }
+    }
+
+    & $mod { $script:BobDigestHttpCache = $null; $script:BobDigestHttpCacheAt = $null }
+    $env:BOB_WEEKLY_LOG = $null
     $env:BOB_MACHINE_ID = $null
     $env:BOB_BRIDGE_HOME = $null
 }

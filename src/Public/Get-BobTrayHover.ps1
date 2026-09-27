@@ -546,8 +546,9 @@ function Get-BobSeatForMachine {
 }
 
 function Get-BobCursorOverageGbp {
-    # CAST IRON (issue #423 / Simon 2026-09-27): TipForm Cursor overspend is LOCAL only.
-    # Read spendLimitUsage via Get-BobCursorAgentWeeklyRemaining / Get-CursorAgentUsage.py.
+    # CAST IRON (agentic_build #423 / AgentMonitor #150 / Simon 2026-09-27): TipForm
+    # Cursor overspend is LOCAL only. Read spendLimitUsage via
+    # Get-BobCursorAgentWeeklyRemaining / Get-CursorAgentUsage.py.
     # Never digest GET, never cursor_pools / seat-cache peer GBP labels.
     # Digest may still *publish* overage_gbp for other seats; this getter must not consume it.
     # Never treat tip_cursor.json as pounds.
@@ -1654,6 +1655,9 @@ function Get-BobTrayHover {
         $pct = ConvertTo-BobTrayIntOrNull $pc.pct
         if ($null -eq $pct) { continue }
         if ($src -eq 'grok-build' -and $mac) {
+            # FR AgentMonitor#150 / CAST IRON: this host's Grok weekly is LOCAL unified.jsonl.
+            # Digest may fill peer tiles only; never clobber a known local weekly.
+            if ($mac -eq $machineId -and $weeklyBy.ContainsKey($machineId)) { continue }
             $weeklyBy[$mac] = $pct
         }
     }
@@ -1665,8 +1669,14 @@ function Get-BobTrayHover {
         if (-not $mac) { continue }
         $pct = ConvertTo-BobTrayIntOrNull $wr.weekly
         if ($null -eq $pct) { continue }
+        # FR AgentMonitor#150: digest must not overwrite this host's local Grok pool.
+        if ($mac -eq $machineId -and $weeklyBy.ContainsKey($machineId)) { continue }
         $weeklyBy[$mac] = $pct
-        if ($wr.period_end) { $periodEndBy[$mac] = [string]$wr.period_end }
+        if ($wr.period_end) {
+            if (-not ($mac -eq $machineId -and $periodEndBy.ContainsKey($machineId))) {
+                $periodEndBy[$mac] = [string]$wr.period_end
+            }
+        }
         try {
             Save-BobSeatPeriodEnd -MachineId $mac -PeriodEnd $(if ($wr.period_end) { [string]$wr.period_end } else { $null }) -Weekly $pct
         } catch { }

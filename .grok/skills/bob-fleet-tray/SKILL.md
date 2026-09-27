@@ -66,7 +66,7 @@ is enough. When the model is Auto, the meter is **auto**, not on-demand.
 Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
 those rows with xAI seat labels.
 
-### CAST IRON — pool check is LOCAL (Simon 2026-09-27)
+### CAST IRON — pool check is LOCAL (Simon 2026-09-27 / AgentMonitor #150)
 
 **Agents start / fuel / "is there pool?"** must use **local** Spending
 (`Get-BobCursorAgentWeeklyRemaining` / `GetCurrentPeriodUsage` /
@@ -76,6 +76,13 @@ remaining. TipForm bars on a host with a Cursor login paint from that
 local doc first. Digest `pcent` may only **fill still-null** bars (hosts
 with no Cursor login, e.g. MarchHare). Digest must **not overwrite** a
 known local/cache value.
+
+**Overspend + this host's Grok weekly** (AgentMonitor #150 / agentic_build
+#423): TipForm `overspend £N.NN` is local `spendLimitUsage` only
+(`Get-BobCursorOverageGbp`). This host's Grok Build weekly tile is local
+`unified.jsonl` (`Get-BobWeeklyRemaining`); digest must not clobber it.
+Publish path (`Write-BobIrcStatus` → digest `overage_gbp` / `weekly`) stays
+unchanged for peers.
 
 Hosts that do have a login (ionos, flamingo) still **publish** `pcent` via
 `Write-BobIrcStatus` so MarchHare can fill nulls. Shape/POST checklist:
