@@ -5130,6 +5130,28 @@ Invoke-Case 'BT0tip hover pcent rows no remaining_pct crash' {
     if (-not $auto -or [string]$auto.remaining_pct -ne '0') { throw "auto pool remaining_pct=$($auto.remaining_pct) (0 is real)" }
     $chat = @($pools | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
     if (-not $chat -or [int]$chat.remaining_pct -ne 68) { throw "grok-chat pool remaining_pct=$($chat.remaining_pct)" }
+    # CAST IRON: local Spending wins — digest pcent must not overwrite a known local pool.
+    $localDoc = [pscustomobject]@{
+        remaining_pct = 9
+        cursor_spending_groups = @(
+            [pscustomobject]@{ id = 'auto'; remaining_pct = 9 }
+            [pscustomobject]@{ id = 'high-cost-models'; remaining_pct = 100 }
+            [pscustomobject]@{ id = 'grok-chat'; remaining_pct = 0 }
+        )
+    }
+    $digestClash = @(
+        [pscustomobject]@{ source = 'cursor-models'; pct = 0; machine = 'ionos' }
+        [pscustomobject]@{ source = 'high-cost-models'; pct = 1; machine = 'ionos' }
+    )
+    $localWins = & $m { param($doc, $r) @(Get-BobCursorPoolsForTray -MachineId 'ionos' -LocalCursorDoc $doc -PcentRows $r) } $localDoc $digestClash
+    $autoLocal = @($localWins | Where-Object { [string]$_.group_id -eq 'auto' })[0]
+    if (-not $autoLocal -or [int]$autoLocal.remaining_pct -ne 9) {
+        throw "local auto pool must stay 9 vs digest 0 (got $($autoLocal.remaining_pct))"
+    }
+    $hiLocal = @($localWins | Where-Object { [string]$_.group_id -eq 'high-cost-models' })[0]
+    if (-not $hiLocal -or [int]$hiLocal.remaining_pct -ne 100) {
+        throw "local high-cost must stay 100 vs digest 1 (got $($hiLocal.remaining_pct))"
+    }
     # Set-BobCursorControlPoolRow tolerates null, digest `remaining` shape, and hashtables.
     & $m { Set-BobCursorControlPoolRow -Pool $null -RemainingPct 5 -PeriodEnd '2026-10-16T17:23:01Z' }
     $digestPool = [pscustomobject]@{ id = 'cursor-models'; label = 'Cursor Models'; remaining = 9; group_label = 'auto' }

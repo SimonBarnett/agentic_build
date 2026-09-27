@@ -64,11 +64,11 @@ Hermetic capture (no live HTTP): `BOB_DIGEST_WEBHOOK_CAPTURE` = an ndjson path. 
 
 TipForm on every seat, including MarchHare:
 
-- GET the report URL.
-- Apply digest `cursor_pools` and each machine's `pcent`.
-- Spending groups are fleet-shared. Fan pool ids out to every seat **except** named xAI seats `smart-catalogue`, `club-madeira`, `ntsa` (those stay per-seat).
+- **CAST IRON (Simon 2026-09-27):** Cursor **pool check** (Agents start / fuel gate / "is there pool?") is **local Spending** (`Get-BobCursorAgentWeeklyRemaining`). Do **not** use digest GET / `cursor_pools` / `pcent` to decide pool remaining when local is known.
+- GET the report URL for jobs, weekly tiles, and to **fill still-null** Cursor bars on hosts with no Cursor login (MarchHare).
+- Digest must **not overwrite** a bar that local Spending or seat cache already set.
 - Group aliases (`Normalize-BobCursorSpendingGroupId`, PR #306): `grok-weekly` / `grok_weekly` / `sand` / `grok-chat` -> `grok-chat`; `other-models` / `other_models` / `high-cost-models` -> `high-cost-models`; `cursor-models` / `low-cost-models` / `auto` / `on-demand` / `overage` -> `auto`.
-- Also accept chair whisper `BOB DIGEST v1` (`Import-BobIrcTrayPull`) into `bob-peers\`. HTTP digest is the path that fills a host with no local Cursor login.
+- Also accept chair whisper `BOB DIGEST v1` (`Import-BobIrcTrayPull`) into `bob-peers\`.
 
 Paint: `bob-fleet-tray`. Three bars only. No on-demand bar.
 
@@ -118,4 +118,5 @@ curl -fsS https://irc.ntsa.uk/bob/v1/report
 - Do not invent usage numbers.
 - Do not print the report secret.
 - Builders POST. TipForm GETs. Jeeves whispers `BOB DIGEST v1` (chair), it is not a substitute for `pcent` on the webhook.
+- Cursor pool remaining / Agents fuel gate: **local** Spending first. Digest fills nulls only.
 - One home for fuel policy: `bob-token-handoff`.

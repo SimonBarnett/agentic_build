@@ -5,9 +5,9 @@ description: >
   PowerShell NotifyIcon, Font Awesome robot, dark TipForm card. Use when the
   user says tray icon, system tray, Bob Fleet card, #Bobiverse, systray,
   NotifyIcon, flash the watcher, recycle tray, TipForm n/a, MarchHare Cursor
-  pools, digest pcent, or /bob-fleet-tray. MarchHare has no Cursor login;
-  bars come from the fleet digest. Stall policy is bob-fleet-monitor.
-  Numbers: box-usage and bob-digest-webhook. Do not invent usage numbers.
+  pools, digest pcent, or /bob-fleet-tray. CAST IRON: Cursor pool check is
+  LOCAL Spending (box-usage); digest must not decide pool remaining.
+  Stall policy is bob-fleet-monitor. Do not invent usage numbers.
 ---
 
 # Tray (Bob Fleet / #Bobiverse)
@@ -51,10 +51,9 @@ offer a session-only API key dialog and pass `XAI_API_KEY` to the
 Named xAI seats (`smart-catalogue`, `club-madeira`, `ntsa`) stay per-seat.
 They are not Cursor spending bars.
 
-## Cursor spending groups (fleet digest, not this host's login)
+## Cursor spending groups
 
-**Three groups** on the card (not xAI seat names; issue #151). PR #306
-(TipForm digest/pcent) is the code. This skill is the recipe.
+**Three groups** on the card (not xAI seat names; issue #151).
 
 1. `grok chat  {N%|n/a}` -- Sand (`GetSandUsageStatus.usagePercent`). Digest aliases `grok-weekly`, `sand` map here.
 2. `high cost models  {N%|n/a}` -- `planUsage.apiPercentUsed` (named models). Digest alias `other-models` maps here. Never pick Other Models as a worker fuel (`bob-token-handoff`).
@@ -67,21 +66,26 @@ is enough. When the model is Auto, the meter is **auto**, not on-demand.
 Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
 those rows with xAI seat labels.
 
-**MarchHare has no Cursor login.** TipForm must not require a local Cursor
-session on the host that paints the card. Consume fleet digest
-`cursor_pools` plus peer `pcent` from
-`https://irc.ntsa.uk/bob/v1/report` (`Get-BobDigestUrl` / `reportUrl`).
-Hosts that do have a login (ionos, flamingo) publish `pcent` via
-`Write-BobIrcStatus`. Digest pool ids
-(`cursor-models`, `other-models`, `grok-weekly`, and aliases) fan out to
-every seat. Named xAI seat rows stay per-seat. Shape, POST, and the
-accuracy checklist: `bob-digest-webhook`. Do not invent a percent. Missing
-is `n/a`. `0%` is a real value.
+### CAST IRON — pool check is LOCAL (Simon 2026-09-27)
+
+**Agents start / fuel / "is there pool?"** must use **local** Spending
+(`Get-BobCursorAgentWeeklyRemaining` / `GetCurrentPeriodUsage` /
+`planUsage.autoPercentUsed`). **Never** GET the digest report (or trust
+digest `cursor_pools` / `pcent`) to decide whether a Cursor pool has
+remaining. TipForm bars on a host with a Cursor login paint from that
+local doc first. Digest `pcent` may only **fill still-null** bars (hosts
+with no Cursor login, e.g. MarchHare). Digest must **not overwrite** a
+known local/cache value.
+
+Hosts that do have a login (ionos, flamingo) still **publish** `pcent` via
+`Write-BobIrcStatus` so MarchHare can fill nulls. Shape/POST checklist:
+`bob-digest-webhook`. Do not invent a percent. Missing is `n/a`. `0%` is
+a real value.
 
 `account_remaining_pct` on `Get-BobTrayHover` is the **auto** remaining
-(MRB fuel gate), filled from local Cursor when present, else from digest
-`pcent` / `cursor_pools`. Machine rows are Grok Build weekly + fuels
-(`cursor-models`, `grok-build`, `copilot`, `grok-bot`).
+(MRB fuel gate), filled from **local** Cursor first. Machine rows are
+Grok Build weekly + fuels (`cursor-models`, `grok-build`, `copilot`,
+`grok-bot`).
 
 - Known remaining: each group bar shows N% from Spending (see `box-usage`), not Sand overage mislabelled as auto.
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents to GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overspend, not as the fuel remaining figure. Digest `overage_gbp` may be null while the local TipForm has GBP: prefer local `spendLimitUsage` when present (`box-usage`). A plain `0%` or `82%` label is not overspend.
@@ -193,8 +197,8 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 2. Log tail `watch_bob_tray.log` for `tray up`, `tip show ok`, poll errors.
 3. Confirm `$notify.Visible` path still sets Visible=$true after start.
 4. Confirm `NotifyIcon.Text` is empty (no white P+ chip).
-5. Confirm title `#Bobiverse (<id>)`, three Cursor bars (grok chat, high cost models, auto) from digest `pcent` / `cursor_pools` when this host has no Cursor login, seat labels beside names, shared % on ntsa seats.
-6. Bars stuck at `n/a` on MarchHare: digest GET is not `https://irc.ntsa.uk/bob/v1/report`, or peers omitted `pcent`. Checklist: `bob-digest-webhook`. Do not invent the percent.
+5. Confirm title `#Bobiverse (<id>)`, three Cursor bars (grok chat, high cost models, auto) from **local** Spending when this host has a Cursor login; digest only fills nulls when it does not. Seat labels beside names; shared % on ntsa seats.
+6. Bars stuck at `n/a` on MarchHare (no Cursor login): digest GET is not `https://irc.ntsa.uk/bob/v1/report`, or peers omitted `pcent`. Checklist: `bob-digest-webhook`. Do not invent the percent. On ionos/flamingo, `n/a` means local Spending failed — fix local, do not fall back to digest for the pool check.
 7. Click / Status does nothing: TipForm C# failed to compile -- check for duplicate `SendMessage` P/Invoke or Add-Type errors in the log.
 8. Refresh clears the card: rebuild cleared controls while redraw was suspended, or an exception after Clear -- drop WM_SETREDRAW; format labels before Clear; ResumeLayout + Refresh always.
 9. If card flashes on poll: verify SuspendLayout/ResumeLayout wraps `Rebuild-BobTrayTiles` (no SetRedraw).
@@ -212,9 +216,10 @@ fresh session + skills + prompt -- never resume). Cursor also gets
 
 ### Empty fuel / session API key (Simon 2026-09-24)
 
-Before **Start Agent** or **Plan** start, tray reads the last TipForm fuel snapshot
-(`machines.*.remaining_pct` for Grok on this host; `cursor_pools` / account auto
-for Cursor):
+Before **Start Agent** or **Plan** start, tray checks fuel: Grok from
+`machines.*.remaining_pct` / digest `pcent.grok-chat` (FR #356); **Cursor
+auto pool from local Spending** (`Get-BobTrayCursorFuelRemaining` →
+`Get-BobCursorAgentWeeklyRemaining`) — never digest for the Cursor pool gate:
 
 - **Remaining > 0 or unknown**: unchanged launch (no dialog).
 - **Grok remaining 0**: WinForms password dialog for `XAI_API_KEY`. Cancel aborts.
@@ -271,4 +276,4 @@ IconLocation via AgentMonitor `Publish-DesktopShortcuts.ps1`.
 - Do not report session context as weekly quota.
 - Job lines are GitHub owner/repo, never a commit SHA as primary label.
 - Do not omit registered bobiverse seats. Do not invent jobs. Do not WinRM.
-- Do not paint Cursor bars from "this host's Cursor login" alone. MarchHare has none.
+- CAST IRON: Cursor pool remaining / Agents fuel gate = local Spending. Digest fills nulls only; never overwrites local.

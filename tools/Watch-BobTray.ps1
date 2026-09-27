@@ -1067,7 +1067,26 @@ function Publish-BobTrayFuelMode {
 }
 
 function Get-BobTrayCursorFuelRemaining {
-    # Cursor Agents start with -Model auto: prefer auto / low-cost / cursor-models pool.
+    # CAST IRON (Simon 2026-09-27): Cursor pool check is LOCAL Spending only
+    # (Get-BobCursorAgentWeeklyRemaining / planUsage.autoPercentUsed). Never GET digest
+    # or trust digest cursor_pools / pcent to decide whether a pool has remaining.
+    if (Get-Command Get-BobCursorAgentWeeklyRemaining -ErrorAction SilentlyContinue) {
+        try {
+            $localDoc = Get-BobCursorAgentWeeklyRemaining
+            if ($localDoc) {
+                $fromLocal = $null
+                if (Get-Command Get-BobCursorGroupRemainFromLocalDoc -ErrorAction SilentlyContinue) {
+                    $fromLocal = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $localDoc -GroupId 'auto'
+                }
+                if ($null -eq $fromLocal -and $null -ne $localDoc.remaining_pct -and [string]$localDoc.remaining_pct -ne '') {
+                    try { $fromLocal = [int]$localDoc.remaining_pct } catch { }
+                }
+                if ($null -ne $fromLocal) { return [int]$fromLocal }
+            }
+        }
+        catch { }
+    }
+    # Fallback: last TipForm snapshot (already local-preferring via Get-BobCursorPoolsForTray).
     $snap = $script:lastFuelSnapshot
     if (-not $snap) { return $null }
     $autoIds = @('auto', 'low-cost-models', 'cursor-models')
@@ -1102,7 +1121,7 @@ function Test-BobTrayAgentFuelExhausted {
     }
     $remain = $null
     if ($k -eq 'cursor') { $remain = Get-BobTrayCursorFuelRemaining }
-    # Cursor: unknown/null remaining => do not block (digest may omit cursor pools).
+    # Cursor: unknown/null local remaining => do not block (host may have no Cursor login).
     if ($null -eq $remain) { return $false }
     return ($remain -le 0)
 }
