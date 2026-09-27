@@ -1398,6 +1398,10 @@ function Get-BobCursorPoolsForTray {
             account_name    = $glabel
         }
     }
+    # CAST IRON (Simon 2026-09-27): Cursor pool remaining is a LOCAL Spending check
+    # (Get-BobCursorAgentWeeklyRemaining / GetCurrentPeriodUsage). Never use digest to
+    # decide whether a pool exists or to overwrite a known local/cache value. Digest
+    # pcent may only FILL a still-null bar (hosts with no Cursor login, e.g. MarchHare).
     foreach ($pc in @($PcentRows)) {
         if (-not $pc) { continue }
         $src = [string]$pc.source
@@ -1408,7 +1412,6 @@ function Get-BobCursorPoolsForTray {
         if ($reportMac) { $reportMac = Resolve-BobiverseMachineId $reportMac }
         $seatId = $localSeatId
         $groupId = $null
-        # Cursor spending groups are fleet-shared via digest/IRC (MarchHare has no local Cursor).
         if ($src -eq 'cursor-models' -or $src -eq 'low-cost-models' -or $src -eq 'auto') {
             $groupId = 'auto'
         }
@@ -1430,13 +1433,14 @@ function Get-BobCursorPoolsForTray {
             if ($macSeat) { $seatId = [string]$macSeat.id }
         }
         foreach ($pool in $pools) {
-            if ([string]$pool.group_id -eq $groupId) {
-                $pool.remaining_pct = $pct
-                $pool.pct_label = ('{0}%' -f $pct)
-                $pool.heading = ('{0}  {1}' -f $pool.group_label, $pool.pct_label)
-                if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
-                break
-            }
+            if ([string]$pool.group_id -ne $groupId) { continue }
+            # Local/cache already set this bar — digest must not clobber (incl. with n/a path).
+            if ($null -ne $pool.remaining_pct -and [string]$pool.remaining_pct -ne '') { break }
+            $pool.remaining_pct = $pct
+            $pool.pct_label = ('{0}%' -f $pct)
+            $pool.heading = ('{0}  {1}' -f $pool.group_label, $pool.pct_label)
+            if ($pool.reset_label) { $pool.heading = ('{0}  {1}' -f $pool.heading, $pool.reset_label) }
+            break
         }
         foreach ($seat in @(Get-BobSeatConfig)) {
             if (-not $seat -or -not $seat.id) { continue }
