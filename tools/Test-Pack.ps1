@@ -2306,11 +2306,12 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     if ($txt -notmatch 'beef142') { throw "hover missing digest sha: $txt" }
     if ($txt -notmatch 'digest ingest fixture') { throw "hover missing description: $txt" }
     if ($txt -notmatch 'face142') { throw "hover missing flamingo sha: $txt" }
-    if ($txt -notmatch '(?m)^[ ]+low cost models  11%') { throw "local low cost models bar from digest: $txt" }
-    if ($txt -match '(?m)^[ ]+Club Madeira  low cost models') { throw "peer pool cache must not paint xAI seat as Cursor bar: $txt" }
+    if ($txt -notmatch '(?m)^[ ]+(auto|low cost models)  11%') { throw "local auto/low-cost bar from digest: $txt" }
+    if ($txt -match '(?m)^[ ]+Club Madeira  (auto|low cost models|grok chat|high cost models)') { throw "peer pool cache must not paint xAI seat as Cursor bar: $txt" }
     if ($txt -notmatch '(?m)ionos[^\r\n]*\(12%\)') { throw "ionos weekly bar missing: $txt" }
     if ($txt -notmatch '(?m)flamingo[^\r\n]*\(8%\)') { throw "flamingo weekly bar missing: $txt" }
-    if ($txt -notmatch 'reset 28 Sep') { throw "ionos reset label missing: $txt" }
+    if ($txt -notmatch 'Until reset:') { throw "ionos reset countdown missing: $txt" }
+    if ($txt -match 'reset \d{1,2} [A-Z][a-z]{2}\b') { throw "ionos reset must be countdown not date: $txt" }
     if ($txt -notmatch 'composer-2\.5') { throw "hover missing digest model: $txt" }
     if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
     $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
@@ -2462,6 +2463,16 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
                 working_on = 'digest worker fixture line'
                 running    = 1
                 lastSeen   = '2026-09-22T10:00:00Z'
+                jobs       = @(
+                    @{
+                        repo        = 'SimonBarnett/agentic_irc'
+                        sha         = 'face151'
+                        model       = 'grok-4.6'
+                        description = 'digest worker fixture line'
+                        run_time    = '1m00s'
+                        state       = 'START'
+                    }
+                )
             }
         }
     }
@@ -2472,12 +2483,12 @@ Invoke-Case 'BT0l5 cursor spending groups and irc workers' {
     if (@($h.cursor_groups).Count -lt 3) { throw "cursor_groups=$(@($h.cursor_groups).Count)" }
     if ($txt -notmatch '(?m)^[ ]+grok chat  75%') { throw "ionos local grok chat bar: $txt" }
     if ($txt -notmatch '(?m)^[ ]+high cost models  90%') { throw "ionos local high cost bar: $txt" }
-    if ($txt -notmatch '(?m)^[ ]+low cost models  95%') { throw "ionos local low cost bar: $txt" }
-    if ($txt -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models)') {
+    if ($txt -notmatch '(?m)^[ ]+(auto|low cost models)  95%') { throw "ionos local auto/low-cost bar: $txt" }
+    if ($txt -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models|auto)') {
         throw 'xAI seat labels must not prefix Cursor spending bars'
     }
-    if ($txt -match '(?m)^[ ]+low cost models  95%[^\r\n]*\r?\n[ ]+low cost models') {
-        throw 'must not collapse Cursor groups into one low cost row only'
+    if ($txt -match '(?m)^[ ]+(auto|low cost models)  95%[^\r\n]*\r?\n[ ]+(auto|low cost models)') {
+        throw 'must not collapse Cursor groups into one auto/low-cost row only'
     }
     if ($txt -notmatch 'digest worker fixture line') { throw "flamingo irc worker line missing: $txt" }
     if ($txt -match '(?m)^[ ]+flamingo[^\r\n]*\r?\n[ ]+no jobs') { throw "flamingo tile must not lead with no jobs: $txt" }
@@ -2533,6 +2544,25 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
     if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
     if ($hoverSrc -notmatch 'sand_period_end') { throw 'grok chat reset must prefer sand_period_end' }
+    if ($hoverSrc -notmatch 'Until reset:') { throw 'Format-BobResetLabel must emit Until reset countdown (AgentMonitor #148)' }
+    if ($hoverSrc -notmatch 'FetchedAt') { throw 'Format-BobResetLabel must accept FetchedAt to hide after poll-since-reset' }
+}
+
+# --- BT0reset148 TipForm reset countdown (AgentMonitor #148) ---
+Invoke-Case 'BT0reset148 reset countdown days hours minutes' {
+    param($bridgeRoot)
+    $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
+    . $hoverPath
+    $now = [datetime]::Parse('2026-09-26T12:00:00Z', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+    $label = Format-BobResetLabel -PeriodEnd '2026-09-28T16:12:00Z' -Now $now
+    if ($label -ne 'Until reset: 2 days, 4 hours, 12 minutes') { throw "countdown sample=$label" }
+    $zero = Format-BobResetLabel -PeriodEnd '2026-09-26T11:00:00Z' -Now $now
+    if ($zero -ne 'Until reset: 0 minutes') { throw "clamp sample=$zero" }
+    $hidden = Format-BobResetLabel -PeriodEnd '2026-09-25T12:00:00Z' -FetchedAt '2026-09-26T13:00:00Z' -Now $now
+    if ($null -ne $hidden -and [string]$hidden -ne '') { throw "polled-since-reset must hide: $hidden" }
+    $omitDays = Format-BobResetLabel -PeriodEnd '2026-09-26T15:30:00Z' -Now $now
+    if ($omitDays -ne 'Until reset: 3 hours, 30 minutes') { throw "omit-days sample=$omitDays" }
+    if ((Format-BobResetLabel -PeriodEnd $null)) { throw 'null period_end must return null' }
 }
 
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---

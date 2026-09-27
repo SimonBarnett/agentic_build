@@ -100,24 +100,27 @@ tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
 cache. HTTP digest GET is the same `reportUrl` (PR #306). Not POINT, not
 a presence-only digest.
 
-## Reset dates
+## Reset countdown (AgentMonitor #148)
 
-Show weekly reset next to the meter, not only in digests:
+Show time until weekly reset next to the meter, not only in digests.
+`Format-BobResetLabel` formats from the known `period_end` (no extra polling):
 
-- **Each Cursor spending group** (`grok chat`, `high cost models`, `auto`): `reset DD Mon` on that row. `grok chat` uses Sand `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor Spending billing cycle end. Per-group `period_end` on the seat cache wins when present. Do not leave reset only on auto.
-- **Each machine tile**: that xAI seat's `currentPeriod.end` from `unified.jsonl` `billing: fetched credits config` (`Get-BobWeeklyRemaining`). Same-seat machines share one reset date (and one remaining %).
-- Fleet share: IRC POINT includes `reset=YYYY-MM-DD`.
-- Durable cache: `~\.grok\bob-bridge\seat-period-end.json` (by_machine + by_seat) so TipForm keeps peer reset dates when IRC peer JSON is wiped. Import must **not** wipe an existing peer `period_end` when an older POINT lacks `reset=`.
+- Label: `Until reset: {days} days, {hours} hours, {minutes} minutes` (omit zero components; clamp negative to `0 minutes`).
+- **Hide when polled since reset:** if usage `FetchedAt` >= `period_end`, omit the reset line (percentage still shown).
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `auto`): countdown on that row. `grok chat` uses Sand `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor Spending billing cycle end. Per-group `period_end` on the seat cache wins when present.
+- **Each machine tile**: that xAI seat's `currentPeriod.end` from `unified.jsonl` (`Get-BobWeeklyRemaining`). Same-seat machines share one reset instant (and one remaining %).
+- Fleet share: IRC POINT still includes `reset=YYYY-MM-DD` for peers.
+- Durable cache: `~\.grok\bob-bridge\seat-period-end.json` (by_machine + by_seat). Import must **not** wipe an existing peer `period_end` when an older POINT lacks `reset=`.
 
 Example control headings:
 
-`grok chat  N%  reset DD Mon`
+`grok chat  N%  Until reset: 2 days, 4 hours, 12 minutes`
 
-`high cost models  N%  reset DD Mon`
+`high cost models  N%  Until reset: 2 days, 4 hours, 12 minutes`
 
-`auto  N%  reset DD Mon`
+`auto  N%  Until reset: 2 days, 4 hours, 12 minutes`
 
-`flamingo  -  Club Madeira (N%) - reset DD Mon`
+`flamingo  -  Club Madeira (N%) - Until reset: 2 days, 4 hours, 12 minutes`
 
 TipForm layout (Simon 2026-09-23):
 

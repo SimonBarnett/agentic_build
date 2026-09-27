@@ -252,6 +252,7 @@ function ConvertTo-BobCursorUsageDoc {
         sand_remaining_pct = $sandRemain
         sand_exhausted = $sandExhausted
         sand_period_end = $sandPeriodEnd
+        fetched_at    = $(if ($j.fetched_at) { [string]$j.fetched_at } elseif ($j.ts) { [string]$j.ts } else { $null })
         source        = 'cursor-agent'
         kind          = 'weekly'
     }
@@ -592,25 +593,65 @@ function Format-BobCursorAccountLabel {
 
 
 
+function ConvertTo-BobUtcDateTime {
+    param($Value)
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    try {
+        $raw = [string]$Value
+        if ($raw -match '^\d{12,}$') {
+            return [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$raw).UtcDateTime
+        }
+        if ($raw -match '^\d{10}$') {
+            return [DateTimeOffset]::FromUnixTimeSeconds([int64]$raw).UtcDateTime
+        }
+        $dt = [datetime]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+        if ($dt.Kind -eq [DateTimeKind]::Unspecified) { $dt = [DateTime]::SpecifyKind($dt, [DateTimeKind]::Utc) }
+        return $dt.ToUniversalTime()
+    }
+    catch { return $null }
+}
+
+function Format-BobResetCountdownPart {
+    param([int]$Value, [string]$Singular, [string]$Plural)
+    if ($Value -le 0) { return $null }
+    $word = if ($Value -eq 1) { $Singular } else { $Plural }
+    return ('{0} {1}' -f $Value, $word)
+}
+
 function Format-BobResetLabel {
-    param($PeriodEnd)
+    <#
+    .SYNOPSIS
+      TipForm reset line: countdown until period_end (AgentMonitor #148 / tray).
+    .NOTES
+      Hide when FetchedAt >= PeriodEnd (polled since reset). Clamp negative span to zero.
+      No polling here — format only from known timestamps.
+    #>
+    param(
+        $PeriodEnd,
+        $FetchedAt = $null,
+        $Now = $null
+    )
     if (-not $PeriodEnd -or [string]::IsNullOrWhiteSpace([string]$PeriodEnd)) { return $null }
     try {
-        $raw = [string]$PeriodEnd
-        $dt = $null
-        # ms epoch
-        if ($raw -match '^\d{12,}$') {
-            $dt = [DateTimeOffset]::FromUnixTimeMilliseconds([int64]$raw).UtcDateTime
-        }
-        else {
-            $dt = [datetime]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
-            if ($dt.Kind -eq [DateTimeKind]::Unspecified) { $dt = [DateTime]::SpecifyKind($dt, [DateTimeKind]::Utc) }
-            $dt = $dt.ToUniversalTime()
-        }
-        $tz = [TimeZoneInfo]::FindSystemTimeZoneById('GMT Standard Time')
-        try { $tz = [TimeZoneInfo]::FindSystemTimeZoneById('Europe/London') } catch { }
-        $local = [TimeZoneInfo]::ConvertTimeFromUtc($dt, $tz)
-        return ('reset {0}' -f $local.ToString('d MMM', [Globalization.CultureInfo]::GetCultureInfo('en-GB')))
+        $dt = ConvertTo-BobUtcDateTime $PeriodEnd
+        if (-not $dt) { return $null }
+        $fetchedUtc = ConvertTo-BobUtcDateTime $FetchedAt
+        # Polled since reset: fetch landed at/after the reset instant → hide line.
+        if ($null -ne $fetchedUtc -and $fetchedUtc -ge $dt) { return $null }
+        $nowUtc = ConvertTo-BobUtcDateTime $Now
+        if (-not $nowUtc) { $nowUtc = [DateTime]::UtcNow }
+        $span = $dt - $nowUtc
+        if ($span -lt [TimeSpan]::Zero) { $span = [TimeSpan]::Zero }
+        $days = [int][math]::Floor($span.TotalDays)
+        $hours = $span.Hours
+        $minutes = $span.Minutes
+        $parts = @(
+            (Format-BobResetCountdownPart -Value $days -Singular 'day' -Plural 'days')
+            (Format-BobResetCountdownPart -Value $hours -Singular 'hour' -Plural 'hours')
+            (Format-BobResetCountdownPart -Value $minutes -Singular 'minute' -Plural 'minutes')
+        ) | Where-Object { $_ }
+        if (-not $parts -or @($parts).Count -eq 0) { $parts = @('0 minutes') }
+        return ('Until reset: {0}' -f ($parts -join ', '))
     }
     catch { return $null }
 }
@@ -1289,11 +1330,11 @@ function Resolve-BobCursorPcentRowMapping {
 }
 
 function Set-BobCursorControlPoolRow {
-    param($Pool, $RemainingPct, [string]$PeriodEnd)
+    param($Pool, $RemainingPct, [string]$PeriodEnd, $FetchedAt = $null)
     # Null pool is a no-op: an unbound $row here crashed every tray hover with
     # "The property 'remaining_pct' cannot be found on this object" (empty TipForm).
     if ($null -eq $Pool) { return }
-    $resetLabel = Format-BobResetLabel $PeriodEnd
+    $resetLabel = Format-BobResetLabel -PeriodEnd $PeriodEnd -FetchedAt $FetchedAt
     $pctLabel = Format-BobCursorControlPoolPctLabel $RemainingPct
     $heading = Format-BobCursorControlPoolHeading -GroupLabel ([string]$Pool.group_label) -PctLabel $pctLabel -ResetLabel $resetLabel
     # Digest pools expose `remaining` (not remaining_pct); tray rows expose remaining_pct.
@@ -1304,6 +1345,7 @@ function Set-BobCursorControlPoolRow {
         reset_label   = $resetLabel
         pct_label     = $pctLabel
         heading       = $heading
+        fetched_at    = $FetchedAt
     }
     if ($Pool -is [System.Collections.IDictionary]) {
         foreach ($k in $values.Keys) { $Pool[$k] = $values[$k] }
@@ -1381,7 +1423,9 @@ function Get-BobCursorPoolsForTray {
                 if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
             }
         }
-        $resetLabel = Format-BobResetLabel $pe
+        $fetchedAt = $null
+        if ($LocalCursorDoc -and $LocalCursorDoc.fetched_at) { $fetchedAt = [string]$LocalCursorDoc.fetched_at }
+        $resetLabel = Format-BobResetLabel -PeriodEnd $pe -FetchedAt $fetchedAt
         $heading = ('{0}  {1}' -f $glabel, $pctLabel)
         if ($resetLabel) { $heading = ('{0}  {1}' -f $heading, $resetLabel) }
         $pools += ,[pscustomobject]@{
@@ -1396,6 +1440,7 @@ function Get-BobCursorPoolsForTray {
             overage_label   = $null
             heading         = $heading
             account_name    = $glabel
+            fetched_at      = $fetchedAt
         }
     }
     # CAST IRON (Simon 2026-09-27): Cursor pool remaining is a LOCAL Spending check
@@ -1595,6 +1640,7 @@ function Get-BobTrayHover {
     $reachBy[$machineId] = 'local'
     $weeklyBy = @{}
     $periodEndBy = @{}
+    $weekFetchedBy = @{}
     $week = Get-BobWeeklyRemaining
     $remainPct = $null
     $weekFetched = $null
@@ -1602,6 +1648,7 @@ function Get-BobTrayHover {
         $remainPct = [int]$week.remaining_pct
         $weekFetched = [string]$week.fetched_at
         $weeklyBy[$machineId] = $remainPct
+        if ($weekFetched) { $weekFetchedBy[$machineId] = $weekFetched }
     }
     if ($week -and $week.period_end) {
         $periodEndBy[$machineId] = [string]$week.period_end
@@ -1897,7 +1944,9 @@ function Get-BobTrayHover {
         $seatInfo = Get-BobSeatForMachine -MachineId $mid
         $tileEnd = $null
         if ($periodEndBy.ContainsKey($mid)) { $tileEnd = [string]$periodEndBy[$mid] }
-        $tileReset = Format-BobResetLabel $tileEnd
+        $tileFetched = $null
+        if ($weekFetchedBy.ContainsKey($mid)) { $tileFetched = [string]$weekFetchedBy[$mid] }
+        $tileReset = Format-BobResetLabel -PeriodEnd $tileEnd -FetchedAt $tileFetched
         $upSince = $null
         if ($uptimeByMachine.ContainsKey($mid)) { $upSince = [string]$uptimeByMachine[$mid] }
         $tile = New-Object psobject -Property @{
@@ -2077,7 +2126,7 @@ function Get-BobTrayHover {
         account_overage_gbp = $(if ($null -ne (Get-BobCursorOverageGbp)) { [double](Get-BobCursorOverageGbp) } else { $null })
         account_used_pct = $cursorUsed
         account_period_end = $(if ($cursorWeek -and $cursorWeek.period_end) { [string]$cursorWeek.period_end } else { $null })
-        account_reset_label = $(if ($cursorWeek -and $cursorWeek.period_end) { Format-BobResetLabel $cursorWeek.period_end } else { $null })
+        account_reset_label = $(if ($cursorWeek -and $cursorWeek.period_end) { Format-BobResetLabel -PeriodEnd $cursorWeek.period_end -FetchedAt $cursorWeek.fetched_at } else { $null })
         gh_posting          = $ghPosting
     }
 }
