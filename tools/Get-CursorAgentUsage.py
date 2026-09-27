@@ -361,6 +361,7 @@ def build_usage_doc(period: dict | None, sand: dict | None) -> dict:
     period_end = _period_end_iso(period)
     if period_end:
         out["period_end"] = period_end
+    out["ts"] = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     out["cursor_spending_groups"] = build_spending_groups(period, sand)
 
