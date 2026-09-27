@@ -181,9 +181,11 @@ Copies `.grok/skills/*/SKILL.md` into `~\.grok\skills` via `Copy-BobProjectSkill
 
 ### Bob Systray Start / Restart (CAST IRON — Simon 2026-09-27)
 
-Start Menu: `Programs\Bob Systray\` → `Bob Systray.lnk` and `Restart Bob Systray.lnk`.
+Start Menu / Desktop: **one** shortcut `Bob Systray.lnk` only. Restart is the
+systray context-menu **Restart** when the tray is running (same
+`Start-BobFleetTray -ForceNew` bootstrap). No separate Restart icon.
 
-Both call `tools/Start-BobFleetTray.ps1`, which **always**:
+`tools/Start-BobFleetTray.ps1` **always**:
 
 1. Runs deterministic `Update-BobSystrayFromGit.ps1` (git fetch + install when
    behind `origin/main`; Updating dialog when work is needed). **No LLM.**
@@ -198,7 +200,13 @@ Both call `tools/Start-BobFleetTray.ps1`, which **always**:
    toolbars; does not restart Explorer).
 5. Starts / ForceNew-replaces the tray via `_Watch-BobTray-<machineId>.ps1`.
 
-TipForm **Restart watcher** uses the same Start path (`-ForceNew`).
+Systray **Restart** = same Start bootstrap (`-ForceNew`). **Exit** writes
+`agent.quit.request` then stops the bobiverse ear (IRC logoff).
+
+While running, the tray POSTs local Cursor `pcent` + `overage_gbp` and local
+xAI `weekly` via `Write-BobIrcStatus` every **30s** (digest webhook). Unhandled
+exceptions open owning-repo GitHub issues via `Report-BobDeterministicException`
+(`gh`, no model tokens).
 
 ```powershell
 powershell -NoProfile -STA -ExecutionPolicy Bypass -File "$repo\tools\Start-BobFleetTray.ps1"

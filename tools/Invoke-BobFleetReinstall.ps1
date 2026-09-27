@@ -315,38 +315,38 @@ function Install-BobFleetTrayShortcuts {
     $paths = @()
     $ps = (Get-Command powershell.exe).Source
     $ico = Join-Path $RepoRoot 'assets\bob-systray.ico'
-    $entries = @(
-        @{ Name = 'Bob Systray.lnk'; Extra = '' },
-        @{ Name = 'Restart Bob Systray.lnk'; Extra = ' -ForceNew' }
-    )
     foreach ($dir in @($DesktopDir, $StartMenuDir)) {
-        foreach ($e in $entries) {
-            $lnkPath = Join-Path $dir $e.Name
-            $args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`"$($e.Extra)"
-            if ($WhatIf) {
-                $paths += $lnkPath
-                continue
+        foreach ($legacy in @('Restart Bob Systray.lnk', 'Restart Bob Systray.lnk.target.txt')) {
+            $lp = Join-Path $dir $legacy
+            if ((Test-Path -LiteralPath $lp) -and -not $WhatIf) {
+                Remove-Item -LiteralPath $lp -Force -ErrorAction SilentlyContinue
             }
-            if ($env:BOB_FLEET_REINSTALL_FAKE -match '^(?i)1|true|yes$') {
-                Set-Content -LiteralPath ($lnkPath + '.target.txt') -Value "$ps $args" -Encoding utf8
-                $paths += ($lnkPath + '.target.txt')
-                continue
-            }
-            try {
-                $w = New-Object -ComObject WScript.Shell
-                $s = $w.CreateShortcut($lnkPath)
-                $s.TargetPath = $ps
-                $s.Arguments = $args
-                $s.WorkingDirectory = $RepoRoot
-                $s.WindowStyle = 7
-                $s.Description = 'Bob Systray (git update if needed)'
-                if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
-                $s.Save()
-                $paths += $lnkPath
-            }
-            catch {
-                $paths += "error:$($_.Exception.Message)"
-            }
+        }
+        $lnkPath = Join-Path $dir 'Bob Systray.lnk'
+        $args = "-NoProfile -STA -ExecutionPolicy Bypass -File `"$launcher`" -RepoRoot `"$RepoRoot`""
+        if ($WhatIf) {
+            $paths += $lnkPath
+            continue
+        }
+        if ($env:BOB_FLEET_REINSTALL_FAKE -match '^(?i)1|true|yes$') {
+            Set-Content -LiteralPath ($lnkPath + '.target.txt') -Value "$ps $args" -Encoding utf8
+            $paths += ($lnkPath + '.target.txt')
+            continue
+        }
+        try {
+            $w = New-Object -ComObject WScript.Shell
+            $s = $w.CreateShortcut($lnkPath)
+            $s.TargetPath = $ps
+            $s.Arguments = $args
+            $s.WorkingDirectory = $RepoRoot
+            $s.WindowStyle = 7
+            $s.Description = 'Bob Systray (bootstrap + tidy). Restart from systray menu.'
+            if (Test-Path -LiteralPath $ico) { $s.IconLocation = "$ico,0" }
+            $s.Save()
+            $paths += $lnkPath
+        }
+        catch {
+            $paths += "error:$($_.Exception.Message)"
         }
     }
     return [pscustomobject]@{ ok = $true; paths = $paths }

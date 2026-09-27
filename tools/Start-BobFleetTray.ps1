@@ -103,7 +103,7 @@ if (-not $SkipUpdate) {
 
 function Invoke-BobSystrayTidy {
     # CAST IRON (Simon 2026-09-27): start/restart MUST
-    # 1) close prior agent sessions (Watch-AgentHealth / grok.exe / cursor-agent)
+    # 1) close prior agent sessions (Stop-BobSystrayPriorAgents)
     # 2) tidy leftover session powershell/python/node
     # 3) sweep orphan NotifyIcons (ghost tray icons)
     param([string]$Root)

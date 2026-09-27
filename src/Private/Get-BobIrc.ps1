@@ -1901,6 +1901,7 @@ function Get-BobDigestWebhookFingerprint {
         [string]$Doc.status
         [string]$Doc.responding
         [string]$Doc.remaining_pct
+        [string]$Doc.overage_gbp
         $(if ($Doc.pcent) { ($Doc.pcent | ConvertTo-Json -Compress -Depth 5) } else { '' })
         $jobsJson
     )
@@ -1935,6 +1936,10 @@ function Build-BobDigestWebhookMergePayload {
     if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
     if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
     if ($Doc.pcent) { $payload.pcent = $Doc.pcent }
+    # CAST IRON (Simon 2026-09-27): month overspend GBP on every usage heartbeat.
+    if ($null -ne $Doc.overage_gbp -and [string]$Doc.overage_gbp -ne '') {
+        try { $payload.overage_gbp = [double]$Doc.overage_gbp } catch { }
+    }
     return [pscustomobject]$payload
 }
 
@@ -2109,16 +2114,16 @@ function Write-BobIrcStatus {
     $cursorLabel = $null
     $cursorPeriodEnd = $null
     $cursorRemainingPct = $null
+    $overageGbp = $null
     try {
         $cw = Get-BobCursorAgentWeeklyRemaining
         if ($cw) {
             if ($null -ne $cw.remaining_pct) { $cursorRemainingPct = [int]$cw.remaining_pct }
             $cursorLabel = Format-BobCursorAccountLabel -RemainingPct $cw.remaining_pct -UsedPct $cw.used_pct
+            try { $overageGbp = Get-BobCursorOverageGbp } catch { }
+            if ($null -eq $overageGbp -and $null -ne $cw.overage_gbp) { $overageGbp = [double]$cw.overage_gbp }
             if ($cursorLabel -eq 'empty') {
-                $gbp = $null
-                try { $gbp = Get-BobCursorOverageGbp } catch { }
-                if ($null -eq $gbp -and $null -ne $cw.overage_gbp) { $gbp = [double]$cw.overage_gbp }
-                if ($null -ne $gbp) { $cursorLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$gbp)) }
+                if ($null -ne $overageGbp) { $cursorLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$overageGbp)) }
             }
             if ($cw.period_end) { $cursorPeriodEnd = [string]$cw.period_end }
             if ($cursorLabel -and $cursorLabel -ne 'empty') {
@@ -2180,6 +2185,7 @@ function Write-BobIrcStatus {
         remaining_pct          = $cursorRemainingPct
         account_remaining_pct  = $cursorRemainingPct
         cursor_remaining_pct   = $cursorRemainingPct
+        overage_gbp            = $overageGbp
         pcent                  = $pcent
         running                = @($running).Count + $liveN
         queued                 = @($inbox).Count
