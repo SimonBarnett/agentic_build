@@ -1,6 +1,8 @@
-﻿# Cleanup-OrphanAgents.ps1 — close orphan python/node/powershell; keep fleet.
+﻿# Cleanup-OrphanAgents.ps1 - close orphan python/node/powershell; keep fleet.
 # Skill: cleanup-orphans. Never print secrets.
-[CmdletBinding(SupportsShouldProcess = $true)]
+# ASCII-only. Do not use SupportsShouldProcess here: it already defines -WhatIf
+# and an explicit [switch]$WhatIf duplicates the parameter (breaks Start-BobFleetTray tidy).
+[CmdletBinding()]
 param(
     [switch]$WhatIf
 )
@@ -67,19 +69,16 @@ foreach ($pr in $procs) {
     if ($keep.Contains($id)) { continue }
     $cmd = if ($pr.CommandLine) { [string]$pr.CommandLine } else { '(none)' }
     $short = if ($cmd.Length -gt 120) { $cmd.Substring(0, 120) + '...' } else { $cmd }
-    if ($WhatIf -or $PSCmdlet.ShouldProcess("$id $($pr.Name)", 'Stop-Process')) {
-        if (-not $WhatIf) {
-            try {
-                Stop-Process -Id $id -Force -ErrorAction Stop
-                $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = $short })
-            }
-            catch {
-                $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = "FAIL: $($_.Exception.Message)" })
-            }
-        }
-        else {
-            $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = $short })
-        }
+    if ($WhatIf) {
+        $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = $short })
+        continue
+    }
+    try {
+        Stop-Process -Id $id -Force -ErrorAction Stop
+        $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = $short })
+    }
+    catch {
+        $killed.Add([pscustomobject]@{ Pid = $id; Name = $pr.Name; Cmd = ('FAIL: ' + $_.Exception.Message) })
     }
 }
 
