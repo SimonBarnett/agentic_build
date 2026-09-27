@@ -102,10 +102,25 @@ if (-not $SkipUpdate) {
 }
 
 function Invoke-BobSystrayTidy {
-    # CAST IRON (Simon 2026-09-27): start/restart MUST tidy leftover session
-    # powershell/python/node and sweep orphan NotifyIcons (ghost tray icons).
+    # CAST IRON (Simon 2026-09-27): start/restart MUST
+    # 1) close prior agent sessions (Watch-AgentHealth / grok.exe / cursor-agent)
+    # 2) tidy leftover session powershell/python/node
+    # 3) sweep orphan NotifyIcons (ghost tray icons)
     param([string]$Root)
     $psExe = (Get-Command powershell.exe).Source
+    $stopAgents = Join-Path $Root 'tools\Stop-BobSystrayPriorAgents.ps1'
+    if (Test-Path -LiteralPath $stopAgents) {
+        Write-Output 'tidy: Stop-BobSystrayPriorAgents'
+        try {
+            & $psExe -NoProfile -ExecutionPolicy Bypass -File $stopAgents 2>&1 | ForEach-Object { Write-Output $_ }
+        }
+        catch {
+            Write-Warning ("tidy prior agents failed: {0}" -f $_.Exception.Message)
+        }
+    }
+    else {
+        Write-Warning "tidy: missing $stopAgents"
+    }
     $cleanup = Join-Path $Root 'tools\Cleanup-OrphanAgents.ps1'
     if (Test-Path -LiteralPath $cleanup) {
         Write-Output 'tidy: Cleanup-OrphanAgents'
