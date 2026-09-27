@@ -13,14 +13,14 @@
 
 .EXAMPLE
   # On marchhare (typical tree):
-  powershell -NoProfile -ExecutionPolicy Bypass -File D:\ai\agentic_build\tools\Bootstrap-BobSystray.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File D:\AI\agentic_build\tools\Bootstrap-BobSystray.ps1
 
 .EXAMPLE
   # Chicken-egg: no local checkout yet - pipe from GitHub main:
   irm https://raw.githubusercontent.com/SimonBarnett/agentic_build/main/tools/Bootstrap-BobSystray.ps1 | iex
 
 .EXAMPLE
-  powershell -NoProfile -ExecutionPolicy Bypass -File .\Bootstrap-BobSystray.ps1 -RepoRoot D:\ai\agentic_build -SkipTrayStart
+  powershell -NoProfile -ExecutionPolicy Bypass -File .\Bootstrap-BobSystray.ps1 -RepoRoot D:\AI\agentic_build -SkipTrayStart
 #>
 [CmdletBinding()]
 param(
@@ -71,14 +71,22 @@ function Resolve-AgenticBuildRoot {
     }
     foreach ($c in @(
             $env:BOB_FLEET_ROOT,
+            'D:\AI\agentic_build',
             'D:\ai\agentic_build',
+            'C:\AI\agentic_build',
             'C:\ai\agentic_build',
+            'E:\AI\agentic_build',
             'E:\ai\agentic_build',
+            (Join-Path $env:USERPROFILE 'AI\agentic_build'),
             (Join-Path $env:USERPROFILE 'ai\agentic_build')
         )) {
         if (-not $c) { continue }
         $p = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($c))
-        if (Test-Path -LiteralPath (Join-Path $p 'tools\Watch-BobTray.ps1')) { return $p }
+        # Prefer an existing checkout even if Watch-BobTray.ps1 is not yet present (old tip).
+        if ((Test-Path -LiteralPath (Join-Path $p '.git')) -or
+            (Test-Path -LiteralPath (Join-Path $p 'tools\Watch-BobTray.ps1'))) {
+            return $p
+        }
     }
     return $null
 }
@@ -89,7 +97,11 @@ $root = Resolve-AgenticBuildRoot -Preferred $RepoRoot
 if (-not $root) {
     # Prefer an existing drive root (marchhare often has no D:). Never assume D:\.
     $parent = $null
-    foreach ($cand in @('D:\ai', 'C:\ai', 'E:\ai', (Join-Path $env:USERPROFILE 'ai'))) {
+    foreach ($cand in @(
+            'D:\AI', 'D:\ai', 'C:\AI', 'C:\ai', 'E:\AI', 'E:\ai',
+            (Join-Path $env:USERPROFILE 'AI'),
+            (Join-Path $env:USERPROFILE 'ai')
+        )) {
         $driveRoot = [IO.Path]::GetPathRoot($cand)
         if (-not $driveRoot -or -not (Test-Path -LiteralPath $driveRoot)) { continue }
         if (-not (Test-Path -LiteralPath $cand)) {
@@ -99,7 +111,7 @@ if (-not $root) {
         break
     }
     if (-not $parent) {
-        throw 'no writable AI parent folder (tried D:\ai, C:\ai, E:\ai, ~/ai)'
+        throw 'no writable AI parent folder (tried D:\AI, C:\AI, E:\AI, ~/AI)'
     }
     $root = Join-Path $parent 'agentic_build'
     Write-Boot ("clone {0} -> {1}" -f $RemoteUrl, $root)
