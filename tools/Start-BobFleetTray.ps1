@@ -31,7 +31,7 @@ if (-not $SkipUpdate) {
         Write-Output (@($updOut) -join "`n")
         # Non-zero update: still attempt tray start from current tree (dialog already closed).
         if ($updCode -ne 0) {
-            Write-Warning "Bob Systray update exited $updCode — starting tray from current tree"
+            Write-Warning "Bob Systray update exited $updCode - starting tray from current tree"
         }
     }
 }
