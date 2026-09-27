@@ -72,8 +72,14 @@ function Ensure-BobSystraySeatWrapper {
 }
 
 function Get-BobSystrayTrayProcesses {
+    # Match bare Watch-BobTray.ps1 AND seat wrappers (_Watch-BobTray-marchhare.ps1).
+    # Wrapper CommandLine does not contain "Watch-BobTray.ps1", so a strict .ps1
+    # suffix miss made ForceNew leave ghosts and "failed to stay up" false-fail.
     return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.CommandLine -and $_.CommandLine -match 'Watch-BobTray\.ps1'
+            $_.CommandLine -and (
+                $_.CommandLine -match 'Watch-BobTray\.ps1' -or
+                $_.CommandLine -match '_Watch-BobTray-[^\s"]+\.ps1'
+            )
         })
 }
 

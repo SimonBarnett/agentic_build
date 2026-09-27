@@ -217,10 +217,13 @@ if (-not $SkipTrayStart) {
         }
         Start-Sleep -Seconds 1
         $trayOk = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.CommandLine -and $_.CommandLine -match 'Watch-BobTray\.ps1'
+                $_.CommandLine -and (
+                    $_.CommandLine -match 'Watch-BobTray\.ps1' -or
+                    $_.CommandLine -match '_Watch-BobTray-[^\s"]+\.ps1'
+                )
             }).Count -gt 0
         if (-not $trayOk) {
-            throw 'Watch-BobTray not running after Start-BobFleetTray'
+            throw 'Watch-BobTray / seat wrapper not running after Start-BobFleetTray'
         }
     }
 }
