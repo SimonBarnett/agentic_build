@@ -905,27 +905,39 @@ function Get-BobTrayFuelLocalMachineId {
 }
 
 function Get-BobTrayGrokFuelRemaining {
-    # Prefer digest machines.<id>.pcent["grok-chat"] (FR #356); fall back to remaining_pct.
-    $fromPcent = Get-BobTrayMachineGrokChatPcent
-    if ($null -ne $fromPcent) { return [int]$fromPcent }
+    # CAST IRON (Simon 2026-09-27): Grok agent start uses LOCAL weekly remaining
+    # (machine tile / Get-BobWeeklyRemaining), not digest pcent.grok-chat.
+    # Digest pcent may fill only when local is unknown.
     $snap = $script:lastFuelSnapshot
-    if (-not $snap) { return $null }
     $mid = Get-BobTrayFuelLocalMachineId
-    foreach ($m in @($snap.machines)) {
-        if (-not $m) { continue }
-        $id = [string]$m.id
-        if (-not $id) { continue }
-        try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
-        if (-not $id) { continue }
-        if ($mid -and ($id.ToLowerInvariant() -eq $mid)) {
-            if ($null -ne $m.remaining_pct -and [string]$m.remaining_pct -ne '') {
-                try { return [int]$m.remaining_pct } catch { return $null }
+    if ($snap) {
+        foreach ($m in @($snap.machines)) {
+            if (-not $m) { continue }
+            $id = [string]$m.id
+            if (-not $id) { continue }
+            try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
+            if (-not $id) { continue }
+            if ($mid -and ($id.ToLowerInvariant() -eq $mid)) {
+                if ($null -ne $m.remaining_pct -and [string]$m.remaining_pct -ne '') {
+                    try { return [int]$m.remaining_pct } catch { }
+                }
             }
         }
+        if ($null -ne $snap.remaining_pct -and [string]$snap.remaining_pct -ne '') {
+            try { return [int]$snap.remaining_pct } catch { }
+        }
     }
-    if ($null -ne $snap.remaining_pct -and [string]$snap.remaining_pct -ne '') {
-        try { return [int]$snap.remaining_pct } catch { return $null }
+    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
+        try {
+            $w = Get-BobWeeklyRemaining
+            if ($null -ne $w -and $null -ne $w.remaining_pct -and [string]$w.remaining_pct -ne '') {
+                return [int]$w.remaining_pct
+            }
+        }
+        catch { }
     }
+    $fromPcent = Get-BobTrayMachineGrokChatPcent
+    if ($null -ne $fromPcent) { return [int]$fromPcent }
     return $null
 }
 
@@ -992,16 +1004,21 @@ function Get-BobTrayMachineGrokChatPcent {
 
 function Resolve-BobTrayGrokFuelAtStart {
     <#
-      FR #356: check once at agent start.
-      - pcent > 0  => pool
-      - pcent = 0  => session-key (dialog)
-      - blank/missing => unknown (stop; never keyless)
+      Grok watch-seat start fuel gate (CAST IRON Simon 2026-09-27):
+      Local weekly remaining first (TipForm machine tile / Get-BobWeeklyRemaining).
+      Digest pcent.grok-chat is fill-only - blank digest must NOT block when local weekly is known.
+      - remaining > 0  => pool
+      - remaining = 0  => session-key (dialog)
+      - blank/missing local+digest => unknown (stop; never keyless)
     #>
     param(
         [object]$Digest,
         [string]$MachineId
     )
-    $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
+    $remain = Get-BobTrayGrokFuelRemaining
+    if ($null -eq $remain -and $Digest) {
+        $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
+    }
     if ($null -eq $remain) {
         return [pscustomobject]@{
             remaining = $null
@@ -1202,14 +1219,14 @@ function Start-BobTrayAgentWatch {
     $kind = ([string]$Agent.kind).ToLowerInvariant()
     $sessionEnv = $null
     if ($kind -eq 'grok') {
-        # FR #356: check digest pcent["grok-chat"] once at start only.
+        # Local weekly first (CAST IRON); digest pcent only fills nulls.
         $fuel = Resolve-BobTrayGrokFuelAtStart
         if ($fuel.action -eq 'stop-unknown') {
-            Write-TrayLog 'agents: grok fuel_mode=unknown (pcent.grok-chat blank/missing) - refusing keyless start'
+            Write-TrayLog 'agents: grok fuel_mode=unknown (local weekly blank/missing) - refusing keyless start'
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             try {
                 [void][System.Windows.Forms.MessageBox]::Show(
-                    'Digest pcent.grok-chat is blank/missing. Will not start a keyless Grok seat.',
+                    'Local Grok weekly remaining is blank/missing. Will not start a keyless Grok seat.',
                     'Grok fuel unknown',
                     [System.Windows.Forms.MessageBoxButtons]::OK,
                     [System.Windows.Forms.MessageBoxIcon]::Warning
@@ -1674,13 +1691,13 @@ function Start-BobTrayPlanAgent {
     }
     $sessionEnv = $null
     if ($kind -eq 'grok') {
-        # FR #356: same start-once rule as Agents > Grok (unknown => stop).
+        # Same start-once rule as Agents > Grok (local weekly; unknown => stop).
         $fuel = Resolve-BobTrayGrokFuelAtStart
         if ($fuel.action -eq 'stop-unknown') {
             Write-TrayLog 'plan: grok fuel_mode=unknown - refusing keyless Plan start'
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             [void][System.Windows.Forms.MessageBox]::Show(
-                'Digest pcent.grok-chat is blank/missing. Will not start a keyless Plan seat.',
+                'Local Grok weekly remaining is blank/missing. Will not start a keyless Plan seat.',
                 'Plan seat',
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Warning

@@ -2,6 +2,8 @@
 # Bob Systray launcher (Start Menu / Desktop shortcut target).
 # CAST IRON: always check git for updates and install via scripts (no LLM)
 # before starting the tray. Show Updating dialog when behind origin.
+# Prefer tools\_Watch-BobTray-<machineId>.ps1 (sets BOB_MACHINE_ID + IRC home).
+# ASCII-only for Windows PowerShell 5.1 UTF-8 no BOM.
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
@@ -18,6 +20,63 @@ if (-not (Test-Path -LiteralPath $tray)) {
     throw "missing $tray"
 }
 
+function Get-BobSystrayMachineId {
+    $mid = ([string]$env:BOB_MACHINE_ID).Trim()
+    if ($mid) { return $mid.ToLowerInvariant() }
+    try {
+        Import-Module (Join-Path $RepoRoot 'src\BobBridge.psd1') -Force -ErrorAction SilentlyContinue
+        if (Get-Command Get-ThisMachineId -ErrorAction SilentlyContinue) {
+            $m = [string](Get-ThisMachineId)
+            if ($m) { return $m.ToLowerInvariant() }
+        }
+    }
+    catch { }
+    $hn = $env:COMPUTERNAME
+    if ($hn -match '(?i)marchhare') { return 'marchhare' }
+    if ($hn -match '(?i)flamingo') { return 'flamingo' }
+    if ($hn -match '(?i)ionos') { return 'ionos' }
+    if ($hn -match '(?i)ce-priority|dev1') { return 'ce-priority-dev1' }
+    return $null
+}
+
+function Ensure-BobSystraySeatWrapper {
+    param([string]$Root, [string]$MachineId)
+    $wrap = Join-Path $Root ("tools\_Watch-BobTray-{0}.ps1" -f $MachineId)
+    $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
+    $bridge = Join-Path $env:USERPROFILE '.grok\bob-bridge'
+    $trayPath = Join-Path $Root 'tools\Watch-BobTray.ps1'
+    $lines = @(
+        '# DO NOT EDIT - per-machine wrapper from Start-BobFleetTray / Install-BobFleet.'
+        '$ErrorActionPreference = "Continue"'
+        'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {'
+        '  $_.CommandLine -and $_.CommandLine -match "Watch-BobTray" -and [int]$_.ProcessId -ne $PID'
+        '} | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch { } }'
+        'Start-Sleep -Milliseconds 600'
+        ('$env:BOB_IRC_HOME = "{0}"' -f $ircHome.Replace('\', '\\'))
+        ('$env:AGENTIC_IRC_HOME = "{0}"' -f $ircHome.Replace('\', '\\'))
+        ('$env:BOB_MACHINE_ID = "{0}"' -f $MachineId)
+        ('$env:BOB_BRIDGE_HOME = "{0}"' -f $bridge.Replace('\', '\\'))
+        ('& "{0}"' -f $trayPath)
+    )
+    $needWrite = $true
+    if (Test-Path -LiteralPath $wrap) {
+        $cur = Get-Content -LiteralPath $wrap -Raw -ErrorAction SilentlyContinue
+        if ($cur -and $cur -match [regex]::Escape($trayPath) -and $cur -match [regex]::Escape($MachineId)) {
+            $needWrite = $false
+        }
+    }
+    if ($needWrite) {
+        [IO.File]::WriteAllLines($wrap, $lines, [Text.UTF8Encoding]::new($false))
+    }
+    return $wrap
+}
+
+function Get-BobSystrayTrayProcesses {
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -and $_.CommandLine -match 'Watch-BobTray\.ps1'
+        })
+}
+
 # --- deterministic update gate (start + restart) ---
 if (-not $SkipUpdate) {
     $updater = Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1'
@@ -29,23 +88,19 @@ if (-not $SkipUpdate) {
         $updCode = $LASTEXITCODE
         if ($null -eq $updCode) { $updCode = 0 }
         Write-Output (@($updOut) -join "`n")
-        # Non-zero update: still attempt tray start from current tree (dialog already closed).
         if ($updCode -ne 0) {
             Write-Warning "Bob Systray update exited $updCode - starting tray from current tree"
         }
     }
 }
 
-$pat = '(?i)Watch-BobTray\.ps1'
-$hits = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $_.CommandLine -and $_.CommandLine -match $pat
-    })
+$hits = @(Get-BobSystrayTrayProcesses)
 
 if ($ForceNew -and $hits.Count -gt 0) {
     foreach ($h in $hits) {
         try { Stop-Process -Id ([int]$h.ProcessId) -Force -ErrorAction SilentlyContinue } catch { }
     }
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 800
     $hits = @()
 }
 
@@ -63,9 +118,27 @@ if ($WhatIf) {
     exit 0
 }
 
+$mid = Get-BobSystrayMachineId
+if (-not $mid) {
+    Write-Warning 'BOB_MACHINE_ID unresolved - starting Watch-BobTray without seat wrapper'
+    $launch = $tray
+}
+else {
+    $env:BOB_MACHINE_ID = $mid
+    $launch = Ensure-BobSystraySeatWrapper -Root $RepoRoot -MachineId $mid
+    Write-Output ("using seat wrapper {0}" -f $launch)
+}
+
 $ps = (Get-Command powershell.exe).Source
-Start-Process -FilePath $ps -ArgumentList @(
+$proc = Start-Process -FilePath $ps -ArgumentList @(
     '-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-    '-File', $tray
-) -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+    '-File', $launch
+) -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+
+Start-Sleep -Seconds 2
+$alive = @(Get-BobSystrayTrayProcesses)
+if ($alive.Count -eq 0) {
+    throw ("Watch-BobTray failed to stay up after start (launcherPid={0} launch={1})" -f $(if ($proc) { $proc.Id } else { 0 }), $launch)
+}
+Write-Output ("Bob Systray started trayPid={0} count={1}" -f $alive[0].ProcessId, $alive.Count)
 exit 0
