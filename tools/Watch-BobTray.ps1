@@ -1,4 +1,4 @@
-﻿# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
+# Hidden Bob Fleet tray watcher + system tray icon. Flashes on ACTION_REQUIRED.
 # Title is Bob Fleet. Primary bar is weekly remaining (CLI billing log).
 # Job list: every registered fleet machine (bundled registry + local store +
 # read-only filesystem peer peek). Fail closed: unreachable / lastSeen stale.
@@ -7,7 +7,7 @@
 # (no MouseMove, no iconProbe). Card stays parked until X (no hideTip).
 # Restart watcher kills Watch-Bobiverse + bobiverse irc_agent, starts
 # _Watch-Bobiverse-<id>, then relaunches this tray. BAD: native
-# NotifyIcon.Text white chip — Clear-BobNativeTip always.
+# NotifyIcon.Text white chip - Clear-BobNativeTip always.
 # Exactly one TipForm; never Form.Show after ShowParkedAt.
 # Empty fuel: Agents start / Plan may prompt for session XAI_API_KEY or CURSOR_API_KEY
 # (child process env only; never persist User/Machine env or auth.json).
@@ -248,7 +248,7 @@ namespace BobTrayUi {
                     this.Height,
                     Shell.SWP_NOACTIVATE | Shell.SWP_SHOWWINDOW);
                 if (this.IsDisposed) return false;
-                // Visible bookkeeping only. Do not call Form.Show() — that is a second dialog.
+                // Visible bookkeeping only. Do not call Form.Show() - that is a second dialog.
                 if (!this.Visible) this.Visible = true;
                 if (!this.Visible && !this.IsDisposed) {
                     Shell.ShowWindow(this.Handle, Shell.SW_SHOWNA);
@@ -298,7 +298,7 @@ function Enable-BobDoubleBuffer {
 }
 
 function Suspend-BobTrayPaint {
-    # Only the tile host — never SuspendLayout / WM_SETREDRAW on TipForm.
+    # Only the tile host - never SuspendLayout / WM_SETREDRAW on TipForm.
     # Suspending the form then Controls.Clear left a blank visible card (and
     # looked like a "new empty dialog" on poll refresh).
     try {
@@ -601,7 +601,7 @@ function New-BobTrayAgentBadgeImage {
     param([string]$Kind)
     $kind = ([string]$Kind).ToLowerInvariant()
     $letter = 'A'
-    # Bright chips — black/near-black badges vanish on the dark TipForm / menu.
+    # Bright chips - black/near-black badges vanish on the dark TipForm / menu.
     $bgCol = [System.Drawing.Color]::FromArgb(88, 166, 255)
     $fgCol = [System.Drawing.Color]::White
     if ($kind -eq 'cursor') {
@@ -633,7 +633,7 @@ function New-BobTrayAgentBadgeImage {
 
 function ConvertTo-BobTrayTipVisibleImage {
     param([System.Drawing.Image]$Image)
-    # Dark app glyphs (Cursor/Grok) disappear on the dark tip — plate them on a light chip.
+    # Dark app glyphs (Cursor/Grok) disappear on the dark tip - plate them on a light chip.
     if (-not $Image) { return $null }
     $size = 32
     $out = New-Object System.Drawing.Bitmap $size, $size
@@ -684,7 +684,7 @@ function Get-BobTrayAgentImage {
             $img = $plated
         }
     }
-    # Soft greyscale when not installed — keep alpha high enough to stay visible on dark tip.
+    # Soft greyscale when not installed - keep alpha high enough to stay visible on dark tip.
     if (-not $Installed -and $img) {
         $gray = ConvertTo-BobTrayGrayImage $img
         if ($img -ne $gray) { try { $img.Dispose() } catch { } }
@@ -804,7 +804,7 @@ function Start-BobTrayProcessWithSessionEnv {
 
 function Get-BobTrayWatchWorkspace {
     # FR #369 / #102: explicit -Cwd for Watch-AgentHealth.
-    # Default per-machine seat work dir C:\bob-seat-work\<machine> — never live \ai trees.
+    # Default per-machine seat work dir C:\bob-seat-work\<machine> - never live \ai trees.
     # Config: BOB_SEAT_WORK (exact path) or BOB_SEAT_WORK_ROOT (parent; child = <machine>).
     param([string]$FallbackRoot = '')
     $exact = ([string]$env:BOB_SEAT_WORK).Trim()
@@ -1979,7 +1979,7 @@ function Start-IrcWatcher {
 
 function Restart-BobTrayWatcher {
     # FR #346 + Bob Systray: deterministic git update (dialog if behind) then ForceNew relaunch.
-    # No LLM on this path — Update-BobSystrayFromGit.ps1 / Invoke-BobFleetReinstall.ps1 only.
+    # No LLM on this path - Update-BobSystrayFromGit.ps1 / Invoke-BobFleetReinstall.ps1 only.
     Write-TrayLog 'Restart watcher: Bob Systray git update + ForceNew tray relaunch'
     $summary = 'update skipped'
     $updater = Join-Path $RepoRoot 'tools\Update-BobSystrayFromGit.ps1'
@@ -2017,12 +2017,12 @@ function Restart-BobTrayWatcher {
         Start-BobiverseMootWrapper
     }
     try {
-        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Systray — Restart', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
+        $script:notifyIcon.ShowBalloonTip(12000, 'Bob Systray - Restart', $summary, [System.Windows.Forms.ToolTipIcon]::Info)
     }
     catch { }
     try { Start-IrcWatcher } catch { }
     try { Start-JobsWatcher } catch { }
-    # ForceNew: kill this tray and start replacement (SkipUpdate — already updated above).
+    # ForceNew: kill this tray and start replacement (SkipUpdate - already updated above).
     $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
     if (Test-Path -LiteralPath $startTray) {
@@ -2397,7 +2397,7 @@ function Rebuild-BobTrayTiles {
         try { $grokIcon = Get-BobTrayAgentImage -Agent $grokAgent -Installed (Test-BobTrayAgentInstalled $grokAgent) } catch { }
     }
 
-    # Build into a staging panel, then swap — never Controls.Clear on the live host
+    # Build into a staging panel, then swap - never Controls.Clear on the live host
     # while the TipForm is visible (that flashed a blank "new" dialog on poll).
     $stage = New-Object System.Windows.Forms.Panel
     $stage.Location = $script:tileHost.Location
@@ -2470,7 +2470,7 @@ function Rebuild-BobTrayTiles {
             if (-not $resolved) { continue }
             $id = ([string]$resolved).ToUpperInvariant()
             $pct = $m.remaining_pct
-            # 0% is real (#179) — only missing/null is n/a.
+            # 0% is real (#179) - only missing/null is n/a.
             $pctLabel = 'n/a'
             if ($null -ne $pct -and [string]$pct -ne '') { $pctLabel = ('{0}%' -f [int]$pct) }
             $seat = [string]$m.seat_label
@@ -2524,7 +2524,7 @@ function Rebuild-BobTrayTiles {
         throw
     }
 
-    # Atomic swap on the TipForm: add stage, remove old — live card never empty.
+    # Atomic swap on the TipForm: add stage, remove old - live card never empty.
     try {
         if ($script:tip -and -not $script:tip.IsDisposed) {
             $idx = $script:tip.Controls.GetChildIndex($oldHost)
@@ -2668,7 +2668,7 @@ function Show-BobTrayCard {
                     return
                 }
             }
-            # Do not call Form.Show() after ShowParkedAt — that is a second dialog.
+            # Do not call Form.Show() after ShowParkedAt - that is a second dialog.
             if (-not (Test-BobTrayTipVisible)) {
                 $handle = $false
                 $loc = '?'
@@ -2776,7 +2776,7 @@ try { Clear-BobTrayGrokSessionDirs } catch { }
 Start-JobsWatcher
 try { Start-IrcWatcher } catch { Write-TrayLog ('irc watcher: ' + $_.Exception.Message) }
 Update-Hover
-# TipForm handle only on click — startup CreateHandle caused hover stub.
+# TipForm handle only on click - startup CreateHandle caused hover stub.
 $notify.Visible = $true
 $flash.Start()
 $poll.Start()
