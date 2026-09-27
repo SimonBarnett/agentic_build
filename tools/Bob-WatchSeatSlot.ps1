@@ -340,11 +340,14 @@ function Build-BobWatchSeatLaunchArgs {
         [string]$Cwd = ''
     )
     $kindFlag = if ($Kind -eq 'grok') { '-Grok' } else { '-Cursor' }
+    # Watch host stays Hidden (tray child). Agent TUI must be visible for human
+    # interaction: AgentMonitor -Windows on => AgentTuiWindowStyle Normal.
+    # CAST IRON (Simon 2026-09-27): never -Windows off from the tray Agents menu.
     $args = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
         '-File', $ScriptPath,
         '-WatchWorker', $kindFlag,
-        '-Windows', 'off',
+        '-Windows', 'on',
         '-IrcHome', $IrcHome
     )
     if ($New) { $args += '-New' }

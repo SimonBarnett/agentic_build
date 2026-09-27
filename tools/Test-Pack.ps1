@@ -977,6 +977,12 @@ Invoke-Case 'BT0l tray hover' {
     if ($watchBody -notmatch '-Model.*auto') { throw 'systray Cursor Agents must pass -Model auto' }
     if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
+    $slotSrc = Get-Content (Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1') -Raw
+    if ($slotSrc -notmatch 'function Build-BobWatchSeatLaunchArgs') { throw 'Bob-WatchSeatSlot must define Build-BobWatchSeatLaunchArgs' }
+    $buildFn = [regex]::Match($slotSrc, '(?s)function Build-BobWatchSeatLaunchArgs\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $buildFn.Success) { throw 'Build-BobWatchSeatLaunchArgs function body not found' }
+    if ($buildFn.Value -match "(?i)'-Windows',\s*'off'") { throw 'Build-BobWatchSeatLaunchArgs must not pass -Windows off (agent TUI must be visible)' }
+    if ($buildFn.Value -notmatch "'-Windows',\s*'on'") { throw 'Build-BobWatchSeatLaunchArgs must pass -Windows on (agent TUI visible for humans)' }
     if ($watchBody -match 'agentMonitorCmd') { throw 'systray Agents must not launch via .cmd (visible -NoExit watch)' }
     if ($watchBody -notmatch 'Watch-AgentHealth\.ps1') { throw 'systray Agents must target Watch-AgentHealth.ps1' }
     if ($watchBody -notmatch 'Test-BobTrayAgentFuelExhausted|Resolve-BobTrayGrokFuelAtStart') { throw 'systray Agents must check fuel before start' }

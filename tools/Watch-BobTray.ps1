@@ -1198,8 +1198,9 @@ function Start-BobTrayAgentWatch {
         Initialize-BobTrayAgentSetup $Agent
         return
     }
-    # #285: hide the watch console; keep agent TUI visible (do NOT pass Windows=off).
-    # Direct -WatchWorker avoids the outer ps1 re-spawn that forces Windows=off.
+    # #285 + CAST IRON (Simon 2026-09-27): hide the watch PowerShell host; agent TUI
+    # must be visible (Build-BobWatchSeatLaunchArgs passes -Windows on, never off).
+    # Direct -WatchWorker avoids an outer re-spawn.
     $ps1 = Join-Path $script:agentMonitorDir 'Watch-AgentHealth.ps1'
     if (-not (Test-Path -LiteralPath $ps1)) {
         Write-TrayLog ('agents: missing Watch-AgentHealth.ps1 under ' + $script:agentMonitorDir)
