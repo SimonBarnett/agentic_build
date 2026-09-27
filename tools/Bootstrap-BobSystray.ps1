@@ -87,10 +87,19 @@ Write-Boot 'Bob Systray bootstrap (deterministic; no LLM)'
 
 $root = Resolve-AgenticBuildRoot -Preferred $RepoRoot
 if (-not $root) {
-    $parent = 'D:\ai'
-    if (-not (Test-Path -LiteralPath $parent)) {
-        if (Test-Path -LiteralPath 'C:\ai') { $parent = 'C:\ai' }
-        else { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    # Prefer an existing drive root (marchhare often has no D:). Never assume D:\.
+    $parent = $null
+    foreach ($cand in @('D:\ai', 'C:\ai', 'E:\ai', (Join-Path $env:USERPROFILE 'ai'))) {
+        $driveRoot = [IO.Path]::GetPathRoot($cand)
+        if (-not $driveRoot -or -not (Test-Path -LiteralPath $driveRoot)) { continue }
+        if (-not (Test-Path -LiteralPath $cand)) {
+            New-Item -ItemType Directory -Force -Path $cand | Out-Null
+        }
+        $parent = $cand
+        break
+    }
+    if (-not $parent) {
+        throw 'no writable AI parent folder (tried D:\ai, C:\ai, E:\ai, ~/ai)'
     }
     $root = Join-Path $parent 'agentic_build'
     Write-Boot ("clone {0} -> {1}" -f $RemoteUrl, $root)
