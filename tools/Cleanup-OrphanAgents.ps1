@@ -43,6 +43,9 @@ Add-KeepByMatch 'nick Jeeves|--chair' 1
 Add-KeepByMatch 'bobcallback\.py' 1
 Add-KeepByMatch 'Irc-Tsr-Runner\.ps1.*\.agentic-irc-cursor($|["''\s-])' 2
 Add-KeepByMatch 'irc_listen\.py --home .*\.agentic-irc-cursor($|["''\s])' 1
+# Live AgentMonitor watch seats (do not kill during systray tidy)
+Add-KeepByMatch 'agentic-irc-watch-(grok|cursor)' 6
+Add-KeepByMatch 'Watch-AgentHealth' 4
 Add-KeepByMatch 'xero-mcp-server' 2
 Add-KeepByMatch 'cursor-agent\.ps1' 2
 Add-KeepByMatch 'ms-vscode\.powershell|Microsoft VS Code|shellIntegration' 4
