@@ -183,12 +183,19 @@ Copies `.grok/skills/*/SKILL.md` into `~\.grok\skills` via `Copy-BobProjectSkill
 
 Start Menu: `Programs\Bob Systray\` → `Bob Systray.lnk` and `Restart Bob Systray.lnk`.
 
-Both call `tools/Start-BobFleetTray.ps1`, which **always** runs deterministic
-`Update-BobSystrayFromGit.ps1` first (git fetch + `Invoke-BobFleetReinstall`
-when behind `origin/main`). **No LLM / no agent** on that path. When updates
-exist, `Show-BobSystrayUpdatingDialog.ps1` stays open until the install
-done-flag is written. TipForm **Restart watcher** uses the same updater, then
-`-ForceNew -SkipUpdate` to replace the tray process.
+Both call `tools/Start-BobFleetTray.ps1`, which **always**:
+
+1. Runs deterministic `Update-BobSystrayFromGit.ps1` (git fetch + install when
+   behind `origin/main`; Updating dialog when work is needed). **No LLM.**
+2. **Tidies** leftover session `powershell` / `python` / `node` via
+   `Cleanup-OrphanAgents.ps1` (keeps live fleet watchers; skill
+   `cleanup-orphans`).
+3. **Sweeps orphan NotifyIcons** (ghost tray icons) via
+   `Clear-BobOrphanNotifyIcons.ps1` (WM_MOUSEMOVE over the notification
+   toolbars; does not restart Explorer).
+4. Starts / ForceNew-replaces the tray via `_Watch-BobTray-<machineId>.ps1`.
+
+TipForm **Restart watcher** uses the same Start path (`-ForceNew`).
 
 ```powershell
 powershell -NoProfile -STA -ExecutionPolicy Bypass -File "$repo\tools\Start-BobFleetTray.ps1"

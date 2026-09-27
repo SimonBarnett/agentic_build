@@ -62,6 +62,7 @@ Prints KEPT / KILLED counts and remaining list. Never prints passwords.
 |------|----------------|
 | Kill one hung talk seat + roll | `killproc` / `Stop-HungAgent.ps1` |
 | Recycle tray only | `bob-fleet-tray` / `Reinstall-AgentSkills.ps1 -RecycleTray` |
+| Start/Restart Bob Systray | `Start-BobFleetTray.ps1` always runs this cleanup + `Clear-BobOrphanNotifyIcons.ps1` |
 | Reload skills | `reinstall-agentic-build-skills` |
 | Stall / watcher policy | `bob-fleet-monitor` |
 
