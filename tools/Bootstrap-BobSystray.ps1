@@ -205,12 +205,23 @@ if (-not (Test-Path -LiteralPath $startMenu)) {
     throw "Start Menu Bob Systray folder missing after install: $startMenu"
 }
 
+$trayOk = $false
 if (-not $SkipTrayStart) {
     $start = Join-Path $root 'tools\Start-BobFleetTray.ps1'
     Write-Boot 'Start-BobFleetTray -ForceNew (update gate + replace tray)'
     if (-not $WhatIf) {
         # SkipUpdate: we already landed on origin/main tip above.
         & $ps -NoProfile -STA -ExecutionPolicy Bypass -File $start -RepoRoot $root -ForceNew -SkipUpdate | Out-Host
+        if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {
+            throw ("Start-BobFleetTray exit={0}" -f $LASTEXITCODE)
+        }
+        Start-Sleep -Seconds 1
+        $trayOk = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.CommandLine -and $_.CommandLine -match 'Watch-BobTray\.ps1'
+            }).Count -gt 0
+        if (-not $trayOk) {
+            throw 'Watch-BobTray not running after Start-BobFleetTray'
+        }
     }
 }
 
@@ -220,7 +231,7 @@ $report = [pscustomobject]@{
     sha          = $sha
     branch       = $Branch
     startMenu    = $startMenu
-    trayStarted  = (-not $SkipTrayStart -and -not $WhatIf)
+    trayStarted  = $trayOk
     machineHint  = $(if ($env:BOB_MACHINE_ID) { $env:BOB_MACHINE_ID } else { 'set BOB_MACHINE_ID=marchhare if needed' })
 }
 $report | ConvertTo-Json -Compress
