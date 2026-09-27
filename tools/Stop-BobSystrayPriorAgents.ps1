@@ -47,7 +47,8 @@ function Test-BobPriorAgentProcess {
     $cmd = if ($Pr.CommandLine) { [string]$Pr.CommandLine } else { '' }
     # Agent TUIs / CLIs (screenshot: Grok "New Agent" window must die on Restart)
     if ($name -eq 'grok.exe') { return $true }
-    if ($name -eq 'grok bot.exe') { return $true }
+    # Grok Bot desktop: kill top-level only (no --type=); children die with parent.
+    if ($name -eq 'grok bot.exe' -and $cmd -notmatch '--type=') { return $true }
     if ($name -eq 'cursor-agent.exe') { return $true }
     if ($name -eq 'agent.exe' -and $cmd -match '(?i)cursor') { return $true }
     # Watch seats (PowerShell host for AgentMonitor)
@@ -57,8 +58,6 @@ function Test-BobPriorAgentProcess {
     # Cursor agent launcher scripts
     if ($cmd -match '(?i)cursor-agent(\.ps1|\.cmd|\.exe)') { return $true }
     if ($cmd -match '(?i)\\.cursor\\.*\\agent(\.exe|\.cmd)') { return $true }
-    # Grok Bot branded agent window sometimes hosts as "Grok Bot.exe" with agent args
-    if ($name -eq 'grok bot.exe' -and $cmd -match '(?i)agent|watch|seat') { return $true }
     return $false
 }
 
