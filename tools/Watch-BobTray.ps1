@@ -1009,8 +1009,8 @@ function Resolve-BobTrayGrokFuelAtStart {
       Local weekly remaining first (TipForm machine tile / Get-BobWeeklyRemaining).
       Digest pcent.grok-chat is fill-only - blank digest must NOT block when local weekly is known.
       - remaining > 0  => pool
-      - remaining = 0  => session-key (dialog) — confirmed exhaustion only
-      - remaining blank: Get-BobGrokAvailability — verified local auth+period => pool;
+      - remaining = 0  => session-key (dialog) - confirmed exhaustion only
+      - remaining blank: Get-BobGrokAvailability - verified local auth+period => pool;
         unknown/stale/auth-failed => stop-unknown (never treat as exhausted)
     #>
     param(
@@ -1177,7 +1177,7 @@ function Test-BobTrayAgentFuelExhausted {
     param([string]$Kind)
     $k = ([string]$Kind).ToLowerInvariant()
     if ($k -eq 'grok') {
-        # FR #356: blank/missing is NOT exhausted (dialog); it is unknown → stop elsewhere.
+        # FR #356: blank/missing is NOT exhausted (dialog); it is unknown -> stop elsewhere.
         $decision = Resolve-BobTrayGrokFuelAtStart
         return ($decision.action -eq 'prompt-session')
     }
@@ -1273,7 +1273,7 @@ function Start-BobTrayAgentWatch {
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             try {
                 [void][System.Windows.Forms.MessageBox]::Show(
-                    ("Grok Build availability is {0} ({1}). Not exhausted — fix local auth/billing freshness, then retry. Do not enter an API key unless the pool is confirmed at 0%." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
+                    ("Grok Build availability is {0} ({1}). Not exhausted - fix local auth/billing freshness, then retry. Do not enter an API key unless the pool is confirmed at 0%." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
                     'Grok fuel unknown',
                     [System.Windows.Forms.MessageBoxButtons]::OK,
                     [System.Windows.Forms.MessageBoxIcon]::Warning
@@ -1745,7 +1745,7 @@ function Start-BobTrayPlanAgent {
             Write-TrayLog ('plan: grok fuel_mode=unknown reason={0} - refusing keyless Plan start' -f $why)
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             [void][System.Windows.Forms.MessageBox]::Show(
-                ("Grok Build availability is {0} ({1}). Not exhausted — fix local auth/billing freshness, then retry." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
+                ("Grok Build availability is {0} ({1}). Not exhausted - fix local auth/billing freshness, then retry." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
                 'Plan seat',
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Warning
@@ -2045,19 +2045,20 @@ function Start-IrcWatcher {
 function Request-BobTrayIrcLogout {
     # CAST IRON (Simon 2026-09-27): closing systray must log off bob IRC account.
     # Prefer graceful agent.quit.request (PART/QUIT); then stop ear + kill leftovers.
-    $home = $null
+    # Use $ircHome - $HOME/$home is a read-only automatic variable in PowerShell.
+    $ircHome = $null
     try {
         if (Get-Command Get-BobIrcHome -ErrorAction SilentlyContinue) {
-            $home = Get-BobIrcHome
+            $ircHome = Get-BobIrcHome
         }
     }
     catch { }
-    if (-not $home) {
-        $home = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
+    if (-not $ircHome) {
+        $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
     }
-    if ($home -and (Test-Path -LiteralPath $home)) {
+    if ($ircHome -and (Test-Path -LiteralPath $ircHome)) {
         try {
-            $quitPath = Join-Path $home 'agent.quit.request'
+            $quitPath = Join-Path $ircHome 'agent.quit.request'
             Set-Content -LiteralPath $quitPath -Value ('tray-exit {0:o}' -f [datetime]::UtcNow) -Encoding ascii
             Write-TrayLog ("irc logout: wrote {0}" -f $quitPath)
             Start-Sleep -Seconds 2
