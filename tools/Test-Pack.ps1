@@ -6164,6 +6164,79 @@ Invoke-Case 'BT0agent watch seat joins IRC' {
     if ($fleet -notmatch "-not \(Test-Path -LiteralPath \(Join-Path \`$watchDst '\.git'\)\)") { throw 'Install-BobFleet must not copy the fleet fork over the AgentMonitor git clone' }
 }
 
+Invoke-Case 'BT0fr453 systray restart announce drains before quit' {
+    param($bridgeRoot)
+    $traySrc = Get-Content (Join-Path $RepoRoot 'tools\Watch-BobTray.ps1') -Raw
+    if ($traySrc -notmatch 'function Wait-BobTrayIrcOutboxDrained') {
+        throw 'Wait-BobTrayIrcOutboxDrained missing (FR #453 drain-before-quit)'
+    }
+    if ($traySrc -notmatch 'function Wait-BobTrayIrcAgentStopped') {
+        throw 'Wait-BobTrayIrcAgentStopped missing (FR #453)'
+    }
+    $announceFn = [regex]::Match($traySrc, '(?s)function Write-BobTrayIrcDepartureAnnounce\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $announceFn.Success) { throw 'Write-BobTrayIrcDepartureAnnounce missing' }
+    if ($announceFn.Value -notmatch 'outbox\.bak-depart') {
+        throw 'departure announce must archive stale outbox backlog before write'
+    }
+    if ($announceFn.Value -notmatch 'WriteAllText') {
+        throw 'departure announce must WriteAllText sole PRIVMSG (not append behind backlog)'
+    }
+    if ($announceFn.Value -notmatch 'Wait-BobTrayIrcOutboxDrained') {
+        throw 'departure announce must wait for outbox drain before returning'
+    }
+    $logoutFn = [regex]::Match($traySrc, '(?s)function Request-BobTrayIrcLogout\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $logoutFn.Success) { throw 'Request-BobTrayIrcLogout missing' }
+    # Strip comment lines so CAST IRON prose does not fake ordering.
+    $logoutBody = [regex]::Replace($logoutFn.Value, '(?m)^\s*#.*$', '')
+    $annPos = $logoutBody.IndexOf('Write-BobTrayIrcDepartureAnnounce')
+    $quitPos = $logoutBody.IndexOf("'agent.quit.request'")
+    if ($quitPos -lt 0) { $quitPos = $logoutBody.IndexOf('"agent.quit.request"') }
+    $waitAgentPos = $logoutBody.IndexOf('Wait-BobTrayIrcAgentStopped')
+    $stopPos = $logoutBody.IndexOf('Stop-BobiverseMoot')
+    if ($annPos -lt 0 -or $quitPos -lt 0 -or $waitAgentPos -lt 0 -or $stopPos -lt 0) {
+        throw 'logout must announce, quit.request, wait agent, Stop-BobiverseMoot'
+    }
+    if (-not ($annPos -lt $quitPos -and $quitPos -lt $waitAgentPos -and $waitAgentPos -lt $stopPos)) {
+        throw 'FR #453 order: announce -> quit.request -> Wait-BobTrayIrcAgentStopped -> Stop-BobiverseMoot'
+    }
+    $restartFn = [regex]::Match($traySrc, '(?s)function Restart-BobTrayWatcher\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $restartFn.Success) { throw 'Restart-BobTrayWatcher missing' }
+    $restartBody = [regex]::Replace($restartFn.Value, '(?m)^\s*#.*$', '')
+    $logoutInRestart = $restartBody.IndexOf('Request-BobTrayIrcLogout')
+    $forceInRestart = $restartBody.IndexOf("'-ForceNew'")
+    if ($forceInRestart -lt 0) { $forceInRestart = $restartBody.IndexOf('"-ForceNew"') }
+    if ($forceInRestart -lt 0) { $forceInRestart = $restartBody.IndexOf('-ForceNew') }
+    if ($logoutInRestart -lt 0 -or $forceInRestart -lt 0 -or $logoutInRestart -ge $forceInRestart) {
+        throw 'Restart must Request-BobTrayIrcLogout before Start-BobFleetTray -ForceNew'
+    }
+    $startSrc = Get-Content (Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1') -Raw
+    if ($startSrc -notmatch 'logging off IRC') {
+        throw 'Start-BobFleetTray -ForceNew must best-effort announce departure (FR #453)'
+    }
+    # Behavioural: Wait-BobTrayIrcOutboxDrained clears when marker removed.
+    $waitFn = [regex]::Match($traySrc, '(?s)function Wait-BobTrayIrcOutboxDrained\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $waitFn.Success) { throw 'could not extract Wait-BobTrayIrcOutboxDrained' }
+    Invoke-Expression $waitFn.Value
+    $dir = Join-Path $bridgeRoot 'fr453-drain'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $ob = Join-Path $dir 'outbox.txt'
+    $marker = 'PRIVMSG #bobiverse :bob-test: tray Restart - logging off IRC (graceful PART/QUIT)'
+    Set-Content -LiteralPath $ob -Value ($marker + "`n") -Encoding utf8
+    $job = Start-Job -ScriptBlock {
+        param($p, $m)
+        Start-Sleep -Milliseconds 400
+        Set-Content -LiteralPath $p -Value '' -Encoding utf8
+    } -ArgumentList $ob, $marker
+    $r = Wait-BobTrayIrcOutboxDrained -OutboxPath $ob -Marker $marker -TimeoutSec 5 -PollMs 50
+    Wait-Job $job -Timeout 5 | Out-Null
+    Remove-Job $job -Force -ErrorAction SilentlyContinue
+    if (-not $r.ok) { throw "Wait-BobTrayIrcOutboxDrained should succeed after clear, got $($r.reason)" }
+    $skill = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw
+    if ($skill -notmatch 'FR #453' -or $skill -notmatch 'Archive any stale') {
+        throw 'bob-fleet-tray skill must document FR #453 announce-drain ordering'
+    }
+}
+
 Invoke-Case 'BT0systray start menu git-update gate' {
     param($bridgeRoot)
     # Bob Systray: Start Menu folder + robot ico + deterministic update (no LLM).

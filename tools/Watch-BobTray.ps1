@@ -2068,38 +2068,98 @@ function Get-BobTrayIrcNick {
     return ('bob-{0}' -f $mid)
 }
 
+function Wait-BobTrayIrcOutboxDrained {
+    # FR #453: poll until outbox no longer contains Marker (irc_agent accepted/sent it).
+    param(
+        [Parameter(Mandatory)][string]$OutboxPath,
+        [Parameter(Mandatory)][string]$Marker,
+        [int]$TimeoutSec = 30,
+        [int]$PollMs = 250
+    )
+    $deadline = [datetime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSec))
+    while ([datetime]::UtcNow -lt $deadline) {
+        if (-not (Test-Path -LiteralPath $OutboxPath)) {
+            return [pscustomobject]@{ ok = $true; reason = 'missing' }
+        }
+        $raw = ''
+        try { $raw = [IO.File]::ReadAllText($OutboxPath) } catch { }
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return [pscustomobject]@{ ok = $true; reason = 'empty' }
+        }
+        if ($raw.IndexOf($Marker, [StringComparison]::Ordinal) -lt 0) {
+            return [pscustomobject]@{ ok = $true; reason = 'absent' }
+        }
+        Start-Sleep -Milliseconds ([Math]::Max(50, $PollMs))
+    }
+    return [pscustomobject]@{ ok = $false; reason = 'timeout' }
+}
+
+function Wait-BobTrayIrcAgentStopped {
+    # After quit.request, prefer agent exit before force-kill (FR #453).
+    param([int]$TimeoutSec = 10, [int]$PollMs = 250)
+    $deadline = [datetime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSec))
+    while ([datetime]::UtcNow -lt $deadline) {
+        $hits = @(Test-IrcAgentUp)
+        if ($hits.Count -eq 0) {
+            return [pscustomobject]@{ ok = $true; reason = 'stopped' }
+        }
+        Start-Sleep -Milliseconds ([Math]::Max(50, $PollMs))
+    }
+    return [pscustomobject]@{ ok = $false; reason = 'timeout' }
+}
+
 function Write-BobTrayIrcDepartureAnnounce {
-    # agentic_irc #250: announce departure on #bobiverse via bob-{machine} before PART/QUIT.
+    # agentic_irc #250 / FR #453: announce on #bobiverse BEFORE quit/disconnect.
+    # Stale outbox backlog can bury the line for minutes; archive then write ONLY
+    # the departure PRIVMSG so irc_agent drains it before PART/QUIT.
     param(
         [ValidateSet('Exit', 'Restart')]
         [string]$Reason = 'Exit',
-        [string]$IrcHome
+        [string]$IrcHome,
+        [int]$DrainTimeoutSec = 30
     )
-    if (-not $IrcHome) { return }
+    if (-not $IrcHome) { return [pscustomobject]@{ ok = $false; error = 'no_home' } }
     try {
         $nick = Get-BobTrayIrcNick
         $outbox = Join-Path $IrcHome 'outbox.txt'
         $msg = '{0}: tray {1} - logging off IRC (graceful PART/QUIT)' -f $nick, $Reason
         $line = 'PRIVMSG #bobiverse :{0}' -f $msg
-        $pre = ''
         if (Test-Path -LiteralPath $outbox) {
-            $bytes = [IO.File]::ReadAllBytes($outbox)
-            if ($bytes.Length -gt 0 -and $bytes[$bytes.Length - 1] -ne 10) { $pre = "`n" }
+            $len = 0
+            try { $len = ([IO.FileInfo]$outbox).Length } catch { }
+            if ($len -gt 0) {
+                $stamp = [datetime]::UtcNow.ToString('yyyyMMdd-HHmmss')
+                $bak = Join-Path $IrcHome ("outbox.bak-depart-{0}.txt" -f $stamp)
+                try {
+                    [IO.File]::Copy($outbox, $bak, $true)
+                    Write-TrayLog ('irc departure archived outbox ({0} bytes) -> {1}' -f $len, $bak)
+                }
+                catch {
+                    Write-TrayLog ('irc departure outbox archive failed: ' + $_.Exception.Message)
+                }
+            }
         }
-        [IO.File]::AppendAllText($outbox, $pre + $line + "`n", (New-Object System.Text.UTF8Encoding $false))
+        [IO.File]::WriteAllText($outbox, $line + "`n", (New-Object System.Text.UTF8Encoding $false))
         Write-TrayLog ('irc departure announce: {0}' -f $msg)
-        # Allow irc_agent to drain outbox before quit.request.
-        Start-Sleep -Seconds 3
+        $drain = Wait-BobTrayIrcOutboxDrained -OutboxPath $outbox -Marker $line -TimeoutSec $DrainTimeoutSec
+        if (-not $drain.ok) {
+            Write-TrayLog ('irc departure announce drain timeout ({0}s) - continuing quit' -f $DrainTimeoutSec)
+        }
+        else {
+            Write-TrayLog ('irc departure announce drained ({0})' -f $drain.reason)
+        }
+        return [pscustomobject]@{ ok = [bool]$drain.ok; line = $line; drain = $drain }
     }
     catch {
         Write-TrayLog ('irc departure announce failed: ' + $_.Exception.Message)
+        return [pscustomobject]@{ ok = $false; error = $_.Exception.Message }
     }
 }
 
 function Request-BobTrayIrcLogout {
     # CAST IRON (Simon 2026-09-27): closing systray must log off bob IRC account.
-    # agentic_irc #250: announce via bob-{machine} first, then graceful quit.request.
-    # Prefer graceful agent.quit.request (PART/QUIT); then stop ear + kill leftovers.
+    # agentic_irc #250 / FR #453: announce + drain FIRST, then quit.request, wait
+    # for irc_agent stop, then Stop-BobiverseMoot. Never kill before announce flush.
     # Use $ircHome - $HOME/$home is a read-only automatic variable in PowerShell.
     param(
         [ValidateSet('Exit', 'Restart')]
@@ -2118,13 +2178,19 @@ function Request-BobTrayIrcLogout {
     }
     if ($ircHome -and (Test-Path -LiteralPath $ircHome)) {
         if (-not $SkipAnnounce) {
-            Write-BobTrayIrcDepartureAnnounce -Reason $Reason -IrcHome $ircHome
+            Write-BobTrayIrcDepartureAnnounce -Reason $Reason -IrcHome $ircHome | Out-Null
         }
         try {
             $quitPath = Join-Path $ircHome 'agent.quit.request'
             Set-Content -LiteralPath $quitPath -Value ('tray-{0} {1:o}' -f $Reason.ToLowerInvariant(), [datetime]::UtcNow) -Encoding ascii
             Write-TrayLog ("irc logout: wrote {0}" -f $quitPath)
-            Start-Sleep -Seconds 2
+            $stopped = Wait-BobTrayIrcAgentStopped -TimeoutSec 10
+            if ($stopped.ok) {
+                Write-TrayLog 'irc logout: bobiverse irc_agent stopped after quit.request'
+            }
+            else {
+                Write-TrayLog 'irc logout: irc_agent still up after quit.wait - Stop-BobiverseMoot will force'
+            }
         }
         catch {
             Write-TrayLog ('irc logout quit.request failed: ' + $_.Exception.Message)
