@@ -6103,6 +6103,17 @@ Invoke-Case 'BT0systray start menu git-update gate' {
     if ($restartFn.Value -match 'SkipUpdate') { throw 'Restart must not SkipUpdate (full bootstrap)' }
     if ($restartFn.Value -notmatch 'Request-BobTrayIrcLogout') { throw 'Restart must IRC logoff before replace' }
     if ($restartFn.Value -notmatch '-Reason Restart') { throw 'Restart must Request-BobTrayIrcLogout -Reason Restart (graceful, not raw kill)' }
+    # agentic_build #442: recycle Bob must share Start-BobFleetTray -ForceNew (not raw Watch-BobTray spawn)
+    $skillTray = Get-Content (Join-Path $RepoRoot '.grok\skills\bob-fleet-tray\SKILL.md') -Raw -ErrorAction SilentlyContinue
+    if (-not $skillTray -or $skillTray -notmatch 'Start-BobFleetTray -ForceNew') {
+        throw 'bob-fleet-tray skill must document recycle via Start-BobFleetTray -ForceNew (#442)'
+    }
+    $ircRecycle = Join-Path (Split-Path $RepoRoot -Parent) 'agentic_irc\scripts\bob_recycle.py'
+    if (Test-Path -LiteralPath $ircRecycle) {
+        $br = Get-Content -LiteralPath $ircRecycle -Raw
+        if ($br -notmatch 'Start-BobFleetTray') { throw 'bob_recycle._default_recycle_tray must prefer Start-BobFleetTray (#442)' }
+        if ($br -notmatch 'logging off IRC') { throw 'bob_recycle restarting_announce must say logging off IRC (#442)' }
+    }
     $prof = Join-Path $bridgeRoot 'systray-profile'
     New-Item -ItemType Directory -Force -Path $prof | Out-Null
     $env:BOB_WATCH_SEAT_PROFILE_ROOT = $prof
