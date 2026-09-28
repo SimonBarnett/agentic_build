@@ -63,7 +63,8 @@ Never paste `auth.json`, sand-secrets, or bearer tokens.
 | Signal | How |
 |---|---|
 | Weekly remaining % | `Get-BobWeeklyRemaining` from last `billing: fetched credits config` in `~\.grok\logs\unified.jsonl`. Legacy ≤1.0.40: `100 - creditUsagePercent`. Grok 1.0.41+: no `creditUsagePercent` — `remaining_pct`/`used_pct` stay `$null` (`n/a`); still return `period_end` (FR #427). Period type must match WEEKLY / `USAGE_PERIOD_TYPE_WEEKLY`. |
-| Reset date | Same doc -> `period_end` (`currentPeriod.end`). Format for UI: `Format-BobResetLabel` -> `Until reset: …` / `reset DD Mon` (UK local). Shown even when weekly % is `n/a`. |
+| Availability (start gate) | `Get-BobGrokAvailability` (FR #430): `available` / `exhausted` / `unknown` / `auth-failed` / `stale`. Null % + local `allow_access` + current `period_end` ⇒ `available` (no API key). Only `remaining_pct=0` is exhausted. Never invent %. |
+| Reset date | Same doc -> `period_end` (`currentPeriod.end`). Format for UI: `Format-BobResetLabel` -> `Until reset: …` / `reset DD Mon` (UK local). Shown even when weekly % is `n/a`. Display-only — not an eligibility proof. |
 | Seat map | `config/bob-seats.json`: ionos=Smart Catalogue, flamingo=Club Madeira, marchhare+ce-priority-dev1=ntsa (si@ntsa.uk). Same seat -> one shared remaining % (min) and one shared reset |
 | Publish to fleet | `Write-BobIrcStatus` writes `weekly` + `period_end`, POINT `reset=YYYY-MM-DD`, and digest `pcent` (POST `reportUrl`) |
 

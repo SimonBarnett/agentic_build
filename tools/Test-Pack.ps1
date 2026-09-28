@@ -5784,6 +5784,87 @@ Invoke-Case 'BT0agent FR352 no_tokens automated + quota detect' {
     if ($hover -notmatch 'out of tokens, open with key') { throw 'TipForm must show out of tokens, open with key' }
 }
 
+Invoke-Case 'BT0week430 grok availability vs unknown pct' {
+    param($bridgeRoot)
+    # FR #430: null remaining_pct is not exhaustion; verified local auth+period => available.
+    $authPath = Join-Path $bridgeRoot 'settings_cache_fr430.json'
+    $inner = @{
+        fetched_at   = '2026-09-28T05:55:00Z'
+        grok_version = '1.0.41'
+        settings     = @{
+            allow_access              = $true
+            subscription_tier_display = 'X Premium+'
+            default_model             = 'grok-4.7'
+        }
+    } | ConvertTo-Json -Compress -Depth 6
+    (@{ payload = $inner } | ConvertTo-Json -Compress) | Set-Content -LiteralPath $authPath -Encoding utf8
+    $env:BOB_GROK_SETTINGS_CACHE = $authPath
+
+    $week141 = [pscustomobject]@{
+        remaining_pct = $null
+        used_pct      = $null
+        period_end    = '2026-10-04T00:36:16.871396+00:00'
+        format        = 'grok-1.0.41'
+        source        = 'unified.jsonl:billing:grok-1.0.41-period'
+        kind          = 'weekly'
+    }
+    $av = Get-BobGrokAvailability -Weekly $week141 -Auth (Get-BobGrokAuthSnapshot) -UtcNow ([datetime]'2026-09-28T12:00:00Z')
+    if ($av.state -ne 'available') { throw "1.0.41 verified want available got $($av.state)/$($av.reason)" }
+    if ($null -ne $av.remaining_pct) { throw 'must not invent remaining_pct' }
+
+    $ex = Get-BobGrokAvailability -Weekly ([pscustomobject]@{ remaining_pct = 0; period_end = '2026-10-04T00:00:00Z' }) -UtcNow ([datetime]'2026-09-28T12:00:00Z')
+    if ($ex.state -ne 'exhausted') { throw "0% want exhausted got $($ex.state)" }
+
+    $pos = Get-BobGrokAvailability -Weekly ([pscustomobject]@{ remaining_pct = 12; period_end = '2026-10-04T00:00:00Z' }) -UtcNow ([datetime]'2026-09-28T12:00:00Z')
+    if ($pos.state -ne 'available' -or $pos.remaining_pct -ne 12) { throw "legacy positive failed $($pos | ConvertTo-Json -Compress)" }
+
+    $stale = Get-BobGrokAvailability -Weekly ([pscustomobject]@{ remaining_pct = $null; period_end = '2026-09-01T00:00:00Z'; format = 'grok-1.0.41' }) -Auth (Get-BobGrokAuthSnapshot) -UtcNow ([datetime]'2026-09-28T12:00:00Z')
+    if ($stale.state -ne 'stale') { throw "past period want stale got $($stale.state)" }
+
+    $denyInner = @{ fetched_at = '2026-09-28T05:55:00Z'; settings = @{ allow_access = $false } } | ConvertTo-Json -Compress -Depth 5
+    $denyPath = Join-Path $bridgeRoot 'settings_cache_deny.json'
+    (@{ payload = $denyInner } | ConvertTo-Json -Compress) | Set-Content -LiteralPath $denyPath -Encoding utf8
+    $env:BOB_GROK_SETTINGS_CACHE = $denyPath
+    $af = Get-BobGrokAvailability -Weekly $week141 -Auth (Get-BobGrokAuthSnapshot) -UtcNow ([datetime]'2026-09-28T12:00:00Z')
+    if ($af.state -ne 'auth-failed') { throw "allow_access false want auth-failed got $($af.state)" }
+
+    $env:BOB_GROK_SETTINGS_CACHE = $authPath
+    $capMach = [pscustomobject]@{
+        id         = 'flamingo'
+        grok_build = [pscustomobject]@{ remaining_pct = $null; period_end = '2026-10-04T00:00:00Z'; availability = 'available'; availability_reason = 'verified-local-auth-weekly-period' }
+        fuels      = @('grok-build')
+    }
+    $cap = [pscustomobject]@{ cursor_models = [pscustomobject]@{ remaining_pct = 50 }; machines = @($capMach) }
+    if (-not (Test-BobFuelHasIncluded -Capacity $cap -Machine $capMach -Fuel 'grok-build')) {
+        throw 'verified availability must count as included grok-build fuel'
+    }
+    $capMach2 = [pscustomobject]@{
+        id         = 'flamingo'
+        grok_build = [pscustomobject]@{ remaining_pct = $null; availability = 'unknown' }
+        fuels      = @('grok-build')
+    }
+    if (Test-BobFuelHasIncluded -Capacity $cap -Machine $capMach2 -Fuel 'grok-build') {
+        throw 'unknown availability must not count as included fuel'
+    }
+
+    $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
+    $tok = $null; $err = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($tray, [ref]$tok, [ref]$err)
+    $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Resolve-BobTrayGrokFuelAtStart' }, $true)
+    if (-not $fn) { throw 'missing Resolve-BobTrayGrokFuelAtStart' }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    function script:Get-BobTrayGrokFuelRemaining { return $null }
+    function script:Get-BobTrayMachineGrokChatPcent { return $null }
+    function script:Get-BobWeeklyRemaining { return $week141 }
+    $env:BOB_GROK_SETTINGS_CACHE = $authPath
+    $d = Resolve-BobTrayGrokFuelAtStart -MachineId 'flamingo'
+    if ($d.action -ne 'start-pool' -or $d.fuel_mode -ne 'pool') {
+        throw "1.0.41 verified start want start-pool got $($d | ConvertTo-Json -Compress)"
+    }
+    $env:BOB_GROK_SETTINGS_CACHE = $null
+}
+
+
 Invoke-Case 'BT0agent FR356 grok fuel_mode at start' {
     # FR #356: pcent>0 => pool; 0 => session-key; blank/missing => unknown (stop).
     $tray = Join-Path $RepoRoot 'tools\Watch-BobTray.ps1'
@@ -5797,6 +5878,11 @@ Invoke-Case 'BT0agent FR356 grok fuel_mode at start' {
     function script:Get-BobTrayFuelLocalMachineId { return 'marchhare' }
     function script:Resolve-BobiverseMachineId { param($Id) return ([string]$Id).ToLowerInvariant() }
     function script:Write-TrayLog { param($Message) }
+    # Digest-only cases: no local weekly %; FR #430 availability stubbed to unknown.
+    function script:Get-BobTrayGrokFuelRemaining { return $null }
+    function script:Get-BobWeeklyRemaining { return $null }
+    function script:Get-BobGrokAuthSnapshot { return $null }
+    function script:Get-BobGrokAvailability { param($Weekly, $Auth, $UtcNow) return [pscustomobject]@{ state = 'unknown'; reason = 'test-stub'; remaining_pct = $null } }
 
     $poolDoc = [pscustomobject]@{
         machines = [pscustomobject]@{
