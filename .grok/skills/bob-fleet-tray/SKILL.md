@@ -108,12 +108,12 @@ tray-complete `bob-peers\*.json`, `_report-digest.json`, and cursor pool
 cache. HTTP digest GET is the same `reportUrl` (PR #306). Not POINT, not
 a presence-only digest.
 
-## Reset countdown (AgentMonitor #148 / FR #436)
+## Reset countdown (AgentMonitor #148 / FR #445)
 
 Show time until weekly reset next to the meter, not only in digests.
 `Format-BobResetLabel` formats from the known `period_end` (no extra polling):
 
-- Label uses **mutually exclusive units**: if remaining includes ≥1 whole day, show **only days** (`Until reset: 2 days`). If days is zero, show **only total minutes** (hours folded in: `3h15m` → `Until reset: 195 minutes`). Never show hours. Never show `0 days`. Clamp expired/negative to `Until reset: 0 minutes`.
+- **No** `Until reset:` prefix. Units: if `days > 0` → `N days, M hours` (omit zero hours; never minutes). If `days = 0` → `N hours, M minutes` (omit zero hours when only minutes remain). Clamp expired/negative to `0 minutes`.
 - **Hide when polled since reset:** if usage `FetchedAt` >= `period_end`, omit the reset line (percentage still shown).
 - **Each Cursor spending group** (`grok chat`, `high cost models`, `Low cost models`): countdown on that row. `grok chat` uses Sand `nextResetTimestampUtc` (`sand_period_end`) only — never Cursor `billingCycleEnd` (FR #448). The other two use the Cursor Spending billing cycle end. Per-group `period_end` on the seat cache wins for non-Sand groups when present.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from `unified.jsonl` (`Get-BobWeeklyRemaining`). Same-seat machines share one reset instant (and one remaining %).
@@ -122,13 +122,13 @@ Show time until weekly reset next to the meter, not only in digests.
 
 Example control headings:
 
-`grok chat  N%  Until reset: 2 days`
+`grok chat  N%  2 days, 4 hours`
 
-`high cost models  N%  Until reset: 2 days`
+`high cost models  N%  2 days, 4 hours`
 
-`Low cost models  N%  Until reset: 195 minutes`
+`Low cost models  N%  3 hours, 15 minutes`
 
-`flamingo  -  Club Madeira (N%) - Until reset: 2 days`
+`flamingo  -  Club Madeira (N%) - 2 days, 4 hours`
 
 TipForm layout (Simon 2026-09-23):
 
