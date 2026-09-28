@@ -620,6 +620,35 @@ Invoke-Case 'BT0k fleet fake store' {
     if ($tw -match 'Watch-BobTray') { throw 'watcher_up must not treat Watch-BobTray as the pull worker' }
 }
 
+# --- BT0week427 Grok 1.0.41 billing period_end without creditUsagePercent (FR #427) ---
+Invoke-Case 'BT0week427 grok 1.0.41 billing period_end' {
+    param($bridgeRoot)
+    $v141 = Join-Path $bridgeRoot 'weekly-grok141-case.jsonl'
+    $v141Line = '{"ts":"2026-09-28T05:55:00Z","msg":"billing: fetched credits config","ctx":{"config":{"prepaidBalance":{"val":0},"onDemandUsed":{"val":0},"onDemandCap":{"val":0},"isUnifiedBillingUser":true,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-09-27T00:36:16.871396+00:00","end":"2026-10-04T00:36:16.871396+00:00"}}}}'
+    [IO.File]::WriteAllText($v141, $v141Line + [Environment]::NewLine)
+    $w141 = Get-BobWeeklyRemaining -LogPath $v141
+    if ($null -eq $w141) { throw 'Grok 1.0.41 weekly event must return an object' }
+    if ($null -ne $w141.remaining_pct) { throw "must not invent remaining_pct; got $($w141.remaining_pct)" }
+    if ($null -ne $w141.used_pct) { throw "must not invent used_pct; got $($w141.used_pct)" }
+    if ([string]$w141.period_end -notmatch '2026-10-04') { throw "period_end=$($w141.period_end)" }
+    if ([string]$w141.format -ne 'grok-1.0.41') { throw "format=$($w141.format)" }
+    if ([string]$w141.source -notmatch '1\.0\.41') { throw "source=$($w141.source)" }
+    $env:BOB_WEEKLY_LOG = $v141
+    $h141 = Get-BobTrayHover
+    if ($null -ne $h141.remaining_pct -and [string]$h141.remaining_pct -ne '') {
+        throw "hover must not invent weekly %; got $($h141.remaining_pct)"
+    }
+    if ([string]$h141.body -notmatch 'Until reset:') {
+        throw "hover must show reset countdown: $($h141.body)"
+    }
+    $leg = Join-Path $bridgeRoot 'weekly-legacy-case.jsonl'
+    [IO.File]::WriteAllText($leg, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":91.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-26T00:00:00Z"}}}}' + [Environment]::NewLine)
+    $wl = Get-BobWeeklyRemaining -LogPath $leg
+    if ([int]$wl.remaining_pct -ne 9) { throw "legacy remaining=$($wl.remaining_pct)" }
+    if ([string]$wl.format -ne 'legacy-1.0.40') { throw "legacy format=$($wl.format)" }
+    $env:BOB_WEEKLY_LOG = $null
+}
+
 # --- BT0l tray hover (weekly remaining + machine tiles T1-T7) ---
 Invoke-Case 'BT0l tray hover' {
     param($bridgeRoot)
@@ -636,12 +665,12 @@ Invoke-Case 'BT0l tray hover' {
     if (@($h.cursor_groups).Count -lt 3) { throw "idle cursor_groups count=$(@($h.cursor_groups).Count) expected >=3" }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]+grok chat') { throw "idle jobs_text missing grok chat group: $($h.jobs_text)" }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]+high cost models') { throw "idle jobs_text missing high cost models group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+low cost models') { throw "idle jobs_text missing low cost models group: $($h.jobs_text)" }
-    if ([string]$h.jobs_text -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models)') {
+    if ([string]$h.jobs_text -notmatch '(?m)^[ ]+(auto|low cost models)') { throw "idle jobs_text missing auto/low-cost group: $($h.jobs_text)" }
+    if ([string]$h.jobs_text -match '(?m)^[ ]+Smart Catalogue  (grok chat|high cost models|low cost models|auto)') {
         throw "xAI seat labels must not prefix Cursor spending bars: $($h.jobs_text)"
     }
     if ([string]$h.jobs_text -notmatch '(?m)^[ ]{0,2}testhost \(') { throw "idle jobs_text missing testhost tile: $($h.jobs_text)" }
-    if ([string]$h.account_name -ne 'low cost models') { throw "account_name=$($h.account_name)" }
+    if ([string]$h.account_name -notmatch '^(auto|low cost models)$') { throw "account_name=$($h.account_name)" }
     if ($null -ne $h.account_remaining_pct) { throw 'cursor account must not copy Grok Build xAI remaining' }
     if ([string]$h.jobs_text -notmatch 'no jobs') { throw "idle jobs_text missing no jobs: $($h.jobs_text)" }
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
@@ -719,7 +748,30 @@ Invoke-Case 'BT0l tray hover' {
     $badWeek = Join-Path $bridgeRoot 'weekly-noperiod.jsonl'
     [IO.File]::WriteAllText($badWeek, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"}}}}' + [Environment]::NewLine)
     $wn = Get-BobWeeklyRemaining -LogPath $badWeek
-    if ($null -ne $wn) { throw 'missing creditUsagePercent must be n/a, not invented' }
+    if ($null -ne $wn) { throw 'weekly without usage and without period_end must stay null (nothing useful)' }
+
+    # FR #427: Grok 1.0.41 billing — no creditUsagePercent; prepaidBalance/onDemand*.val present.
+    $v141 = Join-Path $bridgeRoot 'weekly-grok141.jsonl'
+    $v141Line = '{"ts":"2026-09-28T05:55:00Z","msg":"billing: fetched credits config","ctx":{"config":{"prepaidBalance":{"val":0},"onDemandUsed":{"val":0},"onDemandCap":{"val":0},"isUnifiedBillingUser":true,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","start":"2026-09-27T00:36:16.871396+00:00","end":"2026-10-04T00:36:16.871396+00:00"}}}}'
+    [IO.File]::WriteAllText($v141, $v141Line + [Environment]::NewLine)
+    $w141 = Get-BobWeeklyRemaining -LogPath $v141
+    if ($null -eq $w141) { throw 'Grok 1.0.41 weekly event must return an object (period_end path)' }
+    if ($null -ne $w141.remaining_pct) { throw "1.0.41 must not invent remaining_pct; got $($w141.remaining_pct)" }
+    if ($null -ne $w141.used_pct) { throw "1.0.41 must not invent used_pct; got $($w141.used_pct)" }
+    if ([string]$w141.period_end -notmatch '2026-10-04') { throw "1.0.41 period_end=$($w141.period_end)" }
+    if ([string]$w141.format -ne 'grok-1.0.41') { throw "format=$($w141.format)" }
+    if ([string]$w141.source -notmatch '1\.0\.41') { throw "source=$($w141.source)" }
+    $env:BOB_WEEKLY_LOG = $v141
+    $h141 = Get-BobTrayHover
+    # Usage unknown → remaining_pct n/a, but machine tile reset countdown must still paint.
+    if ($null -ne $h141.remaining_pct -and [string]$h141.remaining_pct -ne '') {
+        throw "hover must not invent weekly % from 1.0.41; got $($h141.remaining_pct)"
+    }
+    $tileTxt = [string]$h141.body
+    if ($tileTxt -notmatch 'Until reset:') {
+        throw "hover must show reset countdown when 1.0.41 period_end known: $tileTxt"
+    }
+    $env:BOB_WEEKLY_LOG = $weekLog
 
     $monthLog = Join-Path $bridgeRoot 'weekly-monthly.jsonl'
     [IO.File]::WriteAllText($monthLog, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":10.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_MONTHLY"}}}}' + [Environment]::NewLine)
@@ -948,7 +1000,10 @@ Invoke-Case 'BT0l tray hover' {
     if ($traySrc -match 'New-BobTrayCursorBitmap') { throw 'Watch-BobTray must not draw a cursor icon on the account bar' }
     if ($traySrc -notmatch 'Clear-BobNativeTip') { throw 'dark card must clear native NotifyIcon tip to avoid double dialog' }
     if ($traySrc -notmatch 'HideTooltipWindows') { throw 'must pop shell tooltips_class32 so native tip does not stack on the card' }
-    if ($traySrc -match 'ShowBalloonTip') { throw 'BalloonTip is a second dialog; use the dark card only' }
+    # Restart-BobTrayWatcher may balloon once; TipForm hover card must not.
+    if ($traySrc -match 'ShowBalloonTip' -and $traySrc -notmatch 'function Restart-BobTrayWatcher') {
+        throw 'BalloonTip is a second dialog; use the dark card only'
+    }
     if ($traySrc -match 'tip\.Show\(\)') { throw 'do not Form.Show after ShowParkedAt (second dialog)' }
     if ($traySrc -notmatch 'Transparent') { throw 'machine-name label BackColor must be Transparent so it does not cover the bar' }
     if ($traySrc -notmatch 'fill_r') { throw 'Watch-BobTray must use gradient fill_r/fill_g/fill_b' }
@@ -975,7 +1030,15 @@ Invoke-Case 'BT0l tray hover' {
     if ($watchBody -notmatch '-WatchWorker') { throw 'systray Agents must launch Watch-AgentHealth.ps1 -WatchWorker' }
     if ($watchBody -notmatch '''-New''|"-New"|-New') { throw 'systray Agents must always pass -New (never resume an old session)' }
     if ($watchBody -notmatch '-Model.*auto') { throw 'systray Cursor Agents must pass -Model auto' }
-    if ($watchBody -notmatch 'WindowStyle.*,\s*''Hidden''') { throw 'systray Agents watch process must be WindowStyle Hidden' }
+    # Hidden lives on Start-BobTrayProcessWithSessionEnv (called from Start-BobTrayAgentWatch).
+    if ($watchBody -notmatch 'Start-BobTrayProcessWithSessionEnv') {
+        throw 'systray Agents must start the watch via Start-BobTrayProcessWithSessionEnv'
+    }
+    $sessEnvFn = [regex]::Match($traySrc, '(?s)function Start-BobTrayProcessWithSessionEnv\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+    if (-not $sessEnvFn.Success) { throw 'Start-BobTrayProcessWithSessionEnv function not found' }
+    if ($sessEnvFn.Value -notmatch "WindowStyle\s*,\s*'Hidden'" -and $sessEnvFn.Value -notmatch 'WindowStyle\.Hidden' -and $sessEnvFn.Value -notmatch 'Hidden') {
+        throw 'systray Agents watch process must be WindowStyle Hidden'
+    }
     if ($watchBody -match "(?i)-Windows['\`"]?\s*,?\s*['\`"]?off") { throw 'systray Agents must not pass -Windows off (TUI must stay visible)' }
     $slotSrc = Get-Content (Join-Path $RepoRoot 'tools\Bob-WatchSeatSlot.ps1') -Raw
     if ($slotSrc -notmatch 'function Build-BobWatchSeatLaunchArgs') { throw 'Bob-WatchSeatSlot must define Build-BobWatchSeatLaunchArgs' }
