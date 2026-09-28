@@ -323,3 +323,11 @@ IconLocation via AgentMonitor `Publish-DesktopShortcuts.ps1`.
 - Job lines are GitHub owner/repo, never a commit SHA as primary label.
 - Do not omit registered bobiverse seats. Do not invent jobs. Do not WinRM.
 - CAST IRON: Cursor pool remaining / Agents fuel gate = local Spending. Digest fills nulls only; never overwrites local.
+
+### Exit / Restart IRC (agentic_irc #250)
+
+`Exit` and `Restart` on the systray menu announce via `bob-{machine}` on
+`#bobiverse` (`tray Exit|Restart - logging off IRC`), wait for outbox drain,
+then write `agent.quit.request` and stop the ear. Restart then relaunches via
+`Start-BobFleetTray -ForceNew` (same bootstrap as Start).
+

@@ -2052,10 +2052,60 @@ function Start-IrcWatcher {
     Start-BobiverseMootWrapper
 }
 
+function Get-BobTrayIrcNick {
+    $mid = $env:BOB_MACHINE_ID
+    if (-not $mid) {
+        try {
+            if (Get-Command Get-BobMachineId -ErrorAction SilentlyContinue) {
+                $mid = Get-BobMachineId
+            }
+        }
+        catch { }
+    }
+    if (-not $mid) { $mid = $env:COMPUTERNAME }
+    $mid = ([string]$mid).Trim().ToLowerInvariant()
+    if (-not $mid) { $mid = 'unknown' }
+    return ('bob-{0}' -f $mid)
+}
+
+function Write-BobTrayIrcDepartureAnnounce {
+    # agentic_irc #250: announce departure on #bobiverse via bob-{machine} before PART/QUIT.
+    param(
+        [ValidateSet('Exit', 'Restart')]
+        [string]$Reason = 'Exit',
+        [string]$IrcHome
+    )
+    if (-not $IrcHome) { return }
+    try {
+        $nick = Get-BobTrayIrcNick
+        $outbox = Join-Path $IrcHome 'outbox.txt'
+        $msg = '{0}: tray {1} - logging off IRC (graceful PART/QUIT)' -f $nick, $Reason
+        $line = 'PRIVMSG #bobiverse :{0}' -f $msg
+        $pre = ''
+        if (Test-Path -LiteralPath $outbox) {
+            $bytes = [IO.File]::ReadAllBytes($outbox)
+            if ($bytes.Length -gt 0 -and $bytes[$bytes.Length - 1] -ne 10) { $pre = "`n" }
+        }
+        [IO.File]::AppendAllText($outbox, $pre + $line + "`n", (New-Object System.Text.UTF8Encoding $false))
+        Write-TrayLog ('irc departure announce: {0}' -f $msg)
+        # Allow irc_agent to drain outbox before quit.request.
+        Start-Sleep -Seconds 3
+    }
+    catch {
+        Write-TrayLog ('irc departure announce failed: ' + $_.Exception.Message)
+    }
+}
+
 function Request-BobTrayIrcLogout {
     # CAST IRON (Simon 2026-09-27): closing systray must log off bob IRC account.
+    # agentic_irc #250: announce via bob-{machine} first, then graceful quit.request.
     # Prefer graceful agent.quit.request (PART/QUIT); then stop ear + kill leftovers.
     # Use $ircHome - $HOME/$home is a read-only automatic variable in PowerShell.
+    param(
+        [ValidateSet('Exit', 'Restart')]
+        [string]$Reason = 'Exit',
+        [switch]$SkipAnnounce
+    )
     $ircHome = $null
     try {
         if (Get-Command Get-BobIrcHome -ErrorAction SilentlyContinue) {
@@ -2067,9 +2117,12 @@ function Request-BobTrayIrcLogout {
         $ircHome = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
     }
     if ($ircHome -and (Test-Path -LiteralPath $ircHome)) {
+        if (-not $SkipAnnounce) {
+            Write-BobTrayIrcDepartureAnnounce -Reason $Reason -IrcHome $ircHome
+        }
         try {
             $quitPath = Join-Path $ircHome 'agent.quit.request'
-            Set-Content -LiteralPath $quitPath -Value ('tray-exit {0:o}' -f [datetime]::UtcNow) -Encoding ascii
+            Set-Content -LiteralPath $quitPath -Value ('tray-{0} {1:o}' -f $Reason.ToLowerInvariant(), [datetime]::UtcNow) -Encoding ascii
             Write-TrayLog ("irc logout: wrote {0}" -f $quitPath)
             Start-Sleep -Seconds 2
         }
@@ -2091,7 +2144,8 @@ function Restart-BobTrayWatcher {
     }
     catch { }
     # Log off IRC before this process dies (replacement will rejoin).
-    try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('restart irc logout: ' + $_.Exception.Message) }
+    # agentic_irc #250: same graceful announce+quit path as Exit (not a raw kill).
+    try { Request-BobTrayIrcLogout -Reason Restart } catch { Write-TrayLog ('restart irc logout: ' + $_.Exception.Message) }
     $startTray = Join-Path $RepoRoot 'tools\Start-BobFleetTray.ps1'
     $ps = (Get-Command powershell.exe).Source
     if (Test-Path -LiteralPath $startTray) {
@@ -2791,7 +2845,7 @@ $miLog.Add_Click({ if (Test-Path $logPath) { Start-Process notepad.exe $logPath 
 $ctx = New-Object System.Windows.Forms.ApplicationContext
 $miRestart.Add_Click({ Restart-BobTrayWatcher })
 $miExit.Add_Click({
-        try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('exit irc logout: ' + $_.Exception.Message) }
+        try { Request-BobTrayIrcLogout -Reason Exit } catch { Write-TrayLog ('exit irc logout: ' + $_.Exception.Message) }
         $ctx.ExitThread()
     })
 $notify.Add_MouseClick({
@@ -2902,8 +2956,8 @@ $pulse.Start()
 Write-TrayLog 'tray up'
 [System.Windows.Forms.Application]::Run($ctx)
 $poll.Stop(); $flash.Stop(); $pulse.Stop(); $pulseOff.Stop()
-# Exit path (menu Exit already requested logout; Restart also did). Idempotent.
-try { Request-BobTrayIrcLogout } catch { Write-TrayLog ('final irc logout: ' + $_.Exception.Message) }
+# Exit path (menu Exit/Restart already announced+logout). Idempotent; skip second announce.
+try { Request-BobTrayIrcLogout -Reason Exit -SkipAnnounce } catch { Write-TrayLog ('final irc logout: ' + $_.Exception.Message) }
 if (Test-BobTrayTipAlive) {
     try { [void]$script:tip.TryHide() } catch { try { $script:tip.Hide() } catch { } }
     try { $script:tip.Dispose() } catch { }
