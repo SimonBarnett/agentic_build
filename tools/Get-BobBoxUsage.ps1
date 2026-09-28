@@ -142,12 +142,14 @@ $report = [ordered]@{
     health             = $health
     weekly_remaining   = if ($week) {
         [ordered]@{
-            remaining_pct = [int]$week.remaining_pct
-            used_pct      = [int]$week.used_pct
+            # FR #427: Grok 1.0.41 may omit creditUsagePercent — keep null, never cast to 0.
+            remaining_pct = $(if ($null -ne $week.remaining_pct -and [string]$week.remaining_pct -ne '') { [int]$week.remaining_pct } else { $null })
+            used_pct      = $(if ($null -ne $week.used_pct -and [string]$week.used_pct -ne '') { [int]$week.used_pct } else { $null })
             fetched_at    = [string]$week.fetched_at
-            period_end    = [string]$week.period_end
+            period_end    = $(if ($week.period_end) { [string]$week.period_end } else { $null })
             source        = [string]$week.source
             kind          = [string]$week.kind
+            format        = $(if ($week.format) { [string]$week.format } else { $null })
         }
     } else { $null }
     grok_processes     = $procs
@@ -189,10 +191,13 @@ if ($health) {
 } else {
     Write-Host "Health:   BobBridge not found on known roots"
 }
-if ($week -and $null -ne $week.remaining_pct) {
+if ($week -and $null -ne $week.remaining_pct -and [string]$week.remaining_pct -ne '') {
     Write-Host ("Weekly:   remaining {0}% (used {1}%) source={2}" -f $week.remaining_pct, $week.used_pct, $week.source)
+} elseif ($week -and $week.period_end) {
+    # Grok 1.0.41+: period known, usage % unknown (FR #427)
+    Write-Host ("Weekly:   n/a (usage unknown; until reset {0}) source={1}" -f $week.period_end, $week.source)
 } else {
-    Write-Host "Weekly:   n/a (no billing creditUsagePercent on a weekly period)"
+    Write-Host "Weekly:   n/a (no weekly billing period / creditUsagePercent)"
 }
 Write-Host "Processes: $($procs.Count) grok.exe"
 foreach ($p in $procs) {
