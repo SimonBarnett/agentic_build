@@ -77,24 +77,25 @@ Spending (`cursor.com/dashboard/spending`) included meters on the TipForm
 |---|---|---|
 | **grok chat** | `GetSandUsageStatus.usagePercent` -> `cursor_spending_groups[id=grok-chat]` | `grok-bot` only (Sand). Not MRB/PR fuel. |
 | **high cost models** | `GetCurrentPeriodUsage.planUsage.apiPercentUsed` | named / Other Models |
-| **auto** | `planUsage.autoPercentUsed` (Auto picker / `autoBucketModels`) | `cursor-models` for MRB and PRs |
+| **Low cost models** (id `auto`) | `planUsage.autoPercentUsed` (Auto picker / `autoBucketModels`) | `cursor-models` for MRB and PRs |
 
-**Auto** is the pool when the model is Auto -- not on-demand. Docs: Auto bills
-at the routed model's list price from **Cursor Models** (and Other Models if
-the router picks third-party). Do **not** paint an on-demand usage bar; header
-`overspend GBP...` (USD cents -> GBP, right-aligned in the tile host) covers
-spend-limit pay-as-you-go.
+**Low cost models** (wire id `auto`) is the pool when the model is Auto -- not
+on-demand. Docs: Auto bills at the routed model's list price from **Cursor
+Models** (and Other Models if the router picks third-party). Do **not** paint
+an on-demand usage bar; header `overspend GBP...` (USD cents -> GBP,
+right-aligned in the tile host) covers spend-limit pay-as-you-go.
 
 TipForm paints **three labelled bars**. Hover JSON: `cursor_pools` (three
-rows). Legacy: low cost models ~ auto; Cursor Models ~ auto.
+rows). Wire id stays `auto`; TipForm label is **Low cost models** (FR #448).
+Cursor Models ~ auto.
 
 | Signal | How |
 |---|---|
-| auto remaining % | Must match Spending `autoPercentUsed` (100 - used). `Get-BobCapacity.cursor_models.remaining_pct`. |
+| Low cost models remaining % | Must match Spending `autoPercentUsed` (100 - used). `Get-BobCapacity.cursor_models.remaining_pct`. |
 | grok chat remaining % | Sand `usagePercent` via `cursor_spending_groups` / `sand_remaining_pct`. |
 | high cost models remaining % | `apiPercentUsed` via `cursor_spending_groups`. |
 | Empty / overspent GBP | `overage_gbp` from `spendLimitUsage.individualUsed` -- header only, not a bar. Digest `overage_gbp` may be null; prefer this local value when present. |
-| Reset date | **Every** spending group row: `reset DD Mon`. `grok chat` -> Sand `sand_period_end`; high/auto -> `billingCycleEnd`. |
+| Reset date | **Every** spending group row: `reset DD Mon`. `grok chat` -> Sand `sand_period_end` only (never Cursor `billingCycleEnd`, FR #448); high/Low cost models -> `billingCycleEnd`. |
 | Cache | `~\.grok\bob-bridge\cursor-agent-usage.json` (~15 min); delete to force refresh |
 
 ## TipForm wiring
@@ -122,9 +123,11 @@ light chip).
 - DEV1 must not use `XAI_API_KEY` (OIDC session, same ntsa seat as marchhare).
 - Peer Cursor pools come from digest `pcent` / `cursor_pools`. Local `Get-BobCursorAgentWeeklyRemaining` is for a host that has a Cursor login.
 
-### TipForm pools / countdown (FR #445)
+### TipForm pools / countdown (FR #445 / #448)
 
 - **grok chat** bar = Cursor Sand only (`sand_remaining_pct` / `cursor_spending_groups[id=grok-chat]`). Never copy auto / high-cost.
+- **grok chat** reset = Sand weekly (`sand_period_end`) only — never Cursor `billingCycleEnd` / `period_end` (FR #448).
+- TipForm label for wire id `auto` is **Low cost models** (id stays `auto`).
 - Reset countdown has **no** `Until reset:` prefix. `days > 0` → `N days, M hours`; `days = 0` → `N hours, M minutes`.
 - Local Bob publishes only its own pools (`Get-BobCursorPoolsForTray -LocalOnly` on Write-BobIrcStatus).
 

@@ -2806,6 +2806,66 @@ Invoke-Case 'BT0fr445 grok-chat never copies Cursor auto pool' {
     }
 }
 
+Invoke-Case 'BT0fr448 grok-chat Sand reset + Low cost models label' {
+    param($bridgeRoot)
+    $m = Get-Module BobBridge
+    $doc = [pscustomobject]@{
+        remaining_pct          = 40
+        sand_remaining_pct     = 77
+        period_end             = '2026-10-01T00:00:00Z'
+        sand_period_end        = '2026-09-29T00:00:00Z'
+        fetched_at             = '2026-09-26T12:00:00Z'
+        cursor_spending_groups = @(
+            [pscustomobject]@{ id = 'auto'; remaining_pct = 40 }
+            [pscustomobject]@{ id = 'high-cost-models'; remaining_pct = 10 }
+            [pscustomobject]@{ id = 'grok-chat'; remaining_pct = 77 }
+        )
+    }
+    $pools = & $m { param($d) @(Get-BobCursorPoolsForTray -MachineId 'ionos' -LocalCursorDoc $d -PcentRows @() -LocalOnly) } $doc
+    $chat = @($pools | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
+    $auto = @($pools | Where-Object { [string]$_.group_id -eq 'auto' })[0]
+    $hi = @($pools | Where-Object { [string]$_.group_id -eq 'high-cost-models' })[0]
+    if (-not $chat) { throw 'grok-chat pool missing' }
+    if ([string]$chat.period_end -ne '2026-09-29T00:00:00Z') {
+        throw "grok-chat period_end must be sand weekly, got $($chat.period_end)"
+    }
+    if ([string]$chat.period_end -eq [string]$doc.period_end) {
+        throw 'grok-chat must not use Cursor billingCycleEnd'
+    }
+    if ([string]$auto.period_end -ne '2026-10-01T00:00:00Z') {
+        throw "auto period_end must be billingCycleEnd, got $($auto.period_end)"
+    }
+    if ([string]$hi.period_end -ne '2026-10-01T00:00:00Z') {
+        throw "high-cost period_end must be billingCycleEnd, got $($hi.period_end)"
+    }
+    if ([string]$auto.group_label -ne 'Low cost models') {
+        throw "auto group_label must be 'Low cost models', got $($auto.group_label)"
+    }
+    $cat = & $m { @(Get-BobCursorSpendingGroupCatalog) }
+    $autoCat = @($cat | Where-Object { [string]$_.id -eq 'auto' })[0]
+    if ([string]$autoCat.label -ne 'Low cost models') {
+        throw "catalog auto label must be 'Low cost models', got $($autoCat.label)"
+    }
+    $sandOnly = & $m {
+        param($d)
+        Get-BobCursorGroupPeriodEndForTray -GroupId 'grok-chat' -LocalCursorDoc $d -OnSeat
+    } $doc
+    if ([string]$sandOnly -ne '2026-09-29T00:00:00Z') {
+        throw "Get-BobCursorGroupPeriodEndForTray grok-chat must be sand, got $sandOnly"
+    }
+    $docNoSand = [pscustomobject]@{
+        period_end      = '2026-10-01T00:00:00Z'
+        sand_period_end = $null
+    }
+    $noSand = & $m {
+        param($d)
+        Get-BobCursorGroupPeriodEndForTray -GroupId 'grok-chat' -LocalCursorDoc $d -OnSeat
+    } $docNoSand
+    if ($null -ne $noSand -and [string]$noSand -ne '') {
+        throw "grok-chat without sand_period_end must be null, got $noSand"
+    }
+}
+
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
 Invoke-Case 'BT0l24 shop channel worker reportUrl' {
     param($bridgeRoot)

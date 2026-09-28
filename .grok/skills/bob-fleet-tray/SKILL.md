@@ -57,11 +57,11 @@ They are not Cursor spending bars.
 
 1. `grok chat  {N%|n/a}` -- Sand (`GetSandUsageStatus.usagePercent`). Digest aliases `grok-weekly`, `sand` map here.
 2. `high cost models  {N%|n/a}` -- `planUsage.apiPercentUsed` (named models). Digest alias `other-models` maps here. Never pick Other Models as a worker fuel (`bob-token-handoff`).
-3. `auto  {N%|n/a}` -- `planUsage.autoPercentUsed` (Auto picker / Cursor Models / `autoBucketModels`). Legacy label **low cost models** is this same bar. MRB/PR fuel gate. Reset + `?` help on every row.
+3. `Low cost models  {N%|n/a}` -- TipForm label for wire id `auto` (`planUsage.autoPercentUsed` / Auto picker / Cursor Models / `autoBucketModels`). Id stays `auto` for cache/wire compat. MRB/PR fuel gate. Reset + `?` help on every row.
 
 Do **not** paint an **on-demand** bar. On-demand is spend-limit pay-as-you-go
 after included. Header **overspend** (GBP, right-aligned in the tile host)
-is enough. When the model is Auto, the meter is **auto**, not on-demand.
+is enough. When the model is Auto, the meter is **Low cost models** (id `auto`), not on-demand.
 
 Do **not** collapse groups into one `Cursor Models` strip. Do **not** prefix
 those rows with xAI seat labels.
@@ -115,7 +115,7 @@ Show time until weekly reset next to the meter, not only in digests.
 
 - Label uses **mutually exclusive units**: if remaining includes ≥1 whole day, show **only days** (`Until reset: 2 days`). If days is zero, show **only total minutes** (hours folded in: `3h15m` → `Until reset: 195 minutes`). Never show hours. Never show `0 days`. Clamp expired/negative to `Until reset: 0 minutes`.
 - **Hide when polled since reset:** if usage `FetchedAt` >= `period_end`, omit the reset line (percentage still shown).
-- **Each Cursor spending group** (`grok chat`, `high cost models`, `auto`): countdown on that row. `grok chat` uses Sand `nextResetTimestampUtc` (`sand_period_end`); the other two use the Cursor Spending billing cycle end. Per-group `period_end` on the seat cache wins when present.
+- **Each Cursor spending group** (`grok chat`, `high cost models`, `Low cost models`): countdown on that row. `grok chat` uses Sand `nextResetTimestampUtc` (`sand_period_end`) only — never Cursor `billingCycleEnd` (FR #448). The other two use the Cursor Spending billing cycle end. Per-group `period_end` on the seat cache wins for non-Sand groups when present.
 - **Each machine tile**: that xAI seat's `currentPeriod.end` from `unified.jsonl` (`Get-BobWeeklyRemaining`). Same-seat machines share one reset instant (and one remaining %).
 - Fleet share: IRC POINT still includes `reset=YYYY-MM-DD` for peers.
 - Durable cache: `~\.grok\bob-bridge\seat-period-end.json` (by_machine + by_seat). Import must **not** wipe an existing peer `period_end` when an older POINT lacks `reset=`.
@@ -126,7 +126,7 @@ Example control headings:
 
 `high cost models  N%  Until reset: 2 days`
 
-`auto  N%  Until reset: 195 minutes`
+`Low cost models  N%  Until reset: 195 minutes`
 
 `flamingo  -  Club Madeira (N%) - Until reset: 2 days`
 
@@ -242,7 +242,7 @@ Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visib
 2. Log tail `watch_bob_tray.log` for `tray up`, `tip show ok`, poll errors.
 3. Confirm `$notify.Visible` path still sets Visible=$true after start.
 4. Confirm `NotifyIcon.Text` is empty (no white P+ chip).
-5. Confirm title `#Bobiverse (<id>)`, three Cursor bars (grok chat, high cost models, auto) from **local** Spending when this host has a Cursor login; digest only fills nulls when it does not. Seat labels beside names; shared % on ntsa seats.
+5. Confirm title `#Bobiverse (<id>)`, three Cursor bars (grok chat, high cost models, Low cost models) from **local** Spending when this host has a Cursor login; digest only fills nulls when it does not. Seat labels beside names; shared % on ntsa seats.
 6. Bars stuck at `n/a` on MarchHare (no Cursor login): digest GET is not `https://irc.ntsa.uk/bob/v1/report`, or peers omitted `pcent`. Checklist: `bob-digest-webhook`. Do not invent the percent. On ionos/flamingo, `n/a` means local Spending failed — fix local, do not fall back to digest for the pool check.
 7. Click / Status does nothing: TipForm C# failed to compile -- check for duplicate `SendMessage` P/Invoke or Add-Type errors in the log.
 8. Refresh clears the card: rebuild cleared controls while redraw was suspended, or an exception after Clear -- drop WM_SETREDRAW; format labels before Clear; ResumeLayout + Refresh always.
@@ -337,9 +337,11 @@ then write `agent.quit.request` and stop the ear. Restart then relaunches via
 `!recycle` / bob_recycle must announce departure (`bob-{machine}: recycling … logging off IRC then restarting Watch-Bobiverse + TipForm tray`) then restart TipForm via `Start-BobFleetTray -ForceNew` — the same bootstrap as systray Restart — not a raw `Watch-BobTray.ps1` spawn.
 
 
-### TipForm pools / countdown (FR #445)
+### TipForm pools / countdown (FR #445 / #448)
 
 - **grok chat** bar = Cursor Sand only (`sand_remaining_pct` / `cursor_spending_groups[id=grok-chat]`). Never copy auto / high-cost.
+- **grok chat** reset = Sand weekly (`sand_period_end` / `nextResetTimestampUtc`) only. Never fall back to Cursor `billingCycleEnd` / `period_end` (FR #448).
+- TipForm label for wire id `auto` is **Low cost models** (id stays `auto`).
 - Reset countdown has **no** `Until reset:` prefix. `days > 0` → `N days, M hours`; `days = 0` → `N hours, M minutes`.
 - Local Bob publishes only its own pools (`Get-BobCursorPoolsForTray -LocalOnly` on Write-BobIrcStatus).
 

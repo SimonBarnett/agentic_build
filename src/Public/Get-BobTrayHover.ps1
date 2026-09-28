@@ -343,7 +343,7 @@ function Get-BobCursorSpendingFromApiFixture {
     $groups = @(
         [pscustomobject]@{ id = 'grok-chat'; label = 'grok chat'; used_pct = $sandUsed; remaining_pct = $sandRemain; source = 'GetSandUsageStatus.usagePercent' }
         [pscustomobject]@{ id = 'high-cost-models'; label = 'high cost models'; used_pct = $apiUsed; remaining_pct = $apiRemain; source = 'GetCurrentPeriodUsage.planUsage.apiPercentUsed' }
-        [pscustomobject]@{ id = 'auto'; label = 'auto'; used_pct = $autoUsed; remaining_pct = $autoRemain; source = 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' }
+        [pscustomobject]@{ id = 'auto'; label = 'Low cost models'; used_pct = $autoUsed; remaining_pct = $autoRemain; source = 'GetCurrentPeriodUsage.planUsage.autoPercentUsed' }
     )
     $periodEnd = $null
     if ($period -and $period.billingCycleEnd) { $periodEnd = [string]$period.billingCycleEnd }
@@ -853,8 +853,9 @@ function Get-BobCursorSpendingGroupCatalog {
         [pscustomobject]@{ id = 'grok-chat'; label = 'grok chat'; pcent_source = 'grok-chat' }
         [pscustomobject]@{ id = 'high-cost-models'; label = 'high cost models'; pcent_source = 'high-cost-models' }
         # Auto model picker → planUsage.autoPercentUsed (Cursor Models / autoBucketModels).
+        # TipForm label FR #448: "Low cost models" (id stays auto for wire/cache compat).
         # Not on-demand. Legacy id low-cost-models still accepted in remain lookups.
-        [pscustomobject]@{ id = 'auto'; label = 'auto'; pcent_source = 'cursor-models' }
+        [pscustomobject]@{ id = 'auto'; label = 'Low cost models'; pcent_source = 'cursor-models' }
     )
 }
 
@@ -877,7 +878,7 @@ Not the Auto meter. 0% means this bar is empty, not n/a.
         }
         '^(auto|low-cost-models|low.cost|cursor-models)$' {
             return @'
-auto (Auto model / Cursor Models pool)
+Low cost models (Auto model / Cursor Models pool)
 When the model picker is Auto, requests draw from this meter (planUsage.autoPercentUsed).
 autoBucketModels includes default (Auto), Composer, Grok, Vega, etc. Docs: Auto bills at the
 routed model's list price and uses the Cursor Models pool (Other Models only if the router
@@ -886,8 +887,8 @@ picks third-party). This is the cursor-models MRB/PR fuel gate. Not on-demand.
         }
         default {
             return @'
-Cursor spending group. Hover a named bar (grok chat / high cost / auto) for that quota.
-0% is a real remaining value — never shown as n/a.
+Cursor spending group. Hover a named bar (grok chat / high cost / Low cost models) for that quota.
+0% is a real remaining value - never shown as n/a.
 '@.Trim()
         }
     }
@@ -1326,8 +1327,9 @@ function Get-BobCursorGroupPeriodEndForTray {
     $gid = [string]$GroupId
     if ($OnSeat -and $LocalCursorDoc) {
         if ($gid -eq 'grok-chat') {
+            # FR #448: Sand weekly reset only — never Cursor billingCycleEnd.
             if ($LocalCursorDoc.sand_period_end) { return [string]$LocalCursorDoc.sand_period_end }
-            if ($LocalCursorDoc.period_end) { return [string]$LocalCursorDoc.period_end }
+            return $null
         }
         elseif ($LocalCursorDoc.period_end) {
             return [string]$LocalCursorDoc.period_end
@@ -1470,32 +1472,35 @@ function Get-BobCursorPoolsForTray {
         # 0% is a real value (#179) — only missing/null is n/a.
         $pctLabel = 'n/a'
         if ($null -ne $remain -and [string]$remain -ne '') { $pctLabel = ('{0}%' -f [int]$remain) }
-        # Per-group reset: grok chat uses Sand nextReset; spending + on-demand use billingCycleEnd.
-        $pe = $periodEnd
+        # Per-group reset: grok chat = Sand nextReset ONLY (FR #448 weekly). Never Cursor billingCycleEnd.
+        $pe = $null
         if ($gid -eq 'grok-chat') {
             if ($sandPeriodEnd) { $pe = $sandPeriodEnd }
             elseif ($ce -and $ce.groups -and $ce.groups.'grok-chat' -and $ce.groups.'grok-chat'.period_end) {
                 $pe = [string]$ce.groups.'grok-chat'.period_end
             }
         }
-        elseif (-not $LocalOnly) {
-            if ($ce -and $ce.groups) {
+        else {
+            $pe = $periodEnd
+            if (-not $LocalOnly) {
+                if ($ce -and $ce.groups) {
+                    $ge = $ce.groups.$gid
+                    if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
+                    if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
+                }
+                if ($null -eq $pe -or $pe -eq '') {
+                    foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+                        if (-not $seatEnt.Value.groups) { continue }
+                        $ge = $seatEnt.Value.groups.$gid
+                        if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
+                    }
+                }
+            }
+            elseif ($ce -and $ce.groups) {
                 $ge = $ce.groups.$gid
                 if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
                 if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
             }
-            if ($null -eq $pe -or $pe -eq '') {
-                foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
-                    if (-not $seatEnt.Value.groups) { continue }
-                    $ge = $seatEnt.Value.groups.$gid
-                    if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
-                }
-            }
-        }
-        elseif ($ce -and $ce.groups) {
-            $ge = $ce.groups.$gid
-            if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
-            if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
         }
         $fetchedAt = $null
         if ($LocalCursorDoc -and $LocalCursorDoc.fetched_at) { $fetchedAt = [string]$LocalCursorDoc.fetched_at }
