@@ -152,6 +152,55 @@ function Invoke-BobSystrayTidy {
 $hits = @(Get-BobSystrayTrayProcesses)
 
 if ($ForceNew -and $hits.Count -gt 0) {
+    # FR #453: if Restart already announced, outbox is empty; if an external
+    # ForceNew kills a live tray, still try a best-effort departure line first.
+    try {
+        $ircHomeFn = Join-Path $env:USERPROFILE '.agentic-irc-bobiverse'
+        if (Test-Path -LiteralPath $ircHomeFn) {
+            $midFn = Get-BobSystrayMachineId
+            if (-not $midFn) { $midFn = 'unknown' }
+            $nickFn = 'bob-{0}' -f $midFn
+            $msgFn = '{0}: tray Restart - logging off IRC (graceful PART/QUIT)' -f $nickFn
+            $lineFn = 'PRIVMSG #bobiverse :{0}' -f $msgFn
+            $obFn = Join-Path $ircHomeFn 'outbox.txt'
+            $needAnnounce = $true
+            if (Test-Path -LiteralPath $obFn) {
+                $curOb = ''
+                try { $curOb = [IO.File]::ReadAllText($obFn) } catch { }
+                if ($curOb -and $curOb.IndexOf('logging off IRC', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                    $needAnnounce = $false
+                }
+            }
+            $agentStillUp = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                    $_.CommandLine -and $_.CommandLine -match 'irc_agent\.py' -and $_.CommandLine -match 'bobiverse'
+                }).Count -gt 0
+            # Skip if Restart already logged out (agent gone) — avoid orphan announce for next join.
+            if ($needAnnounce -and $agentStillUp) {
+                if (Test-Path -LiteralPath $obFn) {
+                    $lenFn = 0
+                    try { $lenFn = ([IO.FileInfo]$obFn).Length } catch { }
+                    if ($lenFn -gt 0) {
+                        $bakFn = Join-Path $ircHomeFn ('outbox.bak-depart-forcenew-{0}.txt' -f [datetime]::UtcNow.ToString('yyyyMMdd-HHmmss'))
+                        try { [IO.File]::Copy($obFn, $bakFn, $true) } catch { }
+                    }
+                }
+                [IO.File]::WriteAllText($obFn, $lineFn + "`n", [Text.UTF8Encoding]::new($false))
+                Write-Output ('irc departure announce (ForceNew): {0}' -f $msgFn)
+                $deadlineFn = [datetime]::UtcNow.AddSeconds(20)
+                while ([datetime]::UtcNow -lt $deadlineFn) {
+                    if (-not (Test-Path -LiteralPath $obFn)) { break }
+                    $rawFn = ''
+                    try { $rawFn = [IO.File]::ReadAllText($obFn) } catch { }
+                    if ([string]::IsNullOrWhiteSpace($rawFn) -or $rawFn.IndexOf($lineFn, [StringComparison]::Ordinal) -lt 0) { break }
+                    Start-Sleep -Milliseconds 250
+                }
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+    catch {
+        Write-Warning ("ForceNew IRC departure announce failed: {0}" -f $_.Exception.Message)
+    }
     foreach ($h in $hits) {
         try { Stop-Process -Id ([int]$h.ProcessId) -Force -ErrorAction SilentlyContinue } catch { }
     }

@@ -324,12 +324,18 @@ IconLocation via AgentMonitor `Publish-DesktopShortcuts.ps1`.
 - Do not omit registered bobiverse seats. Do not invent jobs. Do not WinRM.
 - CAST IRON: Cursor pool remaining / Agents fuel gate = local Spending. Digest fills nulls only; never overwrites local.
 
-### Exit / Restart IRC (agentic_irc #250)
+### Exit / Restart IRC (agentic_irc #250 / FR #453)
 
 `Exit` and `Restart` on the systray menu announce via `bob-{machine}` on
-`#bobiverse` (`tray Exit|Restart - logging off IRC`), wait for outbox drain,
-then write `agent.quit.request` and stop the ear. Restart then relaunches via
-`Start-BobFleetTray -ForceNew` (same bootstrap as Start).
+`#bobiverse` (`tray Exit|Restart - logging off IRC`). Ordering CAST IRON:
+
+1. Archive any stale `outbox.txt` backlog, write **only** the departure PRIVMSG.
+2. Wait until irc_agent drains that line (outbox empty / marker absent).
+3. Write `agent.quit.request`, wait for bobiverse `irc_agent` to stop.
+4. Then `Stop-BobiverseMoot` (force leftovers). Never kill before announce flush.
+
+`Restart` then relaunches via `Start-BobFleetTray -ForceNew` (same bootstrap as
+Start). External `-ForceNew` also best-effort announces if no prior logout line.
 
 
 ### Recycle Bob (agentic_build #442)
