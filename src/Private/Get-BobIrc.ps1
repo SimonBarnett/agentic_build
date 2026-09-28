@@ -1,4 +1,4 @@
-﻿function Get-BobiverseConfigPath {
+function Get-BobiverseConfigPath {
     $envp = [string]$env:BOB_IRC_CONFIG
     if ($envp -and $envp.Trim() -and (Test-Path $envp.Trim())) { return $envp.Trim() }
     Join-Path (Get-ModuleRoot) 'config\bobiverse.json'
@@ -1154,8 +1154,15 @@ function Apply-BobIrcDigestCursorPools {
         if (-not $pool) { continue }
         $poolId = [string]$pool.id
         if (-not $poolId) { $poolId = [string]$pool.seat }
-        if (-not $poolId) { continue }
-        $seatId = Resolve-BobCursorPoolSeatId $poolId
+        if (-not $poolId -and $pool.seat_id) { $poolId = [string]$pool.seat_id }
+        $groupId = $null
+        if ($pool.group) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group) }
+        elseif ($pool.group_id) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group_id) }
+        # #456 slim rows: group_id alone is enough (no seat id on digest merge pools).
+        if (-not $poolId -and -not $groupId) { continue }
+        $seatId = $null
+        if ($poolId) { $seatId = Resolve-BobCursorPoolSeatId $poolId }
+        if (-not $seatId -and $groupId) { $seatId = $groupId }
         if (-not $seatId) { continue }
         $rem = $null
         if ($null -ne $pool.remaining -and [string]$pool.remaining -ne '') {
@@ -1168,16 +1175,14 @@ function Apply-BobIrcDigestCursorPools {
         if ($pool.period_end) { $period = [string]$pool.period_end }
         elseif ($pool.reset) { $period = [string]$pool.reset }
         $label = $null
-        if ($pool.label) { $label = [string]$pool.label }
+        if ($pool.group_label) { $label = [string]$pool.group_label }
+        elseif ($pool.label) { $label = [string]$pool.label }
         if ($pool.overage) {
             $ov = [string]$pool.overage
             if ($label) { $label = ('{0} {1}' -f $label, $ov) }
             else { $label = $ov }
         }
-        $groupId = $null
-        if ($pool.group) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group) }
-        elseif ($pool.group_id) { $groupId = Normalize-BobCursorSpendingGroupId ([string]$pool.group_id) }
-        elseif ($label) { $groupId = Normalize-BobCursorSpendingGroupId $label }
+        if (-not $groupId -and $label) { $groupId = Normalize-BobCursorSpendingGroupId $label }
         # Cursor spending groups are fleet-shared (MarchHare has no local Cursor login).
         # Digest pool ids are cursor-models/other-models/grok-weekly - fan out to every seat.
         $seatTargets = @()
@@ -1188,14 +1193,20 @@ function Apply-BobIrcDigestCursorPools {
             foreach ($seat in @(Get-BobSeatConfig)) {
                 if ($seat -and $seat.id) { $seatTargets += ,[string]$seat.id }
             }
-            if ($seatTargets.Count -eq 0 -and $seatId) { $seatTargets += ,$seatId }
+            if ($seatTargets.Count -eq 0 -and $seatId -match '^(smart-catalogue|club-madeira|ntsa)$') {
+                $seatTargets += ,$seatId
+            }
         }
         foreach ($sid in $seatTargets) {
             if (-not $sid) { continue }
             if ($groupId) {
                 Save-BobCursorPoolGroupForSeat -SeatId $sid -GroupId $groupId -RemainingPct $rem -PeriodEnd $period
             }
-            if (-not $groupId -or $groupId -eq 'low-cost-models' -or $groupId -eq 'auto') {
+            # Seat-level period_end is Cursor billing only — never Sand weekly (#456 / FR #448).
+            if ($groupId -eq 'low-cost-models' -or $groupId -eq 'auto') {
+                Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $rem -PeriodEnd $period -Label $label
+            }
+            elseif (-not $groupId) {
                 Save-BobCursorPoolForSeat -SeatId $sid -RemainingPct $rem -PeriodEnd $period -Label $label
             }
         }
@@ -1258,6 +1269,24 @@ function Test-BobIrcDigestMachineReportsIdle {
     return $false
 }
 
+function ConvertTo-BobDigestCursorPoolRows {
+    param($Pools)
+    # Slim rows for digest merge / fingerprint (#456): group + remaining + period_end only.
+    $rows = @()
+    foreach ($p in @($Pools)) {
+        if (-not $p) { continue }
+        $gid = [string]$p.group_id
+        if (-not $gid -and $p.id) { $gid = [string]$p.id }
+        if (-not $gid) { continue }
+        $rows += ,[pscustomobject]@{
+            group_id      = $gid
+            group_label   = $(if ($p.group_label) { [string]$p.group_label } elseif ($p.label) { [string]$p.label } else { $gid })
+            remaining_pct = $p.remaining_pct
+            period_end    = $(if ($p.period_end) { [string]$p.period_end } else { $null })
+        }
+    }
+    return @($rows)
+}
 function Merge-BobIrcDigestPeerWithPrevious {
     param($Ent, $Doc, $Prev)
     if (-not $Doc -or -not $Prev) { return $Doc }
@@ -1289,6 +1318,15 @@ function Merge-BobIrcDigestPeerWithPrevious {
     }
     if ($names -notcontains 'cursor_period_end' -and $Prev.cursor_period_end) {
         $Doc | Add-Member -NotePropertyName cursor_period_end -NotePropertyValue ([string]$Prev.cursor_period_end) -Force
+    }
+    if ($names -notcontains 'sand_period_end' -and $Prev.sand_period_end) {
+        $Doc | Add-Member -NotePropertyName sand_period_end -NotePropertyValue ([string]$Prev.sand_period_end) -Force
+    }
+    if ($names -notcontains 'cursor_pools') {
+        $prevPools = @($Prev.cursor_pools)
+        if ($prevPools.Count -gt 0) {
+            $Doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @(ConvertTo-BobDigestCursorPoolRows -Pools $prevPools) -Force
+        }
     }
     foreach ($rk in @('remaining_pct', 'account_remaining_pct', 'cursor_remaining_pct')) {
         if ($names -notcontains $rk) {
@@ -1377,6 +1415,8 @@ function ConvertTo-BobIrcPeerFromDigestMachine {
         period_end        = $periodEnd
         cursor_label      = $(if ($names -contains 'cursor_label' -and $Ent.cursor_label) { [string]$Ent.cursor_label } else { $null })
         cursor_period_end = $(if ($names -contains 'cursor_period_end' -and $Ent.cursor_period_end) { [string]$Ent.cursor_period_end } else { $null })
+        sand_period_end   = $(if ($names -contains 'sand_period_end' -and $Ent.sand_period_end) { [string]$Ent.sand_period_end } else { $null })
+        cursor_pools      = $(if ($names -contains 'cursor_pools' -and $Ent.cursor_pools) { @(ConvertTo-BobDigestCursorPoolRows -Pools @($Ent.cursor_pools)) } else { @() })
         remaining_pct     = $(if ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
         account_remaining_pct = $(if ($names -contains 'account_remaining_pct' -and $null -ne $Ent.account_remaining_pct -and [string]$Ent.account_remaining_pct -ne '') { try { [int]$Ent.account_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
         cursor_remaining_pct  = $(if ($names -contains 'cursor_remaining_pct' -and $null -ne $Ent.cursor_remaining_pct -and [string]$Ent.cursor_remaining_pct -ne '') { try { [int]$Ent.cursor_remaining_pct } catch { $null } } elseif ($names -contains 'remaining_pct' -and $null -ne $Ent.remaining_pct -and [string]$Ent.remaining_pct -ne '') { try { [int]$Ent.remaining_pct } catch { $null } } else { $null })
@@ -1530,6 +1570,10 @@ function Import-BobIrcDigestJson {
     foreach ($prop in @($nodes.PSObject.Properties)) {
         $doc = ConvertTo-BobIrcPeerFromDigestMachine -MachineId ([string]$prop.Name) -Ent $prop.Value
         if (-not $doc) { continue }
+        # #456: per-machine pools (when chair persists them) — apply group period_ends.
+        if ($doc.cursor_pools -and @($doc.cursor_pools).Count -gt 0) {
+            Apply-BobIrcDigestCursorPools -Pools @($doc.cursor_pools)
+        }
         $resolved = [string]$doc.id
         Save-BobIrcChairDigestPeer -MachineId $resolved -ChairPeer $doc
         $peerPath = Join-Path $dir ($resolved + '.json')
@@ -1852,7 +1896,14 @@ function Test-BobIrcDigestWebhookChairInSync {
         return $false
     }
     if ($Chair.cursor_period_end -and [string]$Chair.cursor_period_end -ne [string]$Local.cursor_period_end) { return $false }
+    if ($Chair.sand_period_end -and [string]$Chair.sand_period_end -ne [string]$Local.sand_period_end) { return $false }
     if ($Chair.period_end -and [string]$Chair.period_end -ne [string]$Local.period_end) { return $false }
+    # #456: per-pool remaining + period_end must stay in sync (Sand weekly vs billing).
+    if ($Chair.cursor_pools -or $Local.cursor_pools) {
+        $chairPools = Get-BobDigestWebhookPoolSnapshot -Pools @(ConvertTo-BobDigestCursorPoolRows -Pools @($Chair.cursor_pools))
+        $localPools = Get-BobDigestWebhookPoolSnapshot -Pools @(ConvertTo-BobDigestCursorPoolRows -Pools @($Local.cursor_pools))
+        if ($chairPools -ne $localPools) { return $false }
+    }
     if ($Chair.model -and [string]$Chair.model -ne [string]$Local.model) { return $false }
     if ($Chair.kind -and [string]$Chair.kind -ne [string]$Local.kind) { return $false }
     if ($Chair.repo -and [string]$Chair.repo -ne [string]$Local.repo) { return $false }
@@ -1884,12 +1935,17 @@ function Get-BobDigestWebhookFingerprint {
     if ($jobsNorm.Count -gt 0) {
         $jobsJson = ($jobsNorm | ConvertTo-Json -Compress -Depth 4)
     }
+    $poolsSig = ''
+    if ($Doc.cursor_pools) {
+        $poolsSig = Get-BobDigestWebhookPoolSnapshot -Pools @(ConvertTo-BobDigestCursorPoolRows -Pools @($Doc.cursor_pools))
+    }
     $parts = @(
         [string]([int]$Doc.running)
         [string]([int]$Doc.queued)
         [string]$Doc.weekly
         [string]$Doc.cursor_label
         [string]$Doc.cursor_period_end
+        [string]$Doc.sand_period_end
         [string]$Doc.period_end
         [string]$Doc.model
         [string]$Doc.kind
@@ -1903,6 +1959,7 @@ function Get-BobDigestWebhookFingerprint {
         [string]$Doc.remaining_pct
         [string]$Doc.overage_gbp
         $(if ($Doc.pcent) { ($Doc.pcent | ConvertTo-Json -Compress -Depth 5) } else { '' })
+        $poolsSig
         $jobsJson
     )
     return ($parts -join '|')
@@ -1923,6 +1980,8 @@ function Build-BobDigestWebhookMergePayload {
     if ($null -ne $Doc.weekly -and [string]$Doc.weekly -ne '') { $payload.weekly = [int]$Doc.weekly }
     if ($Doc.cursor_label) { $payload.cursor_label = [string]$Doc.cursor_label }
     if ($Doc.cursor_period_end) { $payload.cursor_period_end = [string]$Doc.cursor_period_end }
+    # #456: Sand / grok-chat weekly reset — distinct from Cursor billingCycleEnd.
+    if ($Doc.sand_period_end) { $payload.sand_period_end = [string]$Doc.sand_period_end }
     if ($Doc.period_end) { $payload.period_end = [string]$Doc.period_end }
     if ($Doc.model) { $payload.model = [string]$Doc.model }
     if ($Doc.kind) { $payload.kind = [string]$Doc.kind }
@@ -1936,6 +1995,11 @@ function Build-BobDigestWebhookMergePayload {
     if ($null -ne $Doc.queued) { $payload.queued = [int]$Doc.queued }
     if ($Doc.jobs -and @($Doc.jobs).Count -gt 0) { $payload.jobs = @($Doc.jobs) }
     if ($Doc.pcent) { $payload.pcent = $Doc.pcent }
+    # #456: each Bob reports per-pool remaining + period_end (grok-chat weekly vs high/auto billing).
+    if ($Doc.cursor_pools) {
+        $poolRows = @(ConvertTo-BobDigestCursorPoolRows -Pools @($Doc.cursor_pools))
+        if ($poolRows.Count -gt 0) { $payload.cursor_pools = @($poolRows) }
+    }
     # CAST IRON (Simon 2026-09-27): month overspend GBP on every usage heartbeat.
     if ($null -ne $Doc.overage_gbp -and [string]$Doc.overage_gbp -ne '') {
         try { $payload.overage_gbp = [double]$Doc.overage_gbp } catch { }
@@ -2113,6 +2177,7 @@ function Write-BobIrcStatus {
     Save-BobSeatPeriodEnd -MachineId $id -PeriodEnd $periodEnd -Weekly $week
     $cursorLabel = $null
     $cursorPeriodEnd = $null
+    $sandPeriodEnd = $null
     $cursorRemainingPct = $null
     $overageGbp = $null
     try {
@@ -2126,6 +2191,8 @@ function Write-BobIrcStatus {
                 if ($null -ne $overageGbp) { $cursorLabel = ('-{0}{1:N2}' -f [char]0x00A3, [math]::Abs([double]$overageGbp)) }
             }
             if ($cw.period_end) { $cursorPeriodEnd = [string]$cw.period_end }
+            # #456: Sand / grok-chat weekly reset (never Cursor billingCycleEnd).
+            if ($cw.sand_period_end) { $sandPeriodEnd = [string]$cw.sand_period_end }
             if ($cursorLabel -and $cursorLabel -ne 'empty') {
                 Save-BobCursorAccountCache -Label $cursorLabel -PeriodEnd $cursorPeriodEnd
             }
@@ -2182,6 +2249,7 @@ function Write-BobIrcStatus {
         period_end             = $periodEnd
         cursor_label           = $cursorLabel
         cursor_period_end      = $cursorPeriodEnd
+        sand_period_end        = $sandPeriodEnd
         remaining_pct          = $cursorRemainingPct
         account_remaining_pct  = $cursorRemainingPct
         cursor_remaining_pct   = $cursorRemainingPct
@@ -2200,11 +2268,20 @@ function Write-BobIrcStatus {
         source                 = 'irc'
     }
     try {
-        # FR #445: publish only this host's pools (never peer/fleet values as own).
+        # FR #445 / #456: publish only this host's pools (never peer/fleet values as own).
+        # Each pool carries its own period_end (grok-chat = Sand weekly; high/auto = billing).
         $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @() -LocalOnly)
-        if ($poolRows.Count -gt 0) {
-            $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($poolRows) -Force
-            Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($poolRows)
+        $slimPools = @(ConvertTo-BobDigestCursorPoolRows -Pools $poolRows)
+        if ($slimPools.Count -gt 0) {
+            $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($slimPools) -Force
+            Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($slimPools)
+            $localSeat = Get-BobSeatForMachine -MachineId $id
+            if ($localSeat -and $localSeat.id) {
+                foreach ($pr in $slimPools) {
+                    Save-BobCursorPoolGroupForSeat -SeatId ([string]$localSeat.id) -GroupId ([string]$pr.group_id) `
+                        -RemainingPct $pr.remaining_pct -PeriodEnd $(if ($pr.period_end) { [string]$pr.period_end } else { $null })
+                }
+            }
         }
     }
     catch { }

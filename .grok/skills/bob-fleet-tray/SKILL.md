@@ -84,10 +84,11 @@ known local/cache value.
 Publish path (`Write-BobIrcStatus` → digest `overage_gbp` / `weekly`) stays
 unchanged for peers.
 
-Hosts that do have a login (ionos, flamingo) still **publish** `pcent` via
-`Write-BobIrcStatus` so MarchHare can fill nulls. Shape/POST checklist:
-`bob-digest-webhook`. Do not invent a percent. Missing is `n/a`. `0%` is
-a real value.
+Hosts that do have a login (ionos, flamingo) still **publish** `pcent` **and**
+per-pool `cursor_pools` (with `period_end`) plus `sand_period_end` via
+`Write-BobIrcStatus` so MarchHare can fill nulls with the correct reset clocks
+(issue #456). Shape/POST checklist: `bob-digest-webhook`. Do not invent a
+percent. Missing is `n/a`. `0%` is a real value.
 
 `account_remaining_pct` on `Get-BobTrayHover` is the **auto** remaining
 (MRB fuel gate), filled from **local** Cursor first. Machine rows are
