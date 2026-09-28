@@ -1984,19 +1984,38 @@ function Get-BobTrayHover {
         $tileReset = Format-BobResetLabel -PeriodEnd $tileEnd -FetchedAt $tileFetched
         $upSince = $null
         if ($uptimeByMachine.ContainsKey($mid)) { $upSince = [string]$uptimeByMachine[$mid] }
+        $tileAvail = $null
+        $tileAvailReason = $null
+        if ($mid -eq $machineId -and (Get-Command Get-BobGrokAvailability -ErrorAction SilentlyContinue)) {
+            try {
+                $wObj = $null
+                if ($week -and $week.period_end) { $wObj = $week }
+                elseif ($null -ne $wPct -or $tileEnd) {
+                    $wObj = [pscustomobject]@{ remaining_pct = $wPct; period_end = $tileEnd; format = $(if ($week) { $week.format } else { $null }) }
+                }
+                $av = Get-BobGrokAvailability -Weekly $wObj
+                if ($av) {
+                    $tileAvail = [string]$av.state
+                    $tileAvailReason = [string]$av.reason
+                }
+            }
+            catch { }
+        }
         $tile = New-Object psobject -Property @{
-            id             = $mid
-            job_count      = $rows.Count
-            jobs           = $rows
-            reach          = $reach
-            last_seen      = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
-            remaining_pct  = $wPct
-            period_end     = $tileEnd
-            reset_label    = $tileReset
-            up_since       = $upSince
-            seat_id        = $(if ($seatInfo) { [string]$seatInfo.id } else { $null })
-            seat_label     = $(if ($seatInfo) { [string]$seatInfo.label } else { $null })
-            seat_email     = $(if ($seatInfo) { [string]$seatInfo.email } else { $null })
+            id                   = $mid
+            job_count            = $rows.Count
+            jobs                 = $rows
+            reach                = $reach
+            last_seen            = $(if ($seenBy.ContainsKey($mid)) { $seenBy[$mid] } else { $null })
+            remaining_pct        = $wPct
+            period_end           = $tileEnd
+            reset_label          = $tileReset
+            availability         = $tileAvail
+            availability_reason  = $tileAvailReason
+            up_since             = $upSince
+            seat_id              = $(if ($seatInfo) { [string]$seatInfo.id } else { $null })
+            seat_label           = $(if ($seatInfo) { [string]$seatInfo.label } else { $null })
+            seat_email           = $(if ($seatInfo) { [string]$seatInfo.email } else { $null })
         }
         $tiles += ,$tile
         $pctLabel = 'n/a'
@@ -2004,6 +2023,7 @@ function Get-BobTrayHover {
         $jlName = $mid
         if ($seatInfo -and $seatInfo.label) { $jlName = ('{0}  -  {1}' -f $mid, $seatInfo.label) }
         $machHeading = ('  {0} ({1})' -f $jlName, $pctLabel)
+        if ($tileAvail -and $null -eq $wPct) { $machHeading = ('{0} [{1}]' -f $machHeading, $tileAvail) }
         if ($tileReset) { $machHeading = ('{0} - {1}' -f $machHeading, $tileReset) }
         $jobLines += $machHeading
         if ($upSince) { $jobLines += ('    up since {0}' -f $upSince) }

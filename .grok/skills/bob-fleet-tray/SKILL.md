@@ -98,6 +98,7 @@ Grok Build weekly + fuels (`cursor-models`, `grok-build`, `copilot`,
 - Do **not** label Grok Bot Sand overage as Cursor Models remaining. Overage GBP from `GetCurrentPeriodUsage.spendLimitUsage.individualUsed` (USD cents to GBP FX, not `tip_cursor.json`) is a separate signal. Show it as overspend, not as the fuel remaining figure. **CAST IRON (issue #423):** TipForm Cursor overspend (`Get-BobCursorOverageGbp` / `account_overage_gbp`) is **local Spending only** — never digest GET, never `cursor_pools` / seat-cache `overage_label`. Digest may still *publish* `overage_gbp` for peers; this seat must not paint from that. Digest `overage_gbp` may be null while local TipForm has GBP (`box-usage`). A plain `0%` or `82%` label is not overspend.
 - Empty auto remaining (0%): then fuel falls through to grok.exe. Sand 100% does not by itself mean auto is empty.
 - Machine tile bars still use xAI `unified.jsonl` weekly remaining (`Get-BobWeeklyRemaining`: legacy `creditUsagePercent`, or Grok 1.0.41+ `currentPeriod.end` with `remaining_pct` unknown / `n/a` — FR #427).
+- **FR #430:** start gate uses `Get-BobGrokAvailability` when `%` is null — verified local auth + current weekly period ⇒ start without API key; only explicit `remaining_pct=0` is exhaustion (`needs Simon: API key`). Unknown/stale/auth-failed ≠ exhausted.
 - Numbers: `box-usage`. Do not invent weekly %.
 
 Fleet peer freshness: `Watch-Bobiverse` polls `!bobiverse` (~120s). Chair

@@ -1005,12 +1005,13 @@ function Get-BobTrayMachineGrokChatPcent {
 
 function Resolve-BobTrayGrokFuelAtStart {
     <#
-      Grok watch-seat start fuel gate (CAST IRON Simon 2026-09-27):
+      Grok watch-seat start fuel gate (CAST IRON Simon 2026-09-27 + FR #430):
       Local weekly remaining first (TipForm machine tile / Get-BobWeeklyRemaining).
       Digest pcent.grok-chat is fill-only - blank digest must NOT block when local weekly is known.
       - remaining > 0  => pool
-      - remaining = 0  => session-key (dialog)
-      - blank/missing local+digest => unknown (stop; never keyless)
+      - remaining = 0  => session-key (dialog) — confirmed exhaustion only
+      - remaining blank: Get-BobGrokAvailability — verified local auth+period => pool;
+        unknown/stale/auth-failed => stop-unknown (never treat as exhausted)
     #>
     param(
         [object]$Digest,
@@ -1020,24 +1021,67 @@ function Resolve-BobTrayGrokFuelAtStart {
     if ($null -eq $remain -and $Digest) {
         $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
     }
-    if ($null -eq $remain) {
+    if ($null -ne $remain) {
+        if ([int]$remain -gt 0) {
+            return [pscustomobject]@{
+                remaining    = [int]$remain
+                fuel_mode    = 'pool'
+                action       = 'start-pool'
+                availability = 'available'
+                reason       = 'legacy-remaining-pct'
+            }
+        }
         return [pscustomobject]@{
-            remaining = $null
-            fuel_mode = 'unknown'
-            action    = 'stop-unknown'
+            remaining    = [int]$remain
+            fuel_mode    = 'session-key'
+            action       = 'prompt-session'
+            availability = 'exhausted'
+            reason       = 'legacy-remaining-pct-zero'
         }
     }
-    if ([int]$remain -gt 0) {
+
+    $week = $null
+    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
+        try { $week = Get-BobWeeklyRemaining } catch { $week = $null }
+    }
+    $auth = $null
+    if (Get-Command Get-BobGrokAuthSnapshot -ErrorAction SilentlyContinue) {
+        try { $auth = Get-BobGrokAuthSnapshot } catch { $auth = $null }
+    }
+    $avail = $null
+    if (Get-Command Get-BobGrokAvailability -ErrorAction SilentlyContinue) {
+        try { $avail = Get-BobGrokAvailability -Weekly $week -Auth $auth } catch { $avail = $null }
+    }
+    if ($avail -and [string]$avail.state -eq 'available') {
         return [pscustomobject]@{
-            remaining = [int]$remain
-            fuel_mode = 'pool'
-            action    = 'start-pool'
+            remaining    = $null
+            fuel_mode    = 'pool'
+            action       = 'start-pool'
+            availability = 'available'
+            reason       = [string]$avail.reason
         }
+    }
+    if ($avail -and [string]$avail.state -eq 'exhausted') {
+        return [pscustomobject]@{
+            remaining    = 0
+            fuel_mode    = 'session-key'
+            action       = 'prompt-session'
+            availability = 'exhausted'
+            reason       = [string]$avail.reason
+        }
+    }
+    $reason = 'unknown'
+    $state = 'unknown'
+    if ($avail) {
+        $reason = [string]$avail.reason
+        $state = [string]$avail.state
     }
     return [pscustomobject]@{
-        remaining = [int]$remain
-        fuel_mode = 'session-key'
-        action    = 'prompt-session'
+        remaining    = $null
+        fuel_mode    = 'unknown'
+        action       = 'stop-unknown'
+        availability = $state
+        reason       = $reason
     }
 }
 
@@ -1224,11 +1268,12 @@ function Start-BobTrayAgentWatch {
         # Local weekly first (CAST IRON); digest pcent only fills nulls.
         $fuel = Resolve-BobTrayGrokFuelAtStart
         if ($fuel.action -eq 'stop-unknown') {
-            Write-TrayLog 'agents: grok fuel_mode=unknown (local weekly blank/missing) - refusing keyless start'
+            $why = if ($fuel.reason) { [string]$fuel.reason } else { 'unknown' }
+            Write-TrayLog ('agents: grok fuel_mode=unknown reason={0} - refusing keyless start' -f $why)
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             try {
                 [void][System.Windows.Forms.MessageBox]::Show(
-                    'Local Grok weekly remaining is blank/missing. Will not start a keyless Grok seat.',
+                    ("Grok Build availability is {0} ({1}). Not exhausted — fix local auth/billing freshness, then retry. Do not enter an API key unless the pool is confirmed at 0%." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
                     'Grok fuel unknown',
                     [System.Windows.Forms.MessageBoxButtons]::OK,
                     [System.Windows.Forms.MessageBoxIcon]::Warning
@@ -1696,10 +1741,11 @@ function Start-BobTrayPlanAgent {
         # Same start-once rule as Agents > Grok (local weekly; unknown => stop).
         $fuel = Resolve-BobTrayGrokFuelAtStart
         if ($fuel.action -eq 'stop-unknown') {
-            Write-TrayLog 'plan: grok fuel_mode=unknown - refusing keyless Plan start'
+            $why = if ($fuel.reason) { [string]$fuel.reason } else { 'unknown' }
+            Write-TrayLog ('plan: grok fuel_mode=unknown reason={0} - refusing keyless Plan start' -f $why)
             try { Publish-BobTrayFuelMode -FuelMode 'unknown' } catch { }
             [void][System.Windows.Forms.MessageBox]::Show(
-                'Local Grok weekly remaining is blank/missing. Will not start a keyless Plan seat.',
+                ("Grok Build availability is {0} ({1}). Not exhausted — fix local auth/billing freshness, then retry." -f $(if ($fuel.availability) { $fuel.availability } else { 'unknown' }), $why),
                 'Plan seat',
                 [System.Windows.Forms.MessageBoxButtons]::OK,
                 [System.Windows.Forms.MessageBoxIcon]::Warning

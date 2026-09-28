@@ -205,6 +205,173 @@ function Get-BobRemainingPctValue {
     try { return [int]$raw } catch { return $null }
 }
 
+function Get-BobGrokAuthSnapshot {
+    <#
+    .SYNOPSIS
+      Read-only local Grok auth/subscription snapshot from settings_cache.json.
+    .NOTES
+      FR #430: never logs secrets. Override path with BOB_GROK_SETTINGS_CACHE for tests.
+    #>
+    param([string]$Path)
+    if (-not $Path) {
+        if ($env:BOB_GROK_SETTINGS_CACHE -and [string]$env:BOB_GROK_SETTINGS_CACHE.Trim()) {
+            $Path = [string]$env:BOB_GROK_SETTINGS_CACHE.Trim()
+        }
+        else {
+            $Path = Join-Path $env:USERPROFILE '.grok\settings_cache.json'
+        }
+    }
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        $wrap = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $wrap.payload) { return $null }
+        $payload = $wrap.payload
+        if ($payload -is [string]) { $payload = $payload | ConvertFrom-Json }
+        $s = $payload.settings
+        if (-not $s) { return $null }
+        return [pscustomobject]@{
+            allow_access              = $s.allow_access
+            subscription_tier_display = [string]$s.subscription_tier_display
+            default_model             = [string]$s.default_model
+            fetched_at                = [string]$payload.fetched_at
+            grok_version_reported     = [string]$payload.grok_version
+            source                    = 'settings_cache.json'
+        }
+    }
+    catch { return $null }
+}
+
+function Test-BobGrokAllowAccessTrue {
+    param($Auth)
+    if (-not $Auth) { return $false }
+    $a = $Auth.allow_access
+    if ($a -is [bool]) { return [bool]$a }
+    $s = [string]$a
+    return ($s -eq 'True' -or $s -eq 'true' -or $s -eq '1')
+}
+
+function Get-BobGrokAvailability {
+    <#
+    .SYNOPSIS
+      Explicit Grok Build availability state (FR #430) — separate from remaining_pct.
+    .OUTPUTS
+      state: available | exhausted | unknown | auth-failed | stale
+      Never invents remaining_pct. Never spends credits / prompts / network beyond local files.
+    #>
+    param(
+        $Weekly,
+        $Auth,
+        [datetime]$UtcNow = [datetime]::UtcNow,
+        [int]$AuthMaxAgeHours = 168
+    )
+    if (-not $UtcNow.Kind -or $UtcNow.Kind -eq [DateTimeKind]::Unspecified) {
+        $UtcNow = [DateTime]::SpecifyKind($UtcNow, [DateTimeKind]::Utc)
+    }
+    else { $UtcNow = $UtcNow.ToUniversalTime() }
+    $checked = $UtcNow.ToString('o')
+    $periodEnd = $null
+    if ($Weekly -and $Weekly.period_end) { $periodEnd = [string]$Weekly.period_end }
+
+    $pct = Get-BobRemainingPctValue $Weekly
+    if ($null -ne $pct) {
+        if ($pct -gt 0) {
+            return [pscustomobject]@{
+                state         = 'available'
+                reason        = 'legacy-remaining-pct'
+                remaining_pct = $pct
+                period_end    = $periodEnd
+                checked_at    = $checked
+                format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { 'legacy' })
+            }
+        }
+        return [pscustomobject]@{
+            state         = 'exhausted'
+            reason        = 'legacy-remaining-pct-zero'
+            remaining_pct = 0
+            period_end    = $periodEnd
+            checked_at    = $checked
+            format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { 'legacy' })
+        }
+    }
+
+    if (-not $Auth) { $Auth = Get-BobGrokAuthSnapshot }
+    if (-not $Auth) {
+        return [pscustomobject]@{
+            state         = 'unknown'
+            reason        = 'no-auth-snapshot'
+            remaining_pct = $null
+            period_end    = $periodEnd
+            checked_at    = $checked
+            format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { $null })
+        }
+    }
+    if (-not (Test-BobGrokAllowAccessTrue $Auth)) {
+        return [pscustomobject]@{
+            state         = 'auth-failed'
+            reason        = 'allow_access-false'
+            remaining_pct = $null
+            period_end    = $periodEnd
+            checked_at    = $checked
+            format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { $null })
+        }
+    }
+
+    $authFresh = $true
+    if ($Auth.fetched_at) {
+        try {
+            $fa = [datetime]::Parse([string]$Auth.fetched_at, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            if (($UtcNow - $fa).TotalHours -gt [double]$AuthMaxAgeHours) { $authFresh = $false }
+        }
+        catch { }
+    }
+    if (-not $authFresh) {
+        return [pscustomobject]@{
+            state         = 'stale'
+            reason        = 'auth-snapshot-stale'
+            remaining_pct = $null
+            period_end    = $periodEnd
+            checked_at    = $checked
+            format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { $null })
+        }
+    }
+
+    if ($Weekly -and $periodEnd) {
+        $pe = $null
+        try {
+            $pe = [datetime]::Parse($periodEnd, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+        }
+        catch { }
+        if ($pe -and $pe -lt $UtcNow) {
+            return [pscustomobject]@{
+                state         = 'stale'
+                reason        = 'period-end-past'
+                remaining_pct = $null
+                period_end    = $periodEnd
+                checked_at    = $checked
+                format        = $(if ($Weekly.format) { [string]$Weekly.format } else { $null })
+            }
+        }
+        # Grok 1.0.41+: null % + current weekly period + local allow_access — verified local seat.
+        return [pscustomobject]@{
+            state         = 'available'
+            reason        = 'verified-local-auth-weekly-period'
+            remaining_pct = $null
+            period_end    = $periodEnd
+            checked_at    = $checked
+            format        = $(if ($Weekly.format) { [string]$Weekly.format } else { 'grok-1.0.41' })
+        }
+    }
+
+    return [pscustomobject]@{
+        state         = 'unknown'
+        reason        = $(if ($Weekly) { 'weekly-pct-unknown' } else { 'no-weekly-billing' })
+        remaining_pct = $null
+        period_end    = $periodEnd
+        checked_at    = $checked
+        format        = $(if ($Weekly -and $Weekly.format) { [string]$Weekly.format } else { $null })
+    }
+}
+
 function Get-BobMachineJobCount {
     param($Machine)
     if ($null -eq $Machine) { return 0 }
@@ -268,7 +435,15 @@ function Test-BobFuelHasIncluded {
         }
         'grok-build' {
             $p = Get-BobRemainingPctValue $Machine.grok_build
-            return ($null -ne $p -and $p -gt 0)
+            if ($null -ne $p) { return ($p -gt 0) }
+            # FR #430: null % is not exhaustion — use explicit availability when present.
+            $st = $null
+            if ($Machine.grok_build -and $Machine.grok_build.PSObject.Properties['availability']) {
+                $st = [string]$Machine.grok_build.availability
+            }
+            if ($st -eq 'available') { return $true }
+            if ($st -eq 'exhausted') { return $false }
+            return $false
         }
         'grok-bot' {
             $p = Get-BobRemainingPctValue $Machine.grok_bot
@@ -373,6 +548,8 @@ function Get-BobCapacity {
         if ($tile -and $tile.reach -eq 'not-in-moot') { $alive = $false }
         $gBuildPct = $null
         $gBuildEnd = $null
+        $gBuildAvail = $null
+        $gBuildAvailReason = $null
         if ($tile -and $null -ne $tile.remaining_pct -and [string]$tile.remaining_pct -ne '') {
             $gBuildPct = [int]$tile.remaining_pct
             $gBuildEnd = [string]$tile.period_end
@@ -380,6 +557,34 @@ function Get-BobCapacity {
         elseif ($thisId -and $id -eq $thisId -and $localWeek) {
             $gBuildPct = Get-BobRemainingPctValue $localWeek
             if ($localWeek.period_end) { $gBuildEnd = [string]$localWeek.period_end }
+        }
+        elseif ($tile -and $tile.period_end) {
+            $gBuildEnd = [string]$tile.period_end
+        }
+        if ($thisId -and $id -eq $thisId) {
+            $authSnap = $null
+            try { $authSnap = Get-BobGrokAuthSnapshot } catch { $authSnap = $null }
+            $weekForAvail = $localWeek
+            if (-not $weekForAvail -and ($null -ne $gBuildPct -or $gBuildEnd)) {
+                $weekForAvail = [pscustomobject]@{
+                    remaining_pct = $gBuildPct
+                    period_end    = $gBuildEnd
+                    format        = $(if ($localWeek -and $localWeek.format) { $localWeek.format } else { $null })
+                }
+            }
+            try {
+                $av = Get-BobGrokAvailability -Weekly $weekForAvail -Auth $authSnap
+                if ($av) {
+                    $gBuildAvail = [string]$av.state
+                    $gBuildAvailReason = [string]$av.reason
+                    if (-not $gBuildEnd -and $av.period_end) { $gBuildEnd = [string]$av.period_end }
+                }
+            }
+            catch { }
+        }
+        elseif ($tile -and $tile.availability) {
+            $gBuildAvail = [string]$tile.availability
+            if ($tile.availability_reason) { $gBuildAvailReason = [string]$tile.availability_reason }
         }
         $jobs = 0
         if ($jobCount.ContainsKey($id)) { $jobs = [int]$jobCount[$id] }
@@ -392,7 +597,12 @@ function Get-BobCapacity {
             alive       = $alive
             jobs        = $jobs
             cwdRoots    = @($rec.cwdRoots)
-            grok_build  = [pscustomobject]@{ remaining_pct = $gBuildPct; period_end = $gBuildEnd }
+            grok_build  = [pscustomobject]@{
+                remaining_pct         = $gBuildPct
+                period_end            = $gBuildEnd
+                availability          = $gBuildAvail
+                availability_reason   = $gBuildAvailReason
+            }
             grok_bot    = [pscustomobject]@{ remaining_pct = $null; period_end = $null }
             fuels       = @()
             gh_posting  = $null
