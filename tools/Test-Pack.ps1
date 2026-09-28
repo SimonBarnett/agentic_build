@@ -2732,20 +2732,33 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     if ($hoverSrc -notmatch 'FetchedAt') { throw 'Format-BobResetLabel must accept FetchedAt to hide after poll-since-reset' }
 }
 
-# --- BT0reset148 TipForm reset countdown (AgentMonitor #148) ---
-Invoke-Case 'BT0reset148 reset countdown days hours minutes' {
+# --- BT0reset148 TipForm reset countdown (AgentMonitor #148 / FR #436) ---
+Invoke-Case 'BT0reset148 reset countdown days or minutes only' {
     param($bridgeRoot)
     $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
     . $hoverPath
     $now = [datetime]::Parse('2026-09-26T12:00:00Z', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+    # >1 day with leftover hours/minutes → days only
     $label = Format-BobResetLabel -PeriodEnd '2026-09-28T16:12:00Z' -Now $now
-    if ($label -ne 'Until reset: 2 days, 4 hours, 12 minutes') { throw "countdown sample=$label" }
+    if ($label -ne 'Until reset: 2 days') { throw "countdown sample=$label" }
+    # exactly one day
+    $oneDay = Format-BobResetLabel -PeriodEnd '2026-09-27T12:00:00Z' -Now $now
+    if ($oneDay -ne 'Until reset: 1 day') { throw "one-day sample=$oneDay" }
+    # expired / negative → 0 minutes
     $zero = Format-BobResetLabel -PeriodEnd '2026-09-26T11:00:00Z' -Now $now
     if ($zero -ne 'Until reset: 0 minutes') { throw "clamp sample=$zero" }
+    # polled since reset → hide
     $hidden = Format-BobResetLabel -PeriodEnd '2026-09-25T12:00:00Z' -FetchedAt '2026-09-26T13:00:00Z' -Now $now
     if ($null -ne $hidden -and [string]$hidden -ne '') { throw "polled-since-reset must hide: $hidden" }
-    $omitDays = Format-BobResetLabel -PeriodEnd '2026-09-26T15:30:00Z' -Now $now
-    if ($omitDays -ne 'Until reset: 3 hours, 30 minutes') { throw "omit-days sample=$omitDays" }
+    # <1 day with hours → total minutes (3h30m = 210)
+    $mins = Format-BobResetLabel -PeriodEnd '2026-09-26T15:30:00Z' -Now $now
+    if ($mins -ne 'Until reset: 210 minutes') { throw "minutes-only sample=$mins" }
+    # FR #436 example: 3h15m → 195 minutes
+    $ex = Format-BobResetLabel -PeriodEnd '2026-09-26T15:15:00Z' -Now $now
+    if ($ex -ne 'Until reset: 195 minutes') { throw "195-minutes sample=$ex" }
+    # sub-minute remaining → 0 minutes
+    $sub = Format-BobResetLabel -PeriodEnd '2026-09-26T12:00:30Z' -Now $now
+    if ($sub -ne 'Until reset: 0 minutes') { throw "sub-minute sample=$sub" }
     if ((Format-BobResetLabel -PeriodEnd $null)) { throw 'null period_end must return null' }
 }
 
