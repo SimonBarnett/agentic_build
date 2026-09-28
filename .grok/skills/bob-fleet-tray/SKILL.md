@@ -331,3 +331,8 @@ IconLocation via AgentMonitor `Publish-DesktopShortcuts.ps1`.
 then write `agent.quit.request` and stop the ear. Restart then relaunches via
 `Start-BobFleetTray -ForceNew` (same bootstrap as Start).
 
+
+### Recycle Bob (agentic_build #442)
+
+`!recycle` / bob_recycle must announce departure (`bob-{machine}: recycling … logging off IRC then restarting Watch-Bobiverse + TipForm tray`) then restart TipForm via `Start-BobFleetTray -ForceNew` — the same bootstrap as systray Restart — not a raw `Watch-BobTray.ps1` spawn.
+
