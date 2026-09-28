@@ -285,7 +285,7 @@ def build_spending_groups(period: dict | None, sand: dict | None) -> list[dict]:
     groups.append(
         _group_row(
             "auto",
-            "auto",
+            "Low cost models",
             auto_used,
             auto_remain,
             "GetCurrentPeriodUsage.planUsage.autoPercentUsed",
