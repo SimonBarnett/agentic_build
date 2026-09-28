@@ -2741,7 +2741,7 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
 }
 
 # --- BT0reset148 TipForm reset countdown (AgentMonitor #148 / FR #445) ---
-Invoke-Case 'BT0reset148 reset countdown days or minutes only' {
+Invoke-Case 'BT0reset148 reset countdown days+hours or hours+minutes' {
     param($bridgeRoot)
     $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
     . $hoverPath
