@@ -101,6 +101,15 @@ function Get-BobWeeklyLogPath {
 }
 
 function Get-BobWeeklyRemaining {
+    <#
+    .SYNOPSIS
+      Parse Grok CLI weekly remaining from unified.jsonl billing events.
+    .NOTES
+      FR #427: Grok 1.0.41 removed creditUsagePercent; keep period_end even when
+      remaining_pct is unknown. Legacy ≤1.0.40 still uses creditUsagePercent.
+      prepaidBalance/onDemandUsed/onDemandCap are .val objects on 1.0.41 — we do
+      not invent a weekly % from them (out of scope: on-demand-only billing).
+    #>
     [CmdletBinding()]
     param([string]$LogPath)
     if (-not $LogPath) { $LogPath = Get-BobWeeklyLogPath }
@@ -142,24 +151,50 @@ function Get-BobWeeklyRemaining {
         if (-not $cfg) { return $null }
         $ptype = $null
         if ($cfg.currentPeriod -and $cfg.currentPeriod.type) { $ptype = [string]$cfg.currentPeriod.type }
-        # Only the weekly period is the CLI "Weekly limit left" bar. Missing or non-weekly => n/a.
+        # Weekly only: accept WEEKLY or USAGE_PERIOD_TYPE_WEEKLY (Grok 1.0.41 enum).
         if (-not $ptype -or ($ptype -notmatch 'WEEKLY')) { return $null }
-        $usedRaw = $cfg.creditUsagePercent
-        if ($null -eq $usedRaw -or [string]::IsNullOrWhiteSpace([string]$usedRaw)) { return $null }
-        $used = [double]$usedRaw
-        if ($used -lt 0 -or $used -gt 100) { return $null }
-        $remain = [int][math]::Round(100.0 - $used)
-        if ($remain -lt 0) { $remain = 0 }
-        if ($remain -gt 100) { $remain = 100 }
         $periodEnd = $null
         if ($cfg.currentPeriod -and $cfg.currentPeriod.end) { $periodEnd = [string]$cfg.currentPeriod.end }
+        $fetchedAt = [string]$j.ts
+
+        # Legacy Grok ≤1.0.40: scalar creditUsagePercent at config root.
+        $usedRaw = $cfg.creditUsagePercent
+        if ($null -ne $usedRaw -and -not [string]::IsNullOrWhiteSpace([string]$usedRaw)) {
+            $used = [double]$usedRaw
+            if ($used -lt 0 -or $used -gt 100) { return $null }
+            $remain = [int][math]::Round(100.0 - $used)
+            if ($remain -lt 0) { $remain = 0 }
+            if ($remain -gt 100) { $remain = 100 }
+            return [pscustomobject]@{
+                remaining_pct = $remain
+                used_pct      = [int][math]::Round($used)
+                fetched_at    = $fetchedAt
+                period_end    = $periodEnd
+                source        = 'unified.jsonl:billing:creditUsagePercent'
+                kind          = 'weekly'
+                format        = 'legacy-1.0.40'
+            }
+        }
+
+        # Grok 1.0.41+: no creditUsagePercent. Keep period_end for tray countdown;
+        # do not invent remaining_pct from prepaidBalance/onDemand* (ambiguous).
+        # Presence of prepaidBalance / onDemandUsed / onDemandCap marks the new shape.
+        $has141 = $false
+        foreach ($k in @('prepaidBalance', 'onDemandUsed', 'onDemandCap', 'isUnifiedBillingUser')) {
+            if ($null -ne $cfg.PSObject.Properties[$k]) { $has141 = $true; break }
+        }
+        if (-not $has141 -and -not $periodEnd) {
+            # Old-shaped event missing usage and end → nothing useful.
+            return $null
+        }
         return [pscustomobject]@{
-            remaining_pct = $remain
-            used_pct      = [int][math]::Round($used)
-            fetched_at    = [string]$j.ts
+            remaining_pct = $null
+            used_pct      = $null
+            fetched_at    = $fetchedAt
             period_end    = $periodEnd
-            source        = 'unified.jsonl:billing: fetched credits config'
+            source        = 'unified.jsonl:billing:grok-1.0.41-period'
             kind          = 'weekly'
+            format        = 'grok-1.0.41'
         }
     }
     catch { return $null }
