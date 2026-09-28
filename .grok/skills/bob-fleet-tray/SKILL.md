@@ -336,3 +336,10 @@ then write `agent.quit.request` and stop the ear. Restart then relaunches via
 
 `!recycle` / bob_recycle must announce departure (`bob-{machine}: recycling … logging off IRC then restarting Watch-Bobiverse + TipForm tray`) then restart TipForm via `Start-BobFleetTray -ForceNew` — the same bootstrap as systray Restart — not a raw `Watch-BobTray.ps1` spawn.
 
+
+### TipForm pools / countdown (FR #445)
+
+- **grok chat** bar = Cursor Sand only (`sand_remaining_pct` / `cursor_spending_groups[id=grok-chat]`). Never copy auto / high-cost.
+- Reset countdown has **no** `Until reset:` prefix. `days > 0` → `N days, M hours`; `days = 0` → `N hours, M minutes`.
+- Local Bob publishes only its own pools (`Get-BobCursorPoolsForTray -LocalOnly` on Write-BobIrcStatus).
+

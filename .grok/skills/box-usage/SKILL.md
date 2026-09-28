@@ -121,3 +121,10 @@ light chip).
 - Do not print tokens or auth.json.
 - DEV1 must not use `XAI_API_KEY` (OIDC session, same ntsa seat as marchhare).
 - Peer Cursor pools come from digest `pcent` / `cursor_pools`. Local `Get-BobCursorAgentWeeklyRemaining` is for a host that has a Cursor login.
+
+### TipForm pools / countdown (FR #445)
+
+- **grok chat** bar = Cursor Sand only (`sand_remaining_pct` / `cursor_spending_groups[id=grok-chat]`). Never copy auto / high-cost.
+- Reset countdown has **no** `Until reset:` prefix. `days > 0` → `N days, M hours`; `days = 0` → `N hours, M minutes`.
+- Local Bob publishes only its own pools (`Get-BobCursorPoolsForTray -LocalOnly` on Write-BobIrcStatus).
+

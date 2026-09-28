@@ -2200,7 +2200,8 @@ function Write-BobIrcStatus {
         source                 = 'irc'
     }
     try {
-        $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @())
+        # FR #445: publish only this host's pools (never peer/fleet values as own).
+        $poolRows = @(Get-BobCursorPoolsForTray -MachineId $id -LocalCursorDoc $cw -PcentRows @() -LocalOnly)
         if ($poolRows.Count -gt 0) {
             $doc | Add-Member -NotePropertyName cursor_pools -NotePropertyValue @($poolRows) -Force
             Save-BobFleetCursorPoolsSnapshot -MachineId $id -Pools @($poolRows)

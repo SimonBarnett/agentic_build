@@ -647,12 +647,13 @@ function Format-BobResetCountdownPart {
 function Format-BobResetLabel {
     <#
     .SYNOPSIS
-      TipForm reset line: countdown until period_end (AgentMonitor #148 / tray).
+      TipForm reset line: countdown until period_end (AgentMonitor #148 / FR #445).
     .NOTES
       Hide when FetchedAt >= PeriodEnd (polled since reset). Clamp negative span to zero.
-      Mutually exclusive units (FR #436): whole days only when >= 1 day; otherwise
-      total remaining minutes (hours folded in). Never emit hours or "0 days".
-      No polling here — format only from known timestamps.
+      FR #445: no "Until reset:" prefix. Units:
+        days > 0  -> days + hours (no minutes)
+        days = 0  -> hours + minutes (no days)
+      No polling here - format only from known timestamps.
     #>
     param(
         $PeriodEnd,
@@ -671,15 +672,21 @@ function Format-BobResetLabel {
         $span = $dt - $nowUtc
         if ($span -lt [TimeSpan]::Zero) { $span = [TimeSpan]::Zero }
         $days = [int][math]::Floor($span.TotalDays)
+        $hours = [int]$span.Hours
+        $mins = [int]$span.Minutes
+        $parts = @()
         if ($days -ge 1) {
-            $part = Format-BobResetCountdownPart -Value $days -Singular 'day' -Plural 'days'
-            return ('Until reset: {0}' -f $part)
+            $parts += ,(Format-BobResetCountdownPart -Value $days -Singular 'day' -Plural 'days')
+            $hPart = Format-BobResetCountdownPart -Value $hours -Singular 'hour' -Plural 'hours'
+            if ($hPart) { $parts += ,$hPart }
+            return (($parts | Where-Object { $_ }) -join ', ')
         }
-        $totalMinutes = [int][math]::Floor($span.TotalMinutes)
-        if ($totalMinutes -lt 0) { $totalMinutes = 0 }
-        $part = Format-BobResetCountdownPart -Value $totalMinutes -Singular 'minute' -Plural 'minutes'
-        if (-not $part) { $part = '0 minutes' }
-        return ('Until reset: {0}' -f $part)
+        $hPart = Format-BobResetCountdownPart -Value $hours -Singular 'hour' -Plural 'hours'
+        if ($hPart) { $parts += ,$hPart }
+        $mPart = Format-BobResetCountdownPart -Value $mins -Singular 'minute' -Plural 'minutes'
+        if ($mPart) { $parts += ,$mPart }
+        if ($parts.Count -eq 0) { return '0 minutes' }
+        return ($parts -join ', ')
     }
     catch { return $null }
 }
@@ -891,10 +898,25 @@ function Get-BobCursorGroupRemainFromLocalDoc {
     if (-not $LocalCursorDoc) { return $null }
     $want = [string]$GroupId
     if ($want -eq 'low-cost-models' -or $want -eq 'cursor-models') { $want = 'auto' }
+    # FR #445: grok-chat = Sand only — never Cursor remaining_pct / auto / high-cost.
+    if ($want -eq 'grok-chat') {
+        foreach ($g in @($LocalCursorDoc.cursor_spending_groups)) {
+            if (-not $g) { continue }
+            if ([string]$g.id -ne 'grok-chat') { continue }
+            if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
+                return [int]$g.remaining_pct
+            }
+        }
+        if ($null -ne $LocalCursorDoc.sand_remaining_pct -and [string]$LocalCursorDoc.sand_remaining_pct -ne '') {
+            return [int]$LocalCursorDoc.sand_remaining_pct
+        }
+        return $null
+    }
     foreach ($g in @($LocalCursorDoc.cursor_spending_groups)) {
         if (-not $g) { continue }
         $gid = [string]$g.id
         if ($gid -eq 'low-cost-models' -or $gid -eq 'cursor-models') { $gid = 'auto' }
+        if ($gid -eq 'grok-chat') { continue }
         if ($gid -ne $want) { continue }
         if ($null -ne $g.remaining_pct -and [string]$g.remaining_pct -ne '') {
             return [int]$g.remaining_pct
@@ -902,9 +924,6 @@ function Get-BobCursorGroupRemainFromLocalDoc {
     }
     if ($want -eq 'auto' -and $null -ne $LocalCursorDoc.remaining_pct) {
         return [int]$LocalCursorDoc.remaining_pct
-    }
-    if ($want -eq 'grok-chat' -and $null -ne $LocalCursorDoc.sand_remaining_pct) {
-        return [int]$LocalCursorDoc.sand_remaining_pct
     }
     return $null
 }
@@ -1392,7 +1411,9 @@ function Get-BobCursorPoolsForTray {
     param(
         [string]$MachineId,
         $LocalCursorDoc,
-        $PcentRows
+        $PcentRows,
+        # FR #445: Write-BobIrcStatus / digest publish must not republish peer pool values.
+        [switch]$LocalOnly
     )
     # Cursor Spending groups are per Cursor account on this host — not xAI seat labels
     # (Smart Catalogue / Club Madeira / ntsa are Grok Build seats; see issue #151 UAT).
@@ -1423,14 +1444,27 @@ function Get-BobCursorPoolsForTray {
     foreach ($grp in $catalog) {
         $gid = [string]$grp.id
         $glabel = [string]$grp.label
+        # FR #445: grok-chat is Sand only — never fall back to Cursor auto / high-cost.
         $remain = Get-BobCursorGroupRemainFromLocalDoc -LocalCursorDoc $LocalCursorDoc -GroupId $gid
-        if ($null -eq $remain) { $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid }
         if ($null -eq $remain) {
-            # Fleet-shared Cursor: any seat cached group (ionos/flamingo publish; MarchHare consumes).
-            foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
-                $cand = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $seatEnt.Value -GroupId $gid
-                if ($null -eq $cand) { continue }
-                if ($null -eq $remain -or [int]$cand -lt [int]$remain) { $remain = [int]$cand }
+            if ($gid -eq 'grok-chat') {
+                # Seat cache may hold sand under groups.'grok-chat' only (not remaining_pct).
+                if ($ce -and $ce.groups -and $ce.groups.'grok-chat' -and
+                    $null -ne $ce.groups.'grok-chat'.remaining_pct -and
+                    [string]$ce.groups.'grok-chat'.remaining_pct -ne '') {
+                    try { $remain = [int]$ce.groups.'grok-chat'.remaining_pct } catch { }
+                }
+            }
+            elseif (-not $LocalOnly) {
+                $remain = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $ce -GroupId $gid
+                if ($null -eq $remain) {
+                    # Fleet-shared Cursor auto/high-cost: peer seats may publish; MarchHare TipForm consumes.
+                    foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+                        $cand = Get-BobCursorGroupRemainFromSeatCache -SeatCacheEntry $seatEnt.Value -GroupId $gid
+                        if ($null -eq $cand) { continue }
+                        if ($null -eq $remain -or [int]$cand -lt [int]$remain) { $remain = [int]$cand }
+                    }
+                }
             }
         }
         # 0% is a real value (#179) — only missing/null is n/a.
@@ -1438,18 +1472,30 @@ function Get-BobCursorPoolsForTray {
         if ($null -ne $remain -and [string]$remain -ne '') { $pctLabel = ('{0}%' -f [int]$remain) }
         # Per-group reset: grok chat uses Sand nextReset; spending + on-demand use billingCycleEnd.
         $pe = $periodEnd
-        if ($gid -eq 'grok-chat' -and $sandPeriodEnd) { $pe = $sandPeriodEnd }
-        if ($ce -and $ce.groups) {
+        if ($gid -eq 'grok-chat') {
+            if ($sandPeriodEnd) { $pe = $sandPeriodEnd }
+            elseif ($ce -and $ce.groups -and $ce.groups.'grok-chat' -and $ce.groups.'grok-chat'.period_end) {
+                $pe = [string]$ce.groups.'grok-chat'.period_end
+            }
+        }
+        elseif (-not $LocalOnly) {
+            if ($ce -and $ce.groups) {
+                $ge = $ce.groups.$gid
+                if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
+                if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
+            }
+            if ($null -eq $pe -or $pe -eq '') {
+                foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
+                    if (-not $seatEnt.Value.groups) { continue }
+                    $ge = $seatEnt.Value.groups.$gid
+                    if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
+                }
+            }
+        }
+        elseif ($ce -and $ce.groups) {
             $ge = $ce.groups.$gid
             if (-not $ge -and $gid -eq 'auto') { $ge = $ce.groups.'low-cost-models' }
             if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end }
-        }
-        if ($null -eq $pe -or $pe -eq '') {
-            foreach ($seatEnt in @($cache.by_seat.GetEnumerator())) {
-                if (-not $seatEnt.Value.groups) { continue }
-                $ge = $seatEnt.Value.groups.$gid
-                if ($ge -and $ge.period_end) { $pe = [string]$ge.period_end; break }
-            }
         }
         $fetchedAt = $null
         if ($LocalCursorDoc -and $LocalCursorDoc.fetched_at) { $fetchedAt = [string]$LocalCursorDoc.fetched_at }
