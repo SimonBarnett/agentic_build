@@ -44,15 +44,22 @@ Every `bob-*` builder with a Cursor login runs `Write-BobIrcStatus` (**Watch-Bob
 | `sand_remaining_pct` | overwrites `grok-chat` |
 | `on_demand_remaining_pct` | `on-demand` (not a TipForm bar) |
 
-Fingerprint (`Get-BobDigestWebhookFingerprint`) includes the `pcent` JSON and
-`weekly` / `period_end`. Merge payload (`Build-BobDigestWebhookMergePayload`)
-copies `weekly`, `period_end`, and `pcent` through. A weekly-only or pcent-only
-change must POST.
+**#456 — per-pool resets:** each Bob also POSTs slim `cursor_pools`
+(`group_id`, `remaining_pct`, `period_end`) plus `sand_period_end`.
+`grok-chat.period_end` / `sand_period_end` = Sand weekly reset;
+`high-cost-models` / `auto` use Cursor `billingCycleEnd` (`cursor_period_end`).
+Do not paint one reset clock on all three TipForm bars.
+
+Fingerprint (`Get-BobDigestWebhookFingerprint`) includes the `pcent` JSON,
+`cursor_pools` snapshot, `sand_period_end`, and `weekly` / `period_end`.
+Merge payload (`Build-BobDigestWebhookMergePayload`) copies `weekly`,
+`period_end`, `sand_period_end`, `pcent`, and `cursor_pools` through. A
+weekly-only, pcent-only, or pool-reset-only change must POST.
 
 **agentic_build #387 / gh-Jeeves:** the chair `op=merge` handler must **persist**
 `machines.<id>.weekly` and `period_end` (xAI `Get-BobWeeklyRemaining`). If GET
 digest shows workers but no weekly while local hover shows weekly remaining,
-the chair was dropping those fields — fixed in gh-Jeeves PR that lands
+the chair was dropping those fields â€” fixed in gh-Jeeves PR that lands
 `coerce_machine` + merge for weekly/period_end. MarchHare may have empty
 `pcent` (no Cursor login) and still must show weekly.
 
@@ -109,6 +116,7 @@ curl -fsS https://irc.ntsa.uk/bob/v1/report
 2. `reportUrl` in `config/bobiverse.json` is exactly `https://irc.ntsa.uk/bob/v1/report`.
 3. Each online builder that has a Cursor login has a `pcent` object. MarchHare may omit Cursor keys; that is not a license to invent them.
 4. Keys you act on: `cursor-models` (auto / low cost models), `high-cost-models`, `grok-chat`. `on-demand` may be present and is not a bar.
+5. cursor_pools rows must carry distinct period_end (grok-chat = Sand weekly / sand_period_end; high/auto = billing / cursor_period_end). Empty cursor_pools: [] means peers cannot paint correct resets (issue #456).
 5. `cursor_pools` group ids normalize as in the alias table above. Named seats stay per-seat; other pools fan out.
 6. Body has no `password=`, `xai_api_key=`, `X-Bob-Secret`, `report.secret`, or `connect.password`.
 7. `overage_gbp` may be null on the digest while local TipForm shows GBP. Prefer local `spendLimitUsage` / `Get-BobCursorOverageGbp` when that doc has `overage_gbp`. A label that is only `N%` is remaining, not overspend (overspend text starts with `-` or contains a GBP sign, `GBP`, or `$`).

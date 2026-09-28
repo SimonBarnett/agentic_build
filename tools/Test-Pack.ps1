@@ -1861,6 +1861,67 @@ Invoke-Case 'BT0o bobiverse irc' {
     $env:BOB_IRC_NICK = $null
     $env:BOB_CURSOR_USAGE_FILE = $cursorFile
 
+
+    # --- BT0fr456 digest merge posts cursor_pools + sand_period_end ---
+    Invoke-Case 'BT0fr456 digest posts per-pool period_end and sand weekly' {
+        param($bridgeRoot)
+        $cap = Join-Path $bridgeRoot 'digest-456.ndjson'
+        if (Test-Path $cap) { Remove-Item $cap -Force }
+        $env:BOB_DIGEST_WEBHOOK_CAPTURE = $cap
+        $env:BOB_MACHINE_ID = 'flamingo'
+        $env:BOB_IRC_HOME = Join-Path $bridgeRoot 'irc-home-456'
+        New-Item -ItemType Directory -Force -Path $env:BOB_IRC_HOME | Out-Null
+        $usage = Join-Path $bridgeRoot 'cursor-usage-456.json'
+        @{
+            remaining_pct = 82
+            used_pct = 18
+            period_end = '2026-10-16T17:23:01Z'
+            sand_period_end = '2026-09-30T17:23:58.025Z'
+            sand_remaining_pct = 77
+            sand_used_pct = 23
+            cursor_spending_groups = @(
+                @{ id = 'grok-chat'; label = 'grok chat'; remaining_pct = 77; used_pct = 23; source = 'GetSandUsageStatus.usagePercent' }
+                @{ id = 'high-cost-models'; label = 'high cost models'; remaining_pct = 100; used_pct = 0; source = 'planUsage.apiPercentUsed' }
+                @{ id = 'auto'; label = 'Low cost models'; remaining_pct = 82; used_pct = 18; source = 'planUsage.autoPercentUsed' }
+            )
+            fetched_at = '2026-09-28T14:00:00Z'
+            source = 'cursor-agent'
+            kind = 'weekly'
+        } | ConvertTo-Json -Depth 6 | Set-Content -Path $usage -Encoding utf8
+        $env:BOB_CURSOR_USAGE_FILE = $usage
+        # bobiverse config for reportUrl path (capture bypasses HTTP)
+        $cfgDir = Join-Path $bridgeRoot 'config'
+        New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+        Copy-Item (Join-Path $RepoRoot 'config\bobiverse.json') (Join-Path $cfgDir 'bobiverse.json') -ErrorAction SilentlyContinue
+        $doc = Write-BobIrcStatus -SkipDigestWebhook -PassThru
+        if (-not $doc) { throw 'Write-BobIrcStatus PassThru returned null' }
+        if (-not $doc.sand_period_end) { throw 'doc missing sand_period_end' }
+        if ([string]$doc.sand_period_end -ne '2026-09-30T17:23:58.025Z') { throw "sand_period_end=$($doc.sand_period_end)" }
+        if (-not $doc.cursor_pools -or @($doc.cursor_pools).Count -lt 3) { throw 'doc.cursor_pools missing three rows' }
+        $chat = @($doc.cursor_pools | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
+        $hi = @($doc.cursor_pools | Where-Object { [string]$_.group_id -eq 'high-cost-models' })[0]
+        $auto = @($doc.cursor_pools | Where-Object { [string]$_.group_id -eq 'auto' })[0]
+        if (-not $chat -or -not $hi -or -not $auto) { throw 'missing pool rows' }
+        if ([string]$chat.period_end -ne '2026-09-30T17:23:58.025Z') { throw "grok-chat pe=$($chat.period_end)" }
+        if ([string]$hi.period_end -ne '2026-10-16T17:23:01Z') { throw "high pe=$($hi.period_end)" }
+        if ([string]$auto.period_end -ne '2026-10-16T17:23:01Z') { throw "auto pe=$($auto.period_end)" }
+        if ([string]$chat.period_end -eq [string]$hi.period_end) { throw 'Sand weekly must differ from billing period_end' }
+        $payload = Build-BobDigestWebhookMergePayload $doc
+        if (-not $payload.cursor_pools -or @($payload.cursor_pools).Count -lt 3) { throw 'merge payload dropped cursor_pools' }
+        if (-not $payload.sand_period_end) { throw 'merge payload missing sand_period_end' }
+        $fp1 = Get-BobDigestWebhookFingerprint $doc
+        $doc2 = $doc | ConvertTo-Json -Depth 8 | ConvertFrom-Json
+        $doc2.sand_period_end = '2026-10-01T00:00:00Z'
+        foreach ($row in @($doc2.cursor_pools)) {
+            if ([string]$row.group_id -eq 'grok-chat') { $row.period_end = '2026-10-01T00:00:00Z' }
+        }
+        $fp2 = Get-BobDigestWebhookFingerprint $doc2
+        if ($fp1 -eq $fp2) { throw 'fingerprint must change when only sand period moves' }
+        $env:BOB_DIGEST_WEBHOOK_CAPTURE = $null
+        $env:BOB_MACHINE_ID = $null
+        $env:BOB_CURSOR_USAGE_FILE = $null
+        $env:BOB_IRC_HOME = $null
+    }
     $stamp = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = (Join-Path $bridgeRoot 'agentic_build-i74'); repo = '?' })
     if ($stamp -eq '?' -or -not $stamp) {
         $stamp2 = Get-BobJobRepoStamp ([pscustomobject]@{ cwd = $RepoRoot; repo = '?' })
