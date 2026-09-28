@@ -6090,6 +6090,11 @@ Invoke-Case 'BT0systray start menu git-update gate' {
     if ($traySrcSy -notmatch '\[int\]\$PollSec = 30') { throw 'Watch-BobTray PollSec default must be 30 (digest heartbeat)' }
     if ($traySrcSy -notmatch 'Write-BobIrcStatus') { throw 'Watch-BobTray must Write-BobIrcStatus (cursor+xAI to webhook)' }
     if ($traySrcSy -notmatch 'Request-BobTrayIrcLogout') { throw 'Watch-BobTray Exit/close must IRC logoff bob account' }
+    # agentic_irc #250: announce bob-{machine} departure before quit.request
+    if ($traySrcSy -notmatch 'Write-BobTrayIrcDepartureAnnounce') { throw 'Exit/Restart must announce IRC departure (agentic_irc #250)' }
+    if ($traySrcSy -notmatch 'PRIVMSG #bobiverse') { throw 'departure announce must PRIVMSG #bobiverse' }
+    if ($traySrcSy -notmatch 'logging off IRC') { throw 'departure announce text missing' }
+    if ($traySrcSy -notmatch 'Request-BobTrayIrcLogout -Reason Exit') { throw 'Exit menu must Request-BobTrayIrcLogout -Reason Exit' }
     if ($traySrcSy -notmatch 'Report-BobDeterministicException') { throw 'Watch-BobTray must report unhandled exceptions via Report-BobDeterministicException (gh, no LLM)' }
     $restartFn = [regex]::Match($traySrcSy, '(?s)function Restart-BobTrayWatcher\s*\{.*?^\}', [System.Text.RegularExpressions.RegexOptions]::Multiline)
     if (-not $restartFn.Success) { throw 'Restart-BobTrayWatcher missing' }
@@ -6097,6 +6102,7 @@ Invoke-Case 'BT0systray start menu git-update gate' {
     if ($restartFn.Value -notmatch '-ForceNew') { throw 'Restart must ForceNew' }
     if ($restartFn.Value -match 'SkipUpdate') { throw 'Restart must not SkipUpdate (full bootstrap)' }
     if ($restartFn.Value -notmatch 'Request-BobTrayIrcLogout') { throw 'Restart must IRC logoff before replace' }
+    if ($restartFn.Value -notmatch '-Reason Restart') { throw 'Restart must Request-BobTrayIrcLogout -Reason Restart (graceful, not raw kill)' }
     $prof = Join-Path $bridgeRoot 'systray-profile'
     New-Item -ItemType Directory -Force -Path $prof | Out-Null
     $env:BOB_WATCH_SEAT_PROFILE_ROOT = $prof
