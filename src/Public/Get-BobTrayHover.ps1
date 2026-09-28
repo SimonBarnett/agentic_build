@@ -1670,6 +1670,10 @@ function Get-BobTrayHover {
     $week = Get-BobWeeklyRemaining
     $remainPct = $null
     $weekFetched = $null
+    # CAST IRON AgentMonitor#150: a local unified.jsonl read (incl. Grok 1.0.41
+    # remaining_pct=$null / TipForm n/a) locks this host. Digest weekly=0 or
+    # seat-period-end cache must not paint exhaustion over local n/a.
+    $localWeeklyLocked = [bool]$week
     if ($week -and (Test-BobTrayRemainingKnown $week.remaining_pct)) {
         $remainPct = [int]$week.remaining_pct
         $weekFetched = [string]$week.fetched_at
@@ -1680,7 +1684,7 @@ function Get-BobTrayHover {
         $periodEndBy[$machineId] = [string]$week.period_end
     }
     if ($week) {
-        Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd $(if ($week.period_end) { [string]$week.period_end } else { $null }) -Weekly $(if ($null -ne $week.remaining_pct) { [int]$week.remaining_pct } else { $null })
+        Save-BobSeatPeriodEnd -MachineId $machineId -PeriodEnd $(if ($week.period_end) { [string]$week.period_end } else { $null }) -Weekly $(if ($null -ne $week.remaining_pct -and (Test-BobTrayRemainingKnown $week.remaining_pct)) { [int]$week.remaining_pct } else { $null })
     }
     foreach ($pc in @($digestPcentRows)) {
         if (-not $pc) { continue }
@@ -1691,12 +1695,12 @@ function Get-BobTrayHover {
         if ($null -eq $pct) { continue }
         if ($src -eq 'grok-build' -and $mac) {
             # FR AgentMonitor#150 / CAST IRON: this host's Grok weekly is LOCAL unified.jsonl.
-            # Digest may fill peer tiles only; never clobber a known local weekly.
-            if ($mac -eq $machineId -and $weeklyBy.ContainsKey($machineId)) { continue }
+            # Digest may fill peer tiles only; never clobber a known local weekly (incl. n/a).
+            if ($mac -eq $machineId -and $localWeeklyLocked) { continue }
             $weeklyBy[$mac] = $pct
         }
     }
-    # HTTP digest machine.weekly → Grok tiles (#179). 0% is valid.
+    # HTTP digest machine.weekly → Grok tiles (#179). 0% is valid for peers.
     foreach ($wr in @($digestWeeklyRows)) {
         if (-not $wr) { continue }
         $mac = [string]$wr.machine
@@ -1704,8 +1708,8 @@ function Get-BobTrayHover {
         if (-not $mac) { continue }
         $pct = ConvertTo-BobTrayIntOrNull $wr.weekly
         if ($null -eq $pct) { continue }
-        # FR AgentMonitor#150: digest must not overwrite this host's local Grok pool.
-        if ($mac -eq $machineId -and $weeklyBy.ContainsKey($machineId)) { continue }
+        # FR AgentMonitor#150: digest must not overwrite this host's local Grok pool (incl. n/a).
+        if ($mac -eq $machineId -and $localWeeklyLocked) { continue }
         $weeklyBy[$mac] = $pct
         if ($wr.period_end) {
             if (-not ($mac -eq $machineId -and $periodEndBy.ContainsKey($machineId))) {
@@ -1760,13 +1764,24 @@ function Get-BobTrayHover {
             continue
         }
         if ($peek.lastSeen) { $seenBy[$mid] = [string]$peek.lastSeen }
-        if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) {
-            $weeklyBy[$mid] = [int]$peek.weekly
+        # Never overwrite this host's local unified.jsonl reading (incl. n/a) via peer peek.
+        if ($mid -eq $machineId -and $localWeeklyLocked) {
+            # keep period_end from peek only when local lacked one
+            if ($peek.period_end -and -not ($periodEndBy.ContainsKey($mid) -and $periodEndBy[$mid])) {
+                $periodEndBy[$mid] = [string]$peek.period_end
+            }
         }
-        if ($peek.period_end) { $periodEndBy[$mid] = [string]$peek.period_end }
-        if (($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) -or $peek.period_end) {
+        elseif ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) {
+            $weeklyBy[$mid] = [int]$peek.weekly
+            if ($peek.period_end) { $periodEndBy[$mid] = [string]$peek.period_end }
             try {
-                Save-BobSeatPeriodEnd -MachineId $mid -PeriodEnd $(if ($peek.period_end) { [string]$peek.period_end } else { $null }) -Weekly $(if ($null -ne $peek.weekly -and (Test-BobTrayRemainingKnown $peek.weekly)) { [int]$peek.weekly } else { $null })
+                Save-BobSeatPeriodEnd -MachineId $mid -PeriodEnd $(if ($peek.period_end) { [string]$peek.period_end } else { $null }) -Weekly ([int]$peek.weekly)
+            } catch { }
+        }
+        elseif ($peek.period_end) {
+            $periodEndBy[$mid] = [string]$peek.period_end
+            try {
+                Save-BobSeatPeriodEnd -MachineId $mid -PeriodEnd ([string]$peek.period_end) -Weekly $null
             } catch { }
         }
         if ($peek.cursor_label -and [string]$peek.cursor_label -ne 'empty') {
@@ -1830,7 +1845,9 @@ function Get-BobTrayHover {
             $shared = ($vals | Measure-Object -Minimum).Minimum
             foreach ($sm in @($seat.machines)) {
                 $smid = [string]$sm
-                if ($smid) { $weeklyBy[$smid] = [int]$shared }
+                if (-not $smid) { continue }
+                if ($smid -eq $machineId -and $localWeeklyLocked -and -not $weeklyBy.ContainsKey($smid)) { continue }
+                $weeklyBy[$smid] = [int]$shared
             }
         }
         $ends = @()
@@ -1859,6 +1876,7 @@ function Get-BobTrayHover {
             }
         }
         foreach ($mid2 in @($order)) {
+            if ($mid2 -eq $machineId -and $localWeeklyLocked) { continue }
             if ($weeklyBy.ContainsKey($mid2) -and $null -ne $weeklyBy[$mid2]) { continue }
             if ($peCache.weekly_by_machine.ContainsKey($mid2) -and $null -ne $peCache.weekly_by_machine[$mid2]) {
                 $weeklyBy[$mid2] = [int]$peCache.weekly_by_machine[$mid2]
@@ -1884,7 +1902,10 @@ function Get-BobTrayHover {
                 if ($weeklyBy.ContainsKey($smid) -and $null -ne $weeklyBy[$smid]) {
                     if ($null -eq $seatWeek) { $seatWeek = [int]$weeklyBy[$smid] }
                 }
-                elseif ($null -ne $seatWeek) { $weeklyBy[$smid] = [int]$seatWeek }
+                elseif ($null -ne $seatWeek) {
+                    if ($smid -eq $machineId -and $localWeeklyLocked) { continue }
+                    $weeklyBy[$smid] = [int]$seatWeek
+                }
             }
             if ($seatEnd) {
                 foreach ($sm in @($seat.machines)) {
@@ -1897,6 +1918,7 @@ function Get-BobTrayHover {
             if ($null -ne $seatWeek) {
                 foreach ($sm in @($seat.machines)) {
                     $smid = [string]$sm
+                    if ($smid -eq $machineId -and $localWeeklyLocked) { continue }
                     if ($smid -and (-not $weeklyBy.ContainsKey($smid) -or $null -eq $weeklyBy[$smid])) {
                         $weeklyBy[$smid] = [int]$seatWeek
                     }
@@ -2031,19 +2053,12 @@ function Get-BobTrayHover {
         if ($mid -match '2012') { $tileFuels = @() }
         $tile | Add-Member -NotePropertyName fuels -NotePropertyValue $tileFuels -Force
         if ($tileFuels.Count -gt 0) { $jobLines += ('    fuels: {0}' -f ($tileFuels -join ', ')) }
-        # FR #352: TipForm/tooltip — out of tokens, open with key
+        # FR #352: TipForm/tooltip — out of tokens, open with key.
+        # Grok Build exhaustion only (explicit remaining_pct=0 or availability=exhausted).
+        # Never Cursor Sand / pcent.grok-chat (those are Spending bars, not xAI weekly).
         $outOfTokens = $false
-        foreach ($pr in @($digestPcentRows)) {
-            if (-not $pr) { continue }
-            if ([string]$pr.machine -ne $mid) { continue }
-            if ($null -eq $pr.pct) { continue }
-            try {
-                if ([int]$pr.pct -le 0) { $outOfTokens = $true }
-                else { $outOfTokens = $false; break }
-            }
-            catch { }
-        }
-        if (-not $outOfTokens -and $null -ne $wPct -and [int]$wPct -le 0) { $outOfTokens = $true }
+        if ($tileAvail -eq 'exhausted') { $outOfTokens = $true }
+        elseif ($null -ne $wPct -and [int]$wPct -le 0) { $outOfTokens = $true }
         if ($outOfTokens) {
             $jobLines += '    out of tokens, open with key'
             $tile | Add-Member -NotePropertyName out_of_tokens -NotePropertyValue $true -Force

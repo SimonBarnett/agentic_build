@@ -906,9 +906,25 @@ function Get-BobTrayFuelLocalMachineId {
 }
 
 function Get-BobTrayGrokFuelRemaining {
-    # CAST IRON (Simon 2026-09-27): Grok agent start uses LOCAL weekly remaining
-    # (machine tile / Get-BobWeeklyRemaining), not digest pcent.grok-chat.
-    # Digest pcent may fill only when local is unknown.
+    # CAST IRON (Simon 2026-09-27 + AgentMonitor#150): Grok agent start uses LOCAL
+    # weekly remaining (Get-BobWeeklyRemaining / unified.jsonl), not digest
+    # pcent.grok-chat (that key is Cursor Sand) and not a poisoned seat-cache 0.
+    # Grok 1.0.41: remaining_pct=$null (TipForm n/a) is a real local reading —
+    # return $null so Resolve-BobTrayGrokFuelAtStart uses Get-BobGrokAvailability.
+    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
+        try {
+            $w = Get-BobWeeklyRemaining
+            if ($w) {
+                if ($null -ne $w.remaining_pct -and [string]$w.remaining_pct -ne '') {
+                    try { return [int]$w.remaining_pct } catch { }
+                }
+                # Local billing doc present with unknown % — do not fall through to
+                # TipForm snapshot / digest Sand 0% (false exhaustion dialog).
+                return $null
+            }
+        }
+        catch { }
+    }
     $snap = $script:lastFuelSnapshot
     $mid = Get-BobTrayFuelLocalMachineId
     if ($snap) {
@@ -919,26 +935,17 @@ function Get-BobTrayGrokFuelRemaining {
             try { $id = [string](Resolve-BobiverseMachineId $id) } catch { }
             if (-not $id) { continue }
             if ($mid -and ($id.ToLowerInvariant() -eq $mid)) {
+                # Prefer availability when snapshot % is absent; never invent 0 from n/a.
                 if ($null -ne $m.remaining_pct -and [string]$m.remaining_pct -ne '') {
                     try { return [int]$m.remaining_pct } catch { }
                 }
+                return $null
             }
         }
         if ($null -ne $snap.remaining_pct -and [string]$snap.remaining_pct -ne '') {
             try { return [int]$snap.remaining_pct } catch { }
         }
     }
-    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
-        try {
-            $w = Get-BobWeeklyRemaining
-            if ($null -ne $w -and $null -ne $w.remaining_pct -and [string]$w.remaining_pct -ne '') {
-                return [int]$w.remaining_pct
-            }
-        }
-        catch { }
-    }
-    $fromPcent = Get-BobTrayMachineGrokChatPcent
-    if ($null -ne $fromPcent) { return [int]$fromPcent }
     return $null
 }
 
@@ -1007,7 +1014,8 @@ function Resolve-BobTrayGrokFuelAtStart {
     <#
       Grok watch-seat start fuel gate (CAST IRON Simon 2026-09-27 + FR #430):
       Local weekly remaining first (TipForm machine tile / Get-BobWeeklyRemaining).
-      Digest pcent.grok-chat is fill-only - blank digest must NOT block when local weekly is known.
+      Digest pcent.grok-chat is Cursor Sand - never use it when a local weekly doc exists
+      (Grok 1.0.41 n/a included). Legacy digest fill only when no local unified.jsonl.
       - remaining > 0  => pool
       - remaining = 0  => session-key (dialog) - confirmed exhaustion only
       - remaining blank: Get-BobGrokAvailability - verified local auth+period => pool;
@@ -1018,7 +1026,14 @@ function Resolve-BobTrayGrokFuelAtStart {
         [string]$MachineId
     )
     $remain = Get-BobTrayGrokFuelRemaining
-    if ($null -eq $remain -and $Digest) {
+    $week = $null
+    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
+        try { $week = Get-BobWeeklyRemaining } catch { $week = $null }
+    }
+    # Digest pcent.grok-chat is Cursor Sand (Write-BobIrcStatus), not xAI weekly.
+    # Only use it as a legacy fill when this host has NO local unified.jsonl reading
+    # (hermetic / peer-only FR #356 cases). Local n/a => Get-BobGrokAvailability.
+    if ($null -eq $remain -and -not $week -and $Digest) {
         $remain = Get-BobTrayMachineGrokChatPcent -MachineId $MachineId -Digest $Digest
     }
     if ($null -ne $remain) {
@@ -1038,11 +1053,6 @@ function Resolve-BobTrayGrokFuelAtStart {
             availability = 'exhausted'
             reason       = 'legacy-remaining-pct-zero'
         }
-    }
-
-    $week = $null
-    if (Get-Command Get-BobWeeklyRemaining -ErrorAction SilentlyContinue) {
-        try { $week = Get-BobWeeklyRemaining } catch { $week = $null }
     }
     $auth = $null
     if (Get-Command Get-BobGrokAuthSnapshot -ErrorAction SilentlyContinue) {
