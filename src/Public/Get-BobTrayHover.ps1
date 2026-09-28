@@ -650,6 +650,8 @@ function Format-BobResetLabel {
       TipForm reset line: countdown until period_end (AgentMonitor #148 / tray).
     .NOTES
       Hide when FetchedAt >= PeriodEnd (polled since reset). Clamp negative span to zero.
+      Mutually exclusive units (FR #436): whole days only when >= 1 day; otherwise
+      total remaining minutes (hours folded in). Never emit hours or "0 days".
       No polling here — format only from known timestamps.
     #>
     param(
@@ -669,15 +671,15 @@ function Format-BobResetLabel {
         $span = $dt - $nowUtc
         if ($span -lt [TimeSpan]::Zero) { $span = [TimeSpan]::Zero }
         $days = [int][math]::Floor($span.TotalDays)
-        $hours = $span.Hours
-        $minutes = $span.Minutes
-        $parts = @(
-            (Format-BobResetCountdownPart -Value $days -Singular 'day' -Plural 'days')
-            (Format-BobResetCountdownPart -Value $hours -Singular 'hour' -Plural 'hours')
-            (Format-BobResetCountdownPart -Value $minutes -Singular 'minute' -Plural 'minutes')
-        ) | Where-Object { $_ }
-        if (-not $parts -or @($parts).Count -eq 0) { $parts = @('0 minutes') }
-        return ('Until reset: {0}' -f ($parts -join ', '))
+        if ($days -ge 1) {
+            $part = Format-BobResetCountdownPart -Value $days -Singular 'day' -Plural 'days'
+            return ('Until reset: {0}' -f $part)
+        }
+        $totalMinutes = [int][math]::Floor($span.TotalMinutes)
+        if ($totalMinutes -lt 0) { $totalMinutes = 0 }
+        $part = Format-BobResetCountdownPart -Value $totalMinutes -Singular 'minute' -Plural 'minutes'
+        if (-not $part) { $part = '0 minutes' }
+        return ('Until reset: {0}' -f $part)
     }
     catch { return $null }
 }
