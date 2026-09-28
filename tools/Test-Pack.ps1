@@ -638,8 +638,11 @@ Invoke-Case 'BT0week427 grok 1.0.41 billing period_end' {
     if ($null -ne $h141.remaining_pct -and [string]$h141.remaining_pct -ne '') {
         throw "hover must not invent weekly %; got $($h141.remaining_pct)"
     }
-    if ([string]$h141.body -notmatch 'Until reset:') {
+    if ([string]$h141.body -notmatch '\d+\s+day') {
         throw "hover must show reset countdown: $($h141.body)"
+    }
+    if ([string]$h141.body -match 'Until reset:') {
+        throw "hover must not show Until reset: prefix: $($h141.body)"
     }
     $leg = Join-Path $bridgeRoot 'weekly-legacy-case.jsonl'
     [IO.File]::WriteAllText($leg, '{"ts":"2026-09-19T12:00:00Z","msg":"billing: fetched credits config","ctx":{"config":{"creditUsagePercent":91.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-26T00:00:00Z"}}}}' + [Environment]::NewLine)
@@ -768,8 +771,11 @@ Invoke-Case 'BT0l tray hover' {
         throw "hover must not invent weekly % from 1.0.41; got $($h141.remaining_pct)"
     }
     $tileTxt = [string]$h141.body
-    if ($tileTxt -notmatch 'Until reset:') {
+    if ($tileTxt -notmatch '\d+\s+(day|hour|minute)') {
         throw "hover must show reset countdown when 1.0.41 period_end known: $tileTxt"
+    }
+    if ($tileTxt -match 'Until reset:') {
+        throw "hover must not show Until reset: prefix: $tileTxt"
     }
     $env:BOB_WEEKLY_LOG = $weekLog
 
@@ -2373,7 +2379,8 @@ Invoke-Case 'BT0l4 bobiverse digest tray ingest' {
     if ($txt -match '(?m)^[ ]+Club Madeira  (auto|low cost models|grok chat|high cost models)') { throw "peer pool cache must not paint xAI seat as Cursor bar: $txt" }
     if ($txt -notmatch '(?m)ionos[^\r\n]*\(12%\)') { throw "ionos weekly bar missing: $txt" }
     if ($txt -notmatch '(?m)flamingo[^\r\n]*\(8%\)') { throw "flamingo weekly bar missing: $txt" }
-    if ($txt -notmatch 'Until reset:') { throw "ionos reset countdown missing: $txt" }
+    if ($txt -notmatch '\d+\s+(day|hour|minute)') { throw "ionos reset countdown missing: $txt" }
+    if ($txt -match 'Until reset:') { throw "ionos reset must not use Until reset: prefix: $txt" }
     if ($txt -match 'reset \d{1,2} [A-Z][a-z]{2}\b') { throw "ionos reset must be countdown not date: $txt" }
     if ($txt -notmatch 'composer-2\.5') { throw "hover missing digest model: $txt" }
     if ($txt -match 'grok\.exe \?') { throw "must not show grok.exe ?: $txt" }
@@ -2728,38 +2735,75 @@ Invoke-Case 'BT0l6 tray cursor overspend help icons' {
     $hoverSrc = Get-Content (Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1') -Raw
     if ($hoverSrc -match "gid -eq 'low-cost-models'\) \{ \$heading") { throw 'reset must not be low-cost-only on headings' }
     if ($hoverSrc -notmatch 'sand_period_end') { throw 'grok chat reset must prefer sand_period_end' }
-    if ($hoverSrc -notmatch 'Until reset:') { throw 'Format-BobResetLabel must emit Until reset countdown (AgentMonitor #148)' }
+    if ($hoverSrc -match "return \('Until reset:") { throw 'Format-BobResetLabel must not emit Until reset: prefix (FR #445)' }
+    if ($hoverSrc -notmatch 'days \+ hours|FR #445') { throw 'Format-BobResetLabel must document FR #445 days/hours format' }
     if ($hoverSrc -notmatch 'FetchedAt') { throw 'Format-BobResetLabel must accept FetchedAt to hide after poll-since-reset' }
 }
 
-# --- BT0reset148 TipForm reset countdown (AgentMonitor #148 / FR #436) ---
+# --- BT0reset148 TipForm reset countdown (AgentMonitor #148 / FR #445) ---
 Invoke-Case 'BT0reset148 reset countdown days or minutes only' {
     param($bridgeRoot)
     $hoverPath = Join-Path $RepoRoot 'src\Public\Get-BobTrayHover.ps1'
     . $hoverPath
     $now = [datetime]::Parse('2026-09-26T12:00:00Z', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
-    # >1 day with leftover hours/minutes → days only
+    # FR #445: days > 0 → days + hours (no minutes); no Until reset: prefix
     $label = Format-BobResetLabel -PeriodEnd '2026-09-28T16:12:00Z' -Now $now
-    if ($label -ne 'Until reset: 2 days') { throw "countdown sample=$label" }
-    # exactly one day
+    if ($label -ne '2 days, 4 hours') { throw "countdown sample=$label" }
+    if ($label -match 'Until reset:') { throw 'must not emit Until reset: prefix' }
+    # exactly one day (0 hours omitted)
     $oneDay = Format-BobResetLabel -PeriodEnd '2026-09-27T12:00:00Z' -Now $now
-    if ($oneDay -ne 'Until reset: 1 day') { throw "one-day sample=$oneDay" }
+    if ($oneDay -ne '1 day') { throw "one-day sample=$oneDay" }
     # expired / negative → 0 minutes
     $zero = Format-BobResetLabel -PeriodEnd '2026-09-26T11:00:00Z' -Now $now
-    if ($zero -ne 'Until reset: 0 minutes') { throw "clamp sample=$zero" }
+    if ($zero -ne '0 minutes') { throw "clamp sample=$zero" }
     # polled since reset → hide
     $hidden = Format-BobResetLabel -PeriodEnd '2026-09-25T12:00:00Z' -FetchedAt '2026-09-26T13:00:00Z' -Now $now
     if ($null -ne $hidden -and [string]$hidden -ne '') { throw "polled-since-reset must hide: $hidden" }
-    # <1 day with hours → total minutes (3h30m = 210)
-    $mins = Format-BobResetLabel -PeriodEnd '2026-09-26T15:30:00Z' -Now $now
-    if ($mins -ne 'Until reset: 210 minutes') { throw "minutes-only sample=$mins" }
-    # FR #436 example: 3h15m → 195 minutes
+    # days = 0 → hours + minutes
+    $hm = Format-BobResetLabel -PeriodEnd '2026-09-26T15:30:00Z' -Now $now
+    if ($hm -ne '3 hours, 30 minutes') { throw "hours-minutes sample=$hm" }
     $ex = Format-BobResetLabel -PeriodEnd '2026-09-26T15:15:00Z' -Now $now
-    if ($ex -ne 'Until reset: 195 minutes') { throw "195-minutes sample=$ex" }
+    if ($ex -ne '3 hours, 15 minutes') { throw "3h15m sample=$ex" }
+    $minsOnly = Format-BobResetLabel -PeriodEnd '2026-09-26T12:45:00Z' -Now $now
+    if ($minsOnly -ne '45 minutes') { throw "45-minutes sample=$minsOnly" }
     # sub-minute remaining → 0 minutes
     $sub = Format-BobResetLabel -PeriodEnd '2026-09-26T12:00:30Z' -Now $now
-    if ($sub -ne 'Until reset: 0 minutes') { throw "sub-minute sample=$sub" }
+    if ($sub -ne '0 minutes') { throw "sub-minute sample=$sub" }
     if ((Format-BobResetLabel -PeriodEnd $null)) { throw 'null period_end must return null' }
+}
+
+Invoke-Case 'BT0fr445 grok-chat never copies Cursor auto pool' {
+    param($bridgeRoot)
+    $m = Get-Module BobBridge
+    $doc = [pscustomobject]@{
+        remaining_pct          = 40
+        sand_remaining_pct     = 77
+        period_end             = '2026-10-01T00:00:00Z'
+        sand_period_end        = '2026-09-29T00:00:00Z'
+        fetched_at             = '2026-09-26T12:00:00Z'
+        cursor_spending_groups = @(
+            [pscustomobject]@{ id = 'auto'; remaining_pct = 40 }
+            [pscustomobject]@{ id = 'high-cost-models'; remaining_pct = 10 }
+            [pscustomobject]@{ id = 'grok-chat'; remaining_pct = 77 }
+        )
+    }
+    $pools = & $m { param($d) @(Get-BobCursorPoolsForTray -MachineId 'ionos' -LocalCursorDoc $d -PcentRows @() -LocalOnly) } $doc
+    $chat = @($pools | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
+    $auto = @($pools | Where-Object { [string]$_.group_id -eq 'auto' })[0]
+    if (-not $chat) { throw 'grok-chat pool missing' }
+    if ([int]$chat.remaining_pct -ne 77) { throw "grok-chat must be sand 77, got $($chat.remaining_pct)" }
+    if ([int]$auto.remaining_pct -ne 40) { throw "auto must stay 40, got $($auto.remaining_pct)" }
+    $doc2 = [pscustomobject]@{
+        remaining_pct          = 40
+        cursor_spending_groups = @(
+            [pscustomobject]@{ id = 'auto'; remaining_pct = 40 }
+        )
+    }
+    $pools2 = & $m { param($d) @(Get-BobCursorPoolsForTray -MachineId 'ionos' -LocalCursorDoc $d -PcentRows @() -LocalOnly) } $doc2
+    $chat2 = @($pools2 | Where-Object { [string]$_.group_id -eq 'grok-chat' })[0]
+    if ($null -ne $chat2.remaining_pct -and [string]$chat2.remaining_pct -ne '') {
+        throw "grok-chat without sand must be n/a, got $($chat2.remaining_pct)"
+    }
 }
 
 # --- BT0l24 shop channel + worker nick + reportUrl (issue #124) ---
