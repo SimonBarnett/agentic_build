@@ -23,6 +23,7 @@ frontmatter `github:` MUST name the public repo that owns that book.
 |-----------------|-----------|------------------|
 | IRC wire, Jeeves, talk seats, SEAL, moot, file, dumb, Ergo, Watch-Bobiverse | `SimonBarnett/agentic_irc` | `.grok/skills/harvest-agent-skills/SKILL.md` |
 | Fleet / build / MRB / Bob jobs / TipForm | `SimonBarnett/agentic_build` | `.grok/skills/harvest-agent-skills/SKILL.md` |
+| WiX / MSI pack (heat/candle/light, QuietExec) | `SimonBarnett/agentic_build` (`wix-msi-pack`) | `.grok/skills/harvest-agent-skills/SKILL.md` |
 | MUD / Discworld | `SimonBarnett/mud-skill` | `.grok/skills/harvest-agent-skills/SKILL.md` |
 | Visionary / new-product strategy | `SimonBarnett/skills-visionary` | `.grok/skills/harvest-agent-skills/SKILL.md` |
 | Design UAT | `SimonBarnett/bob-design-uat` | `.grok/skills/harvest-agent-skills/SKILL.md` |

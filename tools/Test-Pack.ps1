@@ -143,7 +143,7 @@ function Invoke-Case {
 
 # --- BT0 skills ---
 Invoke-Case 'BT0 skills' {
-    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'cleanup-orphans', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'watch-agent-health', 'setup-github-cursor', 'visionary')) {
+    foreach ($n in @('grok-build-fleet', 'unstick-grok-bot', 'bob-build-loop', 'bob-spec-intake', 'bob-build-dispatch', 'bob-hostile-mrb', 'box-usage', 'harvest-agent-skills', 'bob-fleet-monitor', 'bob-fleet-tray', 'start-bob-copilot', 'start-bob-cursor', 'cursor-mrb-dev', 'bob-job-loop', 'bob-irc', 'reinstall-agentic-build-skills', 'setup-remote-grok-bot', 'cursor-sand-billing', 'killproc', 'cleanup-orphans', 'github-irc-webhooks', 'setup-github-webhooks', 'setup-ssl-certs', 'agent-monitor-setup', 'watch-agent-health', 'setup-github-cursor', 'visionary', 'wix-msi-pack')) {
         $p = Join-Path $RepoRoot ".grok\skills\$n\SKILL.md"
         if (-not (Test-Path $p)) { throw "missing $p" }
         $raw = Get-Content $p -Raw
@@ -152,6 +152,8 @@ Invoke-Case 'BT0 skills' {
         if ($n -eq 'harvest-agent-skills' -and $raw -notmatch 'honesty box') { throw 'harvest-agent-skills must keep the honesty box' }
         if ($n -eq 'killproc' -and $raw -notmatch '-IrcHome') { throw 'killproc skill must document -IrcHome' }
         if ($n -eq 'cleanup-orphans' -and $raw -notmatch 'Cleanup-OrphanAgents') { throw 'cleanup-orphans skill must document Cleanup-OrphanAgents.ps1' }
+        if ($n -eq 'wix-msi-pack' -and $raw -notmatch 'CustomActionData') { throw 'wix-msi-pack skill must document deferred CustomActionData' }
+        if ($n -eq 'wix-msi-pack' -and $raw -notmatch 'CAQuietExec64') { throw 'wix-msi-pack skill must name CAQuietExec64' }
         if ($n -eq 'github-irc-webhooks' -and $raw -notmatch 'setup-github-webhooks') { throw 'github-irc-webhooks must point at setup-github-webhooks' }
         if ($n -eq 'setup-github-webhooks' -and $raw -notmatch 'irc\.ntsa\.uk/bob/v1/git') { throw 'setup-github-webhooks must document git URL' }
         if ($n -eq 'setup-ssl-certs' -and $raw -notmatch 'wacs\.exe') { throw 'setup-ssl-certs must document wacs.exe' }
