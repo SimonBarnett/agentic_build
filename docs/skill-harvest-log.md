@@ -544,3 +544,10 @@ pointer on `bob-irc` and `visionary` only.
 
 docs/fr-mode-no-self-merge.md; tools/fr_self_merge_guard.py; packs FR mode open-PR-only.
 
+
+## 2026-09-29 — wix-msi-pack (airc-console MSI #309)
+
+- New skill `.grok/skills/wix-msi-pack`: WiX v3 heat/candle/light pack shape, deferred `CAQuietExec64` must use CustomActionData (property = deferred CA id), not `QtExecCmdLine` (msiexec 1603 / 0x80070057).
+- Reference: agentic_irc `Pack-AircConsoleRelease.ps1` / `Fetch-Wix.ps1` / `Product.wxs`; product behaviour stays in agentic_irc `airc-console`.
+- Harvest-agent-skills domain table + Test-Pack BT0 skills list updated.
+- Evidence: CE-PRIORITY-DEV1 install of `airc-console-v0.1.16`; agentic_irc issue #309 / PR #310.
