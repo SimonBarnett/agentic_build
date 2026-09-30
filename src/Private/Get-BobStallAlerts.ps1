@@ -14,6 +14,9 @@ function Get-BobStallAlerts {
         [int]$HeartbeatStaleSec = 90
     )
     if (-not $Seen) { throw 'Seen hashtable required' }
+    if (-not $Seen['inbox']) { $Seen['inbox'] = @{} }
+    if (-not $Seen['running']) { $Seen['running'] = @{} }
+    if (-not $Seen['stall']) { $Seen['stall'] = @{} }
     $WipPattern = '(?i)(\bstarting with\b|\bthen commit\b|\bworking on\b|\babout to\b)'
     $alerts = New-Object System.Collections.Generic.List[string]
     $health = Get-BobHealth
@@ -37,6 +40,7 @@ function Get-BobStallAlerts {
     $nowInbox = @{}
     foreach ($j in $inbox) {
         $id = [string]$j.id
+        if (-not $id) { continue }
         $nowInbox[$id] = $true
         $jobAge = $null
         if ($j.createdAt) {
@@ -58,6 +62,7 @@ function Get-BobStallAlerts {
     $nowRun = @{}
     foreach ($j in $runningNow) {
         $id = [string]$j.id
+        if (-not $id) { continue }
         $nowRun[$id] = $true
         $sid = [string]$j.sessionId
         if (-not $sid) { $sid = $id }
