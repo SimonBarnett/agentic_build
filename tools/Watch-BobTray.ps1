@@ -33,12 +33,48 @@ if (-not (Test-Path $psd1)) { throw "missing $psd1" }
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+# CatchException before any Control. Otherwise a recycle Stop-Process mid-Timer tick
+# surfaces PipelineStoppedException as the Windows Forms JIT dialog.
+try {
+    [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+}
+catch { }
 Add-Type -Name Native -Namespace BobTray -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
 '@
 $hwnd = [BobTray.Native]::GetConsoleWindow()
 if ($hwnd -ne [IntPtr]::Zero) { [void][BobTray.Native]::ShowWindow($hwnd, 0) }
+
+# ThreadException / UnhandledException handlers (mode already set above when possible).
+try {
+    [System.Windows.Forms.Application]::add_ThreadException({
+            param($sender, $e)
+            $ex = $e.Exception
+            if ($ex -is [System.Management.Automation.PipelineStoppedException]) { return }
+            if ($ex -and $ex.GetType().FullName -eq 'System.Management.Automation.PipelineStoppedException') { return }
+            try { Write-TrayLog ('ThreadException: ' + $ex.Message) } catch { }
+            try {
+                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                    Report-BobDeterministicException -Site 'Watch-BobTray.ThreadException' -Exception $ex -ScriptPath $PSCommandPath | Out-Null
+                }
+            }
+            catch { }
+        })
+    [AppDomain]::CurrentDomain.add_UnhandledException({
+            param($sender, $e)
+            $obj = $e.ExceptionObject
+            if ($obj -is [System.Management.Automation.PipelineStoppedException]) { return }
+            try { Write-TrayLog ('UnhandledException: ' + $obj) } catch { }
+            try {
+                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
+                    Report-BobDeterministicException -Site 'Watch-BobTray.UnhandledException' -Exception $obj -ScriptPath $PSCommandPath | Out-Null
+                }
+            }
+            catch { }
+        })
+}
+catch { }
 
 if (-not ('BobTrayUi.TipForm' -as [type])) {
     $refs = @(
@@ -2307,8 +2343,11 @@ function Update-Hover {
                 if ($script:tileHost) { $yAlert = $script:tileHost.Bottom + 8 }
                 $script:alertLabel.Location = New-Object System.Drawing.Point 14, $yAlert
             }
+            Update-BobTrayVersionLabelLayout
             if ((Test-BobTrayTipVisible) -and $script:alertLabel) {
-                $script:tip.Height = [Math]::Max(110, $script:alertLabel.Bottom + 16)
+                $bottom = $script:alertLabel.Bottom
+                if ($script:versionLabel -and $script:versionLabel.Bottom -gt $bottom) { $bottom = $script:versionLabel.Bottom }
+                $script:tip.Height = [Math]::Max(110, $bottom + 16)
             }
             if (-not $script:attention -and -not $paint.pulse -and $notify.Icon -ne $iconIdle) {
                 $notify.Icon = $iconIdle
@@ -2366,6 +2405,44 @@ function Hide-BobTrayCard {
 
 function Get-BobTrayCursorHelpTooltip {
     return (Get-BobTrayCursorGroupHelpTooltip -GroupId '')
+}
+
+function Get-BobTrayProductVersionLabel {
+    $ver = [string]$env:BOBIVERSE_BOB_VERSION
+    if (-not $ver.Trim()) {
+        foreach ($cand in @(
+                (Join-Path $RepoRoot 'VERSION'),
+                (Join-Path $RepoRoot 'src\VERSION'),
+                (Join-Path (Split-Path $RepoRoot -Parent) 'bob\VERSION'),
+                'C:\ai\bob\VERSION'
+            )) {
+            if ($cand -and (Test-Path -LiteralPath $cand)) {
+                try {
+                    $ver = ([string](Get-Content -LiteralPath $cand -TotalCount 1 -ErrorAction Stop)).Trim()
+                    if ($ver) { break }
+                }
+                catch { }
+            }
+        }
+    }
+    if (-not $ver.Trim()) { $ver = 'unknown' }
+    return ('bob {0}' -f $ver.Trim())
+}
+
+function Update-BobTrayVersionLabelLayout {
+    if (-not $script:versionLabel -or -not $script:tip) { return }
+    $script:versionLabel.Text = (Get-BobTrayProductVersionLabel)
+    $y = 40
+    if ($script:alertLabel) { $y = $script:alertLabel.Top }
+    elseif ($script:tileHost) { $y = $script:tileHost.Bottom + 8 }
+    # Right-align inside tip card (width 420, ~14px inset).
+    $script:versionLabel.Location = New-Object System.Drawing.Point 14, $y
+    try {
+        $need = [int]$script:versionLabel.PreferredSize.Width
+        $x = [Math]::Max(14, 420 - 14 - $need)
+        $script:versionLabel.Location = New-Object System.Drawing.Point $x, $y
+    }
+    catch { }
 }
 
 function Format-BobTrayCursorOverspendLine {
@@ -2793,6 +2870,12 @@ function Initialize-BobTrayTipForm {
     $script:alertLabel.ForeColor = $muted
     $script:alertLabel.Location = New-Object System.Drawing.Point 14, 86
     $script:alertLabel.Text = 'alert: none'
+    $script:versionLabel = New-Object System.Windows.Forms.Label
+    $script:versionLabel.AutoSize = $true
+    $script:versionLabel.Font = New-Object System.Drawing.Font 'Segoe UI', 8
+    $script:versionLabel.ForeColor = $muted
+    $script:versionLabel.Text = (Get-BobTrayProductVersionLabel)
+    $script:versionLabel.Location = New-Object System.Drawing.Point 300, 86
     $script:tip.Controls.Add($script:titleLabel)
     $script:tip.Controls.Add($script:closeBtn)
     $script:tip.Controls.Add($script:barCaption)
@@ -2800,9 +2883,11 @@ function Initialize-BobTrayTipForm {
     $script:tip.Controls.Add($script:jobsLabel)
     $script:tip.Controls.Add($script:tileHost)
     $script:tip.Controls.Add($script:alertLabel)
+    $script:tip.Controls.Add($script:versionLabel)
     $script:tip.Add_Shown({
             if (Test-BobTrayTipAlive -and $script:alertLabel) {
-                $script:tip.Height = $script:alertLabel.Bottom + 16
+                Update-BobTrayVersionLabelLayout
+                $script:tip.Height = [Math]::Max($script:alertLabel.Bottom, $(if ($script:versionLabel) { $script:versionLabel.Bottom } else { 0 })) + 16
             }
         })
 }
@@ -2828,6 +2913,8 @@ function Show-BobTrayCard {
         if ($script:jobsLabel) { $bottom = $script:jobsLabel.Bottom }
         if ($script:tileHost) { $bottom = $script:tileHost.Bottom }
         if ($script:alertLabel) { $bottom = $script:alertLabel.Bottom }
+        Update-BobTrayVersionLabelLayout
+        if ($script:versionLabel -and $script:versionLabel.Bottom -gt $bottom) { $bottom = $script:versionLabel.Bottom }
         $script:tip.Height = [Math]::Max(110, $bottom + 16)
         # Park once on click. Stay in that place until X. No hideTip.
         if (-not (Test-BobTrayTipVisible)) {
@@ -2925,16 +3012,20 @@ $notify.Add_MouseClick({
 $flash = New-Object System.Windows.Forms.Timer
 $flash.Interval = 450
 $flash.Add_Tick({
-        if (-not $script:attention) { return }
-        $script:flashOn = -not $script:flashOn
-        $notify.Icon = $(if ($script:flashOn) { $iconAlertA } else { $iconAlertB })
+        try {
+            if (-not $script:attention) { return }
+            $script:flashOn = -not $script:flashOn
+            $notify.Icon = $(if ($script:flashOn) { $iconAlertA } else { $iconAlertB })
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { return }
+        catch { }
     })
 
 $poll = New-Object System.Windows.Forms.Timer
 $poll.Interval = [Math]::Max(5000, $PollSec * 1000)
 $poll.Add_Tick({
-        try { Clear-BobTrayGrokSessionDirs } catch { }
         try {
+            try { Clear-BobTrayGrokSessionDirs } catch { }
             Start-JobsWatcher
             $alerts = @(Get-BobStallAlerts -Seen $seen -StallSec $StallSec -HeartbeatStaleSec $HeartbeatStaleSec)
             if ($alerts.Count -gt 0) { Set-Attention $alerts }
@@ -2942,6 +3033,7 @@ $poll.Add_Tick({
             # CAST IRON: local Cursor (pcent + overspend) + xAI weekly -> digest webhook every tick.
             if (Get-Command Write-BobIrcStatus -ErrorAction SilentlyContinue) {
                 try { Write-BobIrcStatus | Out-Null } catch {
+                    if ($_.Exception -is [System.Management.Automation.PipelineStoppedException]) { return }
                     Write-TrayLog ('digest Write-BobIrcStatus: ' + $_.Exception.Message)
                     try {
                         if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
@@ -2952,6 +3044,7 @@ $poll.Add_Tick({
                 }
             }
         }
+        catch [System.Management.Automation.PipelineStoppedException] { return }
         catch {
             Write-TrayLog ("poll error: " + $_.Exception.Message)
             try {
@@ -2968,42 +3061,27 @@ $pulse.Interval = 60000
 $pulseOff = New-Object System.Windows.Forms.Timer
 $pulseOff.Interval = 700
 $pulseOff.Add_Tick({
-        $pulseOff.Stop()
-        if (-not $script:attention) { $notify.Icon = $iconIdle }
+        try {
+            $pulseOff.Stop()
+            if (-not $script:attention) { $notify.Icon = $iconIdle }
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { return }
+        catch { }
     })
 $pulse.Add_Tick({
-        if ($script:attention) { return }
-        $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct
-        if (-not $paint.pulse) { return }
-        $notify.Icon = $iconContext
-        $pulseOff.Stop(); $pulseOff.Start()
+        try {
+            if ($script:attention) { return }
+            $paint = Get-BobTrayBarPaint -RemainingPct $script:remainingPct
+            if (-not $paint.pulse) { return }
+            $notify.Icon = $iconContext
+            $pulseOff.Stop(); $pulseOff.Start()
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { return }
+        catch { }
     })
 
-# Unhandled exceptions -> GitHub issues via gh (FR #401). No model tokens.
-try {
-    [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
-    [System.Windows.Forms.Application]::add_ThreadException({
-            param($sender, $e)
-            try { Write-TrayLog ('ThreadException: ' + $e.Exception.Message) } catch { }
-            try {
-                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
-                    Report-BobDeterministicException -Site 'Watch-BobTray.ThreadException' -Exception $e.Exception -ScriptPath $PSCommandPath | Out-Null
-                }
-            }
-            catch { }
-        })
-    [AppDomain]::CurrentDomain.add_UnhandledException({
-            param($sender, $e)
-            try { Write-TrayLog ('UnhandledException: ' + $e.ExceptionObject) } catch { }
-            try {
-                if (Get-Command Report-BobDeterministicException -ErrorAction SilentlyContinue) {
-                    Report-BobDeterministicException -Site 'Watch-BobTray.UnhandledException' -Exception $e.ExceptionObject -ScriptPath $PSCommandPath | Out-Null
-                }
-            }
-            catch { }
-        })
-}
-catch { Write-TrayLog ('exception hooks: ' + $_.Exception.Message) }
+# Exception hooks registered at script start (before Controls). Do not call
+# SetUnhandledExceptionMode again here - it fails after NotifyIcon/TipForm exist.
 
 try { Clear-BobTrayGrokSessionDirs } catch { }
 Start-JobsWatcher

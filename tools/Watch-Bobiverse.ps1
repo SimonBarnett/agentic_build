@@ -87,8 +87,18 @@ function Stop-BobiverseEarDuplicates {
     }
 }
 
+function Test-BobiverseIrcBobServiceUp {
+    $svc = Get-Service -Name 'ircBob' -ErrorAction SilentlyContinue
+    return ($null -ne $svc -and $svc.Status -eq 'Running')
+}
+
 function Start-BobiverseIrcAgent {
     try { Compact-BobIrcOutbox } catch { }
+    # Prefer bobiverse ircBob service ear (Bob-{machinename}); do not start legacy bob-* Watch ear.
+    if (Test-BobiverseIrcBobServiceUp) {
+        Write-BobiverseLog 'skip irc_agent: ircBob service Running (Bob-{machinename} ear)'
+        return
+    }
     if (Test-BobiverseIrcAgentUp) { return }
     $py = Get-BobiversePython
     if (-not $py) {

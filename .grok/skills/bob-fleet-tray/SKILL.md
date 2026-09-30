@@ -235,6 +235,31 @@ Hover/flash/card/TipForm code changes: recycle **Watch-BobTray only** (or use Re
 4. Do not `Stop-ScheduledTask BobFleet-*` while build jobs run.
 5. Do not recycle `Watch-Bobiverse`, `BobIrcd`, or `BobJeeves` for a tray paint change. IRC recycle is `bob-irc` (Watch-Bobiverse only).
 
+### Durable start (job object / WMI) — CAST IRON 2026-09-30
+
+`Start-Process -PassThru` children stay in the launching console **job object**.
+Grok Build / agent shells kill that job when the shell exits, so TipForm can
+log `tray up` then vanish. `Start-BobFleetTray.ps1` must start the seat wrapper
+via **`Win32_Process.Create`** (WMI breakaway), with `Start-Process` only as
+fallback. Agent one-shots: same WMI create; never redirect stdout/stderr of the
+tray to the agent shell.
+
+Seat-wrapper peer kill must match **`-File …Watch-BobTray.ps1`** /
+**`-File …_Watch-BobTray-*.ps1` only**. A broad `CommandLine -match "Watch-BobTray"`
+stops diagnostic shells whose argv merely mentions the path.
+
+On bobiverse installs (`C:\ai\bob`): companion is **`scripts\Start-BobTray.ps1`**
++ HKCU `Run\BobiverseTray` / Startup; **disable** legacy `BobFleet-<id>` tasks.
+When **`ircBob` is Running**, `Watch-Bobiverse` must **not** spawn a second
+legacy `bob-*` ear.
+
+### PipelineStoppedException / version footer
+
+Call `Application.SetUnhandledExceptionMode(CatchException)` **before** any
+WinForms control is created. Swallow `PipelineStoppedException` on timer ticks
+and ThreadException (recycle `Stop-Process` mid-tick). TipForm shows product
+version bottom-right (`bob {ver}` from `BOBIVERSE_BOB_VERSION` / `VERSION`).
+
 Card place: `Get-BobTrayTipPlacement` (icon rect, then sticky when already visible, else cursor). TipForm uses `ShowWithoutActivation` / WS_EX_NOACTIVATE.
 
 ## Diagnose (when the card/icon misbehaves)

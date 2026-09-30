@@ -63,8 +63,17 @@ function Read-JsonFile {
             Start-Sleep -Milliseconds 60
         }
     }
-    if (-not $raw.Trim()) { return $null }
-    return $raw | ConvertFrom-Json
+    if (-not $raw -or -not $raw.Trim()) { return $null }
+    # NUL-smashed or truncated files must not throw into tray poll.
+    if ($raw.IndexOf([char]0) -ge 0) { return $null }
+    $trim = $raw.TrimStart()
+    if (-not ($trim.StartsWith('{') -or $trim.StartsWith('['))) { return $null }
+    try {
+        return $raw | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
 }
 
 function Write-JsonFile {
