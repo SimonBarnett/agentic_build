@@ -2336,7 +2336,7 @@ function Update-Hover {
                     # Format-BobCursorAccountLabel will pick tip/overspend when RemainingPct empty
                 }
             }
-            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label -AccountOverageGbp $h.account_overage_gbp
+            Rebuild-BobTrayTiles -Machines @($h.machines) -CursorPools @($h.cursor_pools) -AccountName $h.account_name -AccountPct $h.account_remaining_pct -AccountLabel $h.account_label -AccountReset $h.account_reset_label -AccountOverageGbp $h.account_overage_gbp -ChairChannels @($h.chair_channels)
             if ($script:alertLabel) {
                 $script:alertLabel.Text = ('alert: {0}' -f $script:alertKind)
                 $yAlert = 40
@@ -2639,7 +2639,7 @@ function Add-BobTrayUsageRow {
 }
 
 function Rebuild-BobTrayTiles {
-    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset, $AccountOverageGbp)
+    param($Machines, $CursorPools, $AccountName, $AccountPct, $AccountLabel, $AccountReset, $AccountOverageGbp, $ChairChannels)
     if (-not $script:tileHost) { return }
 
     # Format everything first so a throw never leaves a cleared host.
@@ -2671,6 +2671,30 @@ function Rebuild-BobTrayTiles {
     $oldHost = $script:tileHost
     $script:tileHost = $stage
     try {
+        # ChanServ shops from digest chair_channels (Jeeves registry) — names only.
+        $shops = @()
+        foreach ($ch in @($ChairChannels)) {
+            $s = [string]$ch
+            if (-not $s) { continue }
+            if ($s -eq '#bobiverse' -or $s -eq 'bobiverse') { continue }
+            $shops += ,($s.TrimStart('#'))
+        }
+        if ($shops.Count -gt 0) {
+            $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'ChanServ' -Icon $null
+            $shopFont = New-Object System.Drawing.Font 'Segoe UI', 9
+            foreach ($shop in $shops) {
+                $lbl = New-Object System.Windows.Forms.Label
+                $lbl.AutoSize = $true
+                $lbl.Font = $shopFont
+                $lbl.ForeColor = $fg
+                $lbl.BackColor = [System.Drawing.Color]::Transparent
+                $lbl.Text = [string]$shop
+                $lbl.Location = New-Object System.Drawing.Point 18, $y
+                $script:tileHost.Controls.Add($lbl)
+                $y += 18
+            }
+            $y += 6
+        }
         $overLine = Format-BobTrayCursorOverspendLine -OverageGbp $AccountOverageGbp
         $overColor = [System.Drawing.Color]::FromArgb(248, 81, 73)
         $y = Add-BobTraySectionHeader -X 0 -Y $y -Title 'Cursor' -Icon $cursorIcon -WithHelp -Agent $cursorAgent `
