@@ -551,3 +551,12 @@ docs/fr-mode-no-self-merge.md; tools/fr_self_merge_guard.py; packs FR mode open-
 - Reference: agentic_irc `Pack-AircConsoleRelease.ps1` / `Fetch-Wix.ps1` / `Product.wxs`; product behaviour stays in agentic_irc `airc-console`.
 - Harvest-agent-skills domain table + Test-Pack BT0 skills list updated.
 - Evidence: CE-PRIORITY-DEV1 install of `airc-console-v0.1.16`; agentic_irc issue #309 / PR #310.
+
+## 2026-09-29 - BOB_MACHINE_ID = COMPUTERNAME (not ionos alias)
+
+- Simon CAST IRON: Install-BobFleet `-MachineId` / `BOB_MACHINE_ID` = Windows `COMPUTERNAME` lowercased.
+- Host `WIN-MPRE8VI4U6U` -> `win-mpre8vi4u6u` / `bob-win-mpre8vi4u6u` / `#win-mpre8vi4u6u`. Do not install as `ionos`.
+- Skills: `.grok/skills/bob-irc`; comment on `tools/Install-BobFleet.ps1`.
+- Do not commit per-machine `tools/_Watch-Bobiverse-*.ps1` wrappers (Install-BobFleet generated).
+- Sister IRC playbook harvested to `SimonBarnett/agentic_irc`.
+

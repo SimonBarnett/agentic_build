@@ -1,4 +1,6 @@
 # Register this Windows logon as a fleet machine. No SCM service.
+# CAST IRON (Simon 2026-09-29): -MachineId MUST be Windows COMPUTERNAME lowercased
+# (e.g. WIN-MPRE8VI4U6U -> win-mpre8vi4u6u). Do not pass marketing aliases like ionos.
 # Copies .grok/skills/*/SKILL.md into ~/.grok/skills so Grok Bot / grok.exe on this box can load them.
 # Safe to re-run on a live box (see tools\BobInstallHelpers.ps1):
 # - never starts a second tray or ear (single-instance rule from #318: keep oldest)

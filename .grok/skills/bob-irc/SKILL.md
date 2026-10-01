@@ -45,8 +45,8 @@ fingerprint, **delete `_digest-webhook-posted.json`** and let the next
 ## Recycle
 
 Builder IRC: **Watch-Bobiverse only.** Kill that watcher, start one hidden
-instance (`_Watch-Bobiverse-<machineId>.ps1`, ionos
-`_Watch-Bobiverse-ionos.ps1`). Do not `Restart-Service BobIrcd` for a
+instance (`_Watch-Bobiverse-<machineId>.ps1`, e.g.
+`_Watch-Bobiverse-win-mpre8vi4u6u.ps1`). Do not `Restart-Service BobIrcd` for a
 builder peer glitch. Do not `Stop-ScheduledTask BobFleet-*` while jobs run.
 Do not `Stop-Process ergo`.
 
@@ -67,14 +67,25 @@ become the chair.
 `AGENTIC_IRC_HOME` is the IRC client home for that seat (builders:
 `~\.agentic-irc-bobiverse`). `BOB_DIGEST_HOME` is the Jeeves digest home.
 Do not point a builder `--home` at the digest home, and do not share
-`outbox.txt` between Jeeves and `bob-ionos`. If `BOB_DIGEST_HOME` is unset,
+`outbox.txt` between Jeeves and the bob ear. If `BOB_DIGEST_HOME` is unset,
 read the `BobJeeves` service environment. Do not guess a path.
 
 ## Shop
 
-**Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse` plus `#<machine>` (`#ionos`, `#flamingo`, ...). Git workers use `w-<short>-<pid>` on the shop only (`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has the full nick table.
+**CAST IRON (Simon 2026-09-29):** `Install-BobFleet -MachineId` / `BOB_MACHINE_ID`
+must be the box **Windows `COMPUTERNAME` lowercased**, not a marketing alias.
+Host `WIN-MPRE8VI4U6U` → `win-mpre8vi4u6u` → ear `bob-win-mpre8vi4u6u` / shop
+`#win-mpre8vi4u6u`. Do not install this VPS as `ionos`.
 
-`Watch-Bobiverse` resolves that seat with exported `Resolve-BobiverseMachineId` (nick or raw name to a `config/bobiverse.json` machine id). BobBridge must export it. A private copy throws every watcher tick before `irc_agent` starts. `Get-ThisMachineId` does not do that map. See `docs/bobiverse.md`.
+**Shop:** `bob-*` via `Watch-Bobiverse` / `Install-BobIrc` JOIN `#bobiverse`
+plus `#{machine}`. Git workers use `w-<short>-<pid>` on the shop only
+(`Start-BobWorkerIrcAgent`). Sister `agentic_irc` `.grok/skills/bob-irc` has
+the full nick table.
+
+`Watch-Bobiverse` resolves that seat with exported `Resolve-BobiverseMachineId`
+(nick or raw name; unknown ids pass through as hostname shops). BobBridge must
+export it. A private copy throws every watcher tick before `irc_agent` starts.
+`Get-ThisMachineId` does not do that map. See `docs/bobiverse.md`.
 
 **GIT work backup:** `bob-*` do not auto-claim Jeeves `GIT` lines.
 Idle `w-*` (> 2 min) says `!BORED` only. Jeeves replies `!TASK` and
@@ -99,6 +110,6 @@ idle or cancelled POST a **clear** merge (`jobs=[]`, zeros, clear
 `listen.stdout.log` (burns tokens on chat spam). Legacy talk-seat TSR only
 when no watcher (`agentic-irc` Listener + wake).
 
-Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops `bob-ionos`.
+Huge `outbox.txt` POINT backlog floods Ergo and reconnect-loops the bob ear.
 See `docs/bobiverse.md` (dedupe `lastSeen=`; do not force `127.0.0.1`).
 GIT lines belong on the Jeeves outbox (`bob-jeeves-chair`), not on `bob-*`.
